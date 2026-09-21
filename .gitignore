@@ -1,0 +1,4 @@
+# Sorties derivees du binaire : jamais dans le depot.
+export/*.c
+export/fonctions.tsv
+export/*.log

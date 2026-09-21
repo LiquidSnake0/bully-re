@@ -1,0 +1,12 @@
+// Squelette genere depuis le RTTI de bully.exe. Table virtuelle @ 0090cbd4.
+#pragma once
+
+#include "Objective.h"
+
+class PassBallObjective : public Objective {
+public:
+    // slot  0 : FUN_004718d0
+    // slot  1 : FUN_0046f960
+    // slot  2 : FUN_00828240
+    // slot  3 : FUN_0049a500
+};

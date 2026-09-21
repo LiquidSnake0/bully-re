@@ -1,0 +1,13 @@
+// Squelette genere depuis le RTTI de bully.exe. Table virtuelle @ 0093805c.
+#pragma once
+
+#include "Track.h"
+
+class BlendBikeToPosTrack : public Track {
+public:
+    // slot  0 : FUN_0044e910
+    // slot  1 : FUN_0063e860
+    // slot  2 : FUN_0065a4c0
+    // slot  3 : FUN_0065a670
+    // slot  4 : FUN_00659e20
+};

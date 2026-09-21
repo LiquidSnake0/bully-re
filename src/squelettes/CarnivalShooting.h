@@ -1,0 +1,15 @@
+// Squelette genere depuis le RTTI de bully.exe. Table virtuelle @ 00943d7c.
+#pragma once
+
+#include "Minigame.h"
+
+class CarnivalShooting : public Minigame {
+public:
+    // slot  0 : FUN_006d87a0
+    // slot  1 : FUN_0049a500
+    // slot  2 : thunk_FUN_006d87d0
+    // slot  3 : FUN_0049a500
+    // slot  4 : FUN_007093c0
+    // slot  5 : FUN_006d7e90
+    // slot  6 : FUN_006d7c90
+};
