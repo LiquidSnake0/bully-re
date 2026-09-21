@@ -66,3 +66,12 @@ des noms. Règle de nommage automatique resserrée : deux liaisons Lua au plus
 par fonction du moteur, sinon le nom d'une seule appelante est trompeur ;
 8 noms retirés, 142 gardés. Le `cp` interactif du shell a encore bloqué une
 commande : toujours `\cp -f`.
+
+Chargeurs de données. Le binaire contient l'assertion
+`CFileLoader::LoadLevel('Config/Dat/default.dat')` et les noms de fichiers de
+GTA : `SURFACE.DAT`, `PEDSTATS.DAT`, `CARCOLS.DAT`, `PED.DAT`, `OBJECT.DAT`.
+La séquence de démarrage (0x42ec80, `docs/demarrage.md`) est jalonnée de
+marqueurs de profilage vides qui nomment chaque étape. `CSurfaceTable::Initialise`
+(0x45b250) est reVC à l'identique : recréé dans `src/core/SurfaceTable.cpp`,
+avec un premier programme de test hôte (`tests/test_surface`) qui lira le
+vrai `SURFACE.DAT` dès que les données du jeu seront extraites du MSI.
