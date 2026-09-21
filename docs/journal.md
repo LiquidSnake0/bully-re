@@ -30,3 +30,13 @@ n'est pas un état mais les huit nœuds Gamebryo des composants du vélo.
 `CPhysical` ajoute `ApplyMoveSpeed` / `ApplyTurnSpeed` en virtuelles, avec
 `CTimer::ms_fTimeStep` en 0xc1a9a4. Bilan du jour : 11 fonctions recréées,
 60 slots documentés, 1 522 classes cartographiées, ça compile.
+
+Piétons. `CPed` (46 virtuelles) et `CPlayerPed` (47) lus, doc dans
+`docs/vtable-ped.md`. Surprise : le slot 15 de `CEntity` n'est pas `Teleport`
+(3765 octets, 19 paramètres chez le piéton), l'ordre reVC ne tient donc pas
+partout. Une jauge de piéton découverte : +0x1d40 monte par un appel avec
+montant et son pour le joueur, redescend avec le temps, avec un plancher
+propre au joueur ; nommée `m_nTrouble` en attendant mieux. Le pool de piétons
+(0xc0f5f0) a la disposition de re3 avec la taille d'entrée en quatrième mot.
+Recréés : `CPed::AddTrouble`, `CPed::ProcessTroubleDecay`,
+`CPlayerPed::ProcessTroubleDecay`. Quatre objets compilent.
