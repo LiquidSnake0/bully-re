@@ -51,9 +51,10 @@ fonction Lua désigne une fonction du moteur.
 
 Carte Lua complète : 661 des 914 noms ont une table de liaison (les 253
 autres sont des noms de classes ou de pistes d'action, pas des fonctions
-Lua). 231 liaisons n'appellent qu'une seule fonction du moteur : autant de
-fonctions nommées d'un coup (`docs/fonctions-nommees.tsv`), plus les 19
-lues à la main ce soir. `ApplyNames.java` reporte ces noms dans le projet
+Lua). 231 liaisons n'appellent qu'une seule fonction du moteur ; après
+dédoublonnage, 150 fonctions reçoivent un nom sans ambiguïté et 32 ont
+plusieurs candidats (`docs/fonctions-nommees.tsv`), plus les 19 lues à la
+main ce soir : 169 fonctions renommées dans le projet Ghidra. `ApplyNames.java` reporte ces noms dans le projet
 Ghidra, les décompilations suivantes seront lisibles. Fonctions les plus
 appelées par l'API : 0x73ad50 (50 fois), 0x5ee6d0 (35), 0x471240 (29), à
 identifier en priorité, ce sont des points d'entrée du moteur.
