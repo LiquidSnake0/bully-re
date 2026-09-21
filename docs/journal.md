@@ -40,3 +40,11 @@ propre au joueur ; nommée `m_nTrouble` en attendant mieux. Le pool de piétons
 (0xc0f5f0) a la disposition de re3 avec la taille d'entrée en quatrième mot.
 Recréés : `CPed::AddTrouble`, `CPed::ProcessTroubleDecay`,
 `CPlayerPed::ProcessTroubleDecay`. Quatre objets compilent.
+
+La passerelle Lua. Le binaire garde les 914 noms de l'API Lua
+(`docs/api-lua.txt`) dans des tables `{ nom, fonction C }`. Un script Ghidra
+remonte du nom à la fonction C, puis à ce qu'elle appelle. Résultat immédiat :
+la jauge +0x1d40 est `m_nPunishmentPoints`, le slot 45 `IncPunishmentPoints`,
++0x1ebc `m_nMinPunishmentPoints`, 0x4773d0 `SetPunishmentPoints`, le joueur
+courant `0x00c1aea8`. C'est la méthode qui nommera le plus vite : chaque
+fonction Lua désigne une fonction du moteur.
