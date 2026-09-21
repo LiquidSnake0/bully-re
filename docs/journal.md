@@ -75,3 +75,11 @@ marqueurs de profilage vides qui nomment chaque étape. `CSurfaceTable::Initiali
 (0x45b250) est reVC à l'identique : recréé dans `src/core/SurfaceTable.cpp`,
 avec un premier programme de test hôte (`tests/test_surface`) qui lira le
 vrai `SURFACE.DAT` dès que les données du jeu seront extraites du MSI.
+
+**Premier test contre le vrai jeu.** Les données ont été sorties des trois
+cabs (clés MSI replacées avec les tables File / Component / Directory,
+3 805 fichiers). `Config/dat/surface.dat` est le fichier de GTA III, signé
+Richard Jobling, 14/02/00. Le `CSurfaceTable::Initialise` recréé le charge
+et rend la matrice 6×6 attendue, symétrique, valeurs identiques au fichier
+(rubber/rubber 6.0, wet/wet 0.5). Première fonction vérifiée sur données
+réelles.
