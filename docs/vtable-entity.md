@@ -26,11 +26,43 @@ identique à re3/reVC), *probable* (corps lu, sémantique claire), ? (hypothèse
 | 16 | 00824d30 | CEntity | CEntity | ? | ? |
 | 17 | 004c2180 | CEntity | CBike | `PreRender()` ? | ? |
 | 18 | 004bfb70 | CEntity | CBike | `Render()` ? | ? |
-| 19–33 | | CEntity | CEntity / CVehicle | à lire : éclairage, destruction différée, extensions Bully (CEntity a 34 virtuelles contre 17 dans reVC) | ? |
+| 19 | 00467d60 | CEntity | CEntity | `SetupLighting()` : 726 octets, n'agit que si `m_rwObject` est un clump (type 2) ; même position que reVC | *probable* |
+| 20 | 00468040 | CEntity | CEntity | `RemoveLighting()` : 700 octets, symétrique du 19 | *probable* |
+| 21 | 00828240 | CEntity | CEntity | `FlagToDestroyWhenNextProcessed()` : vide, même position que reVC | *probable* |
+| 22 | 004655f0 | CEntity | CEntity | `IsRenderable()` ? : faux si +0xa4 non nul et +0xe4 nul | ? |
+| 23 | 0085b353 | CEntity | CVehicle | méthode virtuelle pure (`__purecall`), CVehicle l'implémente en 0x43a2d0 | **sûr** (pure) |
+| 24 | 0049a500 | CEntity | CEntity | vide | *probable* |
+| 25 | 00467ab0 | CEntity | CEntity | `GetBoundingBoxTransformed(out, matrice)` ? : boîte du modèle (modelinfo +0xc) transformée | ? |
+| 26 | 00466060 | CEntity | CEntity | appelle le slot 25 puis 0x41a800 | ? |
+| 27, 28 | 00466090 | CEntity | CEntity | `GetBoundDiameter()` ? : 2 × rayon du colmodel | ? |
+| 29 | 00465cc0 | CEntity | CEntity | `GetBoundRadius()` : rayon du colmodel (+0xc), utilisé par `GetBoundRect` | **sûr** |
+| 30 | 0044bea0 | CEntity | CEntity | `+0xcc != 0` | ? |
+| 31 | 00512610 | CEntity | CEntity | parcourt les effets 2D du modèle (0x50ec20), vrai si l'un a +0x38 non nul | ? |
+| 32 | 0044bec0 | CEntity | CEntity | retourne une constante flottante (0x8ff34c), distance de dessin par défaut ? | ? |
+| 33 | 00467ce0 | CEntity | CEntity | vrai si type != 5 et drapeau 0x10000 du modelinfo (+0x28) | ? |
 | 34 | 004b9ea0 | CPhysical | CBike | `ProcessEntityCollision` ? | ? |
 | 35–40 | | CPhysical | CPhysical | extensions physiques propres à Bully | ? |
 | 41 | 004c3ae0 | CPhysical | CBike | ? | ? |
-| 42–59 | | CVehicle | CVehicle / CBike | `ProcessControlInputs`, portes, klaxon, `BlowUpCar`… à apparier avec reVC (18 emplacements contre 24) | ? |
+| 42 | 0049a500 | CVehicle | CBike | `ProcessControlInputs(uint8)` : vide dans CVehicle, même position que reVC | *probable* |
+| 43 | 004358b0 | CVehicle | CBike | `GetComponentWorldPosition(int, CVector&)` : vide dans CVehicle | *probable* |
+| 44 | 006094f0 | CVehicle | CBike | `IsComponentPresent(int)` : retourne faux dans CVehicle | *probable* |
+| 45 | 0044bf10 | CVehicle | CBike | `SetComponentRotation(int, CVector)` : vide | *probable* |
+| 46 | 0044bf20 | CVehicle | CVehicle | `OpenDoor(...)` : vide | ? |
+| 47 | 00828240 | CVehicle | CVehicle | `ProcessOpenDoor(...)` : vide | ? |
+| 48 | 0085b353 | CVehicle | CBike | virtuelle pure dans CVehicle, porte ou état de porte | ? |
+| 49 | 006094f0 | CVehicle | CBike | retourne faux dans CVehicle (`IsDoor...`) | ? |
+| 50 | 004358b0 | CVehicle | CBike | vide dans CVehicle | ? |
+| 51 | 004cc8c0 | CVehicle | CVehicle | `SetUpWheelColModel(CColModel*)` ? : 405 octets, lit la boîte englobante du modelinfo (+0xc) et prend un flottant | ? |
+| 52 | 0044bf30 | CVehicle | CVehicle | appelle 0x4ce4f0 (`PlayCarHorn` ou `BlowUpCar` ?) | ? |
+| 53 | 0085b353 | CVehicle | CBike | virtuelle pure dans CVehicle | ? |
+| 54 | 004cca60 | CVehicle | CBike | `GetHeightAboveRoad()` ? : hauteur de la boîte du colmodel (+0x18) × constante 0x900550, comme reVC | *probable* |
+| 55 | 0049a500 | CVehicle | CBike | vide dans CVehicle | ? |
+| 56 | 0044bf40 | CVehicle | CBike | accesseur : écrit +0x2a0 | ? |
+| 57 | 004cb090 | CVehicle | CBike | retourne une constante flottante (0x912fd0), CBike la redéfinit | ? |
+| 58 | 004cb2b0 | CVehicle | CVehicle | (int a, int b) : si a et b valides, relie le squelette (+0x114) à celui d'une autre entité via 0x6c1f10 ; attache d'un passager ? | ? |
+| 59 | 0085b353 | CVehicle | CBike | virtuelle pure dans CVehicle | ? |
+
+Vue d'ensemble : les 17 virtuelles de reVC sont toutes là, dans le même ordre, aux slots 0, 2, 3, 8 à 21. Bully en intercale 5 avant `Add` (1, 4 à 7) et en ajoute 12 après (22 à 33).
 
 ## Champs identifiés sur CEntity / CPhysical / CBike
 
