@@ -58,3 +58,11 @@ main ce soir : 169 fonctions renommées dans le projet Ghidra. `ApplyNames.java`
 Ghidra, les décompilations suivantes seront lisibles. Fonctions les plus
 appelées par l'API : 0x73ad50 (50 fois), 0x5ee6d0 (35), 0x471240 (29), à
 identifier en priorité, ce sont des points d'entrée du moteur.
+
+Points d'entrée (`docs/points-entree.md`) : l'allocateur du jeu (0x5ee6d0),
+`CPed::PushObjective` (0x471240, pile de 20 objectifs à +0x58), la
+traduction handle Lua → entité (0x5c2770), le pool de points, le hachage
+des noms. Règle de nommage automatique resserrée : deux liaisons Lua au plus
+par fonction du moteur, sinon le nom d'une seule appelante est trompeur ;
+8 noms retirés, 142 gardés. Le `cp` interactif du shell a encore bloqué une
+commande : toujours `\cp -f`.
