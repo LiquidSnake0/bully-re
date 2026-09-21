@@ -48,3 +48,12 @@ la jauge +0x1d40 est `m_nPunishmentPoints`, le slot 45 `IncPunishmentPoints`,
 +0x1ebc `m_nMinPunishmentPoints`, 0x4773d0 `SetPunishmentPoints`, le joueur
 courant `0x00c1aea8`. C'est la méthode qui nommera le plus vite : chaque
 fonction Lua désigne une fonction du moteur.
+
+Carte Lua complète : 661 des 914 noms ont une table de liaison (les 253
+autres sont des noms de classes ou de pistes d'action, pas des fonctions
+Lua). 231 liaisons n'appellent qu'une seule fonction du moteur : autant de
+fonctions nommées d'un coup (`docs/fonctions-nommees.tsv`), plus les 19
+lues à la main ce soir. `ApplyNames.java` reporte ces noms dans le projet
+Ghidra, les décompilations suivantes seront lisibles. Fonctions les plus
+appelées par l'API : 0x73ad50 (50 fois), 0x5ee6d0 (35), 0x471240 (29), à
+identifier en priorité, ce sont des points d'entrée du moteur.
