@@ -19,7 +19,7 @@ struct CVehicleSkeleton {
 class CVisibilityPlugins
 {
 public:
-	static void SetupBikeCallback(RwObject *obj, uint32 *state);   // 0x5109f0
+	static void SetupBikeCallback(RwObject *obj, void **nodes);   // 0x5109f0
 };
 
 class CBike : public CVehicle
@@ -32,13 +32,20 @@ public:
 	void SetModelIndex(int16 id, int32 flags) override;  // 0x4c5ec0
 	void ProcessControl(void) override;                  // 0x4c61f0, ?
 	void ProcessCollision(void) override;                // 0x4c6510, ?
+	void GetComponentWorldPosition(int32 component, CVector &pos) override;   // 0x4b9ed0
+	bool IsComponentPresent(int32 component) override;   // 0x4b9450
+	void SetComponentRotation(int32 component, float x, float y, float z) override;   // 0x4bda90
+	void RemoveRefsToVehicle(CEntity *ent) override;     // 0x4b9b60
+	void PlayCarHorn(void) override;                     // 0x4b9960
+	void Slot53(void) override {}                        // 0x4c0200, à recréer
+	void Slot59(float a, float b) override {}            // 0x4bd300, à recréer
 
 	static void SkeletonCallback(void);                  // 0x4c46d0
 
 	uint32 m_nStaticFlag;         // +0xb0
 	uint8 m_nStaticCounter;       // +0x180
 	CVehicleSkeleton *m_pSkeleton; // +0x114
-	uint32 m_aBikeState[8];       // +0x580
+	void *m_aBikeNodes[8];        // +0x580 : nœuds Gamebryo des composants (GetComponentWorldPosition)
 	uint8 m_bikeExtraA[12];       // +0x5b8
 	uint8 m_bikeExtraB[12];       // +0x5c4
 	void *m_pHandlebars;          // +0x784

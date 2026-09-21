@@ -20,3 +20,13 @@ ajoute 12 après. Slot 23 est une virtuelle pure. Les 18 de `CVehicle` (42 à
 (`ProcessControlInputs`, composants, portes, `SetUpWheelColModel`,
 `GetHeightAboveRoad`), avec trois virtuelles pures. Le monde fait 36 secteurs
 de large, cinq listes par secteur.
+
+Fin de soirée. `CBike` : cinq méthodes de plus recréées et sûres, parce
+qu'elles sont la copie de reVC : `GetComponentWorldPosition`,
+`IsComponentPresent`, `SetComponentRotation`, `RemoveRefsToVehicle`, et
+`PlayCarHorn`, identique ligne pour ligne à `CAutomobile::PlayCarHorn` de
+Vice City, même délai aléatoire, même compteur à 45. Le tableau `+0x580`
+n'est pas un état mais les huit nœuds Gamebryo des composants du vélo.
+`CPhysical` ajoute `ApplyMoveSpeed` / `ApplyTurnSpeed` en virtuelles, avec
+`CTimer::ms_fTimeStep` en 0xc1a9a4. Bilan du jour : 11 fonctions recréées,
+60 slots documentés, 1 522 classes cartographiées, ça compile.

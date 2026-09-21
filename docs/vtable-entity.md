@@ -41,22 +41,27 @@ identique à re3/reVC), *probable* (corps lu, sémantique claire), ? (hypothèse
 | 32 | 0044bec0 | CEntity | CEntity | retourne une constante flottante (0x8ff34c), distance de dessin par défaut ? | ? |
 | 33 | 00467ce0 | CEntity | CEntity | vrai si type != 5 et drapeau 0x10000 du modelinfo (+0x28) | ? |
 | 34 | 004b9ea0 | CPhysical | CBike | `ProcessEntityCollision` ? | ? |
-| 35–40 | | CPhysical | CPhysical | extensions physiques propres à Bully | ? |
-| 41 | 004c3ae0 | CPhysical | CBike | ? | ? |
+| 35 | 004494c0 | CPhysical | CPhysical | retourne une constante flottante (0x905a6c) | ? |
+| 36 | 0046aa90 | CPhysical | CPhysical | 760 octets, branche véhicule (type 2), lit le joueur (0x4ce410) | ? |
+| 37 | 00469760 | CPhysical | CPhysical | `ApplyMoveSpeed()` ? : remet les vitesses à zéro si +0x1bd bit 0, appelle le slot 36, position += vitesse × `CTimer::ms_fTimeStep` (0xc1a9a4) | *probable* |
+| 38 | 00469c70 | CPhysical | CPhysical | `ApplyTurnSpeed()` ? : vitesse angulaire (+0x130..+0x138) × pas de temps, produits vectoriels avec la matrice | *probable* |
+| 39 | 008a1f10 | CPhysical | CPhysical | vide | *probable* |
+| 40 | 00449f00 | CPhysical | CPhysical | matrice courante (0x8b5f90) passée à 0x4128c0 | ? |
+| 41 | 004c3ae0 | CPhysical | CBike | 1931 octets, 4 paramètres dont un flottant | ? |
 | 42 | 0049a500 | CVehicle | CBike | `ProcessControlInputs(uint8)` : vide dans CVehicle, même position que reVC | *probable* |
-| 43 | 004358b0 | CVehicle | CBike | `GetComponentWorldPosition(int, CVector&)` : vide dans CVehicle | *probable* |
-| 44 | 006094f0 | CVehicle | CBike | `IsComponentPresent(int)` : retourne faux dans CVehicle | *probable* |
-| 45 | 0044bf10 | CVehicle | CBike | `SetComponentRotation(int, CVector)` : vide | *probable* |
+| 43 | 004358b0 | CVehicle | CBike | `GetComponentWorldPosition(int, CVector&)` : vide dans CVehicle ; CBike (0x4b9ed0) lit la translation monde du nœud `m_aBikeNodes[i]` | **sûr** |
+| 44 | 006094f0 | CVehicle | CBike | `IsComponentPresent(int)` : faux dans CVehicle ; CBike (0x4b9450) : `m_aBikeNodes[i] != nil` | **sûr** |
+| 45 | 0044bf10 | CVehicle | CBike | `SetComponentRotation(int, x, y, z)` : vide ; CBike (0x4bda90) : degrés → radians, rotations X, Y, Z sur la matrice locale du nœud | **sûr** |
 | 46 | 0044bf20 | CVehicle | CVehicle | `OpenDoor(...)` : vide | ? |
 | 47 | 00828240 | CVehicle | CVehicle | `ProcessOpenDoor(...)` : vide | ? |
-| 48 | 0085b353 | CVehicle | CBike | virtuelle pure dans CVehicle, porte ou état de porte | ? |
+| 48 | 0085b353 | CVehicle | CBike | `RemoveRefsToVehicle(CEntity*)` : pure ; CBike (0x4b9b60) efface +0x6e4 et +0x6e8 si égaux | **sûr** |
 | 49 | 006094f0 | CVehicle | CBike | retourne faux dans CVehicle (`IsDoor...`) | ? |
 | 50 | 004358b0 | CVehicle | CBike | vide dans CVehicle | ? |
 | 51 | 004cc8c0 | CVehicle | CVehicle | `SetUpWheelColModel(CColModel*)` ? : 405 octets, lit la boîte englobante du modelinfo (+0xc) et prend un flottant | ? |
 | 52 | 0044bf30 | CVehicle | CVehicle | appelle 0x4ce4f0 (`PlayCarHorn` ou `BlowUpCar` ?) | ? |
 | 53 | 0085b353 | CVehicle | CBike | virtuelle pure dans CVehicle | ? |
 | 54 | 004cca60 | CVehicle | CBike | `GetHeightAboveRoad()` ? : hauteur de la boîte du colmodel (+0x18) × constante 0x900550, comme reVC | *probable* |
-| 55 | 0049a500 | CVehicle | CBike | vide dans CVehicle | ? |
+| 55 | 0049a500 | CVehicle | CBike | `PlayCarHorn()` : vide ; CBike (0x4b9960) est la copie de CAutomobile::PlayCarHorn de reVC, `m_nCarHornTimer` +0x368, `m_nCarHornDelay` +0x36e | **sûr** |
 | 56 | 0044bf40 | CVehicle | CBike | accesseur : écrit +0x2a0 | ? |
 | 57 | 004cb090 | CVehicle | CBike | retourne une constante flottante (0x912fd0), CBike la redéfinit | ? |
 | 58 | 004cb2b0 | CVehicle | CVehicle | (int a, int b) : si a et b valides, relie le squelette (+0x114) à celui d'une autre entité via 0x6c1f10 ; attache d'un passager ? | ? |
@@ -82,3 +87,5 @@ Vue d'ensemble : les 17 virtuelles de reVC sont toutes là, dans le même ordre,
 | 0x00c1b17c | tableau des secteurs du monde (`CWorld::ms_aSectors`), pas de 0x24 × 5 mots par secteur en X, 0xb4 mots par ligne en Y |
 | 0x00c67738 | `CModelInfo::ms_modelInfoPtrs` |
 | 0x00bf3830 | compteur d'identifiants de type (slot 1) |
+| 0x00c1a9a4 | `CTimer::ms_fTimeStep` |
+| 0x00900160 / 0x00900158 | constantes π et 180 (conversion degrés → radians) |
