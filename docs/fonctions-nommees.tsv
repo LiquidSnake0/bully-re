@@ -259,3 +259,11 @@ adresse	nom_propose	source
 0044ca40	CVehiclePool::CVehiclePool	lecture du corps
 0044a610	CPtrNodePool::CPtrNodePool	lecture du corps
 0044a700	CEntryInfoNodePool::CEntryInfoNodePool	lecture du corps
+0042caf0	CFileLoader::LoadImgIde	lecture du corps
+0042c970	CFileLoader::LoadIdeBinary	lecture du corps
+0042d150	CFileMgr::ReadExact	lecture du corps
+005f0a30	CFileMgr::SetImagePath	lecture du corps
+00429c70	CTxdStore::AddTxdSlot	lecture du corps
+005f1650	CTxdStore::LoadTxd	lecture du corps
+0050ee20	CSkyDome::Load	lecture du corps
+00463e10	CFileLoader::AfterLevel	lecture du corps

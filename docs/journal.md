@@ -133,3 +133,14 @@ pools ; la classe de chaque pool sort du constructeur passé à
 (0x120 = la taille de `CEntity`), 300 `CDummy`, 275 `CObject`, plus les
 pilotes d'animation propres à Bully. `docs/pools.md`, `src/core/Pools.cpp`,
 `src/core/World.cpp`. Douze objets compilent.
+
+Les archives. `CFileLoader::LoadLevel` (0x42cd30) est petit : IMAGEPATH,
+TEXDICTION, IMGIDE, SKY_DOME, EXIT ; COLFILE / MODELFILE / HIERFILE reconnus
+mais ignorés. Les définitions de modèles ne sont plus des IDE texte mais des
+`.idb` binaires emballés dans `Objects/ide.img` (77 fichiers, `default.idb`
+en premier) et lus par `LoadImgIde` (0x42caf0) puis `LoadIdeBinary`
+(0x42c970) ; les IDE texte sont encore dans `Objects/` comme source.
+`Stream/World.img` (1,9 Go) contient 5 724 modèles `.nif`, 4 469 textures
+`.nft`, 550 groupes d'animations, 488 collisions, 52 scripts Lua compilés.
+`CdStream` recréé (répertoire .dir de 32 octets par entrée), vérifié :
+11 980 entrées, `Algie1.lur` en tête. Sixième test vert, quatorze objets.
