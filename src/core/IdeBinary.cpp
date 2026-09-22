@@ -5,7 +5,16 @@
 int32 (*CIdeBinary::ms_pedHandler)(const CPedIdeEntry &e) = nil;
 int32 (*CIdeBinary::ms_objHandler)(const CObjIdeEntry &e) = nil;
 int32 CIdeBinary::ms_numPeds;
+int32 (*CIdeBinary::ms_carHandler)(const CCarIdeEntry &e) = nil;
 int32 CIdeBinary::ms_numObjs;
+int32 (*CIdeBinary::ms_weapHandler)(const CWeapIdeEntry &e) = nil;
+int32 (*CIdeBinary::ms_simpleHandler)(const CSimpleIdeEntry &e) = nil;
+int32 CIdeBinary::ms_numCars, CIdeBinary::ms_numWeaps, CIdeBinary::ms_numItems, CIdeBinary::ms_numCashScnd, CIdeBinary::ms_numClth;
+int32 CIdeBinary::ms_firstWeaponId = -1, CIdeBinary::ms_lastWeaponId = -1;
+int32 CIdeBinary::ms_firstItemId = -1, CIdeBinary::ms_lastItemId = -1;
+int32 CIdeBinary::ms_firstClothId = -1, CIdeBinary::ms_lastClothId = -1;
+int32 CIdeBinary::ms_firstBikeId = -1, CIdeBinary::ms_lastBikeId = -1;
+int32 CIdeBinary::ms_firstVehicleId = -1, CIdeBinary::ms_lastVehicleId = -1;
 
 // 0x0042bfd0 : count, puis par entrée id, deux chaînes, un entier, quatre
 // chaînes, quatre groupes d'animation, un entier, cinq chaînes. Dans le
@@ -120,6 +129,134 @@ CIdeBinary::LoadObjs(CIdeReader &r)
 	}
 }
 
+// 0x0042a160 : count, puis par entrée id, huit chaînes, quatre entiers,
+// un float. Le binaire prend un CVehicleModelInfo dans la réserve statique
+// de 32 × 0x1e0 octets (0x51c770, 0xc771e4), résout le txd (0x50e7b0),
+// appelle le slot 6 avec le premier groupe d'animation, résout le second
+// (0x5349b0 → +0x1d8, sauf « null »), remplace les « _ » du nom de jeu par
+// des espaces, range compRules (+0xdc) ; « car » → type 0, roue (+0x5c) et
+// échelle (+0x58) ; « bike » → type 1, échelle (+0x58), roue convertie en
+// float (+0xe0) et bornes des ids de vélos. Puis handling (0x4c9a90 → +0x5e),
+// classe (0x4ce290 → +0x54) et fréquence (+0x62), bornes des ids de
+// véhicules, et 0x425220.
+void
+CIdeBinary::LoadCars(CIdeReader &r)
+{
+	int32 count = r.Int();
+	for(int32 i = 0; i < count; i++){
+		CCarIdeEntry e;
+		memset(&e, 0, sizeof(e));
+		e.id = r.Int();
+		r.String(e.model, sizeof(e.model));
+		r.String(e.txd, sizeof(e.txd));
+		r.String(e.type, sizeof(e.type));
+		r.String(e.handlingId, sizeof(e.handlingId));
+		r.String(e.gameName, sizeof(e.gameName));
+		r.String(e.animGroup, sizeof(e.animGroup));
+		r.String(e.animGroup2, sizeof(e.animGroup2));
+		r.String(e.vehClass, sizeof(e.vehClass));
+		e.frequency = r.Int();
+		e.level = r.Int();
+		e.compRules = r.Int();
+		e.wheelModelId = r.Int();
+		e.wheelScale = r.Float();
+		for(char *p = e.gameName; *p; p++) if(*p == '_') *p = ' ';
+		if(strcmp(e.type, "bike") == 0){
+			ms_lastBikeId = e.id;
+			if(ms_firstBikeId == -1) ms_firstBikeId = e.id;
+		}
+		if(ms_firstVehicleId == -1) ms_firstVehicleId = e.id;
+		ms_lastVehicleId = e.id;
+		ms_numCars++;
+		if(ms_carHandler) ms_carHandler(e);
+	}
+}
+
+// 0x00429ee0 : id, quatre chaînes, quatre dwords. Le binaire prend un
+// CWeaponModelInfo dans la réserve de 150 × 0x58 octets (0x51c6b0,
+// 0xc735e4), résout le txd, passe le premier groupe d'animation au slot 6,
+// le second à 0x535e30 (→ +0x4c sauf « null »), range la distance (+0x50)
+// et deux octets (+0x54, +0x55), et tient les bornes des ids d'armes.
+void
+CIdeBinary::LoadWeap(CIdeReader &r)
+{
+	int32 count = r.Int();
+	for(int32 i = 0; i < count; i++){
+		CWeapIdeEntry e;
+		memset(&e, 0, sizeof(e));
+		e.id = r.Int();
+		r.String(e.model, sizeof(e.model));
+		r.String(e.txd, sizeof(e.txd));
+		r.String(e.animGroup, sizeof(e.animGroup));
+		r.String(e.animGroup2, sizeof(e.animGroup2));
+		e.unk = r.Int();
+		e.drawDist = r.Float();
+		e.byte54 = r.Int();
+		e.byte55 = r.Int();
+		if(ms_firstWeaponId == -1) ms_firstWeaponId = e.id;
+		ms_lastWeaponId = e.id;
+		ms_numWeaps++;
+		if(ms_weapHandler) ms_weapHandler(e);
+	}
+}
+
+// id, modèle, txd, communs à item, cash, scnd et clth
+static void
+LireSimple(CIdeReader &r, CSimpleIdeEntry &e, int32 tag)
+{
+	memset(&e, 0, sizeof(e));
+	e.section = tag;
+	e.id = r.Int();
+	r.String(e.model, sizeof(e.model));
+	r.String(e.txd, sizeof(e.txd));
+}
+
+// 0x0042b400 : CSimpleModelInfo avec la distance constante 0x900e68 (30.0),
+// +0xb = 255, octets +0x2d..+0x32 à zéro, bit 0x400000 des flags, entrée
+// dans la table des noms spéciaux, bornes des ids d'objets ramassables.
+void
+CIdeBinary::LoadItem(CIdeReader &r)
+{
+	int32 count = r.Int();
+	for(int32 i = 0; i < count; i++){
+		CSimpleIdeEntry e;
+		LireSimple(r, e, IDE_ITEM);
+		if(ms_firstItemId == -1) ms_firstItemId = e.id;
+		ms_lastItemId = e.id;
+		ms_numItems++;
+		if(ms_simpleHandler) ms_simpleHandler(e);
+	}
+}
+
+// 0x0042b510 : comme item, sans les bornes ; sert à cash et à scnd
+void
+CIdeBinary::LoadCashScnd(CIdeReader &r, int32 tag)
+{
+	int32 count = r.Int();
+	for(int32 i = 0; i < count; i++){
+		CSimpleIdeEntry e;
+		LireSimple(r, e, tag);
+		ms_numCashScnd++;
+		if(ms_simpleHandler) ms_simpleHandler(e);
+	}
+}
+
+// 0x0042a6a0 : modelinfo de vêtement (0x51c910), txd, bornes des ids
+// (le dernier est un maximum, pas le dernier lu)
+void
+CIdeBinary::LoadClth(CIdeReader &r)
+{
+	int32 count = r.Int();
+	for(int32 i = 0; i < count; i++){
+		CSimpleIdeEntry e;
+		LireSimple(r, e, IDE_CLTH);
+		if(ms_firstClothId == -1) ms_firstClothId = e.id;
+		if(ms_lastClothId < e.id) ms_lastClothId = e.id;
+		ms_numClth++;
+		if(ms_simpleHandler) ms_simpleHandler(e);
+	}
+}
+
 // 0x0042c970
 bool
 CIdeBinary::Load(const uint8 *data, uint32 size)
@@ -130,6 +267,11 @@ CIdeBinary::Load(const uint8 *data, uint32 size)
 		switch(tag){
 		case IDE_PEDS: LoadPeds(r); break;
 		case IDE_OBJS: LoadObjs(r); break;
+		case IDE_CARS: LoadCars(r); break;
+		case IDE_WEAP: LoadWeap(r); break;
+		case IDE_ITEM: LoadItem(r); break;
+		case IDE_CASH: case IDE_SCND: LoadCashScnd(r, tag); break;
+		case IDE_CLTH: LoadClth(r); break;
 		case IDE_PATH: r.Int(); break;                  // « path » : un dword sauté
 		default: return false;                          // section pas encore recréée
 		}

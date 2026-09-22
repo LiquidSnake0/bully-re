@@ -6,7 +6,8 @@
 // « objs », « cars », « weap », « cash », « scnd », « accs », « item »,
 // « 2dfx », « panm », « clth », « path », « tobj ») stocké à l'envers.
 // Après chaque section : deux dwords [premier id, dernier id], enregistrés
-// par 0x52dc50 sauf si le premier vaut -1.
+// par 0x52dc50 sauf si le premier vaut -1. Le dword de tête compte les
+// octets qui le suivent (0x42c970 borne le parcours à data + size).
 //
 // Les chaînes sont sur des dwords : le lecteur consomme des dwords tant
 // que l'octet de poids fort du dernier lu n'est pas nul.
@@ -104,19 +105,70 @@ enum eSimpleModelInfoFlags {
 	SMI_FLAG_IDE_20000      = 0x2000000
 };
 
+// Une ligne « cars » de default.ide : Id, DFF, TXD, Type (car/bike),
+// HandlingId, Game name, ANIMGROUP, ANIMGROUP2, Class, Frq, Lvl, Comprules,
+// wheelModelId, WheelScale. Le binaire garde le même ordre : id, huit
+// chaînes, quatre entiers, un float.
+struct CCarIdeEntry {
+	int32 id;
+	char model[32], txd[32];
+	char type[8];                   // "car" ou "bike"
+	char handlingId[16];
+	char gameName[16];              // les « _ » deviennent des espaces
+	char animGroup[16], animGroup2[16];
+	char vehClass[16];
+	int32 frequency;                // → +0x62 (si la classe est connue)
+	int32 level;                    // non lu par le jeu
+	int32 compRules;                // → +0xdc
+	int32 wheelModelId;             // car : → +0x5c ; bike : converti en float → +0xe0
+	float wheelScale;               // → +0x58
+};
+
+// Une ligne « weap » : id, modèle, txd, ANIMGROUP, ANIMGROUP2, puis quatre
+// nombres (un entier non lu, la distance de dessin, deux octets).
+struct CWeapIdeEntry {
+	int32 id;
+	char model[32], txd[32];
+	char animGroup[24], animGroup2[24];
+	int32 unk;                      // non lu par le jeu (1 partout)
+	float drawDist;                 // → +0x50 du CWeaponModelInfo
+	int32 byte54, byte55;           // → +0x54, +0x55 (0x535e60)
+};
+
+// Lignes « cash », « scnd », « item », « clth » : id, modèle, txd.
+struct CSimpleIdeEntry {
+	int32 section;                  // tag de la section d'origine
+	int32 id;
+	char model[32], txd[32];
+};
+
 class CIdeBinary
 {
 public:
 	static int32 (*ms_pedHandler)(const CPedIdeEntry &e);   // appelé par entrée lue
 	static int32 (*ms_objHandler)(const CObjIdeEntry &e);
+	static int32 (*ms_carHandler)(const CCarIdeEntry &e);
+	static int32 (*ms_weapHandler)(const CWeapIdeEntry &e);
+	static int32 (*ms_simpleHandler)(const CSimpleIdeEntry &e);
 	static int32 ms_numPeds;
 	static int32 ms_numObjs;
+	static int32 ms_numCars, ms_numWeaps, ms_numItems, ms_numCashScnd, ms_numClth;
+	static int32 ms_firstWeaponId, ms_lastWeaponId;    // 0xa136b0 / 0xa136b4
+	static int32 ms_firstItemId, ms_lastItemId;        // 0xa136b8 / 0xa136bc
+	static int32 ms_firstClothId, ms_lastClothId;      // 0xa136d8 / 0xa136dc (max)
+	static int32 ms_firstBikeId, ms_lastBikeId;        // 0xa136e0 / 0xa136e4
+	static int32 ms_firstVehicleId, ms_lastVehicleId;  // 0xa136a8 / 0xa136ac
 
 	// Parcourt les sections tant qu'elles sont connues ; retourne faux à la
-	// première section non encore recréée (« peds » et « objs » le sont).
+	// première section non encore recréée (restent tobj, accs, 2dfx, panm).
 	static bool Load(const uint8 *data, uint32 size);      // 0x42c970
 	static void LoadPeds(CIdeReader &r);                    // 0x42bfd0
 	static void LoadObjs(CIdeReader &r);                    // 0x42aa20
+	static void LoadCars(CIdeReader &r);                    // 0x42a160
+	static void LoadWeap(CIdeReader &r);                    // 0x429ee0
+	static void LoadItem(CIdeReader &r);                    // 0x42b400
+	static void LoadCashScnd(CIdeReader &r, int32 tag);     // 0x42b510 (cash et scnd)
+	static void LoadClth(CIdeReader &r);                    // 0x42a6a0
 
 	static uint32 ConvertFlags(uint32 ideFlags);            // 0x429d30 (bits posés dans +0x28)
 	static bool IsSpecialObjectId(int32 id);                // 0x429e70
