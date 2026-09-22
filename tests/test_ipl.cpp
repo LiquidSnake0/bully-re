@@ -68,8 +68,8 @@ main(void)
 		else { char tg[5]; memcpy(tg, &CIplFile::ms_lastTag, 4); tg[4] = 0; printf("  section « %s » non recréée dans %s\n", tg, n); }
 		free(b);
 	}
-	printf("%d fichiers .ipb, %d lus en entier ; inst %d, rail %d, pont %d, prop %d, spec %d\n", fichiers, entiers, CIplFile::ms_numInst, CIplFile::ms_numRail, CIplFile::ms_numPont, CIplFile::ms_numProp, CIplFile::ms_numSpec);
-	VERIF(fichiers == 85 && entiers >= 81);
+	printf("%d fichiers .ipb, %d lus en entier ; inst %d, rail %d, pont %d, pois %d, prop %d, spec %d\n", fichiers, entiers, CIplFile::ms_numInst, CIplFile::ms_numRail, CIplFile::ms_numPont, CIplFile::ms_numPois, CIplFile::ms_numProp, CIplFile::ms_numSpec);
+	VERIF(fichiers == 85 && entiers == 85);
 	printf(echecs ? "%d échec(s)\n" : "tout passe\n", echecs);
 	return echecs != 0;
 }

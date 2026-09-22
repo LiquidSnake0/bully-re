@@ -12,14 +12,15 @@
 //   occl : 7 dwords (0x433550)
 //   prop : nom à longueur préfixée (0x434700)
 //   rail : nom préfixé, dword, compte, compte × 3 dwords (0x434f50)
-//   perm : nom préfixé, 4 dwords dont un compte, compte dwords (0x4336f0)
-//   pois : quatre chaînes préfixées puis des dwords (0x434df0 / 0x4347b0),
-//          pas encore recréé
+//   perm : nom préfixé, dword, deux flottants, compte, compte dwords (0x4336f0)
+//   pois : nom préfixé, dword, compte, puis compte × {quatre chaînes
+//          préfixées, 21 dwords} (0x434df0 / 0x4347b0)
 //   pont : nom préfixé, dword, 3 dwords, 3 dwords, dword, trois chaînes
 //          préfixées, 6 dwords, deux chaînes préfixées (0x433d80)
-//   trig, pthx : lecteurs 0x4338d0, 0x434570, absents des données
+//   trig : nom préfixé puis 19 dwords (0x4338d0)
+//   pthx : nom préfixé, dword, dword, compte, compte × 9 dwords (0x434570)
 // Sections rencontrées dans les 85 fichiers : inst 104, rail 42, pont 30,
-// prop 28, spec 25, pois 4.
+// pois 29, prop 28, spec 25, perm 4, trig et pthx (zones).
 #pragma once
 #include "../common.h"
 
@@ -63,6 +64,19 @@ struct CIplPont {
 	char s3[68], s4[16];
 };
 
+// Un point d'intérêt (« pois ») : un groupe nommé (« Smokers »…) de
+// points, chacun avec quatre chaînes (« Both », « », « Wall », « PREPPY »…)
+// et 21 dwords non encore interprétés.
+struct CIplPoiPoint {
+	char s[4][64];
+	int32 d[21];
+};
+struct CIplPois {
+	char name[64];
+	int32 unk;
+	int32 numPoints;
+};
+
 class CIplFile
 {
 public:
@@ -71,7 +85,8 @@ public:
 	static int32 (*ms_occlHandler)(const CIplOccl &e);
 	static int32 (*ms_propHandler)(const char *name);
 	static int32 (*ms_pontHandler)(const CIplPont &e);
-	static int32 ms_numInst, ms_numRail, ms_numSpec, ms_numProj, ms_numOccl, ms_numProp, ms_numPerm, ms_numPont;
+	static int32 (*ms_poisHandler)(const CIplPois &g, const CIplPoiPoint &p);
+	static int32 ms_numInst, ms_numRail, ms_numSpec, ms_numProj, ms_numOccl, ms_numProp, ms_numPerm, ms_numPont, ms_numPois, ms_numTrig, ms_numPthx;
 	static int32 ms_lastTag;        // tag de la dernière section rencontrée (diagnostic)
 
 	// Analyse un fichier entier ; retourne faux sur une section non recréée.

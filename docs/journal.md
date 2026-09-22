@@ -183,3 +183,6 @@ Reste onze sections à recréer, `objs` en premier.
   spec, proj, occl, prop, rail, perm, pont ; `test_ipl` sur ftest.ipb et les
   85 fichiers (reste pois, quatre fichiers). Table des identifiants de
   streaming dans `docs/streaming.md`.
+- IPL : sections pois (4 chaînes + 21 dwords par point), perm (compte au
+  4e dword), trig (19 dwords), pthx (9 dwords par point, déduit des données)
+  ajoutées ; les 85 `.ipb` se lisent jusqu'à la queue de zéros.

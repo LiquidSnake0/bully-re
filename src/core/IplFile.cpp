@@ -7,8 +7,9 @@ int32 (*CIplFile::ms_railHandler)(const CIplRail &e) = nil;
 int32 (*CIplFile::ms_occlHandler)(const CIplOccl &e) = nil;
 int32 (*CIplFile::ms_propHandler)(const char *name) = nil;
 int32 (*CIplFile::ms_pontHandler)(const CIplPont &e) = nil;
+int32 (*CIplFile::ms_poisHandler)(const CIplPois &g, const CIplPoiPoint &p) = nil;
 int32 CIplFile::ms_numInst, CIplFile::ms_numRail, CIplFile::ms_numSpec, CIplFile::ms_numProj,
-      CIplFile::ms_numOccl, CIplFile::ms_numProp, CIplFile::ms_numPerm, CIplFile::ms_numPont;
+      CIplFile::ms_numOccl, CIplFile::ms_numProp, CIplFile::ms_numPerm, CIplFile::ms_numPont, CIplFile::ms_numPois, CIplFile::ms_numTrig, CIplFile::ms_numPthx;
 int32 CIplFile::ms_lastTag;
 
 static inline int32 RdInt(const uint8 *&p) { int32 v; memcpy(&v, p, 4); p += 4; return v; }
@@ -72,7 +73,7 @@ CIplFile::Load(const uint8 *data, uint32 size)
 		case IPL_PERM:
 			for(int32 i = 0; i < count; i++){
 				char name[256]; RdName(p, name, sizeof(name));
-				RdInt(p); int32 n = RdInt(p); RdInt(p); RdInt(p);
+				RdInt(p); RdInt(p); RdInt(p); int32 n = RdInt(p);   // dword, deux flottants, compte
 				p += n * 4;
 				ms_numPerm++;
 			}
@@ -92,8 +93,38 @@ CIplFile::Load(const uint8 *data, uint32 size)
 				if(ms_pontHandler) ms_pontHandler(e);
 			}
 			break;
+		case IPL_POIS:
+			for(int32 i = 0; i < count; i++){
+				CIplPois g; memset(&g, 0, sizeof(g));
+				RdName(p, g.name, sizeof(g.name));
+				g.unk = RdInt(p);
+				g.numPoints = RdInt(p);
+				for(int32 k = 0; k < g.numPoints; k++){
+					CIplPoiPoint pt; memset(&pt, 0, sizeof(pt));
+					for(int j = 0; j < 4; j++) RdName(p, pt.s[j], sizeof(pt.s[j]));
+					for(int j = 0; j < 21; j++) pt.d[j] = RdInt(p);
+					ms_numPois++;
+					if(ms_poisHandler) ms_poisHandler(g, pt);
+				}
+			}
+			break;
+		case IPL_TRIG:
+			for(int32 i = 0; i < count; i++){
+				char name[256]; RdName(p, name, sizeof(name));
+				p += 19 * 4;
+				ms_numTrig++;
+			}
+			break;
+		case IPL_PTHX:
+			for(int32 i = 0; i < count; i++){
+				char name[256]; RdName(p, name, sizeof(name));
+				RdInt(p); RdInt(p); int32 n = RdInt(p);
+				p += n * 36;
+				ms_numPthx++;
+			}
+			break;
 		default:
-			return false;                        // pois, trig, pthx : pas encore recréés
+			return false;
 		}
 		if(p > end) return false;
 	}
