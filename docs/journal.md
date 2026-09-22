@@ -83,3 +83,16 @@ Richard Jobling, 14/02/00. Le `CSurfaceTable::Initialise` recréé le charge
 et rend la matrice 6×6 attendue, symétrique, valeurs identiques au fichier
 (rubber/rubber 6.0, wet/wet 0.5). Première fonction vérifiée sur données
 réelles.
+
+## 22 septembre 2026
+
+Index. `ExportTout.java` décompile les 20 819 fonctions en JSONL (26 Mo,
+35 minutes), `tools/indexer.py` en fait une base SQLite (64 Mo, deux
+secondes) avec appels, appelants, chaînes, offsets lus ou écrits, globales,
+et recherche plein texte. `tools/chercher.py offset 0x1d40` répond en une
+seconde : sept fonctions écrivent les points de punition, cinq les lisent.
+
+`pedstats.dat` : parseur lu dans l'index, recréé, testé sur le vrai fichier.
+Deuxième chargeur vérifié. `CGame::Initialise` (0x42ee90) porte les noms de
+GTA en clair dans ses marqueurs (`CWorld::Initialise()`, `CPickups::Init()`,
+`CStreaming::Init()`), et le moteur audio s'appelle Screamer.

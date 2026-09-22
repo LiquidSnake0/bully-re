@@ -21,7 +21,16 @@ emplacements d'arme (type, munitions, poids, mission de déblocage), résistance
 | +0x18 | 4 | `HashString(nom)` |
 | +0x1c | 64 × 4 | les 64 colonnes B à BM, entiers, flottants ou hachés selon la colonne |
 
-Les colonnes textuelles (classe, modèles de vélo, types d'arme, mission de
-déblocage) sont vraisemblablement stockées comme hachés de chaîne, à
-confirmer dans le corps de `ParseLine` une fois l'export complet disponible.
+`ParseLine` lu dans l'index : chaque colonne est un entier `%d`, sauf
+
+| Colonne | Champ | Conversion |
+|---|---|---|
+| B (0) | pickup | `"none"` → -1, sinon `GetModelIndexByName` (0x51c1e0) |
+| S (0x11) | classe | `GetCharacterClassId` (0x488a00), appelé deux fois |
+| AP, AU, AY, BC, BG | armes | `GetWeaponIdByName` (0x51ad50) |
+| AQ, AR, AS | vélos | `GetModelIndexByName`, -1 ramené à 0 |
+| AX, BB, BF, BJ | mission de déblocage | `"init"` → -1, sinon `GetMissionIdByName` (0x5fa7b0 puis 0x6a9e70) |
+
 `CPedStats::Reload` (0x49a180) relit le fichier dans les entrées existantes.
+Recréé dans `src/peds/PedStats.cpp`, vérifié par `tests/test_pedstats` sur le
+vrai fichier (75 entrées, valeurs de `STAT_PLAYER` et `STAT_N_EARNEST`).

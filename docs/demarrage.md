@@ -43,3 +43,17 @@ hachage (+0x18). C'est `CPedStats::Initialise` / `CPedStats::Reload`.
 | 0x42d300 | `CFileMgr::CloseFile(fd)` | |
 | 0x429ac0 | `CFileLoader::LoadLine(fd)` | tampon 0xbd0a08 de 0x15e octets ; contrôles et virgules → espaces |
 | 0x5eef40 / 0x5eefa0 | `CMemoryHeap::Push(id)` / `Pop()` | identifiants de zone, comme PUSH_MEMID |
+
+## CGame::Initialise (0x0042ee90, 2618 octets)
+
+Même principe, marqueurs vides avec le nom de l'étape, parfois l'appel en
+clair : `CGame::Initialise`, `CTxdStore`, textures génériques, `TXD/PARTICLE.NFT`,
+`g_GameLogic.Init()`, `theCameraManager()`, `CWorld::Initialise()`,
+`InitModelIndices()`, `CPickups::Init()`, `CdStreamAddImage('Stream/world.img')`,
+`CFileLoader::LoadLevel('Config/Dat/default.dat')`,
+`CFileLoader::LoadModelInfoFile('Config\Extra\shared.bin', 0)`,
+`CFileLoader::LoadLevel(pDatFile)`, `PEDStats`, `Screamer.InitialiseBankManager()`
+(Screamer est le moteur audio de Rockstar), `CObjectData::Initialise`
+(`Config\Extra\OBJECT2.DAT`, `Config\Dat\OBJECT.DAT`), `CStreaming::Init()`…
+Les noms de GTA sont donc dans le binaire lui-même : `CWorld`, `CPickups`,
+`CFileLoader`, `CObjectData`, `CStreaming`, `CTxdStore`.

@@ -201,3 +201,7 @@ adresse	nom_propose	source
 005eefa0	CMemoryHeap::Pop	lecture du corps
 00529230	CSpecialFX::Init	lecture du corps
 0049a500	Nop	lecture du corps
+0042ee90	CGame::Initialise	lecture du corps
+0051c1e0	GetModelIndexByName	lecture du corps
+0051ad50	GetWeaponIdByName	lecture du corps
+00488a00	GetCharacterClassId	lecture du corps
