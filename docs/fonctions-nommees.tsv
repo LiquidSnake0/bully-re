@@ -176,7 +176,7 @@ adresse	nom_propose	source
 0049a6a0	CPlayerPed::ProcessPunishmentDecay	lecture du corps
 004773d0	CPed::SetPunishmentPoints	lecture du corps
 004ce410	FindPlayerPed	lecture du corps
-0085c6f0	CWorld::GetSectorIndex	lecture du corps
+0085c6f0	_ftol	lecture du corps : conversion flottant → entier, appelée partout ; d'abord prise à tort pour CWorld::GetSectorIndex
 005ee6d0	GameMalloc	lecture du corps
 00471240	CPed::PushObjective	lecture du corps
 005c2770	LuaGetEntity	lecture du corps
@@ -219,3 +219,14 @@ adresse	nom_propose	source
 004c9ad0	cHandlingDataMgr::ConvertDataToGameUnits	lecture du corps
 004c9ca0	cHandlingDataMgr::ConvertBikeDataToGameUnits	lecture du corps
 004c9a20	cHandlingDataMgr::FindExactWord	lecture du corps
+004d0a60	CObjectData::ParseVolumeTable	lecture du corps
+004d0bc0	CObjectData::PostInit	lecture du corps
+0061a310	CTokenizer::Init	lecture du corps
+0061a370	CTokenizer::Next	lecture du corps
+0061a250	CTokenizer::Copy	lecture du corps
+0061a430	CTokenizer::AsLong	lecture du corps
+0061a460	CTokenizer::AsFloat	lecture du corps
+00667a00	GetEffectIdByName	lecture du corps
+00597e70	GetSoundBankIdByName	lecture du corps
+00595a30	GetSoundIdByName	lecture du corps
+005a7c10	GetStreamIdByName	lecture du corps

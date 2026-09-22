@@ -24,7 +24,8 @@ class CWorld
 public:
 	static CSector ms_aSectors[NUMSECTORS_Y][NUMSECTORS_X];   // 0x00c1b17c
 
-	static int GetSectorIndexX(float x);   // 0x85c6f0 (même fonction pour X et Y dans le binaire ?)
+	// Dans CPhysical::Add le calcul est en ligne : coordonnée → flottant → _ftol (0x85c6f0).
+	static int GetSectorIndexX(float x);
 	static int GetSectorIndexY(float y);
 	static CSector *GetSector(int x, int y) { return &ms_aSectors[y][x]; }
 };

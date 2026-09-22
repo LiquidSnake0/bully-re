@@ -9,4 +9,5 @@ g++ $FLAGS tests/test_surface.cpp src/core/SurfaceTable.cpp tests/hote/FileMgr.c
 g++ $FLAGS tests/test_pedstats.cpp src/peds/PedStats.cpp tests/hote/Lookups.cpp tests/hote/Chemins.cpp -o build/tests/test_pedstats
 g++ $FLAGS tests/test_carcols.cpp src/vehicles/VehicleColours.cpp tests/hote/Vehicules.cpp tests/hote/Chemins.cpp -o build/tests/test_carcols
 g++ $FLAGS tests/test_handling.cpp src/vehicles/HandlingMgr.cpp tests/hote/Handling.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp -o build/tests/test_handling
-echo "tests prêts : test_surface, test_pedstats, test_carcols, test_handling"
+g++ $FLAGS tests/test_objectdata.cpp src/objects/ObjectData.cpp src/core/Tokenizer.cpp tests/hote/Objets.cpp tests/hote/Vehicules.cpp tests/hote/Chemins.cpp -o build/tests/test_objectdata
+echo "tests prêts : test_surface, test_pedstats, test_carcols, test_handling, test_objectdata"

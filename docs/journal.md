@@ -115,3 +115,10 @@ de Vice City en 0xa357c8 où les motos sont remplacées par les vélos de
 Bully. Recréé avec la table, vérifié sur COMET, BIKE et PREDATOR. Quatrième
 chargeur vérifié. Reste `ConvertDataToGameUnits` (0x4c9ad0), lisible mais
 qui dépend de constantes globales à identifier.
+
+`object.dat` : rien à voir avec celui de GTA, 22 colonnes propres à Bully
+(points de vie, effets de destruction, sons, butes de ramassage), 80 lignes
+d'alias. Nouveau découpeur de ligne `CTokenizer` (0x61a310), propre à Bully.
+Recréés et vérifiés : cinquième chargeur. Erreur corrigée : 0x85c6f0 n'est
+pas `CWorld::GetSectorIndex` mais `_ftol`, appelé par 412 fonctions.
+Dix objets et cinq tests compilent.
