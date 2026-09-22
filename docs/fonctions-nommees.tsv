@@ -205,3 +205,14 @@ adresse	nom_propose	source
 0051c1e0	GetModelIndexByName	lecture du corps
 0051ad50	GetWeaponIdByName	lecture du corps
 00488a00	GetCharacterClassId	lecture du corps
+005355b0	CVehicleModelInfo::LoadVehicleColours	chaîne de fichier référencée
+0051c0b0	FindVehicleModelInfoByName	chaîne de fichier référencée
+004264c0	CFileStream::Open	chaîne de fichier référencée
+0042d4b0	CFileStream::ReadLine	chaîne de fichier référencée
+004c9d30	cHandlingDataMgr::LoadHandlingData	chaîne de fichier référencée
+00499ff0	CPedType::LoadPedData	chaîne de fichier référencée
+004439e0	LoadColours	chaîne de fichier référencée
+0049c280	CPopulation::LoadPedPop	chaîne de fichier référencée
+0041a5a0	LoadVehPop	chaîne de fichier référencée
+006cc2f0	LoadCloths	chaîne de fichier référencée
+004d0c90	CObjectData::Initialise	chaîne de fichier référencée

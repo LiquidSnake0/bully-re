@@ -96,3 +96,12 @@ seconde : sept fonctions écrivent les points de punition, cinq les lisent.
 Deuxième chargeur vérifié. `CGame::Initialise` (0x42ee90) porte les noms de
 GTA en clair dans ses marqueurs (`CWorld::Initialise()`, `CPickups::Init()`,
 `CStreaming::Init()`), et le moteur audio s'appelle Screamer.
+
+`carcols.dat` : `CVehicleModelInfo::LoadVehicleColours` (0x5355b0), même
+logique que Vice City avec une table de 256 couleurs et seize entiers par
+ligne de véhicule ; lecture par un objet fichier (0x4264c0, 0x42d4b0) et
+non par `work_buff`. Recréé, vérifié : 100 couleurs, 16 véhicules, huit
+paires pour `bike`. Troisième chargeur vérifié. Les chargeurs suivants sont
+repérés par leur chaîne dans l'index : `HANDLING.CFG` (0x4c9d30),
+`PED.DAT` (0x499ff0), `colours.dat`, `PedPop`, `VehPop`, `Cloths`, `OBJECT.DAT`
+(0x4d0c90). Sept objets et trois tests compilent.

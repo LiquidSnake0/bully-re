@@ -21,31 +21,7 @@ int32 GetCharacterClassId(const char *name) { return (int32)(HashString(name) & 
 int32 GetWeaponIdByName(const char *name) { return strcmp(name, "unarmed") == 0 ? 0 : (int32)(HashString(name) & 0xff); }
 int32 GetMissionIdByName(const char *name) { return (int32)(HashString(name) & 0xffff); }
 
-// Le jeu tourne sur un système insensible à la casse : on résout chaque
-// segment du chemin contre le contenu réel du dossier.
-#include <dirent.h>
-#include <string>
-static void
-ResoudreCasse(char *chemin)
-{
-	std::string res, seg, reste = chemin;
-	if(!reste.empty() && reste[0] == '/'){ res = "/"; reste.erase(0, 1); }
-	while(!reste.empty()){
-		size_t k = reste.find('/');
-		seg = reste.substr(0, k);
-		reste = k == std::string::npos ? "" : reste.substr(k + 1);
-		std::string dossier = res.empty() ? "." : res;
-		DIR *d = opendir(dossier.c_str());
-		std::string trouve = seg;
-		if(d){
-			for(dirent *e; (e = readdir(d)) != nil;)
-				if(strcasecmp(e->d_name, seg.c_str()) == 0){ trouve = e->d_name; break; }
-			closedir(d);
-		}
-		res += (res.empty() || res == "/" ? "" : "/") + trouve;
-	}
-	strcpy(chemin, res.c_str());
-}
+#include "Chemins.h"
 
 // Fichier texte hôte : OpenFile lit tout, LoadLine rend ligne par ligne
 // avec le même nettoyage que le binaire (contrôles et virgules → espaces).
@@ -57,10 +33,7 @@ int32 CFileMgr::OpenFile(const char *path, const char *mode, int32)
 {
 	// chemin du jeu → chemin hôte relatif au dossier passé en variable d'environnement
 	char chemin[512];
-	const char *racine = getenv("BULLY_DATA");
-	snprintf(chemin, sizeof(chemin), "%s/%s", racine ? racine : ".", path);
-	for(char *c = chemin; *c; c++) if(*c == '\\') *c = '/';
-	ResoudreCasse(chemin);
+	CheminHote(path, chemin, sizeof(chemin));
 	FILE *f = fopen(chemin, mode);
 	if(f == nil){ fprintf(stderr, "introuvable : %s\n", chemin); return 0; }
 	g_contenu.clear();
