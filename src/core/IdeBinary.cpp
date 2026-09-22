@@ -8,6 +8,13 @@ int32 CIdeBinary::ms_numPeds;
 int32 (*CIdeBinary::ms_carHandler)(const CCarIdeEntry &e) = nil;
 int32 CIdeBinary::ms_numObjs;
 int32 (*CIdeBinary::ms_weapHandler)(const CWeapIdeEntry &e) = nil;
+static void LireSimple(CIdeReader &r, CSimpleIdeEntry &e, int32 tag);
+
+int32 (*CIdeBinary::ms_panmHandler)(const CPanmIdeEntry &e) = nil;
+int32 (*CIdeBinary::ms_2dfxHandler)(const C2dEffectIdeEntry &e) = nil;
+int32 CIdeBinary::ms_numTobjs, CIdeBinary::ms_numAccs, CIdeBinary::ms_numPanms, CIdeBinary::ms_num2dfx;
+int32 CIdeBinary::ms_firstAccsId = -1, CIdeBinary::ms_lastAccsId = -1;
+int32 CIdeBinary::ms_firstPanmId = -1, CIdeBinary::ms_lastPanmId = -1;
 int32 (*CIdeBinary::ms_simpleHandler)(const CSimpleIdeEntry &e) = nil;
 int32 CIdeBinary::ms_numCars, CIdeBinary::ms_numWeaps, CIdeBinary::ms_numItems, CIdeBinary::ms_numCashScnd, CIdeBinary::ms_numClth;
 int32 CIdeBinary::ms_firstWeaponId = -1, CIdeBinary::ms_lastWeaponId = -1;
@@ -99,33 +106,133 @@ CIdeBinary::IsNogOrWalkable(const char *n)
 // +0x30..+0x32, efface le bit de l'id dans le bitset 0xc9dd58 (0x5273c0)
 // et enregistre l'id dans la table des noms spéciaux (0x43f220,
 // « _start_ »… à 0xa136e8) si le nom y figure.
+static void
+LireObj(CIdeReader &r, CObjIdeEntry &e, int32 section)
+{
+	memset(&e, 0, sizeof(e));
+	e.section = section;
+	e.type = r.Int();
+	if(e.type < 0 || e.type > 5) return;              // le binaire saute au default et laisse tout tel quel
+	e.id = r.Int();
+	r.String(e.model, sizeof(e.model));
+	r.String(e.txd, sizeof(e.txd));
+	e.numObjs = r.Int();                              // non lu par le jeu, implicite dans le type
+	int32 n = e.type / 2 + 1;
+	for(int32 k = 0; k < n; k++) e.drawDist[k] = r.Float();
+	e.flags = (uint32)r.Int();
+	e.unk1 = r.Float();
+	e.unk2 = r.Float();
+	e.unk3 = r.Int();
+	e.byte0b = r.Int();
+	if((e.type & 1) == 0){
+		e.byte2d = r.Int();
+		e.byte2e = r.Int();
+		e.byte2f = r.Int();
+	}
+	if(section == IDE_TOBJ){
+		e.timeOn = r.Int();
+		e.timeOff = r.Int();
+	}
+}
+
 void
 CIdeBinary::LoadObjs(CIdeReader &r)
 {
 	int32 count = r.Int();
 	for(int32 i = 0; i < count; i++){
 		CObjIdeEntry e;
+		LireObj(r, e, IDE_OBJS);
+		ms_numObjs++;
+		if(ms_objHandler) ms_objHandler(e);
+	}
+}
+
+// 0x0042af80 : même disposition que objs, plus les heures d'allumage et
+// d'extinction en queue ; CTimeModelInfo (0x51c650) avec +0x34 / +0x38, et
+// enregistrement de l'id dans l'objet retourné par 0x824d30 (+0x3c).
+void
+CIdeBinary::LoadTobj(CIdeReader &r)
+{
+	int32 count = r.Int();
+	for(int32 i = 0; i < count; i++){
+		CObjIdeEntry e;
+		LireObj(r, e, IDE_TOBJ);
+		ms_numTobjs++;
+		if(ms_objHandler) ms_objHandler(e);
+	}
+}
+
+// 0x0042a080 : accessoires (access.ide) ; modelinfo 0x51c710, txd, table
+// des noms spéciaux, bornes des ids.
+void
+CIdeBinary::LoadAccs(CIdeReader &r)
+{
+	int32 count = r.Int();
+	for(int32 i = 0; i < count; i++){
+		CSimpleIdeEntry e;
+		LireSimple(r, e, IDE_ACCS);
+		if(ms_firstAccsId == -1) ms_firstAccsId = e.id;
+		ms_lastAccsId = e.id;
+		ms_numAccs++;
+		if(ms_simpleHandler) ms_simpleHandler(e);
+	}
+}
+
+// 0x0042a4d0 : objets animés (props.ide) ; modelinfo 0x51c880, AGR passé
+// à 0x51fef0 puis au slot 6, AGR de piéton à 0x520030, test alpha → +0x8f,
+// collision secondaire → 0x520350, verrouillage → +0x90, bornes des ids.
+void
+CIdeBinary::LoadPanm(CIdeReader &r)
+{
+	int32 count = r.Int();
+	for(int32 i = 0; i < count; i++){
+		CPanmIdeEntry e;
 		memset(&e, 0, sizeof(e));
-		e.type = r.Int();
-		if(e.type < 0 || e.type > 5) return;            // le binaire saute au default et laisse tout tel quel
 		e.id = r.Int();
 		r.String(e.model, sizeof(e.model));
 		r.String(e.txd, sizeof(e.txd));
-		e.numObjs = r.Int();                              // non lu par le jeu, implicite dans le type
-		int32 n = e.type / 2 + 1;
-		for(int32 k = 0; k < n; k++) e.drawDist[k] = r.Float();
-		e.flags = (uint32)r.Int();
-		e.unk1 = r.Float();
-		e.unk2 = r.Float();
-		e.unk3 = r.Int();
-		e.byte0b = r.Int();
-		if((e.type & 1) == 0){
-			e.byte2d = r.Int();
-			e.byte2e = r.Int();
-			e.byte2f = r.Int();
-		}
-		ms_numObjs++;
-		if(ms_objHandler) ms_objHandler(e);
+		r.String(e.agr, sizeof(e.agr));
+		r.String(e.pedAgr, sizeof(e.pedAgr));
+		e.alphaTest = r.Int();
+		e.secondaryCollision = r.Int();
+		e.manualTargetLock = r.Int();
+		if(ms_firstPanmId == -1) ms_firstPanmId = e.id;
+		ms_lastPanmId = e.id;
+		ms_numPanms++;
+		if(ms_panmHandler) ms_panmHandler(e);
+	}
+}
+
+// 0x0042b610 : voir C2dEffectIdeEntry ; les textures sont cherchées dans
+// le txd « particle » (0x5f2170 / 0x5f1610).
+void
+CIdeBinary::Load2dfx(CIdeReader &r)
+{
+	int32 count = r.Int();
+	for(int32 i = 0; i < count; i++){
+		C2dEffectIdeEntry e;
+		memset(&e, 0, sizeof(e));
+		e.id = r.Int();
+		for(int k = 0; k < 3; k++) e.pos[k] = r.Float();
+		for(int k = 0; k < 4; k++) e.col[k] = r.Int();
+		e.type = r.Int();
+		r.String(e.corona, sizeof(e.corona));
+		r.String(e.shadow, sizeof(e.shadow));
+		e.dist = r.Float();
+		e.range = r.Float();
+		e.size = r.Float();
+		e.shadowSize = r.Float();
+		e.byte3b = r.Int();
+		e.byte39 = r.Int();
+		e.val2c = r.Int();
+		e.val30 = r.Float();
+		e.val34 = r.Int();
+		e.unk = r.Int();
+		e.byte3a = r.Int();
+		e.flags = r.Int();
+		e.bool38 = r.Int();
+		ms_num2dfx++;
+		if(ms_2dfxHandler) ms_2dfxHandler(e);
 	}
 }
 
@@ -272,6 +379,10 @@ CIdeBinary::Load(const uint8 *data, uint32 size)
 		case IDE_ITEM: LoadItem(r); break;
 		case IDE_CASH: case IDE_SCND: LoadCashScnd(r, tag); break;
 		case IDE_CLTH: LoadClth(r); break;
+		case IDE_TOBJ: LoadTobj(r); break;
+		case IDE_ACCS: LoadAccs(r); break;
+		case IDE_PANM: LoadPanm(r); break;
+		case IDE_2DFX: Load2dfx(r); break;
 		case IDE_PATH: r.Int(); break;                  // « path » : un dword sauté
 		default: return false;                          // section pas encore recréée
 		}

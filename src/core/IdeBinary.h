@@ -69,6 +69,7 @@ struct CPedIdeEntry {
 // distance (modelinfo +0x24), les flags (convertis par SetFlags) et les
 // octets de queue ; les trois dwords après les flags ne sont pas lus.
 struct CObjIdeEntry {
+	int32 section;                  // IDE_OBJS ou IDE_TOBJ
 	int32 type;
 	int32 id;
 	char model[32], txd[32];
@@ -80,6 +81,41 @@ struct CObjIdeEntry {
 	int32 unk3;                     // non lu ; toujours 0
 	int32 byte0b;                   // → modelinfo +0xb (255 partout)
 	int32 byte2d, byte2e, byte2f;   // types pairs seulement ; → +0x2d, +0x2e, +0x2f
+	int32 timeOn, timeOff;          // tobj seulement ; → +0x34, +0x38 du CTimeModelInfo
+};
+
+// Une ligne « panm » (props.ide) : id, dff, txd, nom d'AGR, nom d'AGR de
+// piéton, test alpha, modèle de collision secondaire (0..6), verrouillage
+// manuel de cible.
+struct CPanmIdeEntry {
+	int32 id;
+	char model[32], txd[32];
+	char agr[32], pedAgr[32];
+	int32 alphaTest;                // → +0x8f (booléen)
+	int32 secondaryCollision;       // → 0x520350 si non nul
+	int32 manualTargetLock;         // → +0x90 (booléen)
+};
+
+// Une ligne « 2dfx » : id du modèle, position, couleur, type (0 partout :
+// lumière), texture de corona, texture d'ombre, puis treize nombres. Le
+// chargeur (0x42b610) alloue un effet de 0x40 octets et l'enchaîne au
+// modèle par indice (0x50ea20) ; les noms des champs suivent C2dEffect de
+// reVC quand l'offset correspond, sinon l'offset dans l'effet.
+struct C2dEffectIdeEntry {
+	int32 id;
+	float pos[3];                   // → +0
+	int32 col[4];                   // → +0xc..+0xf
+	int32 type;                     // non lu par le jeu
+	char corona[24], shadow[24];    // → +0x14, +0x18 (textures du txd « particle »)
+	float dist, range, size, shadowSize;   // → +0x1c, +0x20, +0x24, +0x28
+	int32 byte3b, byte39;           // → octets +0x3b, +0x39
+	int32 val2c;                    // → dword +0x2c
+	float val30;                    // → dword +0x30 (1.0 dans les données)
+	int32 val34;                    // → dword +0x34
+	int32 unk;                      // non lu par le jeu
+	int32 byte3a;                   // → octet +0x3a
+	int32 flags;                    // → octet +0x3c (le bit 4 efface le bit 2)
+	int32 bool38;                   // → +0x38 (booléen)
 };
 
 // Flags du modelinfo simple (+0x28), après conversion des flags IDE par
@@ -149,21 +185,30 @@ public:
 	static int32 (*ms_objHandler)(const CObjIdeEntry &e);
 	static int32 (*ms_carHandler)(const CCarIdeEntry &e);
 	static int32 (*ms_weapHandler)(const CWeapIdeEntry &e);
+	static int32 (*ms_panmHandler)(const CPanmIdeEntry &e);
+	static int32 (*ms_2dfxHandler)(const C2dEffectIdeEntry &e);
 	static int32 (*ms_simpleHandler)(const CSimpleIdeEntry &e);
 	static int32 ms_numPeds;
 	static int32 ms_numObjs;
 	static int32 ms_numCars, ms_numWeaps, ms_numItems, ms_numCashScnd, ms_numClth;
+	static int32 ms_numTobjs, ms_numAccs, ms_numPanms, ms_num2dfx;
+	static int32 ms_firstAccsId, ms_lastAccsId;        // 0xa136c0 / 0xa136c4
+	static int32 ms_firstPanmId, ms_lastPanmId;        // 0xa136a0 / 0xa136a4
 	static int32 ms_firstWeaponId, ms_lastWeaponId;    // 0xa136b0 / 0xa136b4
 	static int32 ms_firstItemId, ms_lastItemId;        // 0xa136b8 / 0xa136bc
 	static int32 ms_firstClothId, ms_lastClothId;      // 0xa136d8 / 0xa136dc (max)
 	static int32 ms_firstBikeId, ms_lastBikeId;        // 0xa136e0 / 0xa136e4
 	static int32 ms_firstVehicleId, ms_lastVehicleId;  // 0xa136a8 / 0xa136ac
 
-	// Parcourt les sections tant qu'elles sont connues ; retourne faux à la
-	// première section non encore recréée (restent tobj, accs, 2dfx, panm).
+	// Parcourt les sections ; retourne faux sur un tag inconnu (le binaire,
+	// lui, l'ignore et continue en désynchronisé).
 	static bool Load(const uint8 *data, uint32 size);      // 0x42c970
 	static void LoadPeds(CIdeReader &r);                    // 0x42bfd0
 	static void LoadObjs(CIdeReader &r);                    // 0x42aa20
+	static void LoadTobj(CIdeReader &r);                    // 0x42af80 (objs + deux heures)
+	static void LoadAccs(CIdeReader &r);                    // 0x42a080
+	static void LoadPanm(CIdeReader &r);                    // 0x42a4d0
+	static void Load2dfx(CIdeReader &r);                    // 0x42b610
 	static void LoadCars(CIdeReader &r);                    // 0x42a160
 	static void LoadWeap(CIdeReader &r);                    // 0x429ee0
 	static void LoadItem(CIdeReader &r);                    // 0x42b400

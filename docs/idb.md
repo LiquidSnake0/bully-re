@@ -16,11 +16,21 @@ le premier n'est pas -1.
 
 | Tag | Chargeur | État |
 |---|---|---|
-| peds | 0x42bfd0 | recréé (`CIdeBinary::LoadPeds`), vérifié : 259 entrées de `default.idb`, `player` et `DOgirl_Zoe_EG` conformes au texte |
-| objs | 0x42aa20 | recréé (`CIdeBinary::LoadObjs`), vérifié : 6 entrées de `default.idb` conformes au texte, 122 de `ifunhous.idb` ; disposition validée sur les 3 297 entrées des 77 fichiers |
-| tobj, weap, cars, item, accs, 2dfx, panm, clth | 0x42af80, 0x429ee0, 0x42a160, 0x42b400, 0x42a080, 0x42b610, 0x42a4d0, 0x42a6a0 | à lire |
-| cash, scnd | 0x42b510 (même fonction) | à lire |
-| path | un dword sauté | recréé |
+| peds | 0x42bfd0 | recréé (`LoadPeds`), 289 entrées de `default.idb` conformes au texte |
+| objs | 0x42aa20 | recréé (`LoadObjs`), 3 351 entrées sur 76 fichiers, toutes de type 0 |
+| tobj | 0x42af80 | recréé (`LoadTobj`) : objs + heures d'allumage et d'extinction, 160 entrées |
+| cars | 0x42a160 | recréé (`LoadCars`), 27 entrées, bornes vélos/véhicules |
+| weap | 0x429ee0 | recréé (`LoadWeap`), 146 entrées |
+| item, accs, clth | 0x42b400, 0x42a080, 0x42a6a0 | recréés : id, modèle, txd, bornes d'ids |
+| cash, scnd | 0x42b510 | recréés : id, modèle, txd |
+| panm | 0x42a4d0 | recréé (`LoadPanm`), 237 entrées de `props.idb` |
+| 2dfx | 0x42b610 | recréé (`Load2dfx`), 651 entrées sur 75 fichiers |
+| path | — | un dword sauté |
+
+`test_ide` lit les 77 fichiers de `Objects/ide.img` en entier et vérifie
+`default.idb`, `ifunhous.idb`, `iboxing.idb`, `props.idb` et `access.idb`
+contre leurs IDE texte (`Objects/*.ide`, `Interior/`, `Prop/`, `Terrain/` :
+un texte par `.idb`).
 
 Entrée `peds` : id, modèle, txd, female, taille, type, stat, quatre groupes
 d'animation, unique, racine et fichier de l'arbre d'actions, racine et
@@ -48,3 +58,25 @@ Flags IDE rencontrés dans les données (3 297 entrées) : 0 (1 043), 0x80
 (447), 0x4 (409), 0x2000 (330), 0xc (150), 0x84 (128), 0x1000 (120),
 0x1080 (107), 0x22000 (90), 0x20004 (80), 0x20000 (50). Distances les plus
 fréquentes : 30, 100, 40, 20, 50, 15, 25, 60.
+
+Entrée `tobj` : comme objs, puis deux dwords (heure d'allumage, heure
+d'extinction) → +0x34 / +0x38 du `CTimeModelInfo` (0x51c650).
+
+Entrée `cars` : id, modèle, txd, type (`car` / `bike`), handling, nom de
+jeu (les `_` deviennent des espaces), deux groupes d'animation, classe, puis
+fréquence, niveau (non lu), règles de composants, id de roue, échelle de
+roue. Le `CVehicleModelInfo` vient d'une réserve statique de 32 × 0x1e0
+octets (0xc771e4).
+
+Entrée `weap` : id, modèle, txd, deux groupes d'animation, un entier non
+lu, distance de dessin, deux octets. Réserve de 150 × 0x58 octets (0xc735e4).
+
+Entrée `panm` : id, dff, txd, AGR, AGR de piéton, test alpha, collision
+secondaire, verrouillage manuel de cible.
+
+Entrée `2dfx` : id du modèle, position, couleur RVBA, type (0 partout), deux
+noms de textures du txd `particle`, distance, portée, taille, taille
+d'ombre, puis neuf nombres rangés à des offsets épars de l'effet (voir
+`C2dEffectIdeEntry`). L'effet fait 0x40 octets et s'enchaîne au modèle par
+indice (0x50ea20 : l'effet reçoit l'ancien +0x10 du modèle, le modèle
+reçoit l'indice du nouvel effet).

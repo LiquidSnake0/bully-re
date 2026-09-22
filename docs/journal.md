@@ -163,3 +163,9 @@ Reste onze sections à recréer, `objs` en premier.
   item et scnd avant d'atteindre objs en lecture séquentielle, le test entre
   donc directement sur le tag pour l'instant.
 - `test_ide` : 6 objs de default.idb conformes au texte, 122 de ifunhous.idb.
+- Suite : cars, weap, item, cash, scnd, clth, puis tobj, accs, panm, 2dfx.
+  Les 77 `.idb` se lisent en entier ; `default.idb` en séquence (le dword
+  de tête compte les octets qui le suivent, corrigé dans le test).
+- Chaque `.idb` a son IDE texte (`Interior/`, `Prop/`, `Terrain/`), ce qui
+  a permis de vérifier objs/tobj/2dfx sur `iboxing`, panm sur `props`, accs
+  sur `access`.

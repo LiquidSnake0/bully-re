@@ -23,6 +23,12 @@ static int32 GarderWeap(const CWeapIdeEntry &e) { if(g_nw < 200) g_weaps[g_nw++]
 static CSimpleIdeEntry g_simples[100];
 static int32 g_ns;
 static int32 GarderSimple(const CSimpleIdeEntry &e) { if(g_ns < 100) g_simples[g_ns++] = e; return 0; }
+static CPanmIdeEntry g_panms[300];
+static int32 g_np;
+static int32 GarderPanm(const CPanmIdeEntry &e) { if(g_np < 300) g_panms[g_np++] = e; return 0; }
+static C2dEffectIdeEntry g_fx[100];
+static int32 g_nf;
+static int32 GarderFx(const C2dEffectIdeEntry &e) { if(g_nf < 100) g_fx[g_nf++] = e; return 0; }
 static CCarIdeEntry g_cars[64];
 static int32 g_nc;
 static int32 GarderCar(const CCarIdeEntry &e) { if(g_nc < 64) g_cars[g_nc++] = e; return 0; }
@@ -43,7 +49,8 @@ Lire(const char *nom, uint32 *utile)
 	memcpy(utile, buf, 4);
 	return buf;
 }
-void RegisterModelRange(uint16 first, uint32 count) { printf("plage de modèles %u + %u\n", first, count); }
+static int32 g_plages;
+void RegisterModelRange(uint16 first, uint32 count) { (void)first; (void)count; g_plages++; }
 
 int
 main(void)
@@ -61,6 +68,8 @@ main(void)
 	CIdeBinary::ms_carHandler = GarderCar;
 	CIdeBinary::ms_weapHandler = GarderWeap;
 	CIdeBinary::ms_simpleHandler = GarderSimple;
+	CIdeBinary::ms_panmHandler = GarderPanm;
+	CIdeBinary::ms_2dfxHandler = GarderFx;
 	// le dword de tête compte les octets qui le suivent
 	bool complet = CIdeBinary::Load(buf + 4, utile);
 	printf("peds lus : %d ; toutes les sections connues : %s\n", CIdeBinary::ms_numPeds, complet ? "oui" : "non");
@@ -132,6 +141,68 @@ main(void)
 		printf("objs lus dans ifunhous.idb : %d\n", CIdeBinary::ms_numObjs);
 		VERIF(g_no > 0 && g_objs[0].id == 10621 && strcmp(g_objs[0].model, "fun_libwalls") == 0 && g_objs[0].drawDist[0] == 30.0f);
 	}
+
+	// iboxing.idb contre Interior/iboxing.ide : 54 objs, 2 tobj, 26 2dfx.
+	// « 11660, DL_iBoxScreenD, iBoxScreen, 1, 14, 0, 0, 1, 0, 255, 0, 0, 0, 7, 19 »
+	// « 11626, -17.5823, 9.62695, 1.2749, 109, 114, 76, 20, 0, "coronastar",
+	//   "shad_exp", 50, 10, 1.25, 4, 100, 0, 0, 1, 0, 1, 0, 0, 1 »
+	g_no = 0; g_nf = 0; CIdeBinary::ms_numObjs = 0; CIdeBinary::ms_numTobjs = 0; CIdeBinary::ms_num2dfx = 0;
+	uint8 *buf3 = Lire("iboxing.idb", &utile);
+	VERIF(buf3 != nil);
+	if(buf3){
+		VERIF(CIdeBinary::Load(buf3 + 4, utile));
+		printf("iboxing.idb : objs %d, tobj %d, 2dfx %d\n", CIdeBinary::ms_numObjs, CIdeBinary::ms_numTobjs, CIdeBinary::ms_num2dfx);
+		VERIF(CIdeBinary::ms_numObjs == 54 && CIdeBinary::ms_numTobjs == 2 && CIdeBinary::ms_num2dfx == 26 && g_no == 56);
+		VERIF(g_objs[0].id == 11620 && strcmp(g_objs[0].model, "BX_loungeLW") == 0 && strcmp(g_objs[0].txd, "BX_loungeBW") == 0 && g_objs[0].drawDist[0] == 50.0f && g_objs[0].flags == 128);
+		CObjIdeEntry &tb = g_objs[54];
+		VERIF(tb.section == IDE_TOBJ && tb.id == 11660 && strcmp(tb.model, "DL_iBoxScreenD") == 0 && tb.drawDist[0] == 14.0f && tb.timeOn == 7 && tb.timeOff == 19);
+		VERIF(g_objs[55].id == 11661 && g_objs[55].timeOn == 19 && g_objs[55].timeOff == 7);
+		C2dEffectIdeEntry &f = g_fx[0];
+		VERIF(f.id == 11626 && f.pos[0] == -17.5823f && f.pos[1] == 9.62695f && f.pos[2] == 1.2749f);
+		VERIF(f.col[0] == 109 && f.col[1] == 114 && f.col[2] == 76 && f.col[3] == 20 && f.type == 0);
+		VERIF(strcmp(f.corona, "coronastar") == 0 && strcmp(f.shadow, "shad_exp") == 0);
+		VERIF(f.dist == 50.0f && f.range == 10.0f && f.size == 1.25f && f.shadowSize == 4.0f);
+		VERIF(f.byte3b == 100 && f.byte39 == 0 && f.val2c == 0 && f.val30 == 1.0f && f.val34 == 0 && f.unk == 1 && f.byte3a == 0 && f.flags == 0 && f.bool38 == 1);
+		VERIF(g_fx[1].pos[1] == -9.63843f);
+	}
+
+	// props.idb : 237 panm, « 9984, RMailbox, RMailbox, RMailbox, null, 0, 0, 1 »
+	uint8 *buf4 = Lire("props.idb", &utile);
+	VERIF(buf4 != nil);
+	if(buf4){
+		VERIF(CIdeBinary::Load(buf4 + 4, utile));
+		printf("props.idb : panm %d (%d..%d)\n", CIdeBinary::ms_numPanms, CIdeBinary::ms_firstPanmId, CIdeBinary::ms_lastPanmId);
+		VERIF(CIdeBinary::ms_numPanms == 237 && g_np == 237 && CIdeBinary::ms_firstPanmId == 9984);
+		CPanmIdeEntry &pm = g_panms[0];
+		VERIF(pm.id == 9984 && strcmp(pm.model, "RMailbox") == 0 && strcmp(pm.agr, "RMailbox") == 0 && strcmp(pm.pedAgr, "null") == 0);
+		VERIF(pm.alphaTest == 0 && pm.secondaryCollision == 0 && pm.manualTargetLock == 1);
+		VERIF(g_panms[1].id == 9985 && g_panms[2].id == 9986 && strcmp(g_panms[2].pedAgr, "Px_RedButton") == 0);
+	}
+
+	// access.idb : 21 accs, « 11466, FOOTBALL_HELMET, FOOTBALL_HELMET »
+	g_ns = 0;
+	uint8 *buf5 = Lire("access.idb", &utile);
+	VERIF(buf5 != nil);
+	if(buf5){
+		VERIF(CIdeBinary::Load(buf5 + 4, utile));
+		printf("access.idb : accs %d (%d..%d)\n", CIdeBinary::ms_numAccs, CIdeBinary::ms_firstAccsId, CIdeBinary::ms_lastAccsId);
+		VERIF(CIdeBinary::ms_numAccs == 21 && g_ns == 21 && g_simples[0].section == IDE_ACCS && g_simples[0].id == 11466 && strcmp(g_simples[0].model, "FOOTBALL_HELMET") == 0);
+	}
+
+	// les 77 fichiers de ide.img se lisent en entier
+	CIdeBinary::ms_objHandler = nil; CIdeBinary::ms_pedHandler = nil; CIdeBinary::ms_carHandler = nil;
+	CIdeBinary::ms_weapHandler = nil; CIdeBinary::ms_simpleHandler = nil; CIdeBinary::ms_panmHandler = nil; CIdeBinary::ms_2dfxHandler = nil;
+	int32 lus = 0, entiers = 0;
+	for(int32 i = 0; i < CdStream::ms_images[0].m_numEntries; i++){
+		uint8 *b = Lire(CdStream::ms_images[0].m_entries[i].name, &utile);
+		if(b == nil) continue;
+		lus++;
+		if(CIdeBinary::Load(b + 4, utile)) entiers++;
+		else printf("  section inconnue dans %s\n", CdStream::ms_images[0].m_entries[i].name);
+		free(b);
+	}
+	printf("%d fichiers .idb lus, %d en entier ; objs %d, tobj %d, 2dfx %d\n", lus, entiers, CIdeBinary::ms_numObjs, CIdeBinary::ms_numTobjs, CIdeBinary::ms_num2dfx);
+	VERIF(lus == 77 && entiers == 77);
 
 	VERIF(CIdeBinary::ConvertFlags(0x84) == (SMI_DRAW_LAST | SMI_FLAG_IDE_80));
 	VERIF(CIdeBinary::ConvertFlags(0x8) == (SMI_DRAW_LAST | SMI_ADDITIVE));
