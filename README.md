@@ -21,6 +21,24 @@ posséder le jeu (Steam ou disque).
   `Condition*`, `*Track`, `*Objective`) qui pilote les personnages et les
   activités.
 
+## Ce qui est recréé et vérifié sur les vrais fichiers
+
+Chaque chargeur de données a un test hôte (`tests/construire_tests.sh`, puis
+`BULLY_DATA=<racine du jeu> build/tests/test_…`) qui le compare aux fichiers
+du jeu :
+
+- `Config/dat/*.dat`, `handling.cfg` complet avec la boîte de vitesses et les
+  conversions en unités du jeu ([src/vehicles](src/vehicles)) ;
+- les définitions de modèles binaires `.idb` de `Objects/ide.img`, treize
+  sections, 77 fichiers ([docs/idb.md](docs/idb.md)) ;
+- les archives `.img` / `.dir` ([src/core/CdStream.h](src/core/CdStream.h)) ;
+- les collisions COL3 / COL2 / COLL de `Stream/World.img`, 488 fichiers et
+  3 863 modèles à l'octet près ([docs/collision.md](docs/collision.md)) ;
+- les placements binaires « Ipl$ », 85 fichiers, onze sections
+  ([src/core/IplFile.h](src/core/IplFile.h)) ;
+- la numérotation du streaming ([docs/streaming.md](docs/streaming.md)) et
+  les pools ([docs/pools.md](docs/pools.md)).
+
 ## Méthode
 
 1. Cartographier : RTTI, tables virtuelles, formats de fichiers, appels de scripts Lua.
