@@ -105,3 +105,13 @@ paires pour `bike`. Troisième chargeur vérifié. Les chargeurs suivants sont
 repérés par leur chaîne dans l'index : `HANDLING.CFG` (0x4c9d30),
 `PED.DAT` (0x499ff0), `colours.dat`, `PedPop`, `VehPop`, `Cloths`, `OBJECT.DAT`
 (0x4d0c90). Sept objets et trois tests compilent.
+
+`handling.cfg` : le fichier de GTA III (Bill Henderson, 10/12/1999), 81
+véhicules, 15 lignes vélo, 10 lignes hydravion lues puis ignorées, 11 lignes
+bateau. `cHandlingDataMgr::LoadHandlingData` (0x4c9d30) est reVC avec une
+disposition d'entrée propre (0xdc octets, 34 colonnes dont une colonne de
+dégâts aux piétons), un vélo à 23 champs, et la table des 120 identifiants
+de Vice City en 0xa357c8 où les motos sont remplacées par les vélos de
+Bully. Recréé avec la table, vérifié sur COMET, BIKE et PREDATOR. Quatrième
+chargeur vérifié. Reste `ConvertDataToGameUnits` (0x4c9ad0), lisible mais
+qui dépend de constantes globales à identifier.

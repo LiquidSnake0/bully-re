@@ -216,3 +216,6 @@ adresse	nom_propose	source
 0041a5a0	LoadVehPop	chaîne de fichier référencée
 006cc2f0	LoadCloths	chaîne de fichier référencée
 004d0c90	CObjectData::Initialise	chaîne de fichier référencée
+004c9ad0	cHandlingDataMgr::ConvertDataToGameUnits	lecture du corps
+004c9ca0	cHandlingDataMgr::ConvertBikeDataToGameUnits	lecture du corps
+004c9a20	cHandlingDataMgr::FindExactWord	lecture du corps
