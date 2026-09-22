@@ -18,6 +18,32 @@ enum {
 	BOAT_HANDLING_FALLBACK_ID = 100
 };
 
+// Boîte de vitesses, comme CTransmission de reVC mais sans vitesse de
+// croisière : 0x5c octets, à +0x34 de tHandlingData. InitGearRatios est
+// 0x4ca5f0 (les rapports de rétrogradage et de passage valent 0.42 et
+// 0.95 de l'écart, contre 0.42 et 0.6667 dans Vice City).
+struct tGear {
+	float fMaxVelocity;
+	float fShiftUpVelocity;
+	float fShiftDownVelocity;
+};
+
+class CTransmission
+{
+public:
+	tGear Gears[6];                // [+0x00] marche arrière puis 5 rapports
+	char nDriveType;               // [+0x48] F / R / 4
+	char nEngineType;              // [+0x49] P / D / E
+	int8 nNumberOfGears;           // [+0x4a]
+	uint8 Flags;                   // [+0x4b] octet bas des drapeaux
+	float fEngineAcceleration;     // [+0x4c] × constante 0x900de8 (0.4) à la lecture
+	float fMaxVelocity;            // [+0x50]
+	float fMaxReverseVelocity;     // [+0x54]
+	float fCurVelocity;            // [+0x58]
+
+	void InitGearRatios(void);     // 0x4ca5f0
+};
+
 struct tHandlingData {
 	int32 nIdentifier;             // [0x00]
 	float fMass;                   // [0x04]
@@ -29,14 +55,7 @@ struct tHandlingData {
 	uint8 pad29[3];
 	float fBuoyancy;               // [0x2c] calculé
 	float fTractionMultiplier;     // [0x30]
-	uint8 pad34[0x48];             // [0x34..0x7b] transmission dérivée (rapports, vitesses)
-	char nDriveType;               // [0x7c] F / R / 4
-	char nEngineType;              // [0x7d] P / D / E
-	int8 nNumberOfGears;           // [0x7e]
-	uint8 nFlagsLow;               // [0x7f] octet bas des drapeaux
-	float fEngineAcceleration;     // [0x80] × constante 0x900de8 à la lecture
-	float fMaxVelocity;            // [0x84]
-	uint8 pad88[8];
+	CTransmission Transmission;    // [0x34..0x8f]
 	float fBrakeDeceleration;      // [0x90]
 	float fBrakeBias;              // [0x94]
 	bool bABS;                     // [0x98]

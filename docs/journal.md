@@ -169,3 +169,10 @@ Reste onze sections à recréer, `objs` en premier.
 - Chaque `.idb` a son IDE texte (`Interior/`, `Prop/`, `Terrain/`), ce qui
   a permis de vérifier objs/tobj/2dfx sur `iboxing`, panm sur `props`, accs
   sur `access`.
+- Handling : `CTransmission` (0x5c octets à +0x34, sans vitesse de croisière),
+  `InitGearRatios` (0x4ca5f0, passage à 0.95 de l'écart au lieu de 0.6667),
+  `ConvertDataToGameUnits` (0x4c9ad0) et `ConvertBikeDataToGameUnits`
+  (0x4c9ca0) recréés ; les deux facteurs d'échelle sont des globales bss
+  dont l'écriture n'a pas été retrouvée, valeurs de Vice City prises.
+- `Stream/World.img` contient 5 724 `.nif`, 4 469 `.nft`, 550 `.agr`, 493
+  `.lip`, 488 `.col`, 119 `.cat`, 85 `.ipb`, 52 `.lur`.

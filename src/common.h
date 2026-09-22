@@ -29,3 +29,8 @@ struct CRect {
 // l'instant un type opaque dont on ne lit que le premier octet (le type,
 // comme rwOBJECTTYPE dans RenderWare).
 struct RwObject { uint8 type; };
+
+inline float sq(float x) { return x*x; }
+#define PI 3.14159265358979f
+#define DEGTORAD(x) ((x) * PI / 180.0f)
+#define RADTODEG(x) ((x) * 180.0f / PI)
