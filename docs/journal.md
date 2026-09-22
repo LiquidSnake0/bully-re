@@ -176,3 +176,10 @@ Reste onze sections à recréer, `objs` en premier.
   dont l'écriture n'a pas été retrouvée, valeurs de Vice City prises.
 - `Stream/World.img` contient 5 724 `.nif`, 4 469 `.nft`, 550 `.agr`, 493
   `.lip`, 488 `.col`, 119 `.cat`, 85 `.ipb`, 52 `.lur`.
+- Collisions : `src/collision/ColModel.h/.cpp`, format COL3/COL2/COLL de
+  Bully déchiffré (en-tête de 36 octets, bourrages, blocs KD et LIMK) ;
+  `test_col` lit les 488 fichiers de World.img à l'octet près (3 863 modèles).
+- Placements binaires « Ipl$ » : `src/core/IplFile.h/.cpp`, sections inst,
+  spec, proj, occl, prop, rail, perm, pont ; `test_ipl` sur ftest.ipb et les
+  85 fichiers (reste pois, quatre fichiers). Table des identifiants de
+  streaming dans `docs/streaming.md`.
