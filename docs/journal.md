@@ -151,3 +151,15 @@ nom GTA à l'envers, chaînes sur dwords, plage d'ids après chaque section.
 extrait de `ide.img` : 259 piétons, `player` et `DOgirl_Zoe_EG` identiques
 au IDE texte, plage de modèles 0 à 258. Septième test vert, quinze objets.
 Reste onze sections à recréer, `objs` en premier.
+
+## 2026-09-22 (suite) — section objs des .idb
+
+- `CIdeBinary::LoadObjs` (0x42aa20) recréée, avec `ConvertFlags` (0x429d30),
+  `IsSpecialObjectId` (0x429e70) et le test `nog_` / `walkable_`.
+- Disposition validée par script sur les 77 fichiers de `Objects/ide.img` :
+  3 297 entrées objs, toutes de type 0, chaque section retombant sur un tag
+  connu ou la fin du fichier.
+- Ordre des sections de `default.idb` relevé ; il faut cars, weap, cash,
+  item et scnd avant d'atteindre objs en lecture séquentielle, le test entre
+  donc directement sur le tag pour l'instant.
+- `test_ide` : 6 objs de default.idb conformes au texte, 122 de ifunhous.idb.
