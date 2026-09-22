@@ -267,3 +267,17 @@ adresse	nom_propose	source
 005f1650	CTxdStore::LoadTxd	lecture du corps
 0050ee20	CSkyDome::Load	lecture du corps
 00463e10	CFileLoader::AfterLevel	lecture du corps
+0042bfd0	CFileLoader::LoadPedObjectsBinary	lecture du corps
+0042aa20	CFileLoader::LoadObjectTypesBinary	lecture du corps
+0042af80	CFileLoader::LoadTimeObjectsBinary	lecture du corps
+00429ee0	CFileLoader::LoadWeaponObjectsBinary	lecture du corps
+0042a160	CFileLoader::LoadVehicleObjectsBinary	lecture du corps
+0042b610	CFileLoader::Load2dEffectsBinary	lecture du corps
+0042a4d0	CFileLoader::LoadPropAnimsBinary	lecture du corps
+0042a6a0	CFileLoader::LoadClothingBinary	lecture du corps
+0042b400	CFileLoader::LoadItemsBinary	lecture du corps
+0042a080	CFileLoader::LoadAccessoriesBinary	lecture du corps
+0042b510	CFileLoader::LoadCashOrScndBinary	lecture du corps
+0052dc50	RegisterModelRange	lecture du corps
+0051c810	CModelInfo::AddPedModel	lecture du corps
+0051b210	CModelInfo::ReplacePedModel	lecture du corps

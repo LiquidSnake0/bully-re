@@ -144,3 +144,10 @@ en premier) et lus par `LoadImgIde` (0x42caf0) puis `LoadIdeBinary`
 `.nft`, 550 groupes d'animations, 488 collisions, 52 scripts Lua compilés.
 `CdStream` recréé (répertoire .dir de 32 octets par entrée), vérifié :
 11 980 entrées, `Algie1.lur` en tête. Sixième test vert, quatorze objets.
+
+Les `.idb`. Format déchiffré (`docs/idb.md`) : sections taguées par leur
+nom GTA à l'envers, chaînes sur dwords, plage d'ids après chaque section.
+`CIdeBinary` recréé avec la section `peds`, vérifié sur `default.idb`
+extrait de `ide.img` : 259 piétons, `player` et `DOgirl_Zoe_EG` identiques
+au IDE texte, plage de modèles 0 à 258. Septième test vert, quinze objets.
+Reste onze sections à recréer, `objs` en premier.
