@@ -28,4 +28,8 @@ public:
 	static int GetSectorIndexX(float x);
 	static int GetSectorIndexY(float y);
 	static CSector *GetSector(int x, int y) { return &ms_aSectors[y][x]; }
+
+	static void Initialise(void);   // 0x45d430
+	static uint8 ms_flags6c[5], ms_flags74[3], ms_flags80[3];   // drapeaux remis à zéro par Initialise, à nommer
+	static uint32 ms_field68;
 };

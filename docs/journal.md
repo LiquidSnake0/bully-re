@@ -122,3 +122,14 @@ d'alias. Nouveau découpeur de ligne `CTokenizer` (0x61a310), propre à Bully.
 Recréés et vérifiés : cinquième chargeur. Erreur corrigée : 0x85c6f0 n'est
 pas `CWorld::GetSectorIndex` mais `_ftol`, appelé par 412 fonctions.
 Dix objets et cinq tests compilent.
+
+Le monde sans image, premier pas. `CGame::Initialise` donne les adresses :
+`CWorld::Initialise` 0x45d430 (drapeaux à zéro, comme reVC), `InitModelIndices`
+0x43e910, `CPickups::Init` 0x444900, `CdStreamAddImage` 0x73a740,
+`CFileLoader::LoadLevel` 0x42cd30. `CPools::Initialise` (0x44d1d0) crée 28
+pools ; la classe de chaque pool sort du constructeur passé à
+`vector constructor iterator` : 24 piétons construits en `CPlayerPed`
+(8004 octets), 15 véhicules en `CAutomobile` (0x8c0), 2250 `CBuilding`
+(0x120 = la taille de `CEntity`), 300 `CDummy`, 275 `CObject`, plus les
+pilotes d'animation propres à Bully. `docs/pools.md`, `src/core/Pools.cpp`,
+`src/core/World.cpp`. Douze objets compilent.
