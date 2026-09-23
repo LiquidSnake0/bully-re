@@ -57,8 +57,18 @@ public:
 	CVector GetBoundCentre(void);                         // 0x466b20, non virtuelle
 
 	RwObject *m_rwObject;          // +0x18
+	// Les quatre drapeaux ci-dessous occupent chacun un mot entier dans le
+	// binaire : CWorld::Add (0x45d560) et CWorld::Remove (0x45dc20) les
+	// comparent à zéro sur un `int*` (indices 0x16, 10, 0x2b, 0x3c).
+	int32 bIsStatic;               // +0x28  (param_1[10])
+	int32 bIsBIGBuilding;          // +0x58  (param_1[0x16]) : hors grille, dans ms_bigBuildingsList
+	int32 bIsStaticWaitingForCollision; // +0xac (param_1[0x2b]), aussi testé par CPhysical::AddToMovingList
+	int32 m_field0xf0;             // +0xf0  (param_1[0x3c]) : non nul = l'entité rejoint la liste des
+	                               //        mobiles. Remplace le test IsPhysical() de reVC. Sens exact
+	                               //        non retrouvé, l'offset est partagé par d'autres classes.
 	uint8 m_type : 3;              // +0x108, bits 0..2
 	uint8 m_status : 5;            // +0x108, bits 3..7
+	int16 m_scanCode;              // +0x10a, remis à zéro par CWorld::ClearScanCodes (0x45d6f0)
 	int16 m_modelIndex;            // +0x10e
 	bool bHasPreRenderEffects;     // +0xbc (mot entier dans le binaire)
 	void *m_pAttachedObject;       // +0xc4, sens à confirmer

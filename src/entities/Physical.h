@@ -19,5 +19,14 @@ public:
 	virtual void Slot40(void);                  // 0x449f00 : matrice (0x8b5f90) → 0x4128c0
 	virtual void Slot41(void);                  // CBike : 0x4c3ae0, 1931 octets, 4 paramètres
 
+	// 0x469680 : n'inscrit que si m_pMovingListNode est nul et que
+	// bIsStaticWaitingForCollision (+0xac) est nul ; insertion en tête de
+	// CWorld::ms_listMovingEntityPtrs (0xc1aea4).
+	void AddToMovingList(void);                 // 0x469680
+	// 0x4696f0 : avance d'abord ms_pMovingListCursor (0xc1ae84) si c'est le
+	// nœud en cours de parcours, puis décroche, libère et remet le champ à 0.
+	void RemoveFromMovingList(void);            // 0x4696f0
+
 	CEntryInfoList m_entryInfoList;             // +0x178
+	CPtrNode *m_pMovingListNode;                // +0x17c
 };

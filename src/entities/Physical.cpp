@@ -60,3 +60,29 @@ CPhysical::GetBoundRect(void)
 	return CRect(center.x - radius, center.y - radius,
 	             center.x + radius, center.y + radius);
 }
+
+// 0x00469680. L'entité rejoint CWorld::ms_listMovingEntityPtrs (0xc1aea4),
+// en tête, et garde son nœud en +0x17c. Deux gardes dans le binaire : rien
+// à faire si elle y est déjà, ni si elle attend encore sa collision.
+void
+CPhysical::AddToMovingList(void)
+{
+	if(m_pMovingListNode != nil || bIsStaticWaitingForCollision != 0)
+		return;
+	m_pMovingListNode = CWorld::GetMovingEntityList().InsertItem(this);
+}
+
+// 0x004696f0. Si le nœud retiré est celui que le parcours global tient
+// (ms_pMovingListCursor, 0xc1ae84), le curseur avance d'abord sur le
+// suivant : sans ça, retirer l'entité en cours de traitement couperait
+// la boucle. Puis décrochage, libération, champ remis à zéro.
+void
+CPhysical::RemoveFromMovingList(void)
+{
+	if(m_pMovingListNode == nil)
+		return;
+	if(m_pMovingListNode == CWorld::ms_pMovingListCursor)
+		CWorld::ms_pMovingListCursor = m_pMovingListNode->next;
+	CWorld::GetMovingEntityList().DeleteNode(m_pMovingListNode);
+	m_pMovingListNode = nil;
+}

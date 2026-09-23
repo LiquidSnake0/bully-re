@@ -2,7 +2,6 @@
 #include "Bike.h"
 #include <cstdlib>
 
-#define PI 3.14159265f
 // Gamebryo, à recréer : accès aux matrices d'un NiNode et pile de matrices.
 extern const float *NiNodeGetWorldMatrix(void *node);   // 0x6c9f40
 extern void *NiNodeGetLocalMatrix(void *node);          // 0x6c9930

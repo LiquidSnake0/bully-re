@@ -19,10 +19,16 @@ struct CVector {
 	CVector(float x, float y, float z) : x(x), y(y), z(z) {}
 };
 
+// Même disposition que reVC (core/Rect.h) et que bully.exe (CPhysical::
+// GetBoundRect 0x468fe0 écrit [0] = x − r, [1] = y + r, [2] = x + r,
+// [3] = y − r) : « bottom » est le y maximal et « top » le y minimal.
 struct CRect {
-	float left, bottom, right, top;   // même ordre que reVC : x1, y1, x2, y2
+	float left;     // x min
+	float bottom;   // y max
+	float right;    // x max
+	float top;      // y min
 	CRect(void) : left(0.0f), bottom(0.0f), right(0.0f), top(0.0f) {}
-	CRect(float l, float b, float r, float t) : left(l), bottom(b), right(r), top(t) {}
+	CRect(float l, float t, float r, float b) : left(l), bottom(b), right(r), top(t) {}
 };
 
 // Objet graphique Gamebryo (NiAVObject / NiNode). Recréé plus tard ; pour

@@ -46,11 +46,18 @@ compares the result against values taken by hand from the originals.
 | Binary placements `Ipl$` | 85 files, 11 section types | [src/core/IplFile.h](src/core/IplFile.h) |
 | Gamebryo NIF 20.3.0.9 | 5,724 files, 286,403 known blocks decoded | [docs/nif.md](docs/nif.md) |
 | Streaming ids, pools | id ranges, 28 pools with entry sizes | [docs/streaming.md](docs/streaming.md), [docs/pools.md](docs/pools.md) |
+| World grid and lists | 36x36 sectors, 32-bit list nodes, 10 entity pools | [docs/world.md](docs/world.md) |
 
 Some findings along the way: 247 of the NIF files are **big-endian**, left over
 from a console export; Bully ships **Lua 5.0**, not 5.1; and the `.idb` format
 is the GTA IDE text format compiled to binary, with the section tags stored
 backwards.
+
+The biggest departure from GTA is the world's linked lists. Where re3 has a
+three-pointer node, Bully packs a whole node into **one 32-bit word**: 4 bits
+of entity pool, 14 bits of index in that pool, 14 bits for the next node's
+index. A sector therefore stores handles, not pointers, and fits five lists in
+20 bytes. See [docs/world.md](docs/world.md).
 
 ## Building
 

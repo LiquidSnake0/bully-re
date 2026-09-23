@@ -41,7 +41,14 @@ du jeu :
 - les modèles NIF de Gamebryo 2.3, 5 724 fichiers, géométrie, matériaux et
   textures décodés ([docs/nif.md](docs/nif.md)) ;
 - la numérotation du streaming ([docs/streaming.md](docs/streaming.md)) et
-  les pools ([docs/pools.md](docs/pools.md)).
+  les pools ([docs/pools.md](docs/pools.md)) ;
+- la grille du monde, ses listes et ses dix pools d'entités
+  ([docs/world.md](docs/world.md)).
+
+Le plus gros écart avec GTA est là : un nœud de liste tient sur **un seul mot
+de 32 bits** (4 bits de pool, 14 bits d'index, 14 bits pour le nœud suivant),
+là où re3 en utilise trois pointeurs. Un secteur stocke donc des poignées et
+non des pointeurs, et loge ses cinq listes dans 20 octets.
 
 ## Méthode
 

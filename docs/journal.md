@@ -199,3 +199,46 @@ Reste onze sections à recréer, `objs` en premier.
   à l'octet près.
 - Prochaine étape : les textures `.nft`, puis un premier rendu d'une
   géométrie NIF.
+
+## 2026-09-23 — CWorld, et la surprise des listes
+
+Reprise du chantier `CWorld` laissé en plan (le travail était mis de côté et
+ne compilait pas). Les champs de `CEntity` qu'il utilisait n'étaient pas
+déclarés ; leurs décalages sont maintenant vérifiés un par un dans
+`CWorld::Add` (0x45d560), qui les lit sur un `int*` : `bIsStatic` +0x28,
+`bIsBIGBuilding` +0x58, `bIsStaticWaitingForCollision` +0xac, et un quatrième
+champ +0xf0 dont le sens n'est pas retrouvé mais qui remplace le test
+`IsPhysical()` de reVC. `m_scanCode` est en +0x10a, juste avant
+`m_modelIndex`.
+
+**Les listes de Bully ne sont pas celles de re3.** Un nœud tient sur un seul
+mot de 32 bits : 4 bits de pool, 14 bits d'index dans ce pool, 14 bits
+d'index du nœud suivant (0x3fff = fin). Un secteur ne stocke donc aucun
+pointeur d'entité, seulement des poignées, et le chaînage lui-même est un
+index relatif à la base `0xc0f788`. C'est ce qui fait qu'un secteur tient en
+20 octets pour cinq listes.
+
+`CPools::GetEntity` (0x44a290) résout une poignée sur dix pools, et
+`GetEntityPoolAndIndex` (0x44c7e0) choisit le pool à partir de `m_type`. Ça
+relie enfin les 28 pools de `docs/pools.md` aux types d'entités : seuls dix
+sont référençables depuis une liste du monde, et le type 4 se répartit entre
+objets, projectiles et objets de cinématique selon +0xc4 et +0xec. Deux pools
+pour le type 1, séparés par le slot 34 (`GetIsATreadable` dans re3).
+
+Détail à ne pas perdre : `RemoveFromMovingList` (0x4696f0) fait avancer le
+curseur global `ms_pMovingListCursor` avant de décrocher le nœud, sinon la
+boucle qui parcourt la liste des mobiles perdrait le fil en retirant l'entité
+en cours de traitement. Le test le vérifie.
+
+Tout est écrit dans `docs/world.md`. La recréation garde des nœuds à
+pointeurs plutôt que des mots compressés : la sémantique est la même et la
+disposition mémoire n'est de toute façon pas reproduite ailleurs. L'écart est
+documenté.
+
+`tests/test_world.cpp` ne lit aucun fichier du jeu, il vérifie
+l'arithmétique de la grille contre des valeurs calculées à la main, l'ordre
+des cinq listes, les deux listes globales et les gardes de la liste des
+mobiles. 19 objets compilent, tous les tests passent.
+
+- Prochaine étape, inchangée : les textures `.nft`, puis un premier rendu
+  d'une géométrie NIF.
