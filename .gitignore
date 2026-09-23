@@ -1,4 +1,10 @@
-# Sorties derivees du binaire : jamais dans le depot.
+# Tout ce qui derive du binaire du jeu reste sur la machine : le depot ne
+# contient que du code ecrit a la main et de la documentation.
 export/*.c
-export/fonctions.tsv
 export/*.log
+export/fonctions.tsv
+export/fonctions.jsonl
+export/index.sqlite
+
+# Sorties de compilation
+build/
