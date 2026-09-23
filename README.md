@@ -36,6 +36,8 @@ du jeu :
   3 863 modèles à l'octet près ([docs/collision.md](docs/collision.md)) ;
 - les placements binaires « Ipl$ », 85 fichiers, onze sections
   ([src/core/IplFile.h](src/core/IplFile.h)) ;
+- les modèles NIF de Gamebryo 2.3, 5 724 fichiers, géométrie, matériaux et
+  textures décodés ([docs/nif.md](docs/nif.md)) ;
 - la numérotation du streaming ([docs/streaming.md](docs/streaming.md)) et
   les pools ([docs/pools.md](docs/pools.md)).
 

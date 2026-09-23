@@ -186,3 +186,16 @@ Reste onze sections à recréer, `objs` en premier.
 - IPL : sections pois (4 chaînes + 21 dwords par point), perm (compte au
   4e dword), trig (19 dwords), pthx (9 dwords par point, déduit des données)
   ajoutées ; les 85 `.ipb` se lisent jusqu'à la queue de zéros.
+
+## 2026-09-23 — lecteur NIF
+
+- `src/gamebryo/NifFile` : en-tête, table des blocs avec tailles, chaînes,
+  et décodage de NiNode, NiTriShape/NiTriStrips, NiTriShapeData/
+  NiTriStripsData, NiSourceTexture, NiMaterialProperty, NiTexturingProperty.
+  Dispositions établies sur les octets (docs/nif.md), y compris les
+  tangentes (bit 12 des drapeaux) et la transformation de texture (32 o).
+- 247 fichiers `CS_*` sont grand-boutistes : boutisme appliqué à partir du
+  nombre de types. Les 5 724 fichiers se lisent, 286 403 blocs connus décodés
+  à l'octet près.
+- Prochaine étape : les textures `.nft`, puis un premier rendu d'une
+  géométrie NIF.
