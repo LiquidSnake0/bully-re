@@ -34,6 +34,12 @@ CNifFile::KindOf(const char *t)
 	if(strcmp(t, "NiTriShapeData") == 0) return NIF_TRISHAPEDATA;
 	if(strcmp(t, "NiTriStripsData") == 0) return NIF_TRISTRIPSDATA;
 	if(strcmp(t, "NiSourceTexture") == 0) return NIF_SOURCETEXTURE;
+	// NiSourceCubeMap dérive de NiSourceTexture et se lit pareil.
+	if(strcmp(t, "NiSourceCubeMap") == 0) return NIF_SOURCETEXTURE;
+	if(strcmp(t, "NiPixelData") == 0) return NIF_PIXELDATA;
+	if(strcmp(t, "NiPalette") == 0) return NIF_PALETTE;
+	if(strcmp(t, "NiStringExtraData") == 0) return NIF_STRINGEXTRADATA;
+	if(strcmp(t, "NiIntegerExtraData") == 0) return NIF_INTEGEREXTRADATA;
 	if(strcmp(t, "NiMaterialProperty") == 0) return NIF_MATERIALPROPERTY;
 	if(strcmp(t, "NiTexturingProperty") == 0) return NIF_TEXTURINGPROPERTY;
 	return NIF_INCONNU;
@@ -161,11 +167,78 @@ LireSourceTexture(NifReader &r)
 	int32 ne = r.I32(); free(r.Refs(ne));
 	r.I32();                                        // contrôleur
 	t->external = r.U8();
+	// Deux mots dans les deux cas, le bloc fait la même taille. Quand la
+	// texture est interne (les .nft), le second est la référence au
+	// NiPixelData ; quand elle est externe (les NiSourceCubeMap des .nif,
+	// 36 octets, qui nomment un .nft), il vaut -1.
 	t->fileName = r.I32();
 	t->pixelData = r.I32();
 	t->pixelLayout = r.U32(); t->useMipmaps = r.U32(); t->alphaFormat = r.U32();
 	t->isStatic = r.U8(); t->directRender = r.U8(); t->persistRenderData = r.U8();
 	return t;
+}
+
+// NiPixelData. Taille = 79 + 12 × mipmaps + numPixels × numFaces, vérifiée
+// à l'octet près sur 35 642 blocs (voir docs/nft.md).
+static void *
+LirePixelData(NifReader &r)
+{
+	NifPixelData *d = (NifPixelData*)calloc(1, sizeof(NifPixelData));
+	d->pixelFormat = r.U32();
+	d->bitsPerPixel = r.U8();
+	d->rendererHint = r.I32();
+	d->extraDataValue = r.U32();
+	d->flags = r.U8();
+	d->tiling = r.U32();
+	d->srgb = r.U8();
+	for(int k = 0; k < 4; k++){
+		d->channels[k].type = r.U32();
+		d->channels[k].convention = r.U32();
+		d->channels[k].bitsPerChannel = r.U8();
+		d->channels[k].isSigned = r.U8();
+	}
+	d->palette = r.I32();
+	d->numMipmaps = r.U32();
+	d->bytesPerPixel = r.U32();
+	if(d->numMipmaps > 32){ r.ok = false; return d; }
+	if(d->numMipmaps){
+		d->mipmaps = (NifMipmap*)malloc(d->numMipmaps * sizeof(NifMipmap));
+		for(uint32 k = 0; k < d->numMipmaps; k++){
+			d->mipmaps[k].width = r.U32();
+			d->mipmaps[k].height = r.U32();
+			d->mipmaps[k].offset = r.U32();
+		}
+	}
+	d->numPixels = r.U32();
+	d->numFaces = r.U32();
+	uint32 total = d->numPixels * d->numFaces;
+	if(!r.Need(total)) return d;
+	d->pixels = r.p;                // pas de copie : on pointe dans le tampon
+	r.p += total;
+	return d;
+}
+
+// NiPalette : 1 + 4 + 4 × numEntries octets.
+static void *
+LirePalette(NifReader &r)
+{
+	NifPalette *p = (NifPalette*)calloc(1, sizeof(NifPalette));
+	p->hasAlpha = r.U8();
+	p->numEntries = r.U32();
+	if(p->numEntries > 65536 || !r.Need(p->numEntries * 4)){ r.ok = false; return p; }
+	p->entries = r.p;
+	r.p += p->numEntries * 4;
+	return p;
+}
+
+// NiStringExtraData et NiIntegerExtraData : nom puis valeur, huit octets.
+static void *
+LireExtraData(NifReader &r)
+{
+	NifExtraData *e = (NifExtraData*)calloc(1, sizeof(NifExtraData));
+	e->name = r.I32();
+	e->value = r.I32();
+	return e;
 }
 
 static void *
@@ -267,6 +340,10 @@ CNifFile::Load(const uint8 *data, uint32 size)
 		case NIF_TRISHAPEDATA: b.data = LireTriShapeData(br); break;
 		case NIF_TRISTRIPSDATA: b.data = LireTriStripsData(br); break;
 		case NIF_SOURCETEXTURE: b.data = LireSourceTexture(br); break;
+		case NIF_PIXELDATA: b.data = LirePixelData(br); break;
+		case NIF_PALETTE: b.data = LirePalette(br); break;
+		case NIF_STRINGEXTRADATA:
+		case NIF_INTEGEREXTRADATA: b.data = LireExtraData(br); break;
 		case NIF_MATERIALPROPERTY: b.data = LireMaterial(br); break;
 		case NIF_TEXTURINGPROPERTY: b.data = LireTexturing(br); break;
 		default: break;
@@ -291,6 +368,8 @@ CNifFile::Free(void)
 		case NIF_NODE: { NifNode *n = (NifNode*)b.data; free(n->extra); free(n->properties); free(n->children); free(n->effects); break; }
 		case NIF_TRISHAPE: case NIF_TRISTRIPS: { NifGeometry *g = (NifGeometry*)b.data; free(g->extra); free(g->properties); break; }
 		case NIF_TRISHAPEDATA: case NIF_TRISTRIPSDATA: { NifGeometryData *d = (NifGeometryData*)b.data; free(d->vertices); free(d->normals); free(d->colors); free(d->uv); free(d->triangles); break; }
+		// Les pixels et les entrées de palette pointent dans le tampon source, rien à libérer.
+		case NIF_PIXELDATA: free(((NifPixelData*)b.data)->mipmaps); break;
 		default: break;
 		}
 		free(b.data);

@@ -242,3 +242,35 @@ mobiles. 19 objets compilent, tous les tests passent.
 
 - Prochaine étape, inchangée : les textures `.nft`, puis un premier rendu
   d'une géométrie NIF.
+
+## 2026-09-24 — les textures `.nft`
+
+Surprise du chantier : **un `.nft` est un fichier NIF**. Même ligne d'en-tête,
+même table de blocs, seul le contenu change puisqu'il n'y a que des textures.
+Le lecteur `src/gamebryo/NifFile` s'y applique donc tel quel, il ne lui
+manquait que quatre types de blocs.
+
+- `NiPixelData` : la disposition est établie et sa taille se calcule
+  exactement, 79 + 12 × mipmaps + numPixels × numFaces. Quatre canaux toujours
+  présents, les inutilisés portant le type 19 et la convention 5. Les tailles
+  confirment du DXT1, une 8 × 8 tenant en 32 octets.
+- `NiPalette`, `NiStringExtraData`, `NiIntegerExtraData` ajoutés aussi, et
+  `NiSourceCubeMap` qui se lit comme un `NiSourceTexture`.
+- Piège corrigé au passage : `NiSourceTexture` garde **deux mots après
+  `useExternal`** quel que soit le cas. Pour une texture externe, le second
+  vaut -1 au lieu de pointer vers les pixels. J'avais d'abord cru à un champ
+  en moins, ce qui cassait les 466 `NiSourceCubeMap` des `.nif`.
+- Effet de bord bienvenu : le test des modèles décode maintenant **363 085
+  blocs** contre 286 403 avant.
+- Le boutisme se comporte comme pour les `.nif` : 131 fichiers `CS_*` sont
+  grand-boutistes, et le nombre de blocs se lit toujours en petit-boutiste.
+
+`tests/test_nft` lit les 4 469 fichiers et compare chaque bloc à la taille
+annoncée : 4 465 passent sans un octet d'écart, 142 157 blocs, 258 535 niveaux
+de mipmap, 1,25 Go de pixels. Les quatre qui résistent (BBonusB,
+Barr01_Switch, BeerKeg, BirdBath) portent un octet parasite dont je n'ai pas
+trouvé l'origine ; ils sont décrits dans `docs/nft.md` et le test les attend
+en échec plutôt que de les masquer.
+
+- Prochaine étape : dessiner une première géométrie NIF, maintenant que les
+  pixels sont lisibles.

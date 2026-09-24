@@ -16,7 +16,9 @@
 
 enum eNifBlock {
 	NIF_INCONNU = 0, NIF_NODE, NIF_TRISHAPE, NIF_TRISTRIPS, NIF_TRISHAPEDATA, NIF_TRISTRIPSDATA,
-	NIF_SOURCETEXTURE, NIF_MATERIALPROPERTY, NIF_TEXTURINGPROPERTY
+	NIF_SOURCETEXTURE, NIF_MATERIALPROPERTY, NIF_TEXTURINGPROPERTY,
+	// blocs des fichiers .nft (textures), voir docs/nft.md
+	NIF_PIXELDATA, NIF_PALETTE, NIF_STRINGEXTRADATA, NIF_INTEGEREXTRADATA
 };
 
 struct NifBlock {
@@ -81,6 +83,51 @@ struct NifSourceTexture {
 	int32 pixelData;
 	uint32 pixelLayout, useMipmaps, alphaFormat;
 	uint8 isStatic, directRender, persistRenderData;
+};
+
+// --- Blocs de textures, présents dans les .nft ------------------------
+// Un canal de NiPixelFormat : quatre canaux quelle que soit la texture, les
+// inutilisés valant type 19 (« empty ») et convention 5.
+struct NifPixelChannel {
+	uint32 type;                    // 0 rouge, 1 vert, 2 bleu, 3 alpha, 4 compressé, 19 vide
+	uint32 convention;              // 4 compressé, 5 vide
+	uint8 bitsPerChannel;
+	uint8 isSigned;
+};
+
+struct NifMipmap { uint32 width, height, offset; };
+
+// NiPixelData : l'en-tête de format, puis la pyramide de mipmaps, puis les
+// octets bruts. Les pixels ne sont pas recopiés, on pointe dans le tampon
+// source ; ils restent valides tant que l'appelant garde ce tampon.
+struct NifPixelData {
+	uint32 pixelFormat;             // 4 = compressé (DXT) sur toutes les textures du jeu
+	uint8 bitsPerPixel;
+	int32 rendererHint;
+	uint32 extraDataValue;
+	uint8 flags;
+	uint32 tiling;
+	uint8 srgb;
+	NifPixelChannel channels[4];
+	int32 palette;                  // référence NiPalette, -1 si aucune
+	uint32 numMipmaps, bytesPerPixel;
+	NifMipmap *mipmaps;
+	uint32 numPixels, numFaces;     // numPixels = octets d'une face, toutes mipmaps comprises
+	const uint8 *pixels;
+};
+
+// NiPalette : 256 entrées RGBA sur un octet chacune, pour les textures indexées.
+struct NifPalette {
+	uint8 hasAlpha;
+	uint32 numEntries;
+	const uint8 *entries;           // numEntries × 4 octets, non recopiés
+};
+
+// NiStringExtraData et NiIntegerExtraData : deux mots. Le nom est un index de
+// chaîne ; la valeur est un index de chaîne pour l'un, un entier pour l'autre.
+struct NifExtraData {
+	int32 name;
+	int32 value;
 };
 
 struct NifMaterialProperty {

@@ -1,6 +1,7 @@
 # Formats restants de World.img et Scripts.img
 
 Relevés rapides sur les données (22.09.2026), à approfondir.
+Le `.nft` a quitté cette liste le 24.09.2026 : c'est un NIF de textures, voir [nft.md](nft.md).
 
 | Extension | Nombre | Ce que c'est |
 |---|---|---|

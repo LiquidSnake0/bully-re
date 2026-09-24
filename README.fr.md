@@ -40,6 +40,8 @@ du jeu :
   ([src/core/IplFile.h](src/core/IplFile.h)) ;
 - les modèles NIF de Gamebryo 2.3, 5 724 fichiers, géométrie, matériaux et
   textures décodés ([docs/nif.md](docs/nif.md)) ;
+- les textures `.nft`, 4 469 fichiers, 35 635 blocs de pixels et 1,25 Go
+  d'images ([docs/nft.md](docs/nft.md)) ;
 - la numérotation du streaming ([docs/streaming.md](docs/streaming.md)) et
   les pools ([docs/pools.md](docs/pools.md)) ;
 - la grille du monde, ses listes et ses dix pools d'entités
