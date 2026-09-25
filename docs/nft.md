@@ -106,3 +106,74 @@ de trop entre le troisième et le quatrième bloc. Pris isolément, leur
 annoncée. L'octet parasite n'est donc pas dans le bloc que je décode mal, et
 son origine reste à trouver. Le test les attend en échec plutôt que de les
 masquer.
+
+## Décoder les pixels
+
+`src/gamebryo/TextureDecode` transforme un `NiPixelData` en RGBA. Cinq formats
+existent réellement dans l'archive, mesurés en rapportant la taille du premier
+niveau de mipmap à son nombre de pixels :
+
+| pixelFormat | Format | Octets pour 16 pixels | Blocs |
+|---|---|---|---|
+| 0 | RGB 24 bits | 48 | 134 |
+| 1 | RGBA 32 bits | 64 | 134 |
+| 2 | palette 8 bits | 16 | 127 |
+| 4 | DXT1 (BC1) | 8 | 31 714 |
+| 6 | DXT5 (BC3) | 16 | 3 526 |
+
+Les numéros suivent l'énumération PixelFormat de Gamebryo ; le 5, DXT3, n'est
+jamais utilisé. Pour les formats bruts, l'ordre des canaux se lit dans les
+types de canal de l'en-tête plutôt que d'être supposé.
+
+**Une hypothèse réfutée par les données.** J'attendais des blocs DXT inversés
+dans les 131 fichiers grand-boutistes, comme les autres champs. C'est faux : les
+pixels sont restés en petit-boutiste. Dans un bloc DXT1 opaque, les encodeurs
+placent presque toujours la couleur la plus claire en premier :
+
+| Fichiers | Blocs DXT1 | c0 > c1 |
+|---|---|---|
+| petit-boutistes | 88 007 163 | 86,5 % |
+| grand-boutistes, lus tels quels | 1 738 088 | 79,5 % |
+| grand-boutistes, mots inversés | 1 738 088 | 49,7 % |
+
+Inverser donne exactement le hasard. Seuls les champs du NIF ont été convertis
+à l'export, pas le contenu des images.
+
+`tests/test_texture` vérifie d'abord des blocs construits à la main, dont le
+résultat se calcule d'après la spécification (les deux modes de DXT1, les deux
+modes d'alpha de DXT5, la réplication des bits 5:6:5), puis décode le premier
+niveau des 35 635 textures : toutes passent, 1,65 milliard de pixels.
+
+## Voir un modèle : outils/nif2obj
+
+```sh
+BULLY_DATA=/chemin/vers/Bully build/outils/nif2obj 70wagon
+```
+
+L'outil écrit `export-obj/70wagon/` avec un OBJ, son MTL et les textures en
+TGA, lisibles dans Blender (import OBJ, axe Z vers le haut). Il suit la même
+chaîne que le jeu :
+
+1. **Le modèle nomme son dictionnaire de textures.** La colonne TXD des
+   définitions `.idb` donne le `.nft` à charger : `fun_libwalls` prend ses
+   textures dans `funhouse.nft`. Seuls 2 450 des 5 720 modèles ont un `.nft`
+   du même nom, le reste partage des dictionnaires, exactement comme les TXD de
+   GTA.
+2. **Le NIF est parcouru depuis sa racine** en composant les transformations
+   des nœuds : `monde(enfant) = monde(parent) ∘ (R·(s·p) + t)`.
+3. **Chaque forme prend la texture de base de son `NiTexturingProperty`.** Le
+   nom du `.tga` d'origine, débarrassé du chemin de la machine d'export
+   (`Z:\Bully\Temp\...`), est cherché parmi les `NiSourceTexture` du `.nft`.
+
+Vérifié à l'œil sur le break `70wagon` : 64 formes, 2 723 sommets, 2 022
+triangles, six textures. La carrosserie, les panneaux en faux bois, les vitres,
+les feux et les pare-chocs s'assemblent à leur place ; les roues manquent,
+normal, ce sont des modèles séparés (`Foreign_wheel`). Les textures décodées
+sont reconnaissables au premier coup d'œil.
+
+La convention de rotation, `v' = R·v` avec R lue ligne par ligne comme le
+`NiMatrix3` de Gamebryo, tient sur ce modèle mais n'a pas encore été éprouvée
+sur des pièces franchement tournées les unes par rapport aux autres.
+
+Les exports dérivent des données du jeu : `export-obj/` est dans `.gitignore`,
+aucune image n'entre dans le dépôt.

@@ -274,3 +274,17 @@ en échec plutôt que de les masquer.
 
 - Prochaine étape : dessiner une première géométrie NIF, maintenant que les
   pixels sont lisibles.
+
+## 2026-09-25 — décoder les textures, sortir un premier modèle
+
+- `src/gamebryo/TextureDecode` : cinq formats réellement présents, DXT1 pour
+  presque tout, DXT5 pour l'alpha, et quelques RGB, RGBA et palettes. Les
+  35 635 textures se décodent.
+- Hypothèse réfutée : les blocs DXT des fichiers grand-boutistes **ne sont pas**
+  inversés. Mesuré sur 1,7 million de blocs, les lire tels quels donne la même
+  statistique que les fichiers petit-boutistes, les inverser donne le hasard.
+- `outils/nif2obj` : un modèle, son dictionnaire de textures lu dans les `.idb`
+  (le lien TXD de GTA), l'arbre de nœuds composé, les textures décodées en TGA.
+  Premier modèle vu à l'écran : le break `70wagon`, assemblé correctement.
+- Prochaine étape : un vrai rendu temps réel, et éprouver la convention de
+  rotation sur un modèle à pièces tournées.

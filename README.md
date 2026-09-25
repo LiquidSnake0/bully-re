@@ -45,7 +45,7 @@ compares the result against values taken by hand from the originals.
 | Collision COL3 / COL2 / COLL | 488 files, 3,863 models, exact sizes | [docs/collision.md](docs/collision.md) |
 | Binary placements `Ipl$` | 85 files, 11 section types | [src/core/IplFile.h](src/core/IplFile.h) |
 | Gamebryo NIF 20.3.0.9 | 5,724 files, 363,085 known blocks decoded | [docs/nif.md](docs/nif.md) |
-| Textures `.nft` | 4,469 files, 35,635 NiPixelData, 1.25 GB of pixels | [docs/nft.md](docs/nft.md) |
+| Textures `.nft` | 4,469 files, all 35,635 textures decoded (DXT1, DXT5, RGB, RGBA, palette) | [docs/nft.md](docs/nft.md) |
 | Streaming ids, pools | id ranges, 28 pools with entry sizes | [docs/streaming.md](docs/streaming.md), [docs/pools.md](docs/pools.md) |
 | World grid and lists | 36x36 sectors, 32-bit list nodes, 10 entity pools | [docs/world.md](docs/world.md) |
 
@@ -96,8 +96,10 @@ outside the repository.
 
 ## Status
 
-Early. Everything that loads from disk is done and tested; nothing renders yet.
-Next up: drawing a first NIF mesh.
+Early. Everything that loads from disk is done and tested. The first visible
+step is there: `outils/nif2obj` exports any model with its textures to OBJ,
+following the game's own chain (model → texture dictionary → NIF node tree →
+DXT decode). There is no real-time renderer yet; that is next.
 
 See [docs/journal.md](docs/journal.md) for the running log (in French).
 

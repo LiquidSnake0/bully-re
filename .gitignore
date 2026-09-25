@@ -8,3 +8,5 @@ export/index.sqlite
 
 # Sorties de compilation
 build/
+# sorties de outils/nif2obj : dérivées des données du jeu, jamais dans le dépôt
+export-obj/
