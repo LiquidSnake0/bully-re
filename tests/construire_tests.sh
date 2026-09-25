@@ -19,7 +19,9 @@ g++ $FLAGS tests/test_nft.cpp src/gamebryo/NifFile.cpp src/core/CdStream.cpp tes
 g++ $FLAGS tests/test_texture.cpp src/gamebryo/TextureDecode.cpp src/gamebryo/NifFile.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_texture
 # outil, pas un test : exporte un modèle en OBJ avec ses textures
 mkdir -p build/outils
-g++ $FLAGS outils/nif2obj.cpp src/gamebryo/TextureDecode.cpp src/gamebryo/NifFile.cpp src/core/IdeBinary.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/outils/nif2obj
+g++ $FLAGS tests/test_transform.cpp src/gamebryo/NifTransform.cpp src/gamebryo/NifFile.cpp src/collision/ColModel.cpp src/core/IdeBinary.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_transform
+g++ $FLAGS outils/nif2obj.cpp src/gamebryo/NifTransform.cpp src/gamebryo/TextureDecode.cpp src/gamebryo/NifFile.cpp src/core/IdeBinary.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/outils/nif2obj
+g++ $FLAGS outils/rendu.cpp src/render/SoftRaster.cpp src/gamebryo/NifTransform.cpp src/gamebryo/TextureDecode.cpp src/gamebryo/NifFile.cpp src/core/IdeBinary.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/outils/rendu
 # test_world ne lit aucun fichier du jeu : il vérifie l'arithmétique de la grille et les listes.
 g++ $FLAGS tests/test_world.cpp src/core/World.cpp src/core/Lists.cpp src/entities/Physical.cpp src/entities/Entity.cpp tests/hote/Entite.cpp -o build/tests/test_world
-echo "tests prêts : test_surface, test_pedstats, test_carcols, test_handling, test_objectdata, test_cdstream, test_ide, test_col, test_ipl, test_nif, test_nft, test_texture, test_world ; outil : build/outils/nif2obj"
+echo "tests prêts : test_surface, test_pedstats, test_carcols, test_handling, test_objectdata, test_cdstream, test_ide, test_col, test_ipl, test_nif, test_nft, test_texture, test_transform, test_world ; outils : build/outils/nif2obj, build/outils/rendu"

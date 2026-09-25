@@ -48,6 +48,7 @@ compares the result against values taken by hand from the originals.
 | Textures `.nft` | 4,469 files, all 35,635 textures decoded (DXT1, DXT5, RGB, RGBA, palette) | [docs/nft.md](docs/nft.md) |
 | Streaming ids, pools | id ranges, 28 pools with entry sizes | [docs/streaming.md](docs/streaming.md), [docs/pools.md](docs/pools.md) |
 | World grid and lists | 36x36 sectors, 32-bit list nodes, 10 entity pools | [docs/world.md](docs/world.md) |
+| NIF node transforms | rotation convention settled against 3,842 collision boxes | [docs/nif.md](docs/nif.md) |
 
 Some findings along the way: 247 of the NIF files are **big-endian**, left over
 from a console export; Bully ships **Lua 5.0**, not 5.1; and the `.idb` format
@@ -99,7 +100,8 @@ outside the repository.
 Early. Everything that loads from disk is done and tested. The first visible
 step is there: `outils/nif2obj` exports any model with its textures to OBJ,
 following the game's own chain (model → texture dictionary → NIF node tree →
-DXT decode). There is no real-time renderer yet; that is next.
+DXT decode), and `outils/rendu` draws one with a dependency-free software
+rasterizer. There is no real-time renderer yet; that is next.
 
 See [docs/journal.md](docs/journal.md) for the running log (in French).
 

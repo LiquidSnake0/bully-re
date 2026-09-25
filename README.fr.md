@@ -43,7 +43,10 @@ du jeu :
 - les textures `.nft`, 4 469 fichiers, les 35 635 images décodées en DXT1,
   DXT5, RGB, RGBA et palette ([docs/nft.md](docs/nft.md)) ;
 - un premier export visible : `outils/nif2obj` sort n'importe quel modèle en
-  OBJ avec ses textures, en suivant la chaîne du jeu ;
+  OBJ avec ses textures, et `outils/rendu` le dessine avec un rasteriseur
+  logiciel sans dépendance ;
+- le sens des rotations des nœuds NIF, tranché contre 3 842 boîtes de
+  collision ([docs/nif.md](docs/nif.md)) ;
 - la numérotation du streaming ([docs/streaming.md](docs/streaming.md)) et
   les pools ([docs/pools.md](docs/pools.md)) ;
 - la grille du monde, ses listes et ses dix pools d'entités

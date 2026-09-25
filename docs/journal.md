@@ -288,3 +288,20 @@ en échec plutôt que de les masquer.
   Premier modèle vu à l'écran : le break `70wagon`, assemblé correctement.
 - Prochaine étape : un vrai rendu temps réel, et éprouver la convention de
   rotation sur un modèle à pièces tournées.
+
+## 2026-09-25 — le sens des rotations, tranché ; un rasteriseur en dépôt
+
+- La convention `v' = R·v` que `nif2obj` supposait est maintenant **vérifiée
+  contre les collisions** : sur les 60 modèles à pièces tournées où les deux
+  lectures diffèrent, douze correspondent presque exactement à la boîte de
+  collision avec `R·v`, aucun avec la transposée. `catwalk` fait 0,0001 contre
+  42. C'est `tests/test_transform`, et la composition vit dans
+  `src/gamebryo/NifTransform`, partagée par l'export et le rendu.
+- Leçon de méthode : comparer les positions absolues des boîtes ne donnait que
+  du bruit, beaucoup d'intérieurs étant modélisés en coordonnées monde. Comparer
+  les dimensions a fait apparaître le signal.
+- `src/render/SoftRaster` + `outils/rendu` : premier rendu en dépôt, sans
+  dépendance, avec tampon de profondeur et texture par pixel. Le script Python
+  jetable est à la poubelle.
+- Prochaine étape : le rendu depuis les placements `Ipl$` (une scène, pas un
+  modèle), puis la question du moteur temps réel.

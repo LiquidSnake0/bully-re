@@ -66,3 +66,50 @@ NiFloatExtraData 18 · NiDitherProperty 1.
 Non décodés (sautés grâce aux tailles) : contrôleurs et interpolateurs de
 transformation, extra data, peau (NiSkinInstance/Data/Partition), propriétés
 alpha, spéculaire, stencil, Z-buffer, couleurs de sommets, effets.
+
+## Sens des rotations
+
+Un `NiAVObject` porte une translation, une matrice 3 × 3 et une échelle. La
+matrice est stockée ligne par ligne, mais rien dans le fichier ne dit si un
+point local se transforme par `R·v` ou par `Rᵀ·v`. Les deux lectures donnent
+des modèles plausibles tant que les pièces ne sont pas tournées les unes par
+rapport aux autres, ce qui est le cas de la plupart des props.
+
+Les collisions tranchent. Chaque modèle de collision (`docs/collision.md`)
+porte une boîte englobante dans l'espace du modèle, calculée par l'outil
+d'export de Rockstar, donc avec la bonne convention. `tests/test_transform`
+relie 3 862 collisions à leur modèle par l'identifiant des définitions `.idb`,
+compose l'arbre NIF sous les deux conventions, et compare les **dimensions**
+des boîtes (les positions absolues ne servent à rien : beaucoup d'intérieurs
+sont modélisés à leurs coordonnées monde alors que leur collision est locale).
+
+| | Modèles |
+|---|---|
+| appariés à une collision | 3 842 |
+| dont les deux conventions donnent la même boîte à 5 % près | 3 782 |
+| discriminants | 60 |
+| quasi exacts (écart < 1 %) avec `R·v` seulement | 12 |
+| quasi exacts avec `Rᵀ·v` seulement | 0 |
+
+Le cas le plus net est `catwalk`, une passerelle à poteaux et rambardes : écart
+de 0,0001 avec `R·v`, de 42 avec la transposée. Les 48 autres discriminants
+sont des modèles dont la collision ne suit pas la géométrie visible, ils ne
+départagent rien de fiable.
+
+La convention est donc `v' = R·(s·v) + t`, avec R telle qu'elle est lue, et
+`monde(enfant) = monde(parent) ∘ local(enfant)`. Elle est implémentée dans
+`src/gamebryo/NifTransform`, utilisée par `nif2obj`, par `outils/rendu` et par
+le futur moteur.
+
+## Voir un modèle sans Blender : outils/rendu
+
+```sh
+BULLY_DATA=/chemin/vers/Bully build/outils/rendu 70wagon sortie.ppm 35 20 800
+```
+
+`src/render/SoftRaster` est un rasteriseur logiciel minimal : projection
+orthographique, tampon de profondeur, placage de texture par pixel, éclairage
+par face. Il n'a aucune dépendance et il est écrit pour rester portable vers
+une cible sans GPU exploitable, ce qui sera d'abord le cas sur New 3DS. Ce
+n'est pas le moteur de rendu du jeu, c'est l'outil qui permet de regarder ce
+que les chargeurs produisent.

@@ -13,14 +13,14 @@
 //      dont le nom de fichier (.tga d'origine) est cherché parmi les
 //      NiSourceTexture du .nft ; ses pixels sont décodés et écrits en TGA.
 //
-// Convention de rotation : v' = R·v avec R lue ligne par ligne, comme le
-// NiMatrix3 de Gamebryo. Pas encore vérifié sur un modèle dont les pièces sont
-// tournées les unes par rapport aux autres.
+// La composition des transformations est dans src/gamebryo/NifTransform,
+// avec la convention vérifiée contre les boîtes de collision.
 #include "../src/core/CdStream.h"
 #include "../src/core/FileMgr.h"
 #include "../src/core/IdeBinary.h"
 #include "../src/gamebryo/NifFile.h"
 #include "../src/gamebryo/TextureDecode.h"
+#include "../src/gamebryo/NifTransform.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -93,49 +93,6 @@ ChargerDefinitions(int32 image)
 		if(utile + 4 <= bytes) CIdeBinary::Load(buf + 4, utile);
 		free(buf);
 	}
-}
-
-// --- Transformations ----------------------------------------------------
-struct Transfo { float r[3][3]; float s; CVector t; };
-
-static Transfo
-Identite(void)
-{
-	Transfo x;
-	for(int i = 0; i < 3; i++) for(int j = 0; j < 3; j++) x.r[i][j] = i == j ? 1.0f : 0.0f;
-	x.s = 1.0f; x.t = CVector(0, 0, 0);
-	return x;
-}
-
-static CVector
-Tourner(const float r[3][3], const CVector &v)
-{
-	return CVector(r[0][0]*v.x + r[0][1]*v.y + r[0][2]*v.z,
-	               r[1][0]*v.x + r[1][1]*v.y + r[1][2]*v.z,
-	               r[2][0]*v.x + r[2][1]*v.y + r[2][2]*v.z);
-}
-
-// monde(enfant) = monde(parent) ∘ local(enfant), local(p) = R·(s·p) + t
-static Transfo
-Composer(const Transfo &p, const NifAVObject &o)
-{
-	Transfo c;
-	for(int i = 0; i < 3; i++)
-		for(int j = 0; j < 3; j++){
-			c.r[i][j] = 0;
-			for(int k = 0; k < 3; k++) c.r[i][j] += p.r[i][k] * o.rotation.m[k][j];
-		}
-	c.s = p.s * o.scale;
-	CVector tt = Tourner(p.r, CVector(o.translation.x * p.s, o.translation.y * p.s, o.translation.z * p.s));
-	c.t = CVector(p.t.x + tt.x, p.t.y + tt.y, p.t.z + tt.z);
-	return c;
-}
-
-static CVector
-Appliquer(const Transfo &x, const CVector &v)
-{
-	CVector r = Tourner(x.r, CVector(v.x * x.s, v.y * x.s, v.z * x.s));
-	return CVector(r.x + x.t.x, r.y + x.t.y, r.z + x.t.z);
 }
 
 // --- Export ---------------------------------------------------------------
@@ -211,47 +168,33 @@ TextureDeBase(const Export &e, const NifAVObject &o)
 }
 
 static void
-Parcourir(Export &e, int32 bloc, const Transfo &parent, int profondeur)
+Forme(const CNifFile &f, int32, const NifGeometry &g, const NifGeometryData &d, const NifTransform &t, void *ctx)
 {
-	const CNifFile &f = *e.nif;
-	if(bloc < 0 || bloc >= f.numBlocks || profondeur > 64 || f.blocks[bloc].data == nil) return;
-	const NifBlock &b = f.blocks[bloc];
-	if(b.kind == NIF_NODE){
-		const NifNode *n = (const NifNode*)b.data;
-		Transfo t = Composer(parent, *n);
-		for(int32 i = 0; i < n->numChildren; i++) Parcourir(e, n->children[i], t, profondeur + 1);
-		return;
-	}
-	if(b.kind != NIF_TRISHAPE && b.kind != NIF_TRISTRIPS) return;
-	const NifGeometry *g = (const NifGeometry*)b.data;
-	if(g->data < 0 || g->data >= f.numBlocks || f.blocks[g->data].data == nil) return;
-	const NifGeometryData *d = (const NifGeometryData*)f.blocks[g->data].data;
-	if(d->vertices == nil || d->triangles == nil || d->numTriangles == 0) return;
-	Transfo t = Composer(parent, *g);
-
-	std::string mat = Materiau(e, TextureDeBase(e, *g));
-	fprintf(e.obj, "o %s_%d\n", f.String(g->name)[0] ? f.String(g->name) : "forme", e.formes);
+	Export &e = *(Export*)ctx;
+	if(d.vertices == nil || d.triangles == nil || d.numTriangles == 0) return;
+	std::string mat = Materiau(e, TextureDeBase(e, g));
+	fprintf(e.obj, "o %s_%d\n", f.String(g.name)[0] ? f.String(g.name) : "forme", e.formes);
 	if(!mat.empty()){ fprintf(e.obj, "usemtl %s\n", mat.c_str()); e.texturees++; }
 	int base = e.sommets, baseUv = e.uvs;
-	for(int i = 0; i < d->numVertices; i++){
-		CVector v = Appliquer(t, d->vertices[i]);
+	for(int i = 0; i < d.numVertices; i++){
+		CVector v = NifApply(t, d.vertices[i]);
 		fprintf(e.obj, "v %.5f %.5f %.5f\n", v.x, v.y, v.z);
 	}
-	bool avecUv = d->uv && d->numUVSets > 0;
+	bool avecUv = d.uv && d.numUVSets > 0;
 	if(avecUv)
-		for(int i = 0; i < d->numVertices; i++)       // OBJ a son origine UV en bas à gauche
-			fprintf(e.obj, "vt %.5f %.5f\n", d->uv[i][0], 1.0f - d->uv[i][1]);
-	for(int i = 0; i < d->numTriangles; i++){
-		int a = base + d->triangles[i][0] + 1, bb = base + d->triangles[i][1] + 1, c = base + d->triangles[i][2] + 1;
+		for(int i = 0; i < d.numVertices; i++)       // OBJ a son origine UV en bas à gauche
+			fprintf(e.obj, "vt %.5f %.5f\n", d.uv[i][0], 1.0f - d.uv[i][1]);
+	for(int i = 0; i < d.numTriangles; i++){
+		int a = base + d.triangles[i][0] + 1, bb = base + d.triangles[i][1] + 1, c = base + d.triangles[i][2] + 1;
 		if(avecUv){
-			int ua = baseUv + d->triangles[i][0] + 1, ub = baseUv + d->triangles[i][1] + 1, uc = baseUv + d->triangles[i][2] + 1;
+			int ua = baseUv + d.triangles[i][0] + 1, ub = baseUv + d.triangles[i][1] + 1, uc = baseUv + d.triangles[i][2] + 1;
 			fprintf(e.obj, "f %d/%d %d/%d %d/%d\n", a, ua, bb, ub, c, uc);
 		}else
 			fprintf(e.obj, "f %d %d %d\n", a, bb, c);
 	}
-	e.sommets += d->numVertices;
-	if(avecUv) e.uvs += d->numVertices;
-	e.triangles += d->numTriangles;
+	e.sommets += d.numVertices;
+	if(avecUv) e.uvs += d.numVertices;
+	e.triangles += d.numTriangles;
 	e.formes++;
 }
 
@@ -304,7 +247,7 @@ main(int argc, char **argv)
 	e.mtl = fopen((dossier + "/" + modele + ".mtl").c_str(), "w");
 	if(!e.obj || !e.mtl){ fprintf(stderr, "impossible d'écrire dans %s\n", dossier.c_str()); return 1; }
 	fprintf(e.obj, "# %s, exporté de bully.exe par bully-re (outils/nif2obj)\nmtllib %s.mtl\n", modele.c_str(), modele.c_str());
-	Parcourir(e, 0, Identite(), 0);
+	NifWalkShapes(nif, Forme, &e);
 	fclose(e.obj); fclose(e.mtl);
 
 	printf("  %d formes, %d sommets, %d triangles, %d formes texturées, %zu textures écrites\n",
