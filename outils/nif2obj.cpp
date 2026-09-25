@@ -15,92 +15,16 @@
 //
 // La composition des transformations est dans src/gamebryo/NifTransform,
 // avec la convention vérifiée contre les boîtes de collision.
-#include "../src/core/CdStream.h"
-#include "../src/core/FileMgr.h"
-#include "../src/core/IdeBinary.h"
-#include "../src/gamebryo/NifFile.h"
-#include "../src/gamebryo/TextureDecode.h"
+#include "commun.h"
 #include "../src/gamebryo/NifTransform.h"
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <cctype>
-#include <string>
-#include <map>
-#include <vector>
 #include <sys/stat.h>
-
-static std::map<std::string, std::string> g_txdDe;     // modèle (minuscules) → txd
-
-static std::string
-Minuscules(const char *s)
-{
-	std::string r(s);
-	for(char &c : r) c = (char)tolower((unsigned char)c);
-	return r;
-}
-
-// Nom de fichier sans chemin ni extension, en minuscules : les NIF gardent
-// parfois le chemin complet de la machine d'export (« Z:\Bully\Temp\... »).
-static std::string
-BaseNom(const char *chemin)
-{
-	std::string s = Minuscules(chemin);
-	size_t p = s.find_last_of("\\/");
-	if(p != std::string::npos) s = s.substr(p + 1);
-	size_t d = s.rfind('.');
-	if(d != std::string::npos) s = s.substr(0, d);
-	return s;
-}
-
-template<class E> static int32 Retenir(const E &e) { g_txdDe[Minuscules(e.model)] = e.txd; return 0; }
-void RegisterModelRange(uint16, uint32) {}
-
-static uint8 *
-LireEntree(int32 image, const char *imgPath, const char *nom, uint32 *bytes)
-{
-	const CDirectoryEntry *d = CdStream::ms_images[image].Find(nom);
-	if(d == nil) return nil;
-	*bytes = d->size * CDSTREAM_SECTOR_SIZE;
-	uint8 *buf = (uint8*)malloc(*bytes);
-	int32 fd = CFileMgr::OpenFile(imgPath, "rb", 1);
-	CFileMgr::Seek(fd, d->offset * CDSTREAM_SECTOR_SIZE, 0);
-	bool ok = CFileMgr::ReadExact(fd, buf, *bytes);
-	CFileMgr::CloseFile(fd);
-	if(!ok){ free(buf); return nil; }
-	return buf;
-}
-
-static void
-ChargerDefinitions(int32 image)
-{
-	CIdeBinary::ms_objHandler = Retenir<CObjIdeEntry>;
-	CIdeBinary::ms_pedHandler = Retenir<CPedIdeEntry>;
-	CIdeBinary::ms_carHandler = Retenir<CCarIdeEntry>;
-	CIdeBinary::ms_weapHandler = Retenir<CWeapIdeEntry>;
-	CIdeBinary::ms_panmHandler = Retenir<CPanmIdeEntry>;
-	CIdeBinary::ms_simpleHandler = Retenir<CSimpleIdeEntry>;
-	const CdImage &img = CdStream::ms_images[image];
-	for(int32 k = 0; k < img.m_numEntries; k++){
-		const char *n = img.m_entries[k].name;
-		size_t L = strlen(n);
-		if(L < 4 || strcasecmp(n + L - 4, ".idb") != 0) continue;
-		uint32 bytes;
-		uint8 *buf = LireEntree(image, "Objects\\ide.img", n, &bytes);
-		if(buf == nil) continue;
-		uint32 utile;
-		memcpy(&utile, buf, 4);                   // longueur utile en tête, voir docs/idb.md
-		if(utile + 4 <= bytes) CIdeBinary::Load(buf + 4, utile);
-		free(buf);
-	}
-}
+using namespace outil;
 
 // --- Export ---------------------------------------------------------------
-struct Texture { const NifPixelData *px; const NifPalette *pal; };
 
 struct Export {
 	const CNifFile *nif;
-	std::map<std::string, Texture> textures;     // base du .tga → pixels
+	std::map<std::string, outil::Texture> textures; // base du .tga → pixels
 	std::map<std::string, std::string> ecrites;  // base du .tga → fichier TGA écrit
 	std::string dossier;
 	FILE *obj, *mtl;
@@ -208,15 +132,13 @@ main(int argc, char **argv)
 	mkdir("export-obj", 0755);
 	mkdir(dossier.c_str(), 0755);
 
-	int32 monde = CdStream::AddImage("Stream\\World.img");
-	int32 ide = CdStream::AddImage("Objects\\ide.img");
-	if(monde < 0 || ide < 0){ fprintf(stderr, "archives introuvables, BULLY_DATA ?\n"); return 1; }
-	ChargerDefinitions(ide);
-
-	auto it = g_txdDe.find(Minuscules(modele.c_str()));
-	std::string txd = it != g_txdDe.end() ? it->second : modele;
+	outil::Archives arch;
+	if(!outil::Ouvrir(arch)) return 1;
+	int32 monde = arch.monde;
+	auto it = arch.txdDe.find(Minuscules(modele.c_str()));
+	std::string txd = it != arch.txdDe.end() ? it->second : modele;
 	printf("%s : dictionnaire de textures « %s »%s\n", modele.c_str(), txd.c_str(),
-	       it != g_txdDe.end() ? " (définitions)" : " (même nom, absent des définitions)");
+	       it != arch.txdDe.end() ? " (définitions)" : " (même nom, absent des définitions)");
 
 	uint32 nb, tb = 0;
 	uint8 *nifBuf = LireEntree(monde, "Stream\\World.img", (modele + ".nif").c_str(), &nb);
@@ -238,7 +160,7 @@ main(int argc, char **argv)
 			const NifPalette *pal = nil;
 			if(px->palette >= 0 && px->palette < nft.numBlocks && nft.blocks[px->palette].kind == NIF_PALETTE)
 				pal = (const NifPalette*)nft.blocks[px->palette].data;
-			e.textures[BaseNom(nft.String(st->fileName))] = Texture{px, pal};
+			{ outil::Texture t; t.px = px; t.pal = pal; e.textures[BaseNom(nft.String(st->fileName))] = t; }
 		}
 	}else
 		printf("  %s.nft introuvable : export sans textures\n", txd.c_str());

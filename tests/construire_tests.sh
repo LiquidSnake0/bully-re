@@ -20,8 +20,10 @@ g++ $FLAGS tests/test_texture.cpp src/gamebryo/TextureDecode.cpp src/gamebryo/Ni
 # outil, pas un test : exporte un modèle en OBJ avec ses textures
 mkdir -p build/outils
 g++ $FLAGS tests/test_transform.cpp src/gamebryo/NifTransform.cpp src/gamebryo/NifFile.cpp src/collision/ColModel.cpp src/core/IdeBinary.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_transform
+g++ $FLAGS tests/test_placement.cpp src/render/SoftRaster.cpp src/gamebryo/NifTransform.cpp src/gamebryo/TextureDecode.cpp src/gamebryo/NifFile.cpp src/core/IplFile.cpp src/core/IdeBinary.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_placement
 g++ $FLAGS outils/nif2obj.cpp src/gamebryo/NifTransform.cpp src/gamebryo/TextureDecode.cpp src/gamebryo/NifFile.cpp src/core/IdeBinary.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/outils/nif2obj
 g++ $FLAGS outils/rendu.cpp src/render/SoftRaster.cpp src/gamebryo/NifTransform.cpp src/gamebryo/TextureDecode.cpp src/gamebryo/NifFile.cpp src/core/IdeBinary.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/outils/rendu
+g++ $FLAGS outils/scene.cpp src/render/SoftRaster.cpp src/gamebryo/NifTransform.cpp src/gamebryo/TextureDecode.cpp src/gamebryo/NifFile.cpp src/core/IplFile.cpp src/core/IdeBinary.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/outils/scene
 # test_world ne lit aucun fichier du jeu : il vérifie l'arithmétique de la grille et les listes.
 g++ $FLAGS tests/test_world.cpp src/core/World.cpp src/core/Lists.cpp src/entities/Physical.cpp src/entities/Entity.cpp tests/hote/Entite.cpp -o build/tests/test_world
-echo "tests prêts : test_surface, test_pedstats, test_carcols, test_handling, test_objectdata, test_cdstream, test_ide, test_col, test_ipl, test_nif, test_nft, test_texture, test_transform, test_world ; outils : build/outils/nif2obj, build/outils/rendu"
+echo "tests prêts : test_surface, test_pedstats, test_carcols, test_handling, test_objectdata, test_cdstream, test_ide, test_col, test_ipl, test_nif, test_nft, test_texture, test_transform, test_placement, test_world ; outils : build/outils/nif2obj, build/outils/rendu, build/outils/scene"

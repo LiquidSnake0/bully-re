@@ -100,8 +100,10 @@ outside the repository.
 Early. Everything that loads from disk is done and tested. The first visible
 step is there: `outils/nif2obj` exports any model with its textures to OBJ,
 following the game's own chain (model → texture dictionary → NIF node tree →
-DXT decode), and `outils/rendu` draws one with a dependency-free software
-rasterizer. There is no real-time renderer yet; that is next.
+DXT decode), `outils/rendu` draws one with a dependency-free software
+rasterizer, and `outils/scene` draws a whole zone from the game's own
+placement files (`docs/ipl.md`). There is no real-time renderer yet; that is
+next.
 
 See [docs/journal.md](docs/journal.md) for the running log (in French).
 

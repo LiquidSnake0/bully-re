@@ -47,6 +47,9 @@ du jeu :
   logiciel sans dépendance ;
 - le sens des rotations des nœuds NIF, tranché contre 3 842 boîtes de
   collision ([docs/nif.md](docs/nif.md)) ;
+- une scène entière depuis les placements `Ipl$` : `outils/scene` rend une
+  zone du jeu (bâtiment, dortoir) avec le sens du quaternion établi par les
+  modèles eux-mêmes ([docs/ipl.md](docs/ipl.md)) ;
 - la numérotation du streaming ([docs/streaming.md](docs/streaming.md)) et
   les pools ([docs/pools.md](docs/pools.md)) ;
 - la grille du monde, ses listes et ses dix pools d'entités

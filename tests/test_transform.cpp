@@ -65,13 +65,14 @@ static T CompT(const T &p, const NifAVObject &o){
 static void ParcT(const CNifFile &f, int32 bloc, const T &p, int prof, Boite &b){
 	if(bloc < 0 || bloc >= f.numBlocks || prof > 64 || !f.blocks[bloc].data) return;
 	const NifBlock &bl = f.blocks[bloc];
-	if(bl.kind == NIF_NODE){ const NifNode *n = (const NifNode*)bl.data; T t = CompT(p, *n); for(int32 i = 0; i < n->numChildren; i++) ParcT(f, n->children[i], t, prof+1, b); return; }
+	if(bl.kind == NIF_NODE){ const NifNode *n = (const NifNode*)bl.data; T t = prof <= 1 ? p : CompT(p, *n); for(int32 i = 0; i < n->numChildren; i++) ParcT(f, n->children[i], t, prof+1, b); return; }
 	if(bl.kind != NIF_TRISHAPE && bl.kind != NIF_TRISTRIPS) return;
 	const NifGeometry *g = (const NifGeometry*)bl.data; if(g->data < 0 || g->data >= f.numBlocks || !f.blocks[g->data].data) return;
 	const NifGeometryData *d = (const NifGeometryData*)f.blocks[g->data].data; if(!d->vertices) return;
-	T t = CompT(p, *g);
+	T t = prof <= 1 ? p : CompT(p, *g);
 	for(int i = 0; i < d->numVertices; i++){ CVector v = NifRotate(t.r, CVector(d->vertices[i].x*t.s, d->vertices[i].y*t.s, d->vertices[i].z*t.s)); Ajouter(b, CVector(v.x+t.t.x, v.y+t.t.y, v.z+t.t.z)); }
 }
+static float EcartPos(const Boite &a, const CBox &c){ return fabsf(a.mn.x-c.min.x)+fabsf(a.mn.y-c.min.y)+fabsf(a.mn.z-c.min.z)+fabsf(a.mx.x-c.max.x)+fabsf(a.mx.y-c.max.y)+fabsf(a.mx.z-c.max.z); }
 static float Ecart(const Boite &a, const CBox &c){ return fabsf((a.mx.x-a.mn.x)-(c.max.x-c.min.x)) + fabsf((a.mx.y-a.mn.y)-(c.max.y-c.min.y)) + fabsf((a.mx.z-a.mn.z)-(c.max.z-c.min.z)); }
 static float Taille(const CBox &c){ return (c.max.x-c.min.x)+(c.max.y-c.min.y)+(c.max.z-c.min.z); }
 
@@ -122,7 +123,7 @@ main(void)
 	}
 	printf("%zu identifiants nommés, %zu collisions reliées à un modèle\n", g_idNom.size(), g_col.size());
 
-	int apparies = 0, discriminants = 0, exactR = 0, exactT = 0; float catwalkR = -1, catwalkT = -1;
+	int apparies = 0, discriminants = 0, exactR = 0, exactT = 0, posExactes = 0; float catwalkR = -1, catwalkT = -1;
 	for(int32 k = 0; k < img.m_numEntries; k++){
 		const CDirectoryEntry *d = &img.m_entries[k]; size_t L = strlen(d->name);
 		if(L < 4 || strcasecmp(d->name + L - 4, ".nif") != 0) continue;
@@ -137,6 +138,8 @@ main(void)
 		f.Free(); free(b);
 		if(bR.n == 0) continue;
 		apparies++;
+		// En espace entité, la boîte des sommets doit aussi tomber au même ENDROIT que la collision.
+		if(EcartPos(bR, it->second) < 0.02f * Taille(it->second) + 0.05f) posExactes++;
 		float eR = Ecart(bR, it->second), eT = Ecart(bT, it->second), taille = Taille(it->second);
 		if(nom == "catwalk"){ catwalkR = eR; catwalkT = eT; }
 		if(fabsf(eR - eT) < 0.05f * taille) continue;      // pièces non tournées : ne départage rien
@@ -147,10 +150,12 @@ main(void)
 	}
 	printf("%d modèles appariés, %d discriminants ; quasi exacts (< 1 %%) pour R·v : %d, pour Rᵀ·v : %d\n", apparies, discriminants, exactR, exactT);
 	printf("catwalk : écart R·v %.4f, Rᵀ·v %.4f\n", catwalkR, catwalkT);
+	printf("boîtes au même endroit que la collision (espace entité, 2 %%) : %d sur %d\n", posExactes, apparies);
 	VERIF(apparies > 3000);
 	VERIF(exactR >= 10);
 	VERIF(exactT == 0);
 	VERIF(catwalkR >= 0 && catwalkR < 0.01f && catwalkT > 10.0f);
+	VERIF(posExactes > apparies / 2);
 
 	printf(echecs ? "\n%d verification(s) en echec\n" : "\ntout passe\n", echecs);
 	return echecs != 0;

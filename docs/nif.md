@@ -113,3 +113,18 @@ par face. Il n'a aucune dépendance et il est écrit pour rester portable vers
 une cible sans GPU exploitable, ce qui sera d'abord le cas sur New 3DS. Ce
 n'est pas le moteur de rendu du jeu, c'est l'outil qui permet de regarder ce
 que les chargeurs produisent.
+
+## L'espace de l'entité : le nœud du modèle
+
+Sous « Scene Root », chaque modèle a un nœud qui porte son nom, et c'est la
+transformation de **ce** nœud que le jeu remplace par la matrice de l'entité.
+Les grandes pièces d'intérieur (`BX_loungeFL`, `iboxing`, `SC1b_bldgLib`…) y
+gardent leur position dans le monde ; `DPI_Teacup` y garde un décalage
+d'artiste de −38,7 en x ; `pxFireEx` y a zéro. Dans les trois cas, le
+placement `Ipl$` fournit la position réelle et le nœud du modèle est ignoré.
+
+`NifWalkShapes` compose donc, par défaut, la racine et ses enfants directs
+comme l'identité. Le test des collisions le confirme : dans cet espace, la
+boîte des sommets tombe **au même endroit** que la boîte de collision, et pas
+seulement aux mêmes dimensions. C'est aussi l'espace où `scene` applique les
+placements (`docs/ipl.md`).

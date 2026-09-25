@@ -1,4 +1,5 @@
 #include "NifTransform.h"
+#include <cmath>
 
 NifTransform
 NifIdentity(void)
@@ -45,26 +46,49 @@ NifApply(const NifTransform &x, const CVector &v)
 }
 
 static void
-Parcourir(const CNifFile &f, int32 bloc, const NifTransform &parent, int profondeur, NifShapeFn fn, void *ctx)
+Parcourir(const CNifFile &f, int32 bloc, const NifTransform &parent, int profondeur, NifShapeFn fn, void *ctx, bool espaceEntite)
 {
 	if(bloc < 0 || bloc >= f.numBlocks || profondeur > 64 || f.blocks[bloc].data == nil) return;
 	const NifBlock &b = f.blocks[bloc];
 	if(b.kind == NIF_NODE){
 		const NifNode *n = (const NifNode*)b.data;
-		NifTransform t = NifCompose(parent, *n);
+		// profondeur 0 : Scene Root ; 1 : le nœud du modèle, dont l'entité remplace la transformation
+		NifTransform t = (espaceEntite && profondeur <= 1) ? parent : NifCompose(parent, *n);
 		for(int32 i = 0; i < n->numChildren; i++)
-			Parcourir(f, n->children[i], t, profondeur + 1, fn, ctx);
+			Parcourir(f, n->children[i], t, profondeur + 1, fn, ctx, espaceEntite);
 		return;
 	}
 	if(b.kind != NIF_TRISHAPE && b.kind != NIF_TRISTRIPS) return;
 	const NifGeometry *g = (const NifGeometry*)b.data;
 	if(g->data < 0 || g->data >= f.numBlocks || f.blocks[g->data].data == nil) return;
 	const NifGeometryData *d = (const NifGeometryData*)f.blocks[g->data].data;
-	fn(f, bloc, *g, *d, NifCompose(parent, *g), ctx);
+	// Une forme directement sous Scene Root est elle-même le nœud du modèle
+	// (DormGxref82 : NiTriStrips portant sa position monde) : même règle.
+	fn(f, bloc, *g, *d, (espaceEntite && profondeur <= 1) ? parent : NifCompose(parent, *g), ctx);
 }
 
 void
-NifWalkShapes(const CNifFile &f, NifShapeFn fn, void *ctx)
+NifPlacementRotation(const float q[4], float r[3][3])
 {
-	Parcourir(f, 0, NifIdentity(), 0, fn, ctx);
+	float x = q[0], y = q[1], z = q[2], w = q[3];
+	float n = sqrtf(x*x + y*y + z*z + w*w); if(n > 1e-9f){ x /= n; y /= n; z /= n; w /= n; }
+	r[0][0] = 1 - 2*(y*y + z*z); r[0][1] = 2*(x*y + z*w);     r[0][2] = 2*(x*z - y*w);
+	r[1][0] = 2*(x*y - z*w);     r[1][1] = 1 - 2*(x*x + z*z); r[1][2] = 2*(y*z + x*w);
+	r[2][0] = 2*(x*z + y*w);     r[2][1] = 2*(y*z - x*w);     r[2][2] = 1 - 2*(x*x + y*y);
+}
+
+NifTransform
+NifFromPlacement(const CVector &pos, const CVector &scale, const float q[4])
+{
+	NifTransform p = NifIdentity();
+	NifPlacementRotation(q, p.r);
+	for(int i = 0; i < 3; i++){ p.r[i][0] *= scale.x; p.r[i][1] *= scale.y; p.r[i][2] *= scale.z; }
+	p.t = pos;
+	return p;
+}
+
+void
+NifWalkShapes(const CNifFile &f, NifShapeFn fn, void *ctx, bool espaceEntite)
+{
+	Parcourir(f, 0, NifIdentity(), 0, fn, ctx, espaceEntite);
 }

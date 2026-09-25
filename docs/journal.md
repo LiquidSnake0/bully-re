@@ -305,3 +305,28 @@ en échec plutôt que de les masquer.
   jetable est à la poubelle.
 - Prochaine étape : le rendu depuis les placements `Ipl$` (une scène, pas un
   modèle), puis la question du moteur temps réel.
+
+## 2026-09-25 — une scène entière, et le sens des placements
+
+- `outils/scene` : tous les modèles d'un `.ipb` placés et dessinés ensemble.
+  La salle de boxe (`iboxing`) sort comme un bâtiment complet, le dortoir
+  (`isc_dorm`) vu de dessus sans son toit montre chaque chambre meublée. Le
+  chargement partagé par les trois outils est dans `outils/commun.h`, la
+  scène dans `outils/scene.h`.
+- Deux pièges sur la route. Les grandes pièces d'intérieur sont modélisées en
+  coordonnées monde dans leur propre nœud, et étaient placées une seconde fois
+  : d'où la règle de l'**espace entité**, le nœud fille de « Scene Root » qui
+  porte le nom du modèle est ignoré, c'est l'entité qui le remplace. Vérifié :
+  dans cet espace, 3 155 boîtes sur 3 842 tombent **au même endroit** que la
+  collision, et `DormGxref82` (une forme directement sous la racine) suit la
+  même règle. Puis les volumes `nog_`/`walkable_`/`_nd` qui ne se dessinent
+  jamais et laissent des triangles à z ≈ −320.
+- Le sens du quaternion des placements a résisté une soirée : les deux
+  lectures donnent une scène cohérente, et compter les objets dans les murs
+  ne sépare rien (87,18 % contre 86,98 %). Ce sont les modèles qui ont parlé :
+  sur les nœuds de modèle restés tournés à la position de leur placement, 7
+  collent au **conjugué** à 10⁻⁶, 0 au quaternion brut. La conversion est
+  `NifFromPlacement`, le test `tests/test_placement`, l'histoire dans
+  `docs/ipl.md`.
+- Prochaine étape : le moteur temps réel, avec le rendu logiciel comme
+  référence de ce que chaque image doit contenir.
