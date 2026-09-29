@@ -1,5 +1,6 @@
 // Visite temps réel d'une scène du jeu, à la première personne.
-//   BULLY_DATA=<racine> build/outils/visite <fichier.ipb> [--pos x y z lacet tangage] [--image sortie.ppm] [--banc n]
+//   BULLY_DATA=<racine> build/outils/visite <fichier.ipb> [--pos x y z lacet tangage] [--marche]
+//                                          [--image sortie.ppm] [--banc n] [--promenade n]
 //
 // Le rendu est entièrement logiciel (src/render : Camera + RasterTrianglePersp),
 // dans une image de 400 × 240, la définition de l'écran du haut de la New
@@ -9,12 +10,20 @@
 //
 // Touches : ZQSD ou WASD pour marcher, Espace / C pour monter / descendre,
 // Maj pour aller vite, flèches ou souris (clic pour la capturer) pour
-// regarder, P pour une capture PPM, Échap pour quitter.
+// regarder, F pour passer du vol à la marche (et retour), P pour une capture
+// PPM, Échap pour quitter.
+//
+// En marche, la caméra a un corps : les volumes de collision du jeu (.col),
+// posés avec la même transformation que les modèles, la portent sur le sol,
+// lui font monter les marches et l'arrêtent devant les murs
+// (src/collision/Marche, vérifié par tests/test_marche).
 //
 // --image rend une seule image depuis la position de départ et quitte ;
 // --banc n rend n images en tournant sur place et donne le temps moyen. Les
 // deux marchent sans fenêtre, c'est ce qui permet de vérifier le rendu sans
-// écran.
+// écran. --promenade n marche n images droit devant (en mode marche) et
+// affiche le trajet : on vérifie sans écran qu'on tient au sol et qu'un mur
+// arrête.
 #include "commun.h"
 #include "scene.h"
 #include "../src/render/Camera.h"
@@ -96,10 +105,12 @@ int
 main(int argc, char **argv)
 {
 	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--image sortie.ppm] [--banc n]\n"); return 2; }
-	std::string ipb = argv[1], image; int banc = 0; bool pos = false; float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0;
+	std::string ipb = argv[1], image; int banc = 0, promenade = 0; bool pos = false, marche = false; float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0;
 	for(int i = 2; i < argc; i++){
 		if(strcmp(argv[i], "--image") == 0 && i + 1 < argc) image = argv[++i];
 		else if(strcmp(argv[i], "--banc") == 0 && i + 1 < argc) banc = atoi(argv[++i]);
+		else if(strcmp(argv[i], "--promenade") == 0 && i + 1 < argc){ promenade = atoi(argv[++i]); marche = true; }
+		else if(strcmp(argv[i], "--marche") == 0) marche = true;
 		else if(strcmp(argv[i], "--pos") == 0 && i + 5 < argc){ pos = true; px = (float)atof(argv[++i]); py = (float)atof(argv[++i]); pz = (float)atof(argv[++i]); lacet = (float)atof(argv[++i]); tangage = (float)atof(argv[++i]); }
 	}
 
@@ -110,6 +121,40 @@ main(int argc, char **argv)
 	Visite v; v.s = &s; v.Preparer();
 	Camera cam = Depart(s);
 	if(pos){ cam.pos = CVector(px, py, pz); cam.yaw = lacet * PI / 180; cam.pitch = tangage * PI / 180; }
+
+	// Collisions : chargées une fois pour tout le monde, posées pour cette scène.
+	std::map<std::string, CColModel*> cols;
+	outil::ChargerToutesCollisions(a, cols);
+	CMondeCollision monde; int poses, sans;
+	outil::PoserCollisions(a, s, cols, monde, &poses, &sans);
+	printf("  collisions : %zu modèles connus, %d posés dans la scène (%d sans volume), %zu triangles, %zu sphères\n",
+	       cols.size(), poses, sans, monde.tri.size() / 3, monde.sphCentre.size());
+	CMarcheur corps;
+	auto PoserCorps = [&](void){
+		corps.pos = CVector(cam.pos.x, cam.pos.y, cam.pos.z - corps.hauteurYeux);
+		float z; if(monde.Sol(corps.pos.x, corps.pos.y, cam.pos.z, 100.0f, &z)) corps.pos.z = z;
+		corps.vz = 0;
+	};
+	if(marche) PoserCorps();
+	auto Pas = [&](float avant, float droite, float dt){
+		float dx = cosf(cam.yaw) * avant + sinf(cam.yaw) * droite, dy = sinf(cam.yaw) * avant - cosf(cam.yaw) * droite;
+		corps.Avancer(monde, dx, dy, dt);
+		cam.pos = CVector(corps.pos.x, corps.pos.y, corps.pos.z + corps.hauteurYeux);
+	};
+
+	if(promenade > 0){
+		printf("  départ : pieds %.2f %.2f %.2f\n", corps.pos.x, corps.pos.y, corps.pos.z);
+		int arrets = 0; CVector avant = corps.pos;
+		for(int k = 1; k <= promenade; k++){
+			Pas(3.0f / 60, 0, 1.0f / 60);
+			float fait = hypotf(corps.pos.x - avant.x, corps.pos.y - avant.y);
+			if(fait < 0.3f * 3.0f / 60) arrets++;
+			avant = corps.pos;
+			if(k % 60 == 0) printf("  %4.1f s : pieds %.2f %.2f %.2f %s\n", k / 60.0f, corps.pos.x, corps.pos.y, corps.pos.z, corps.auSol ? "au sol" : "en l'air");
+		}
+		printf("  %d images sur %d presque immobiles (bloqué par un mur)\n", arrets, promenade);
+		if(image.empty()) return 0;         // la promenade est une vérification sans fenêtre
+	}
 
 	using horloge = std::chrono::steady_clock;
 	if(!image.empty() || banc > 0){
@@ -133,6 +178,7 @@ main(int argc, char **argv)
 	SDL_RenderSetLogicalSize(ren, 400, 240);
 	SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGB24, SDL_TEXTUREACCESS_STREAMING, 400, 240);
 	bool fini = false, souris = false; int captures = 0;
+	if(marche) SDL_SetWindowTitle(win, "bully-re : marche (F pour voler)");
 	auto avant = horloge::now(); double cumul = 0; int images = 0;
 	while(!fini){
 		SDL_Event e;
@@ -141,6 +187,7 @@ main(int argc, char **argv)
 			else if(e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE){ if(souris){ souris = false; SDL_SetRelativeMouseMode(SDL_FALSE); } else fini = true; }
 			else if(e.type == SDL_MOUSEBUTTONDOWN){ souris = true; SDL_SetRelativeMouseMode(SDL_TRUE); }
 			else if(e.type == SDL_MOUSEMOTION && souris){ cam.yaw -= e.motion.xrel * 0.003f; cam.pitch -= e.motion.yrel * 0.003f; }
+			else if(e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_F){ marche = !marche; if(marche) PoserCorps(); }
 			else if(e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_p){
 				char nom[64]; snprintf(nom, sizeof nom, "visite-%02d.ppm", captures++);
 				RasterWritePPM(v.img, nom); printf("capture : %s (pos %.2f %.2f %.2f, lacet %.1f, tangage %.1f)\n", nom, cam.pos.x, cam.pos.y, cam.pos.z, cam.yaw * 180 / PI, cam.pitch * 180 / PI);
@@ -151,9 +198,12 @@ main(int argc, char **argv)
 		const Uint8 *k = SDL_GetKeyboardState(nil);
 		float vit = (k[SDL_SCANCODE_LSHIFT] ? 12.0f : 3.0f) * dt;
 		// Positions des touches (scancodes) : ZQSD en AZERTY et WASD en QWERTY tombent au même endroit.
-		cam.Move((k[SDL_SCANCODE_W] ? vit : 0) - (k[SDL_SCANCODE_S] ? vit : 0),
-		         (k[SDL_SCANCODE_D] ? vit : 0) - (k[SDL_SCANCODE_A] ? vit : 0),
-		         (k[SDL_SCANCODE_SPACE] ? vit : 0) - (k[SDL_SCANCODE_C] ? vit : 0));
+		float av = (k[SDL_SCANCODE_W] ? vit : 0) - (k[SDL_SCANCODE_S] ? vit : 0), dr = (k[SDL_SCANCODE_D] ? vit : 0) - (k[SDL_SCANCODE_A] ? vit : 0);
+		if(marche){
+			if(k[SDL_SCANCODE_SPACE] && corps.auSol) corps.vz = 4.0f;       // un saut
+			Pas(av, dr, dt > 0.1f ? 0.1f : dt);
+		}else
+			cam.Move(av, dr, (k[SDL_SCANCODE_SPACE] ? vit : 0) - (k[SDL_SCANCODE_C] ? vit : 0));
 		float rot = 1.6f * dt;
 		cam.yaw += (k[SDL_SCANCODE_LEFT] ? rot : 0) - (k[SDL_SCANCODE_RIGHT] ? rot : 0);
 		cam.pitch += (k[SDL_SCANCODE_UP] ? rot : 0) - (k[SDL_SCANCODE_DOWN] ? rot : 0);
@@ -166,7 +216,7 @@ main(int argc, char **argv)
 		SDL_RenderClear(ren); SDL_RenderCopy(ren, tex, nil, nil); SDL_RenderPresent(ren);
 		if(images == 30){
 			char titre[160];
-			snprintf(titre, sizeof titre, "bully-re : %s — rendu %.1f ms, %d triangles — %.1f %.1f %.1f", ipb.c_str(), cumul / images, v.dessines, cam.pos.x, cam.pos.y, cam.pos.z);
+			snprintf(titre, sizeof titre, "bully-re : %s — %s — rendu %.1f ms, %d triangles — %.1f %.1f %.1f", ipb.c_str(), marche ? "marche" : "vol", cumul / images, v.dessines, cam.pos.x, cam.pos.y, cam.pos.z);
 			SDL_SetWindowTitle(win, titre); cumul = 0; images = 0;
 		}
 	}

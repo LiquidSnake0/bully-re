@@ -54,7 +54,8 @@ du jeu :
   première personne dans une zone, rendu logiciel en 400 × 240 (l'écran du
   haut de la New 3DS), perspective correcte, découpage au plan proche et
   modes de transparence du jeu ; SDL2 n'ouvre que la fenêtre
-  ([docs/rendu-temps-reel.md](docs/rendu-temps-reel.md)) ;
+  ([docs/rendu-temps-reel.md](docs/rendu-temps-reel.md)) ; F passe en marche,
+  sur les volumes de collision du jeu (sol, marches, murs) ;
 - la numérotation du streaming ([docs/streaming.md](docs/streaming.md)) et
   les pools ([docs/pools.md](docs/pools.md)) ;
 - la grille du monde, ses listes et ses dix pools d'entités

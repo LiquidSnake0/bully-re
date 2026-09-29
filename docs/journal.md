@@ -349,3 +349,11 @@ en échec plutôt que de les masquer.
   (`ChargerPlacements`), partagé par `scene` et `visite`.
 - Prochaine étape : marcher sur les collisions au lieu de voler, puis
   enchaîner les scènes voisines.
+- Suite, même jour : **la marche**. F passe du vol à la marche ; les
+  collisions du jeu (488 `.col`, 3 862 modèles) sont posées avec la
+  transformation des modèles, `src/collision/Marche` fait le sol, les marches
+  (45 cm), les murs et la gravité, `tests/test_marche` le vérifie sans fichier
+  du jeu. Dans la salle de boxe, le corps s'arrête au bord du ring à un rayon
+  près et reste au sol. Leçon : `NOGO_` est une zone interdite, un volume
+  fermé ; l'exclure faisait sortir de la zone jouable et tomber dans le vide.
+

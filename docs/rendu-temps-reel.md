@@ -57,8 +57,43 @@ Ce sont des chiffres de PC. Ils ne disent rien de l'ARM11 à 804 MHz de la New
   opaques, dans l'ordre des modèles) ;
 - pas de couleurs de sommets ni d'éclairage du jeu : une lumière directionnelle
   fixe, calculée une fois par triangle ;
-- pas de collision : la caméra traverse les murs ;
 - une seule scène à la fois, pas de streaming des secteurs.
 
-Prochaine étape naturelle : les collisions déjà lues (`src/collision`) pour
-marcher sur le sol au lieu de voler, puis charger les scènes voisines.
+## La marche : les collisions du jeu
+
+F passe du vol à la marche. En marche, la caméra a un corps (pieds, yeux à
+1,60 m, rayon 30 cm) qui marche dans les volumes de collision du jeu :
+
+- les 488 `.col` de `World.img` sont chargés une fois (3 862 modèles de
+  collision), puis ceux des placements de la scène sont posés avec **la même
+  transformation que les modèles visibles** : le modèle de collision vit dans
+  l'espace entité, comme la géométrie (`docs/ipl.md`) ;
+- `src/collision/Marche` : le sol est la plus haute surface sous les pieds
+  (triangles, boîtes converties en 12 triangles, sphères), trouvée depuis la
+  hauteur d'une marche (45 cm) ; les murs repoussent deux sphères placées le
+  long du corps, à l'horizontale seulement, pour qu'un mur ne soulève
+  jamais ; gravité et saut (Espace).
+- `tests/test_marche` le vérifie sans fichier du jeu : chute et appui, marche
+  de 30 cm montée, marche d'un mètre refusée, arrêt à un rayon du mur, rampe
+  suivie au millimètre.
+
+Ce que la salle de boxe a appris :
+
+- **les modèles jamais dessinés comptent pour la marche.** `WALKABLE_` porte
+  des sols ; `NOGO_` est une **zone interdite**, un volume fermé qu'on ne
+  traverse pas. Sans `NOGO_iboxingOP`, le corps sortait de la zone jouable et
+  tombait, parce qu'au-delà il n'y a plus aucun sol. Avec, il s'arrête au
+  bord : c'est la règle du jeu, pas un défaut.
+- `--promenade n` marche n images droit devant, sans fenêtre, et affiche le
+  trajet. Depuis (−727, 377) : vers le ring, arrêt à x = −717,21, soit
+  exactement le bord du ring (−716,91) moins le rayon du corps ; vers +y,
+  arrêt contre la limite de la zone ; pieds à z = 293,91 tout du long.
+
+Ce n'est pas la physique de `bully.exe` (`CWorld::ProcessLineOfSight`,
+`CCollision::ProcessColModels`), dont les dispositions ne sont pas encore
+retrouvées : c'est ce qu'il faut pour marcher, testable et transposable.
+Pas encore d'arbre de partition : chaque image teste tous les triangles de la
+scène, ce qui suffit à cette taille (moins de mille triangles de collision
+pour la salle de boxe).
+
+Prochaine étape : enchaîner les scènes voisines (le streaming des secteurs).

@@ -3,6 +3,9 @@
 #include "commun.h"
 #include "../src/gamebryo/NifTransform.h"
 #include "../src/core/IplFile.h"
+#include "../src/collision/ColModel.h"
+#include "../src/collision/Marche.h"
+#include <strings.h>
 #include <cmath>
 
 namespace outil {
@@ -15,6 +18,7 @@ struct Scene {
 	std::vector<uint8> triMode, triSeuil;                // par triangle : eRasterMode et seuil du test alpha
 	std::vector<std::string> texNoms; std::vector<const RasterTexture*> texPtr;
 	int modeles = 0, manquants = 0;
+	std::vector<CIplInst> placements;                    // gardés pour poser les collisions
 
 	~Scene(){ for(auto &d : dicos) delete d.second; }
 
@@ -117,7 +121,7 @@ inline int32 GarderInst(const CIplInst &e){ g_inst->push_back(e); return 0; }
 inline bool ChargerPlacements(Archives &a, const std::string &ipb, Scene &s){
 	uint32 nb; uint8 *buf = LireMonde(a, ipb, &nb);
 	if(buf == nil){ fprintf(stderr, "%s absent de World.img\n", ipb.c_str()); return false; }
-	std::vector<CIplInst> inst; g_inst = &inst;
+	std::vector<CIplInst> &inst = s.placements; inst.clear(); g_inst = &inst;
 	CIplFile::ms_instHandler = GarderInst;
 	CIplFile::Load(buf, nb);
 	free(buf);
@@ -132,6 +136,61 @@ inline bool ChargerPlacements(Archives &a, const std::string &ipb, Scene &s){
 	printf("  %d modèles placés (%d introuvables, %d jamais dessinés ignorés), %zu triangles, %zu textures, %zu modèles distincts\n",
 	       s.modeles, s.manquants, ignores, s.tri.size() / 3, s.texNoms.size(), compte.size());
 	return !s.tri.empty();
+}
+
+// Toutes les collisions de World.img (488 fichiers .col), par nom de modèle
+// en minuscules. Le modèle de collision est dans l'espace entité, comme la
+// géométrie (docs/ipl.md) : la même transformation de placement les pose.
+inline std::map<std::string, CColModel*> *g_cols = nil;
+inline void GarderCol(int32 id, const char *nom, CColModel *m, uint8){
+	std::string k = nom && nom[0] ? Minuscules(nom) : "";
+	if(k.empty()){ auto it = g_arch->modeleDe.find(id); if(it != g_arch->modeleDe.end()) k = Minuscules(it->second.c_str()); }
+	if(k.empty() || g_cols->count(k)){ m->RemoveCollisionVolumes(); free(m); return; }
+	(*g_cols)[k] = m;
+}
+inline void ChargerToutesCollisions(Archives &a, std::map<std::string, CColModel*> &cols){
+	g_arch = &a; g_cols = &cols;
+	CColLoader::ms_handler = GarderCol;
+	const CdImage &img = CdStream::ms_images[a.monde];
+	for(int32 k = 0; k < img.m_numEntries; k++){
+		const CDirectoryEntry *d = &img.m_entries[k]; size_t L = strlen(d->name);
+		if(L < 4 || strcasecmp(d->name + L - 4, ".col") != 0) continue;
+		uint32 n; uint8 *b = LireEntree(a.monde, "Stream\\World.img", d->name, &n);
+		if(b){ CColLoader::LoadCollisionFile(b, n, 0); free(b); }
+	}
+}
+
+// Pose dans `m` les collisions de tous les placements de la scène, y compris
+// les modèles jamais dessinés. « WALKABLE_ » porte des sols. « NOGO_ » est
+// une zone interdite : un volume fermé qu'on ne traverse pas. Mesuré sur
+// iboxing : sans NOGO_iboxingOP, le corps sort de la zone jouable et tombe,
+// parce qu'au-delà il n'y a plus aucun sol ; avec, il est arrêté au bord.
+inline void PoserCollisions(Archives &a, const Scene &s, const std::map<std::string, CColModel*> &cols, CMondeCollision &m, int *poses, int *sans){
+	*poses = 0; *sans = 0;
+	for(const CIplInst &e : s.placements){
+		std::string modele = e.name;
+		if(modele.empty()){ auto it = a.modeleDe.find(e.modelId); if(it == a.modeleDe.end()) continue; modele = it->second; }
+		std::string k = Minuscules(modele.c_str());
+		auto it = cols.find(k);
+		if(it == cols.end() || it->second->pColData == nil){ (*sans)++; continue; }
+		const CCollisionData &c = *it->second->pColData;
+		NifTransform t = NifFromPlacement(e.pos, e.scale, e.rot);
+		for(int32 i = 0; i < c.numTriangles; i++){
+			const CColTriangle &tr = c.triangles[i];
+			m.AjouterTriangle(NifApply(t, c.vertices[tr.a].Get()), NifApply(t, c.vertices[tr.b].Get()), NifApply(t, c.vertices[tr.c].Get()));
+		}
+		for(int32 i = 0; i < c.numBoxes; i++){
+			const CColBox &bx = c.boxes[i]; CVector k8[8];
+			for(int j = 0; j < 8; j++) k8[j] = NifApply(t, CVector(j & 1 ? bx.max.x : bx.min.x, j & 2 ? bx.max.y : bx.min.y, j & 4 ? bx.max.z : bx.min.z));
+			m.AjouterBoite(k8);
+		}
+		for(int32 i = 0; i < c.numSpheres; i++){
+			// une échelle non uniforme déformerait la sphère : on garde la plus grande
+			float sc = fmaxf(fmaxf(fabsf(e.scale.x), fabsf(e.scale.y)), fabsf(e.scale.z)); if(sc <= 0) sc = 1;
+			m.AjouterSphere(NifApply(t, c.spheres[i].center), c.spheres[i].radius * sc);
+		}
+		(*poses)++;
+	}
 }
 
 } // namespace outil

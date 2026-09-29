@@ -106,7 +106,8 @@ placement files (`docs/ipl.md`). `outils/visite` walks through a zone in
 real time, first person, still fully software-rendered at 400 × 240 (the New
 3DS top screen) with perspective-correct texturing, near-plane clipping and
 the game's own alpha modes; SDL2 only opens the window
-(`docs/rendu-temps-reel.md`). Collision-based walking is next.
+(`docs/rendu-temps-reel.md`). Press F to walk instead of fly: the game's own
+collision volumes carry you on the floor, up steps and against walls.
 
 See [docs/journal.md](docs/journal.md) for the running log (in French).
 
