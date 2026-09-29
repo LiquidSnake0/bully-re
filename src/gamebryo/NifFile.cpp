@@ -42,6 +42,7 @@ CNifFile::KindOf(const char *t)
 	if(strcmp(t, "NiIntegerExtraData") == 0) return NIF_INTEGEREXTRADATA;
 	if(strcmp(t, "NiMaterialProperty") == 0) return NIF_MATERIALPROPERTY;
 	if(strcmp(t, "NiTexturingProperty") == 0) return NIF_TEXTURINGPROPERTY;
+	if(strcmp(t, "NiAlphaProperty") == 0) return NIF_ALPHAPROPERTY;
 	return NIF_INCONNU;
 }
 
@@ -256,6 +257,21 @@ LireMaterial(NifReader &r)
 	return m;
 }
 
+// NiAlphaProperty en 20.3.0.9 : NiObjectNET (nom, données annexes,
+// contrôleur) puis drapeaux u16 et seuil u8. La taille du bloc le confirme :
+// 15 octets sans donnée annexe.
+static void *
+LireAlpha(NifReader &r)
+{
+	NifAlphaProperty *a = (NifAlphaProperty*)calloc(1, sizeof(NifAlphaProperty));
+	a->name = r.I32();
+	int32 ne = r.I32(); free(r.Refs(ne));
+	r.I32();
+	a->flags = r.U16();
+	a->threshold = r.U8();
+	return a;
+}
+
 // NiTexturingProperty en 20.3.0.9 : drapeaux u16, nombre d'emplacements
 // u32, puis pour chaque emplacement un booléen « présent » suivi d'un
 // TexDesc { source i32, drapeaux u16 (jeu d'UV dans les bits bas, filtrage,
@@ -346,6 +362,7 @@ CNifFile::Load(const uint8 *data, uint32 size)
 		case NIF_INTEGEREXTRADATA: b.data = LireExtraData(br); break;
 		case NIF_MATERIALPROPERTY: b.data = LireMaterial(br); break;
 		case NIF_TEXTURINGPROPERTY: b.data = LireTexturing(br); break;
+		case NIF_ALPHAPROPERTY: b.data = LireAlpha(br); break;
 		default: break;
 		}
 		if(b.kind != NIF_INCONNU){

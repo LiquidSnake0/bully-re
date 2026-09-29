@@ -123,4 +123,19 @@ inline std::string TextureDeBase(const CNifFile &f, const NifAVObject &o){
 	return "";
 }
 
+// Mode de rendu d'une forme d'après sa NiAlphaProperty (voir NifFile.h pour
+// les drapeaux). Mélange avec destination ONE = ajout de lumière ; autre
+// mélange = transparence par l'alpha ; sinon test alpha s'il est actif.
+inline void ModeAlpha(const CNifFile &f, const NifAVObject &o, uint8 *mode, uint8 *seuil){
+	for(int32 i = 0; i < o.numProperties; i++){
+		int32 b = o.properties[i];
+		if(b < 0 || b >= f.numBlocks || f.blocks[b].kind != NIF_ALPHAPROPERTY || !f.blocks[b].data) continue;
+		const NifAlphaProperty *a = (const NifAlphaProperty*)f.blocks[b].data;
+		uint32 dst = (a->flags >> 5) & 15;
+		if(a->flags & 1) *mode = dst == 0 ? RASTER_AJOUT : RASTER_MELANGE;
+		else if(a->flags & 0x200){ *mode = RASTER_TEST; *seuil = a->threshold ? a->threshold : 128; }
+		return;
+	}
+}
+
 } // namespace outil

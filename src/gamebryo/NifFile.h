@@ -16,7 +16,7 @@
 
 enum eNifBlock {
 	NIF_INCONNU = 0, NIF_NODE, NIF_TRISHAPE, NIF_TRISTRIPS, NIF_TRISHAPEDATA, NIF_TRISTRIPSDATA,
-	NIF_SOURCETEXTURE, NIF_MATERIALPROPERTY, NIF_TEXTURINGPROPERTY,
+	NIF_SOURCETEXTURE, NIF_MATERIALPROPERTY, NIF_TEXTURINGPROPERTY, NIF_ALPHAPROPERTY,
 	// blocs des fichiers .nft (textures), voir docs/nft.md
 	NIF_PIXELDATA, NIF_PALETTE, NIF_STRINGEXTRADATA, NIF_INTEGEREXTRADATA
 };
@@ -134,6 +134,17 @@ struct NifMaterialProperty {
 	int32 name;
 	float ambient[3], diffuse[3], specular[3], emissive[3];
 	float glossiness, alpha;
+};
+
+// NiAlphaProperty : transparence d'une forme. `flags` suit Gamebryo : bit 0
+// mélange actif, bits 1-4 facteur source, bits 5-8 facteur destination
+// (0 ONE, 1 ZERO, 2 SRCCOLOR, 3 INVSRCCOLOR, 4 DESTCOLOR, 5 INVDESTCOLOR,
+// 6 SRCALPHA, 7 INVSRCALPHA…), bit 9 test alpha actif, bits 10-12 fonction
+// du test. `threshold` est le seuil du test (0-255).
+struct NifAlphaProperty {
+	int32 name;
+	uint16 flags;
+	uint8 threshold;
 };
 
 struct NifTexturingProperty {

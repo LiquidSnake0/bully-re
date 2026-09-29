@@ -2,6 +2,7 @@
 #pragma once
 #include "commun.h"
 #include "../src/gamebryo/NifTransform.h"
+#include "../src/core/IplFile.h"
 #include <cmath>
 
 namespace outil {
@@ -11,6 +12,7 @@ struct Scene {
 	std::map<std::string, Dictionnaire*> dicos;          // txd → textures décodées
 	std::vector<CVector> pts; std::vector<float> uv;
 	std::vector<int32> tri, triTex;                      // par triangle : index dans texNoms, -1
+	std::vector<uint8> triMode, triSeuil;                // par triangle : eRasterMode et seuil du test alpha
 	std::vector<std::string> texNoms; std::vector<const RasterTexture*> texPtr;
 	int modeles = 0, manquants = 0;
 
@@ -36,6 +38,8 @@ struct Scene {
 		if(!d.vertices || !d.triangles) return;
 		bool avecUv = d.uv && d.numUVSets > 0;
 		int32 tex = avecUv ? s.IndexTexture(c.d, TextureDeBase(f, g)) : -1;
+		uint8 mode = RASTER_OPAQUE, seuil = 128;
+		ModeAlpha(f, g, &mode, &seuil);
 		int32 base = (int32)s.pts.size();
 		for(int i = 0; i < d.numVertices; i++){
 			s.pts.push_back(NifApply(c.place, NifApply(t, d.vertices[i])));
@@ -43,7 +47,7 @@ struct Scene {
 		}
 		for(int i = 0; i < d.numTriangles; i++){
 			s.tri.push_back(base + d.triangles[i][0]); s.tri.push_back(base + d.triangles[i][1]); s.tri.push_back(base + d.triangles[i][2]);
-			s.triTex.push_back(tex);
+			s.triTex.push_back(tex); s.triMode.push_back(mode); s.triSeuil.push_back(seuil);
 		}
 	}
 	// Ajoute un modèle placé par `place` (transformation du modèle vers le monde).
@@ -95,5 +99,39 @@ struct Scene {
 		return ok;
 	}
 };
+
+
+// Modèles que le jeu ne dessine jamais : aides à la navigation (le binaire
+// pose le drapeau 0x1000000 sur nog_ / walkable_, docs/idb.md) et maillages
+// « no draw » (_ND). Leurs sommets sont souvent des triangles fantômes posés
+// loin sous la scène.
+inline bool JamaisDessine(const std::string &nom){
+	std::string n = Minuscules(nom.c_str());
+	if(n.compare(0, 4, "nog_") == 0 || n.compare(0, 5, "nogo_") == 0 || n.compare(0, 9, "walkable_") == 0) return true;
+	return n.find("_nd_") != std::string::npos || (n.size() > 3 && n.compare(n.size() - 3, 3, "_nd") == 0);
+}
+inline std::vector<CIplInst> *g_inst = nil;
+inline int32 GarderInst(const CIplInst &e){ g_inst->push_back(e); return 0; }
+
+// Place dans `s` tous les modèles d'un fichier de placements « Ipl$ » (.ipb).
+inline bool ChargerPlacements(Archives &a, const std::string &ipb, Scene &s){
+	uint32 nb; uint8 *buf = LireMonde(a, ipb, &nb);
+	if(buf == nil){ fprintf(stderr, "%s absent de World.img\n", ipb.c_str()); return false; }
+	std::vector<CIplInst> inst; g_inst = &inst;
+	CIplFile::ms_instHandler = GarderInst;
+	CIplFile::Load(buf, nb);
+	free(buf);
+	printf("%s : %zu placements\n", ipb.c_str(), inst.size());
+	std::map<std::string, int> compte; int ignores = 0;
+	for(const CIplInst &e : inst){
+		std::string modele = e.name;
+		if(modele.empty()){ auto it = a.modeleDe.find(e.modelId); if(it == a.modeleDe.end()) continue; modele = it->second; }
+		if(JamaisDessine(modele)){ ignores++; continue; }
+		if(s.AjouterModele(a, modele, NifFromPlacement(e.pos, e.scale, e.rot))) compte[modele]++;
+	}
+	printf("  %d modèles placés (%d introuvables, %d jamais dessinés ignorés), %zu triangles, %zu textures, %zu modèles distincts\n",
+	       s.modeles, s.manquants, ignores, s.tri.size() / 3, s.texNoms.size(), compte.size());
+	return !s.tri.empty();
+}
 
 } // namespace outil

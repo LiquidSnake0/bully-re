@@ -50,6 +50,11 @@ du jeu :
 - une scène entière depuis les placements `Ipl$` : `outils/scene` rend une
   zone du jeu (bâtiment, dortoir) avec le sens du quaternion établi par les
   modèles eux-mêmes ([docs/ipl.md](docs/ipl.md)) ;
+- une première visite en temps réel : `outils/visite` promène une caméra à la
+  première personne dans une zone, rendu logiciel en 400 × 240 (l'écran du
+  haut de la New 3DS), perspective correcte, découpage au plan proche et
+  modes de transparence du jeu ; SDL2 n'ouvre que la fenêtre
+  ([docs/rendu-temps-reel.md](docs/rendu-temps-reel.md)) ;
 - la numérotation du streaming ([docs/streaming.md](docs/streaming.md)) et
   les pools ([docs/pools.md](docs/pools.md)) ;
 - la grille du monde, ses listes et ses dix pools d'entités

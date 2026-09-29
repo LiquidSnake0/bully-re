@@ -330,3 +330,22 @@ en échec plutôt que de les masquer.
   `docs/ipl.md`.
 - Prochaine étape : le moteur temps réel, avec le rendu logiciel comme
   référence de ce que chaque image doit contenir.
+
+## 2026-09-29 — première visite en temps réel
+
+- `outils/visite` : on marche dans la salle de boxe et dans le dortoir en
+  temps réel, caméra à la première personne. Rendu entièrement logiciel en
+  400 × 240 (l'écran du haut de la New 3DS), 3,7 à 4,5 ms par image sur PC ;
+  SDL2 seulement pour la fenêtre. Voir `docs/rendu-temps-reel.md`.
+- `src/render/Camera` (repère, projection, découpage au plan proche) et
+  `RasterTrianglePersp` (perspective correcte en u/w, fonctions d'arête pas
+  à pas). `tests/test_camera` ne lit aucun fichier du jeu et vérifie la
+  projection, le découpage et la perspective : la moitié d'une texture sur un
+  sol incliné tombe à y = 16, pas 32.
+- `NiAlphaProperty` décodée : 2 305 blocs à l'octet près, 365 390 blocs
+  connus au lieu de 363 085. Quatre modes de rendu ; les halos de lumière de
+  la salle de boxe, qui sortaient en carrés noirs, sont des ajouts.
+- Le chargement d'une scène `.ipb` est passé dans `outils/scene.h`
+  (`ChargerPlacements`), partagé par `scene` et `visite`.
+- Prochaine étape : marcher sur les collisions au lieu de voler, puis
+  enchaîner les scènes voisines.
