@@ -17,6 +17,7 @@
 enum eNifBlock {
 	NIF_INCONNU = 0, NIF_NODE, NIF_TRISHAPE, NIF_TRISTRIPS, NIF_TRISHAPEDATA, NIF_TRISTRIPSDATA,
 	NIF_SOURCETEXTURE, NIF_MATERIALPROPERTY, NIF_TEXTURINGPROPERTY, NIF_ALPHAPROPERTY, NIF_STENCILPROPERTY,
+	NIF_SKININSTANCE, NIF_SKINDATA, NIF_SKINPARTITION,
 	// blocs des fichiers .nft (textures), voir docs/nft.md
 	NIF_PIXELDATA, NIF_PALETTE, NIF_STRINGEXTRADATA, NIF_INTEGEREXTRADATA
 };
@@ -157,6 +158,38 @@ struct NifStencilProperty {
 	uint16 flags;
 	uint32 ref, mask;
 	int32 Faces(void) const { return (flags >> 10) & 3; }
+};
+
+// La peau d'une forme animée (docs/nif.md, « Le squelette »).
+// NiSkinInstance : quelles données, quel découpage, quelle racine, quels os
+// (des nœuds NiNode du même fichier).
+struct NifSkinInstance {
+	int32 data, partition, skeletonRoot;
+	int32 numBones; int32 *bones;
+};
+// Un os de NiSkinData : la transformation de l'espace de la peau vers celui
+// de l'os dans la pose de liaison, une sphère englobante, et ses poids.
+struct NifSkinBone {
+	NifMatrix33 rotation; CVector translation; float scale;
+	CVector sphereCentre; float sphereRadius;
+	uint16 numVertices; uint16 *indices; float *weights;
+};
+struct NifSkinData {
+	NifMatrix33 rotation; CVector translation; float scale;   // transformation d'ensemble
+	int32 numBones; uint8 hasWeights;
+	NifSkinBone *bones;
+};
+// NiSkinPartition : la peau découpée en lots d'au plus quelques os, avec pour
+// chaque sommet du lot ses poids et l'index local de ses os.
+struct NifSkinPart {
+	uint16 numVertices, numTriangles, numBones, numStrips, numWeights;
+	uint16 *bones;                  // index dans la liste d'os de l'instance
+	uint16 *vertexMap;              // sommet du lot → sommet de la forme
+	float *weights;                 // numVertices × numWeights
+	uint8 *boneIndices;             // numVertices × numWeights, index dans `bones`
+};
+struct NifSkinPartition {
+	uint32 numPartitions; NifSkinPart *parts;
 };
 
 struct NifTexturingProperty {

@@ -44,6 +44,9 @@ CNifFile::KindOf(const char *t)
 	if(strcmp(t, "NiTexturingProperty") == 0) return NIF_TEXTURINGPROPERTY;
 	if(strcmp(t, "NiAlphaProperty") == 0) return NIF_ALPHAPROPERTY;
 	if(strcmp(t, "NiStencilProperty") == 0) return NIF_STENCILPROPERTY;
+	if(strcmp(t, "NiSkinInstance") == 0) return NIF_SKININSTANCE;
+	if(strcmp(t, "NiSkinData") == 0) return NIF_SKINDATA;
+	if(strcmp(t, "NiSkinPartition") == 0) return NIF_SKINPARTITION;
 	return NIF_INCONNU;
 }
 
@@ -287,6 +290,83 @@ LireStencil(NifReader &r)
 	return s;
 }
 
+// NiSkinInstance en 20.3.0.9 : données i32, découpage i32, racine du
+// squelette i32, nombre d'os u32 puis les os (références de nœuds).
+static void *
+LireSkinInstance(NifReader &r)
+{
+	NifSkinInstance *s = (NifSkinInstance*)calloc(1, sizeof(NifSkinInstance));
+	s->data = r.I32(); s->partition = r.I32(); s->skeletonRoot = r.I32();
+	s->numBones = r.I32(); s->bones = r.Refs(s->numBones);
+	return s;
+}
+
+// Transformation de NiSkinData : matrice 3 × 3 (9 f, par lignes comme
+// NiAVObject), translation 3f, échelle f.
+static void
+LireSkinTransform(NifReader &r, NifMatrix33 &m, CVector &t, float &s)
+{
+	for(int i = 0; i < 3; i++) for(int j = 0; j < 3; j++) m.m[i][j] = r.F32();
+	t = r.Vec(); s = r.F32();
+}
+
+// NiSkinData en 20.3.0.9 : transformation d'ensemble, nombre d'os u32, a des
+// poids u8, puis par os : transformation, sphère (centre 3f, rayon f), nombre
+// de sommets u16 et, si les poids sont là, (index u16, poids f) par sommet.
+static void *
+LireSkinData(NifReader &r)
+{
+	NifSkinData *s = (NifSkinData*)calloc(1, sizeof(NifSkinData));
+	LireSkinTransform(r, s->rotation, s->translation, s->scale);
+	s->numBones = r.I32();
+	s->hasWeights = r.U8();
+	if(s->numBones < 0 || s->numBones > 1000){ r.ok = false; return s; }
+	s->bones = (NifSkinBone*)calloc(s->numBones ? s->numBones : 1, sizeof(NifSkinBone));
+	for(int32 b = 0; b < s->numBones && r.ok; b++){
+		NifSkinBone &o = s->bones[b];
+		LireSkinTransform(r, o.rotation, o.translation, o.scale);
+		o.sphereCentre = r.Vec(); o.sphereRadius = r.F32();
+		o.numVertices = r.U16();
+		if(s->hasWeights){
+			o.indices = (uint16*)malloc(o.numVertices * sizeof(uint16) + 2);
+			o.weights = (float*)malloc(o.numVertices * sizeof(float) + 4);
+			for(int32 i = 0; i < o.numVertices && r.ok; i++){ o.indices[i] = r.U16(); o.weights[i] = r.F32(); }
+		}
+	}
+	return s;
+}
+
+// NiSkinPartition en 20.3.0.9 : nombre de lots u32, puis par lot : sommets,
+// triangles, os, bandes, poids par sommet (u16 chacun), os u16 × n, a une
+// table de sommets u8 (+ u16 × sommets), a des poids u8 (+ f × sommets ×
+// poids), longueurs des bandes u16 × bandes, a des faces u8 (+ triangles
+// u16 × 3, ou les bandes u16), a des index d'os u8 (+ u8 × sommets × poids).
+static void *
+LireSkinPartition(NifReader &r)
+{
+	NifSkinPartition *s = (NifSkinPartition*)calloc(1, sizeof(NifSkinPartition));
+	s->numPartitions = r.U32();
+	if(s->numPartitions > 1000){ r.ok = false; return s; }
+	s->parts = (NifSkinPart*)calloc(s->numPartitions ? s->numPartitions : 1, sizeof(NifSkinPart));
+	for(uint32 k = 0; k < s->numPartitions && r.ok; k++){
+		NifSkinPart &p = s->parts[k];
+		p.numVertices = r.U16(); p.numTriangles = r.U16(); p.numBones = r.U16(); p.numStrips = r.U16(); p.numWeights = r.U16();
+		p.bones = (uint16*)malloc(p.numBones * sizeof(uint16) + 2);
+		for(int32 i = 0; i < p.numBones && r.ok; i++) p.bones[i] = r.U16();
+		if(r.U8()){ p.vertexMap = (uint16*)malloc(p.numVertices * sizeof(uint16) + 2); for(int32 i = 0; i < p.numVertices && r.ok; i++) p.vertexMap[i] = r.U16(); }
+		int32 nw = p.numVertices * p.numWeights;
+		if(r.U8()){ p.weights = (float*)malloc(nw * sizeof(float) + 4); for(int32 i = 0; i < nw && r.ok; i++) p.weights[i] = r.F32(); }
+		int32 total = 0;
+		for(int32 i = 0; i < p.numStrips && r.ok; i++) total += r.U16();
+		if(r.U8()){
+			int32 n = p.numStrips ? total : p.numTriangles * 3;
+			if(r.Need(n * 2)) r.p += n * 2;          // les faces du lot : celles de la forme suffisent
+		}
+		if(r.U8()){ p.boneIndices = (uint8*)malloc(nw + 1); for(int32 i = 0; i < nw && r.ok; i++) p.boneIndices[i] = r.U8(); }
+	}
+	return s;
+}
+
 // NiTexturingProperty en 20.3.0.9 : drapeaux u16, nombre d'emplacements
 // u32, puis pour chaque emplacement un booléen « présent » suivi d'un
 // TexDesc { source i32, drapeaux u16 (jeu d'UV dans les bits bas, filtrage,
@@ -379,6 +459,9 @@ CNifFile::Load(const uint8 *data, uint32 size)
 		case NIF_TEXTURINGPROPERTY: b.data = LireTexturing(br); break;
 		case NIF_ALPHAPROPERTY: b.data = LireAlpha(br); break;
 		case NIF_STENCILPROPERTY: b.data = LireStencil(br); break;
+		case NIF_SKININSTANCE: b.data = LireSkinInstance(br); break;
+		case NIF_SKINDATA: b.data = LireSkinData(br); break;
+		case NIF_SKINPARTITION: b.data = LireSkinPartition(br); break;
 		default: break;
 		}
 		if(b.kind != NIF_INCONNU){
@@ -401,6 +484,9 @@ CNifFile::Free(void)
 		case NIF_NODE: { NifNode *n = (NifNode*)b.data; free(n->extra); free(n->properties); free(n->children); free(n->effects); break; }
 		case NIF_TRISHAPE: case NIF_TRISTRIPS: { NifGeometry *g = (NifGeometry*)b.data; free(g->extra); free(g->properties); break; }
 		case NIF_TRISHAPEDATA: case NIF_TRISTRIPSDATA: { NifGeometryData *d = (NifGeometryData*)b.data; free(d->vertices); free(d->normals); free(d->colors); free(d->uv); free(d->triangles); break; }
+		case NIF_SKININSTANCE: free(((NifSkinInstance*)b.data)->bones); break;
+		case NIF_SKINDATA: { NifSkinData *s = (NifSkinData*)b.data; for(int32 k = 0; s->bones && k < s->numBones; k++){ free(s->bones[k].indices); free(s->bones[k].weights); } free(s->bones); break; }
+		case NIF_SKINPARTITION: { NifSkinPartition *s = (NifSkinPartition*)b.data; for(uint32 k = 0; s->parts && k < s->numPartitions; k++){ NifSkinPart &p = s->parts[k]; free(p.bones); free(p.vertexMap); free(p.weights); free(p.boneIndices); } free(s->parts); break; }
 		// Les pixels et les entrées de palette pointent dans le tampon source, rien à libérer.
 		case NIF_PIXELDATA: free(((NifPixelData*)b.data)->mipmaps); break;
 		default: break;

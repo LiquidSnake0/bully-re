@@ -2,6 +2,7 @@
 #pragma once
 #include "commun.h"
 #include "../src/gamebryo/NifTransform.h"
+#include "../src/gamebryo/NifSkin.h"
 #include "../src/core/IplFile.h"
 #include "../src/collision/ColModel.h"
 #include "../src/collision/Marche.h"
@@ -9,6 +10,30 @@
 #include <cmath>
 
 namespace outil {
+
+// Une pose de démonstration, pas une animation du jeu : les bras le long du
+// corps au lieu de la pose de repos, bras écartés. Le haut du bras tourne
+// autour de son axe y local (vers le bas : + à gauche, − à droite, relevé
+// sur cinq piétons), de l'angle qui amène la main 5 cm à l'extérieur de
+// l'épaule : il dépend de la carrure (36° pour Jimmy, 51° pour Kirby).
+inline void PoseBrasBaisses(const CNifFile &f, NifMatrix33 *pose){
+	std::vector<NifTransform> m(f.numBlocks);
+	for(int cote = 0; cote < 2; cote++){
+		int32 ua = NifFindNode(f, cote ? "Root R UpperArm" : "Root L UpperArm");
+		int32 main_ = NifFindNode(f, cote ? "Root R Hand" : "Root L Hand");
+		if(ua < 0 || main_ < 0) continue;
+		float sens = cote ? -1.0f : 1.0f, meilleur = 0, ecart = 1e9f;
+		for(int k = 0; k <= 90; k++){
+			float a = sens * k * 3.14159265f / 180;
+			pose[ua] = NifAxisRotation(1, a);
+			NifWorldTransforms(f, m.data(), pose);
+			float dehors = (m[main_].t.x - m[ua].t.x) * sens;         // vers l'extérieur du corps
+			float e = fabsf(dehors - 0.05f) + (m[main_].t.z > m[ua].t.z ? 10 : 0);
+			if(e < ecart){ ecart = e; meilleur = a; }
+		}
+		pose[ua] = NifAxisRotation(1, meilleur);
+	}
+}
 
 struct Scene {
 	Archives *arch = nil;
@@ -45,8 +70,8 @@ struct Scene {
 		for(size_t k = 0; k < texNoms.size(); k++) if(texNoms[k] == cle) return (int32)k;
 		texNoms.push_back(cle); texPtr.push_back(&t->second.rt); return (int32)texNoms.size() - 1;
 	}
-	struct Ctx { Scene *s; Dictionnaire *d, *secours; NifTransform place; };
-	static void Forme(const CNifFile &f, int32, const NifGeometry &g, const NifGeometryData &d, const NifTransform &t, void *ctx){
+	struct Ctx { Scene *s; Dictionnaire *d, *secours; NifTransform place; const NifTransform *mondes; };
+	static void Forme(const CNifFile &f, int32 bloc, const NifGeometry &g, const NifGeometryData &d, const NifTransform &t, void *ctx){
 		Ctx &c = *(Ctx*)ctx; Scene &s = *c.s;
 		if(!d.vertices || !d.triangles) return;
 		bool avecUv = d.uv && d.numUVSets > 0;
@@ -61,8 +86,11 @@ struct Scene {
 		ModeAlpha(f, g, &mode, &seuil);
 		uint8 deux = DeuxFaces(f, g) ? 1 : 0;
 		int32 base = (int32)s.pts.size();
+		// Une forme à peau se déforme par ses os (src/gamebryo/NifSkin).
+		std::vector<CVector> peau;
+		if(c.mondes && g.skin >= 0){ peau.resize(d.numVertices); if(!NifSkinVertices(f, bloc, c.mondes, peau.data())) peau.clear(); }
 		for(int i = 0; i < d.numVertices; i++){
-			s.pts.push_back(NifApply(c.place, NifApply(t, d.vertices[i])));
+			s.pts.push_back(NifApply(c.place, peau.empty() ? NifApply(t, d.vertices[i]) : peau[i]));
 			s.uv.push_back(avecUv ? d.uv[i][0] : 0); s.uv.push_back(avecUv ? d.uv[i][1] : 0);
 		}
 		for(int i = 0; i < d.numTriangles; i++){
@@ -71,7 +99,8 @@ struct Scene {
 		}
 	}
 	// Ajoute un modèle placé par `place` (transformation du modèle vers le monde).
-	bool AjouterModele(Archives &a, const std::string &modele, const NifTransform &place){
+	// `brasBaisses` : les formes à peau prennent la pose de PoseBrasBaisses.
+	bool AjouterModele(Archives &a, const std::string &modele, const NifTransform &place, bool brasBaisses = false){
 		arch = &a;
 		uint32 nb; uint8 *buf = LireMonde(a, modele + ".nif", &nb);
 		if(buf == nil){ manquants++; return false; }
@@ -79,7 +108,19 @@ struct Scene {
 		if(!nif.Load(buf, nb)){ free(buf); manquants++; return false; }
 		size_t avant = tri.size(), ptAvant = pts.size();
 		std::string txd = TxdDe(a, modele);
-		Ctx c{this, Dico(txd), Minuscules(txd.c_str()) != Minuscules(modele.c_str()) ? Dico(modele) : nil, place};
+		// Le squelette, s'il y en a un : les nœuds dans leur pose du fichier (ou
+		// la pose demandée), pour déformer les formes à peau.
+		std::vector<NifTransform> mondes;
+		bool peau = false;
+		for(int32 i = 0; i < nif.numBlocks; i++)
+			if((nif.blocks[i].kind == NIF_TRISHAPE || nif.blocks[i].kind == NIF_TRISTRIPS) && nif.blocks[i].data && ((const NifGeometry*)nif.blocks[i].data)->skin >= 0) peau = true;
+		if(peau){
+			std::vector<NifMatrix33> pose(nif.numBlocks, NifAxisRotation(0, 0));
+			if(brasBaisses) PoseBrasBaisses(nif, pose.data());
+			mondes.resize(nif.numBlocks);
+			NifWorldTransforms(nif, mondes.data(), pose.data());
+		}
+		Ctx c{this, Dico(txd), Minuscules(txd.c_str()) != Minuscules(modele.c_str()) ? Dico(modele) : nil, place, mondes.empty() ? nil : mondes.data()};
 		NifWalkShapes(nif, Forme, &c);
 		nif.Free(); free(buf);
 		modeles++;

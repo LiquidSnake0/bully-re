@@ -199,5 +199,15 @@ centre. Ce que ça a demandé :
 Sur 12 piétons demandés dans la cour de l'école, 11 sont posés ; le douzième,
 `special7`, est une entrée de l'IDE sans modèle.
 
-Prochaine étape : le squelette (`NiSkinInstance`, `NiSkinData`,
-`NiSkinPartition`) pour déformer le corps, puis les animations des `.agr`.
+## Le squelette (30.09.2026, suite)
+
+Les trois blocs de peau sont décodés et la formule du skinning établie
+(`docs/nif.md`, « Le squelette »). Chaque modèle à peau est désormais
+déformé par ses os au chargement (`outils/scene.h` → `src/gamebryo/NifSkin`),
+y compris quelques objets du décor (116 pixels changent dans la cour de
+l'école). `--bras` met aux piétons les bras le long du corps : le haut du
+bras tourne autour de son y local de l'angle qui amène la main 5 cm à
+l'extérieur de l'épaule (36° pour Jimmy, 51° pour Kirby et ses épaulières).
+C'est une pose de démonstration, pas une animation du jeu.
+
+Prochaine étape : les animations des `.agr`, pour que les piétons bougent.

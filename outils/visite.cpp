@@ -1,7 +1,7 @@
 // Visite temps réel d'une scène du jeu, à la première personne.
 //   BULLY_DATA=<racine> build/outils/visite <fichier.ipb> [--pos x y z lacet tangage] [--marche]
 //                                          [--image sortie.ppm] [--banc n] [--promenade n]
-//                                          [--monde] [--rayon m] [--survol n] [--pietons n]
+//                                          [--monde] [--rayon m] [--survol n] [--pietons n] [--bras]
 //
 // Le rendu est entièrement logiciel (src/render : Camera + RasterTrianglePersp),
 // dans une image de 400 × 240, la définition de l'écran du haut de la New
@@ -38,8 +38,9 @@
 //
 // --pietons n pose n piétons de la section « peds » du jeu en cercle, 8 m
 // devant la caméra de départ, les pieds sur le sol, tournés vers le centre. Ils sont dans
-// leur pose de repos (les bras écartés) : ni squelette animé ni IA pour
-// l'instant, seulement les modèles, leurs textures et leur place.
+// leur pose du fichier (les bras écartés), déformés par leur squelette
+// (src/gamebryo/NifSkin) ; --bras leur met les bras le long du corps, une
+// pose de démonstration en attendant les animations du jeu.
 #include "commun.h"
 #include "scene.h"
 #include "monde.h"
@@ -189,7 +190,7 @@ int
 main(int argc, char **argv)
 {
 	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--marche] [--image sortie.ppm] [--banc n] [--promenade n] [--monde] [--rayon m]\n"); return 2; }
-	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
+	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0; bool bras = false; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
 	for(int i = 2; i < argc; i++){
 		if(strcmp(argv[i], "--image") == 0 && i + 1 < argc) image = argv[++i];
 		else if(strcmp(argv[i], "--banc") == 0 && i + 1 < argc) banc = atoi(argv[++i]);
@@ -197,6 +198,7 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--marche") == 0) marche = true;
 		else if(strcmp(argv[i], "--survol") == 0 && i + 1 < argc) survol = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--pietons") == 0 && i + 1 < argc) pietons = atoi(argv[++i]);
+		else if(strcmp(argv[i], "--bras") == 0) bras = true;
 		else if(strcmp(argv[i], "--monde") == 0) monde = true;
 		else if(strcmp(argv[i], "--rayon") == 0 && i + 1 < argc) rayon = (float)atof(argv[++i]);
 		else if(strcmp(argv[i], "--pos") == 0 && i + 5 < argc){ pos = true; px = (float)atof(argv[++i]); py = (float)atof(argv[++i]); pz = (float)atof(argv[++i]); lacet = (float)atof(argv[++i]); tangage = (float)atof(argv[++i]); }
@@ -293,7 +295,7 @@ main(int argc, char **argv)
 			// (docs/ipl.md) : d'où le signe moins.
 			float lacetP = -(atan2f(cy - y, cx - x) + PI / 2);
 			float q[4] = { 0, 0, sinf(lacetP / 2), cosf(lacetP / 2) };
-			if(m->s->AjouterModele(a, e.model, NifFromPlacement(CVector(x, y, z), CVector(1, 1, 1), q))){
+			if(m->s->AjouterModele(a, e.model, NifFromPlacement(CVector(x, y, z), CVector(1, 1, 1), q), bras)){
 				poses++; printf("  piéton %-22s %-10s (%.1f, %.1f, %.2f)\n", e.model, e.type, x, y, z);
 			}else printf("  piéton %-22s : modèle introuvable dans World.img\n", e.model);
 		}

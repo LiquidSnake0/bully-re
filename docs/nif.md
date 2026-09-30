@@ -75,6 +75,47 @@ Non décodés (sautés grâce aux tailles) : contrôleurs et interpolateurs de
 transformation, extra data, peau (NiSkinInstance/Data/Partition), propriétés
 spéculaire, Z-buffer, couleurs de sommets, effets.
 
+## Le squelette (30.09.2026)
+
+Trois blocs portent la peau d'un modèle animé ; relevé sur les 5 721 `.nif`
+de World.img : 2 614 NiSkinInstance, 2 614 NiSkinData et 2 541
+NiSkinPartition, **tous décodés à l'octet près**.
+
+- **NiSkinInstance** : données i32, découpage i32, racine du squelette i32,
+  nombre d'os u32 puis les os (références de NiNode).
+- **NiSkinData** : transformation d'ensemble (matrice 9f par lignes,
+  translation 3f, échelle f), nombre d'os u32, a des poids u8, puis par os :
+  transformation de liaison (mêmes 13 flottants), sphère englobante (centre
+  3f, rayon f), nombre de sommets u16 et, si les poids sont là, (index u16,
+  poids f) par sommet. Les poids sont présents dans les 2 614 blocs.
+- **NiSkinPartition** : nombre de lots u32, puis par lot : sommets,
+  triangles, os, bandes, poids par sommet (u16 chacun) ; os u16 × n ; a une
+  table de sommets u8 (+ u16 × sommets) ; a des poids u8 (+ f × sommets ×
+  poids) ; longueurs des bandes u16 × bandes ; a des faces u8 (+ triangles
+  u16 × 3, ou les bandes) ; a des index d'os u8 (+ u8 × sommets × poids).
+  Au plus 57 os par peau et 4 poids par sommet.
+
+**La formule.** Un sommet v devient Σ poids · (M_os ∘ S_os)(v), avec M_os
+la transformation de l'os dans le modèle (celle de son nœud) et S_os sa
+transformation de liaison, **sans transposition**. Établie comme le sens du
+quaternion, en essayant les combinaisons (avec ou sans la transformation
+d'ensemble, avant ou après, transposée ou non) : avec le squelette dans sa
+pose du fichier, seule celle-ci redonne les sommets stockés, à 2,3 mm près
+sur Jimmy ; les versions transposées s'écartent de 6 cm à 3,5 m. La
+transformation d'ensemble est l'identité sur les piétons essayés. Sur Zoe
+l'écart atteint 5,7 cm : son squelette est rangé dans une pose un peu
+différente de la liaison, et c'est lui qui fait foi (un petit piéton qui
+paraissait enfoncé dans le sol se retrouve debout).
+
+**Les os** suivent le nommage Biped de 3ds Max, préfixé par « Root » :
+`Root Pelvis`, `Root L Thigh`, `Root L Calf`, `Root L Foot`, `Root Spine`,
+`Root Spine1`, `Root Spine2`, `Root L Clavicle`, `Root L UpperArm`,
+`Root L Forearm`, `Root L Hand`, les doigts, `Root Neck`, `Root Head`,
+`Root Brow`, `Root EyeLids`, `Root Eyes`, `Root Ponytail1`… Le haut du bras
+se baisse autour de son axe y local (+ à gauche, − à droite).
+
+Code : `src/gamebryo/NifSkin` ; test : `tests/test_skin` (sur PLAYER.nif).
+
 ## Sens des rotations
 
 Un `NiAVObject` porte une translation, une matrice 3 × 3 et une échelle. La

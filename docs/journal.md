@@ -381,3 +381,10 @@ en échec plutôt que de les masquer.
   dans le dictionnaire du modèle quand celui de l'IDE est une variante
   d'hiver, lacet au signe du conjugué du quaternion. 11 piétons sur 12 dans la
   cour de l'école. Suite : le squelette, puis les animations.
+- Suite : **le squelette**. NiSkinInstance, NiSkinData et NiSkinPartition
+  décodés (7 769 blocs, tous à l'octet près). Formule du skinning établie en
+  essayant les combinaisons : os ∘ liaison, sans transposition, 2,3 mm
+  d'écart sur Jimmy. `src/gamebryo/NifSkin` (transformations des nœuds avec
+  une pose, déformation des sommets), `tests/test_skin`. Les piétons sont
+  déformés par leur squelette ; `--bras` leur baisse les bras (pose de
+  démonstration). Suite : les animations des `.agr`.
