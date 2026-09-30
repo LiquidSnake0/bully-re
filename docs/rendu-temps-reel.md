@@ -133,5 +133,40 @@ après), et : salle de boxe 4,3 → 3,1 ms, cour de l'école 65,6 → 47,3 ms
 (21 i/s, 78 000 triangles dessinés, 178 modèles retenus), quartier d'affaires
 39,8 ms. Le rasteriseur lui-même est désormais le poste principal.
 
-Prochaine étape : alléger le rendu extérieur (niveaux de détail, arbre de
-partition pour les collisions), puis les piétons.
+## Alléger le rendu extérieur (30.09.2026, suite)
+
+Mesure d'abord, en coupant le rendu à chaque étape (quartier d'affaires) :
+7 ms pour retenir les modèles et passer leurs sommets dans le repère caméra,
+4 ms pour découper et projeter, **22 ms de rasterisation**. C'est donc le
+rasteriseur qu'il faut soulager, pas la géométrie.
+
+- **Faces arrière.** `NiStencilProperty` décodée (`docs/nif.md`) : toutes
+  celles du jeu disent « les deux faces ». Une forme sans elle n'est dessinée
+  que de face, comme le fait Gamebryo par défaut. Dans la cour de l'école,
+  31 000 triangles sur 78 000 tombent ainsi. Écart d'image : 22 pixels sur
+  96 000 (école), 196 (quartier d'affaires). Dans la salle de boxe vue de
+  dehors, on voit désormais dans la pièce : les murs intérieurs regardent vers
+  l'intérieur, et le jeu, qui élimine leur dos, fait la même chose.
+- **Du plus proche au plus lointain.** Les modèles retenus, tous morceaux
+  confondus, sont triés sur la distance de leur centre : ce qui est devant
+  remplit la profondeur d'abord, et les pixels cachés s'arrêtent au test de
+  profondeur, avant la texture. La transparence, elle, se pose dans l'ordre
+  inverse, de l'arrière vers l'avant, comme Gamebryo trie ses objets
+  transparents. Les seuls pixels qui changent sont là où des surfaces
+  mélangées se recouvrent (buissons, fenêtres éclairées) : l'ancien ordre,
+  celui des fichiers, n'était pas plus juste.
+- **La boucle par pixel.** La partie fractionnaire des coordonnées de
+  texture sans `floorf` (troncature corrigée sous zéro), l'échelle de la
+  texture calculée une fois par triangle, et plus de bornage de la couleur
+  quand l'ombrage ne peut pas dépasser 1.
+
+Essayés et écartés : ne pas dessiner les modèles de moins de 1, 2 ou
+4 pixels à l'écran (gain dans le bruit de mesure) ; `-O3` (image identique,
+gain dans le bruit).
+
+Meilleur de trois mesures de 40 images, avant → après : cour de l'école
+39,7 → 29,9 ms, quartier d'affaires 42,1 → 28,2 ms (35 i/s), salle de boxe
+3,1 → 2,3 ms.
+
+Prochaine étape : les piétons, ou un arbre de partition pour les collisions
+(dehors, chaque pas teste 25 000 triangles).

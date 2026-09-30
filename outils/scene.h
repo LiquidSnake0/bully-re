@@ -16,6 +16,7 @@ struct Scene {
 	std::vector<CVector> pts; std::vector<float> uv;
 	std::vector<int32> tri, triTex;                      // par triangle : index dans texNoms, -1
 	std::vector<uint8> triMode, triSeuil;                // par triangle : eRasterMode et seuil du test alpha
+	std::vector<uint8> triDeuxFaces;                     // par triangle : 1 si la forme se dessine des deux côtés
 	std::vector<std::string> texNoms; std::vector<const RasterTexture*> texPtr;
 	int modeles = 0, manquants = 0;
 	std::vector<CIplInst> placements;                    // gardés pour poser les collisions
@@ -49,6 +50,7 @@ struct Scene {
 		int32 tex = avecUv ? s.IndexTexture(c.d, TextureDeBase(f, g)) : -1;
 		uint8 mode = RASTER_OPAQUE, seuil = 128;
 		ModeAlpha(f, g, &mode, &seuil);
+		uint8 deux = DeuxFaces(f, g) ? 1 : 0;
 		int32 base = (int32)s.pts.size();
 		for(int i = 0; i < d.numVertices; i++){
 			s.pts.push_back(NifApply(c.place, NifApply(t, d.vertices[i])));
@@ -56,7 +58,7 @@ struct Scene {
 		}
 		for(int i = 0; i < d.numTriangles; i++){
 			s.tri.push_back(base + d.triangles[i][0]); s.tri.push_back(base + d.triangles[i][1]); s.tri.push_back(base + d.triangles[i][2]);
-			s.triTex.push_back(tex); s.triMode.push_back(mode); s.triSeuil.push_back(seuil);
+			s.triTex.push_back(tex); s.triMode.push_back(mode); s.triSeuil.push_back(seuil); s.triDeuxFaces.push_back(deux);
 		}
 	}
 	// Ajoute un modèle placé par `place` (transformation du modèle vers le monde).

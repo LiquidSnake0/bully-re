@@ -369,3 +369,9 @@ en échec plutôt que de les masquer.
 - Rejet par modèle (sphère contre cône de vue et 250 m) : même image au
   pixel près, école 65,6 → 47,3 ms, boxe 4,3 → 3,1 ms.
 - Détails : `docs/rendu-temps-reel.md`.
+- Suite, même soir : **le rendu extérieur allégé**. La mesure montre que la
+  rasterisation prend les deux tiers du temps. `NiStencilProperty` décodée
+  (1 129 blocs, tous « deux faces ») : les autres formes perdent leurs faces
+  arrière. Modèles triés du plus proche au plus lointain (la transparence à
+  l'envers), boucle par pixel allégée. École 39,7 → 29,9 ms, quartier
+  d'affaires 42,1 → 28,2 ms, boxe 3,1 → 2,3 ms.

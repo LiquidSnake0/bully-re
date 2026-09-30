@@ -43,6 +43,7 @@ CNifFile::KindOf(const char *t)
 	if(strcmp(t, "NiMaterialProperty") == 0) return NIF_MATERIALPROPERTY;
 	if(strcmp(t, "NiTexturingProperty") == 0) return NIF_TEXTURINGPROPERTY;
 	if(strcmp(t, "NiAlphaProperty") == 0) return NIF_ALPHAPROPERTY;
+	if(strcmp(t, "NiStencilProperty") == 0) return NIF_STENCILPROPERTY;
 	return NIF_INCONNU;
 }
 
@@ -272,6 +273,20 @@ LireAlpha(NifReader &r)
 	return a;
 }
 
+// NiStencilProperty en 20.3.0.9 : NiObjectNET, puis drapeaux u16, référence
+// u32 et masque u32 (22 octets sans donnée annexe).
+static void *
+LireStencil(NifReader &r)
+{
+	NifStencilProperty *s = (NifStencilProperty*)calloc(1, sizeof(NifStencilProperty));
+	s->name = r.I32();
+	int32 ne = r.I32(); free(r.Refs(ne));
+	r.I32();
+	s->flags = r.U16();
+	s->ref = r.U32(); s->mask = r.U32();
+	return s;
+}
+
 // NiTexturingProperty en 20.3.0.9 : drapeaux u16, nombre d'emplacements
 // u32, puis pour chaque emplacement un booléen « présent » suivi d'un
 // TexDesc { source i32, drapeaux u16 (jeu d'UV dans les bits bas, filtrage,
@@ -363,6 +378,7 @@ CNifFile::Load(const uint8 *data, uint32 size)
 		case NIF_MATERIALPROPERTY: b.data = LireMaterial(br); break;
 		case NIF_TEXTURINGPROPERTY: b.data = LireTexturing(br); break;
 		case NIF_ALPHAPROPERTY: b.data = LireAlpha(br); break;
+		case NIF_STENCILPROPERTY: b.data = LireStencil(br); break;
 		default: break;
 		}
 		if(b.kind != NIF_INCONNU){

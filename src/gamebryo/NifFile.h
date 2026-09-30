@@ -16,7 +16,7 @@
 
 enum eNifBlock {
 	NIF_INCONNU = 0, NIF_NODE, NIF_TRISHAPE, NIF_TRISTRIPS, NIF_TRISHAPEDATA, NIF_TRISTRIPSDATA,
-	NIF_SOURCETEXTURE, NIF_MATERIALPROPERTY, NIF_TEXTURINGPROPERTY, NIF_ALPHAPROPERTY,
+	NIF_SOURCETEXTURE, NIF_MATERIALPROPERTY, NIF_TEXTURINGPROPERTY, NIF_ALPHAPROPERTY, NIF_STENCILPROPERTY,
 	// blocs des fichiers .nft (textures), voir docs/nft.md
 	NIF_PIXELDATA, NIF_PALETTE, NIF_STRINGEXTRADATA, NIF_INTEGEREXTRADATA
 };
@@ -145,6 +145,18 @@ struct NifAlphaProperty {
 	int32 name;
 	uint16 flags;
 	uint8 threshold;
+};
+
+// NiStencilProperty : en 20.3.0.9, tout tient dans `flags` (bit 0 stencil
+// actif, bits 1-3 échec, 4-6 échec de profondeur, 7-9 réussite, bits 10-11
+// faces dessinées, bits 12-14 fonction), suivi de la référence et du masque.
+// Faces dessinées : 0 le défaut de l'application (les deux, pour Gamebryo),
+// 1 sens trigonométrique seul, 2 sens horaire seul, 3 les deux.
+struct NifStencilProperty {
+	int32 name;
+	uint16 flags;
+	uint32 ref, mask;
+	int32 Faces(void) const { return (flags >> 10) & 3; }
 };
 
 struct NifTexturingProperty {

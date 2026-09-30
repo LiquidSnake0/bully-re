@@ -97,6 +97,10 @@ RasterTrianglePersp(RasterImage &img, const RasterPVertex v[3], const RasterText
 		c0[k] = ((b.x - a.x) * (y0 + 0.5f - a.y) - (b.y - a.y) * (x0 + 0.5f - a.x)) * inv;
 	}
 	bool texOk = tex && tex->rgba && tex->w && tex->h;
+	float tw = texOk ? (float)(tex->w - 1) : 0, th = texOk ? (float)(tex->h - 1) : 0;
+	// L'ombrage ne dépasse jamais 1 : une couleur de texture (≤ 255) multipliée
+	// par lui reste dans l'octet, le bornage n'est utile qu'au-delà.
+	bool borne = shade > 1.0f;
 	for(int32 y = y0; y <= y1; y++){
 		float dy = (float)(y - y0);
 		float w0 = c0[0] + ay[0] * dy, w1 = c0[1] + ay[1] * dy, w2 = c0[2] + ay[2] * dy;
@@ -111,8 +115,11 @@ RasterTrianglePersp(RasterImage &img, const RasterPVertex v[3], const RasterText
 				float iq = 1.0f / q;
 				float u = (w0 * v[0].uw + w1 * v[1].uw + w2 * v[2].uw) * iq;
 				float vv = (w0 * v[0].vw + w1 * v[1].vw + w2 * v[2].vw) * iq;
-				u -= floorf(u); vv -= floorf(vv);
-				uint32 tx = (uint32)(u * (tex->w - 1) + 0.5f), ty = (uint32)(vv * (tex->h - 1) + 0.5f);
+				// u − floor(u) sans floorf : la troncature, corrigée sous zéro, donne
+				// la même partie fractionnaire (valeurs bien en deçà de 2^23).
+				u -= (float)(int32)u; if(u < 0) u += 1.0f;
+				vv -= (float)(int32)vv; if(vv < 0) vv += 1.0f;
+				uint32 tx = (uint32)(u * tw + 0.5f), ty = (uint32)(vv * th + 0.5f);
 				const uint8 *t = tex->rgba + (ty * tex->w + tx) * 4;
 				cr = t[0]; cg = t[1]; cb = t[2]; ca = t[3];
 			}
@@ -133,9 +140,13 @@ RasterTrianglePersp(RasterImage &img, const RasterPVertex v[3], const RasterText
 				continue;
 			}
 			*dz = -q;
-			px[0] = (uint8)fminf(255.0f, cr * shade);
-			px[1] = (uint8)fminf(255.0f, cg * shade);
-			px[2] = (uint8)fminf(255.0f, cb * shade);
+			if(borne){
+				px[0] = (uint8)fminf(255.0f, cr * shade);
+				px[1] = (uint8)fminf(255.0f, cg * shade);
+				px[2] = (uint8)fminf(255.0f, cb * shade);
+			}else{
+				px[0] = (uint8)(cr * shade); px[1] = (uint8)(cg * shade); px[2] = (uint8)(cb * shade);
+			}
 		}
 	}
 }

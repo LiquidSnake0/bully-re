@@ -39,6 +39,7 @@
 #include "scene.h"
 #include "monde.h"
 #include "../src/render/Camera.h"
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #ifndef VISITE_SANS_SDL
@@ -56,6 +57,7 @@ struct Morceau {
 	std::vector<CVector> vue;
 	CMondeCollision col;
 	std::vector<int32> visibles;            // blocs retenus pour l'image en cours
+	std::vector<float> profondeur;          // leur distance au plan de la caméra
 	~Morceau(){ delete s; }
 
 	void Preparer(void){
@@ -79,7 +81,9 @@ struct Visite {
 	Visite(void){ img = RasterCreate(400, 240, 0, 0, 0); }
 
 	float loin = 250;                       // au-delà, un modèle n'est pas dessiné (mètres)
-	int32 modelesVus = 0;
+	int32 modelesVus = 0, arriere = 0;
+	struct Rang { float z; int32 morceau, bloc; };
+	std::vector<Rang> ordre;                // les modèles à dessiner, triés
 
 	void Rendre(const Camera &cam){
 		RasterClear(img, 128, 150, 170);
@@ -91,7 +95,7 @@ struct Visite {
 		// Seuls leurs sommets passent dans le repère caméra.
 		for(Morceau *m : morceaux){
 			const outil::Scene *s = m->s;
-			m->visibles.clear();
+			m->visibles.clear(); m->profondeur.clear();
 			for(size_t b = 0; b < s->blocs.size(); b++){
 				const outil::Scene::Bloc &bl = s->blocs[b];
 				CVector c = cam.ToView(bl.centre); float r = bl.rayon;
@@ -99,19 +103,31 @@ struct Visite {
 				if(c.x - mx * c.z > r * kx || -c.x - mx * c.z > r * kx) continue;
 				if(c.y - my * c.z > r * ky || -c.y - my * c.z > r * ky) continue;
 				m->visibles.push_back((int32)b);
+				m->profondeur.push_back(c.z);
 				for(int32 i = bl.ptDebut; i < bl.ptFin; i++) m->vue[i] = cam.ToView(s->pts[i]);
 			}
 		}
-		dessines = 0; modelesVus = 0;
+		// Tous morceaux confondus, du plus proche au plus lointain : ce qui est
+		// devant remplit la profondeur d'abord, et les pixels cachés derrière
+		// s'arrêtent au test de profondeur, avant la texture.
+		ordre.clear();
+		for(size_t k = 0; k < morceaux.size(); k++)
+			for(size_t j = 0; j < morceaux[k]->visibles.size(); j++)
+				ordre.push_back({morceaux[k]->profondeur[j], (int32)k, morceaux[k]->visibles[j]});
+		std::sort(ordre.begin(), ordre.end(), [](const Rang &p, const Rang &q){ return p.z < q.z; });
+		dessines = 0; modelesVus = 0; arriere = 0;
 		for(Morceau *m : morceaux) modelesVus += (int32)m->visibles.size();
 		// Deux passes, sur tous les morceaux : les opaques et le test alpha
 		// écrivent la profondeur, puis le mélange et l'ajout se posent par-dessus
 		// sans l'écrire.
+		// La transparence se pose de l'arrière vers l'avant : la seconde passe
+		// parcourt la liste à l'envers.
 		for(int passe = 0; passe < 2; passe++)
-		for(Morceau *m : morceaux){
+		for(size_t r = 0; r < ordre.size(); r++){
+		const Rang &rg = passe == 0 ? ordre[r] : ordre[ordre.size() - 1 - r];
+		Morceau *m = morceaux[rg.morceau];
 		const outil::Scene *s = m->s;
-		for(int32 b : m->visibles){
-		const outil::Scene::Bloc &bl = s->blocs[b];
+		const outil::Scene::Bloc &bl = s->blocs[rg.bloc];
 		for(int32 i = bl.triDebut; i < bl.triFin; i += 3){
 			uint8 mode = s->triMode[i/3];
 			if((mode >= RASTER_MELANGE) != (passe == 1)) continue;
@@ -125,10 +141,12 @@ struct Visite {
 			float uv[6] = { s->uv[s->tri[i]*2], s->uv[s->tri[i]*2+1], s->uv[s->tri[i+1]*2], s->uv[s->tri[i+1]*2+1], s->uv[s->tri[i+2]*2], s->uv[s->tri[i+2]*2+1] };
 			RasterPVertex o[6];
 			int32 n = CameraClipProject(cam, v, uv, o);
+			// Face arrière : à l'écran, les sommets tournent dans l'autre sens.
+			// Le découpage garde l'ordre, un seul test suffit pour les deux moitiés.
+			if(n > 0 && !s->triDeuxFaces[i/3] && (o[1].x - o[0].x) * (o[2].y - o[0].y) - (o[1].y - o[0].y) * (o[2].x - o[0].x) > 0){ arriere++; continue; }
 			int32 tx = s->triTex[i/3];
 			for(int32 k = 0; k < n; k++) RasterTrianglePersp(img, &o[k*3], tx >= 0 ? s->texPtr[tx] : nil, m->ombre[i/3], (eRasterMode)mode, s->triSeuil[i/3]);
 			dessines += n;
-		}
 		}
 		}
 	}
@@ -296,7 +314,7 @@ main(int argc, char **argv)
 		float yaw0 = cam.yaw;
 		for(int k = 0; k < n; k++){ cam.yaw = yaw0 + k * (2 * PI / n); v.Rendre(cam); }
 		double ms = std::chrono::duration<double, std::milli>(horloge::now() - t0).count() / n;
-		printf("  %d image(s) 400×240, %.1f ms par image (%.0f i/s), %d triangles dessinés à la dernière (%d modèles retenus)\n", n, ms, 1000.0 / ms, v.dessines, v.modelesVus);
+		printf("  %d image(s) 400×240, %.1f ms par image (%.0f i/s), %d triangles dessinés à la dernière (%d modèles retenus, %d faces arrière)\n", n, ms, 1000.0 / ms, v.dessines, v.modelesVus, v.arriere);
 		if(!image.empty()){ cam.yaw = yaw0; v.Rendre(cam); bool ok = RasterWritePPM(v.img, image.c_str()); printf("  → %s%s\n", image.c_str(), ok ? "" : " (échec)"); }
 		return 0;
 	}

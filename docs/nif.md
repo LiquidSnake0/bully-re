@@ -63,9 +63,17 @@ NiFloatExtraData 18 · NiDitherProperty 1.
   2f, rotation f, méthode u32, centre 2f) }, le relief avec 6 flottants de
   plus, la parallaxe un flottant ; puis textures de shader u32.
 
+- **NiAlphaProperty** : nom, extra, contrôleur, drapeaux u16, seuil u8.
+- **NiStencilProperty** : nom, extra, contrôleur, drapeaux u16, référence
+  u32, masque u32. Les faces dessinées sont les bits 10-11 des drapeaux.
+  Relevé sur les 5 721 `.nif` de World.img : 1 129 blocs, tous décodés à
+  l'octet près, tous avec les drapeaux 0x4d80, c'est-à-dire « les deux
+  faces ». Le jeu ne s'en sert que pour ça : une forme qui en porte un est à
+  double face, les autres ont leurs faces arrière éliminées.
+
 Non décodés (sautés grâce aux tailles) : contrôleurs et interpolateurs de
 transformation, extra data, peau (NiSkinInstance/Data/Partition), propriétés
-alpha, spéculaire, stencil, Z-buffer, couleurs de sommets, effets.
+spéculaire, Z-buffer, couleurs de sommets, effets.
 
 ## Sens des rotations
 
