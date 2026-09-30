@@ -77,7 +77,7 @@ AgrLireGroupe(const uint8 *buf, uint32 taille, std::vector<AgrAnim> &out)
 					memcpy(&k, r, 2); memcpy(&x, r + 2, 2); memcpy(&y, r + 4, 2); memcpy(&z, r + 6, 2);
 					if(k >= a.numCles) break;
 					AgrPosition ps; ps.t = t[k]; ps.p = CVector(x / 1000.0f, y / 1000.0f, z / 1000.0f);
-					a.positions.push_back(ps);
+					a.positions[os[k]].push_back(ps);
 				}
 			}
 		}
@@ -113,6 +113,30 @@ AgrRotation(const AgrAnim &a, int32 os, float t, float q[4])
 	float dt = p[j].t - p[j-1].t;
 	Slerp(p[j-1].q, p[j].q, dt > 1e-6f ? (t - p[j-1].t) / dt : 0, q);
 	return true;
+}
+
+bool
+AgrPositionOs(const AgrAnim &a, int32 os, float t, CVector *p)
+{
+	if(!a.decodee || os < 0 || os >= AGR_OS || a.positions[os].empty()) return false;
+	const std::vector<AgrPosition> &v = a.positions[os];
+	if(a.duree > 0){ t = fmodf(t, a.duree); if(t < 0) t += a.duree; }
+	if(t <= v.front().t){ *p = v.front().p; return true; }
+	if(t >= v.back().t){ *p = v.back().p; return true; }
+	size_t j = 1; while(j < v.size() && v[j].t < t) j++;
+	float dt = v[j].t - v[j-1].t, u = dt > 1e-6f ? (t - v[j-1].t) / dt : 0;
+	p->x = v[j-1].p.x + u * (v[j].p.x - v[j-1].p.x);
+	p->y = v[j-1].p.y + u * (v[j].p.y - v[j-1].p.y);
+	p->z = v[j-1].p.z + u * (v[j].p.z - v[j-1].p.z);
+	return true;
+}
+
+CVector
+AgrDeplacement(const AgrAnim &a)
+{
+	const std::vector<AgrPosition> &v = a.positions[AGR_OS - 1];
+	if(!a.decodee || v.size() < 2) return CVector(0, 0, 0);
+	return CVector(v.back().p.x - v.front().p.x, v.back().p.y - v.front().p.y, v.back().p.z - v.front().p.z);
 }
 
 void

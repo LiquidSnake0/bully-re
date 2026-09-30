@@ -74,8 +74,24 @@ fichier), dans la même convention que les NiAVObject : la matrice construite
 de façon usuelle depuis le quaternion est celle que le nœud stocke ligne par
 ligne.
 
-**Les positions** : u16 index d'image clé (l'instant est celui de cette clé),
-i16 x, y, z en millimètres. La première animation de `Player_Tired` en a 60,
-autour de z = 0,845 m : la hauteur du bassin. Pas encore appliquées.
+**Les positions** : u16 index d'image clé, i16 x, y, z en millimètres.
+L'image clé désignée donne l'instant **et l'os** : dans les animations de
+piétons, ce sont deux pistes, celle de la clé 1 (`Root`, le bassin, autour de
+z = 0,845 m) et celle de la clé 35 (`ARROW`, la flèche au sol). Le trajet de
+la flèche est le déplacement du personnage : nul pour une attente, 1,48 m
+vers +y en 1,067 s pour le pas de `F_Jocks` n°2. On applique au bassin son
+écart au début de l'animation moins le trajet de la flèche, et c'est le
+personnage entier qui avance de ce trajet.
+
+## La marche
+
+Le corps, dans le repère des animations, regarde vers +y : les pas de marche
+avancent vers +y. Les groupes `S*_S` (`SGEN_S`…) contiennent aussi des
+animations qui avancent, mais vers −y : ce sont des reculs et des esquives
+(vérifié à l'image, bras levés). Les vraies marches sont dans les groupes
+`F_*` que l'IDE donne à chaque piéton (`F_Girls`, `F_Jocks`, `F_Greas`,
+`F_Preps`, `F_Nerds`…, colonne ANIMGROUP) : des cycles qui bouclent (la pose
+de fin redonne celle du début à 0,0013 près), autour de 1,07 s pour deux pas,
+de 1,1 à 1,7 m/s.
 
 Code : `src/anim/Agr` ; test : `tests/test_agr`.

@@ -173,8 +173,10 @@ struct Scene {
 		return tri.size() > avant;
 	}
 	// Met un modèle animé dans la pose de `anim` à l'instant t (s) : chaque os
-	// animé prend la rotation de sa piste à la place de la sienne (sa position
-	// reste celle du fichier), puis la peau est recalculée en place.
+	// animé prend la rotation de sa piste à la place de la sienne, le bassin
+	// (Root) bouge de ce qu'il bouge dans l'animation depuis son début, moins
+	// le trajet de la flèche (ARROW) : c'est le piéton entier qui avance, pas
+	// son bassin. Puis la peau est recalculée en place.
 	void Reposer(Anime &an, const AgrAnim &anim, float t){
 		const CNifFile &f = an.nif;
 		std::vector<NifMatrix33> pose(f.numBlocks, NifAxisRotation(0, 0));
@@ -189,8 +191,15 @@ struct Scene {
 				pose[b].m[i][j] = v;
 			}
 		}
+		std::vector<CVector> decalage(f.numBlocks, CVector(0, 0, 0));
+		CVector r0, rt;
+		if(an.noeuds[1] >= 0 && AgrPositionOs(anim, 1, 0, &r0) && AgrPositionOs(anim, 1, t, &rt)){
+			CVector f0(0, 0, 0), ft(0, 0, 0);
+			AgrPositionOs(anim, AGR_OS - 1, 0, &f0); AgrPositionOs(anim, AGR_OS - 1, t, &ft);
+			decalage[an.noeuds[1]] = CVector(rt.x - r0.x - (ft.x - f0.x), rt.y - r0.y - (ft.y - f0.y), rt.z - r0.z - (ft.z - f0.z));
+		}
 		std::vector<NifTransform> mondes(f.numBlocks);
-		NifWorldTransforms(f, mondes.data(), pose.data());
+		NifWorldTransforms(f, mondes.data(), pose.data(), true, decalage.data());
 		int32 ecrire = an.ptDebut;
 		Ctx c{this, nil, nil, an.place, mondes.data(), &ecrire};
 		NifWalkShapes(f, Forme, &c);

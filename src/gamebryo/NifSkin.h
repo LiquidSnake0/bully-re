@@ -19,7 +19,9 @@
 // matrices) ajoute à chaque nœud une rotation locale, appliquée après la
 // sienne : c'est ce qui plie un os et entraîne ses enfants. Les blocs qui ne
 // sont ni nœud ni forme gardent l'identité.
-void NifWorldTransforms(const CNifFile &f, NifTransform *out, const NifMatrix33 *pose = nil, bool espaceEntite = true);
+// `decalage` (facultatif, numBlocks vecteurs) s'ajoute à la translation
+// locale de chaque nœud : c'est ce qui fait monter et descendre un bassin.
+void NifWorldTransforms(const CNifFile &f, NifTransform *out, const NifMatrix33 *pose = nil, bool espaceEntite = true, const CVector *decalage = nil);
 
 // Sommets déformés d'une forme à peau, dans l'espace du modèle (`out` :
 // numVertices). Un sommet sans poids suit la transformation de sa forme.

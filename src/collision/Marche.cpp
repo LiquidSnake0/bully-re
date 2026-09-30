@@ -1,5 +1,6 @@
 #include "Marche.h"
 #include <cmath>
+#include <algorithm>
 
 static inline CVector Sub(const CVector &a, const CVector &b){ return CVector(a.x - b.x, a.y - b.y, a.z - b.z); }
 static inline CVector Add(const CVector &a, const CVector &b){ return CVector(a.x + b.x, a.y + b.y, a.z + b.z); }
@@ -29,11 +30,64 @@ CMondeCollision::AjouterSphere(const CVector &c, float r)
 	sphCentre.push_back(c); sphRayon.push_back(r);
 }
 
+void
+CMondeCollision::Indexer(float cellule)
+{
+	gDebut.clear(); gListe.clear(); gNx = gNy = 0; gCellule = cellule;
+	if(tri.empty() || cellule <= 0) return;
+	float x0 = tri[0].x, y0 = tri[0].y, x1 = x0, y1 = y0;
+	for(const CVector &p : tri){ x0 = fminf(x0, p.x); y0 = fminf(y0, p.y); x1 = fmaxf(x1, p.x); y1 = fmaxf(y1, p.y); }
+	gx0 = x0; gy0 = y0;
+	gNx = (int32)((x1 - x0) / cellule) + 1; gNy = (int32)((y1 - y0) / cellule) + 1;
+	if((long long)gNx * gNy > 4000000){ gNx = gNy = 0; return; }         // monde démesuré : on renonce à la grille
+	std::vector<int32> compte(gNx * gNy + 1, 0);
+	auto Cases = [&](size_t i, int32 &cx0, int32 &cy0, int32 &cx1, int32 &cy1){
+		const CVector &a = tri[i], &b = tri[i+1], &c = tri[i+2];
+		cx0 = (int32)((fminf(fminf(a.x, b.x), c.x) - gx0) / cellule); cx1 = (int32)((fmaxf(fmaxf(a.x, b.x), c.x) - gx0) / cellule);
+		cy0 = (int32)((fminf(fminf(a.y, b.y), c.y) - gy0) / cellule); cy1 = (int32)((fmaxf(fmaxf(a.y, b.y), c.y) - gy0) / cellule);
+	};
+	for(size_t i = 0; i < tri.size(); i += 3){
+		int32 cx0, cy0, cx1, cy1; Cases(i, cx0, cy0, cx1, cy1);
+		for(int32 y = cy0; y <= cy1; y++) for(int32 x = cx0; x <= cx1; x++) compte[y * gNx + x]++;
+	}
+	gDebut.assign(gNx * gNy + 1, 0);
+	for(int32 k = 0; k < gNx * gNy; k++) gDebut[k + 1] = gDebut[k] + compte[k];
+	gListe.resize(gDebut[gNx * gNy]);
+	std::vector<int32> pos(gDebut.begin(), gDebut.end() - 1);
+	for(size_t i = 0; i < tri.size(); i += 3){                            // dans l'ordre : chaque case reste triée
+		int32 cx0, cy0, cx1, cy1; Cases(i, cx0, cy0, cx1, cy1);
+		for(int32 y = cy0; y <= cy1; y++) for(int32 x = cx0; x <= cx1; x++) gListe[pos[y * gNx + x]++] = (int32)i;
+	}
+	gVu.assign(tri.size() / 3, 0); gTour = 0;
+}
+
+void
+CMondeCollision::Candidats(float x0, float y0, float x1, float y1, std::vector<int32> &out) const
+{
+	out.clear();
+	int32 cx0 = (int32)floorf((x0 - gx0) / gCellule), cx1 = (int32)floorf((x1 - gx0) / gCellule);
+	int32 cy0 = (int32)floorf((y0 - gy0) / gCellule), cy1 = (int32)floorf((y1 - gy0) / gCellule);
+	if(cx0 < 0) cx0 = 0; if(cy0 < 0) cy0 = 0; if(cx1 >= gNx) cx1 = gNx - 1; if(cy1 >= gNy) cy1 = gNy - 1;
+	if(++gTour == 0){ std::fill(gVu.begin(), gVu.end(), 0); gTour = 1; }
+	for(int32 y = cy0; y <= cy1; y++) for(int32 x = cx0; x <= cx1; x++)
+		for(int32 k = gDebut[y * gNx + x]; k < gDebut[y * gNx + x + 1]; k++){
+			int32 i = gListe[k];
+			if(gVu[i / 3] == gTour) continue;
+			gVu[i / 3] = gTour; out.push_back(i);
+		}
+	std::sort(out.begin(), out.end());
+}
+
 bool
 CMondeCollision::Sol(float x, float y, float zHaut, float profondeur, float *z) const
 {
 	bool trouve = false; float meilleur = zHaut - profondeur;
-	for(size_t i = 0; i < tri.size(); i += 3){
+	std::vector<int32> cand;
+	bool grille = gNx > 0;
+	if(grille) Candidats(x, y, x, y, cand);
+	size_t nb = grille ? cand.size() : tri.size() / 3;
+	for(size_t n = 0; n < nb; n++){
+		size_t i = grille ? (size_t)cand[n] : n * 3;
 		const CVector &a = tri[i], &b = tri[i+1], &c = tri[i+2];
 		// Projection sur le plan horizontal : (x, y) dans le triangle ?
 		float d = (b.y - c.y) * (a.x - c.x) + (c.x - b.x) * (a.y - c.y);
@@ -81,7 +135,14 @@ int32
 CMondeCollision::Repousser(CVector &centre, float rayon) const
 {
 	int32 contacts = 0;
-	for(size_t i = 0; i < tri.size(); i += 3){
+	std::vector<int32> cand;
+	bool grille = gNx > 0;
+	// Marge de trois rayons : chaque poussée déplace la sphère d'au plus un
+	// rayon, le rectangle couvre donc tout ce que la boucle pourrait toucher.
+	if(grille) Candidats(centre.x - 3 * rayon, centre.y - 3 * rayon, centre.x + 3 * rayon, centre.y + 3 * rayon, cand);
+	size_t nb = grille ? cand.size() : tri.size() / 3;
+	for(size_t n = 0; n < nb; n++){
+		size_t i = grille ? (size_t)cand[n] : n * 3;
 		const CVector &a = tri[i], &b = tri[i+1], &c = tri[i+2];
 		// rejet rapide par la boîte du triangle
 		if(centre.x + rayon < fminf(fminf(a.x, b.x), c.x) || centre.x - rayon > fmaxf(fmaxf(a.x, b.x), c.x)) continue;

@@ -61,8 +61,8 @@ main(void)
 	printf("  Player_Tired : 3 animations, la première en 36 pistes, 961 clés, norme à %.4f près\n", pire);
 
 	// Les positions : la hauteur du bassin, autour de 0,845 m.
-	VERIF(a.positions.size() == 60);
-	VERIF(fabsf(a.positions[0].p.z - 0.845f) < 0.01f);
+	VERIF(a.positions[1].size() == 60);
+	VERIF(fabsf(a.positions[1][0].p.z - 0.845f) < 0.01f);
 
 	// Interpolation continue : 1 ms d'écart ne tourne presque pas.
 	float q0[4], q1[4];

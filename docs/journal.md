@@ -394,3 +394,9 @@ en échec plutôt que de les masquer.
   clé précédente sur 11), l'ordre des 36 pistes établi sur les os immobiles de
   Jimmy. `src/anim/Agr`, `tests/test_agr`, `docs/agr.md`. Les piétons de la
   visite jouent l'attente de leur catégorie, en temps réel.
+- Suite : **les piétons marchent**. Positions des `.agr` rangées par os (clé 1
+  = bassin, clé 35 = flèche ARROW, dont le trajet est le déplacement). Les
+  vraies marches sont dans les groupes F_* de l'IDE et avancent vers +y ; les
+  S*_S qui avancent vers −y sont des reculs (vérifié à l'image). Marche sur le
+  sol et contre les murs, demi-tour quand bloqué. Collisions en grille de 4 m :
+  2,8 s → 11 ms pour 5 s de foule, résultat identique.

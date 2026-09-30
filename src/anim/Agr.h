@@ -4,7 +4,9 @@
 // 1004, l'encodage des images clés), u32 nombre d'images clés, u32 0, f32
 // durée en secondes, puis les images clés, puis des enregistrements de
 // position (u16 index d'image clé, i16 x, y, z en millimètres) jusqu'à
-// l'animation suivante.
+// l'animation suivante. L'image clé désignée donne à la fois l'instant et
+// l'os : dans un pas de marche, la clé 1 (Root) porte le bassin, la clé 35
+// (ARROW) la flèche au sol.
 //
 // Type 1002 (2 772 animations sur 3 443), décodé comme bully.exe le fait en
 // 0x6b1710 : une image clé tient en 8 octets, deux mots w0, w1 :
@@ -24,7 +26,7 @@
 enum { AGR_OS = 36 };
 
 struct AgrCle { float t; float q[4]; };          // instant (s), quaternion w, x, y, z
-struct AgrPosition { float t; CVector p; };      // instant (s), position (m)
+struct AgrPosition { float t; CVector p; };      // instant (s), position (m) dans le repère du parent
 
 struct AgrAnim {
 	int32 type = 0;
@@ -32,7 +34,7 @@ struct AgrAnim {
 	float duree = 0;
 	bool decodee = false;                        // vrai pour le type 1002
 	std::vector<AgrCle> pistes[AGR_OS];          // par os, dans l'ordre du temps
-	std::vector<AgrPosition> positions;
+	std::vector<AgrPosition> positions[AGR_OS];  // par os : l'os de l'image clé que chaque enregistrement désigne
 };
 
 // Découpe un groupe en animations et décode celles de type 1002.
@@ -42,6 +44,15 @@ bool AgrLireGroupe(const uint8 *buf, uint32 taille, std::vector<AgrAnim> &out);
 // sphériquement entre les deux images clés qui l'encadrent. Faux si l'os n'a
 // pas d'image clé.
 bool AgrRotation(const AgrAnim &a, int32 os, float t, float q[4]);
+
+// Position d'un os à l'instant t, interpolée linéairement. Faux si l'os n'a
+// pas de piste de position (dans les animations de piétons : Root, le bassin,
+// et ARROW, la flèche au sol dont le trajet est le déplacement du personnage).
+bool AgrPositionOs(const AgrAnim &a, int32 os, float t, CVector *p);
+
+// Déplacement de la flèche (ARROW, os 35) sur toute l'animation : ce dont le
+// personnage avance à chaque cycle. (0, 0, 0) pour une animation sur place.
+CVector AgrDeplacement(const AgrAnim &a);
 
 // Quaternion (w, x, y, z) → matrice 3 × 3, dans la convention des NiAVObject
 // (docs/nif.md) : la matrice lue ligne par ligne redonne ce quaternion.

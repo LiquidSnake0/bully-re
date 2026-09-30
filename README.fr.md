@@ -59,8 +59,9 @@ du jeu :
   scènes voisines se chargent et se libèrent pendant qu'on avance
   (`outils/carte` dresse la carte des 85 fichiers de placements) : on passe
   de l'école au quartier d'affaires ; `--pietons n` pose des piétons du jeu
-  déformés par leur squelette et **animés** par les attentes du jeu : le
-  format des `.agr` est déchiffré ([docs/agr.md](docs/agr.md)) ;
+  déformés par leur squelette et **animés** par les animations du jeu (le
+  format des `.agr` est déchiffré, [docs/agr.md](docs/agr.md)) : ils
+  **marchent** dans le décor, sur le sol et contre les murs ;
 - la numérotation du streaming ([docs/streaming.md](docs/streaming.md)) et
   les pools ([docs/pools.md](docs/pools.md)) ;
 - la grille du monde, ses listes et ses dix pools d'entités

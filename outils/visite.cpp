@@ -2,7 +2,7 @@
 //   BULLY_DATA=<racine> build/outils/visite <fichier.ipb> [--pos x y z lacet tangage] [--marche]
 //                                          [--image sortie.ppm] [--banc n] [--promenade n]
 //                                          [--monde] [--rayon m] [--survol n] [--pietons n] [--bras]
-//                                          [--fige] [--temps s]
+//                                          [--fige] [--attente] [--temps s] [--anim groupe:n]
 //
 // Le rendu est entièrement logiciel (src/render : Camera + RasterTrianglePersp),
 // dans une image de 400 × 240, la définition de l'écran du haut de la New
@@ -43,8 +43,14 @@
 // (src/gamebryo/NifSkin), et ils jouent l'attente de leur catégorie tirée des
 // .agr du jeu (IDLE_GSF_A pour une élève, IDLE_JOCK_A pour un sportif… ; le
 // vrai jeu choisit par ses arbres d'action, c'est ici une approximation).
-// --fige les laisse dans la pose du fichier, --bras dans une pose de
-// démonstration (bras le long du corps), --temps s rend l'image à cet instant.
+// Par défaut ils marchent : le pas de leur catégorie (SGEN_S, SGIRL_S…), en
+// avançant de ce que parcourt la flèche ARROW de l'animation, sur le sol et
+// contre les murs (le même corps que la caméra) ; bloqués, ils tournent.
+// --attente les laisse sur place à jouer leur attente, --fige dans la pose
+// du fichier, --bras dans une pose de démonstration (bras le long du corps).
+// --temps s simule jusqu'à cet instant avant de rendre l'image. --anim
+// groupe:n impose à tous la n-ième animation d'un groupe (F_Greas:2…), pour
+// la regarder.
 #include "commun.h"
 #include "scene.h"
 #include "monde.h"
@@ -195,7 +201,7 @@ int
 main(int argc, char **argv)
 {
 	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--marche] [--image sortie.ppm] [--banc n] [--promenade n] [--monde] [--rayon m]\n"); return 2; }
-	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0; bool bras = false, fige = false; float temps = 0; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
+	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0; bool bras = false, fige = false, attente = false; float temps = 0; std::string imposee; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
 	for(int i = 2; i < argc; i++){
 		if(strcmp(argv[i], "--image") == 0 && i + 1 < argc) image = argv[++i];
 		else if(strcmp(argv[i], "--banc") == 0 && i + 1 < argc) banc = atoi(argv[++i]);
@@ -205,6 +211,8 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--pietons") == 0 && i + 1 < argc) pietons = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--bras") == 0) bras = true;
 		else if(strcmp(argv[i], "--fige") == 0) fige = true;
+		else if(strcmp(argv[i], "--attente") == 0) attente = true;
+		else if(strcmp(argv[i], "--anim") == 0 && i + 1 < argc) imposee = argv[++i];
 		else if(strcmp(argv[i], "--temps") == 0 && i + 1 < argc) temps = (float)atof(argv[++i]);
 		else if(strcmp(argv[i], "--monde") == 0) monde = true;
 		else if(strcmp(argv[i], "--rayon") == 0 && i + 1 < argc) rayon = (float)atof(argv[++i]);
@@ -235,6 +243,7 @@ main(int argc, char **argv)
 			sol.sphCentre.insert(sol.sphCentre.end(), m->col.sphCentre.begin(), m->col.sphCentre.end());
 			sol.sphRayon.insert(sol.sphRayon.end(), m->col.sphRayon.begin(), m->col.sphRayon.end());
 		}
+		sol.Indexer();
 	};
 
 	// Dehors : la carte des emprises, puis ce qui est à portée de (x, y).
@@ -290,6 +299,11 @@ main(int argc, char **argv)
 	// animation décodée), chargée une fois.
 	std::map<std::string, std::vector<AgrAnim>> groupes;
 	auto Attente = [&](const CPedIdeEntry &e) -> const AgrAnim* {
+		if(!imposee.empty()){
+			size_t c = imposee.find(':'); std::string g = imposee.substr(0, c); int n = c == std::string::npos ? 0 : atoi(imposee.c_str() + c + 1);
+			if(!groupes.count(g)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); } groupes[g] = v; }
+			return n >= 0 && n < (int)groupes[g].size() && groupes[g][n].decodee ? &groupes[g][n] : nil;
+		}
 		std::string t = e.type, g;
 		if(t == "JOCK") g = "IDLE_JOCK_A"; else if(t == "GREASER") g = "IDLE_GREAS_A"; else if(t == "NERD") g = "IDLE_NERD_A";
 		else if(t == "PREPPY") g = "IDLE_PREP_A"; else if(t == "BULLY") g = "IDLE_BULLY_A"; else if(t == "DROPOUT") g = "IDLE_DOUT_A";
@@ -304,7 +318,53 @@ main(int argc, char **argv)
 		for(const AgrAnim &an : groupes[g]) if(an.decodee) return &an;
 		return nil;
 	};
-	struct PietonAnime { outil::Anime *an; const AgrAnim *anim; float decalage; std::string groupe; };
+	// Le pas de marche de chaque catégorie : dans son groupe S*_S, l'animation
+	// dont la flèche avance à une vitesse de marche (0,4 à 2 m/s), la plus
+	// proche de 1 m/s. SGEN_S n°2 : 0,94 m en 1 s.
+	auto Imposee = [&](void) -> const AgrAnim* {
+		size_t c = imposee.find(':'); std::string g = imposee.substr(0, c); int n = c == std::string::npos ? 0 : atoi(imposee.c_str() + c + 1);
+		if(!groupes.count(g)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); } groupes[g] = v; }
+		return n >= 0 && n < (int)groupes[g].size() && groupes[g][n].decodee ? &groupes[g][n] : nil;
+	};
+	// Le pas de marche d'un piéton : dans ses groupes d'animations de l'IDE
+	// qui commencent par F_ (F_Girls, F_Jocks, F_Greas…, les déplacements de
+	// chaque clan), sinon F_Adult puis F_Jocks, le cycle qui boucle (la pose de
+	// fin est celle du début), avance droit devant, vers +y dans le repère des
+	// animations, et va le plus près de 1,3 m/s, l'allure d'une marche
+	// (F_Jocks n°2 : 1,48 m en 1,067 s). Les groupes S*_S, essayés d'abord,
+	// reculent vers −y : des pas en arrière et des esquives.
+	auto PasDeMarche = [&](const CPedIdeEntry &e) -> const AgrAnim* {
+		if(!imposee.empty()){ const AgrAnim *x = Imposee(); if(x && hypotf(AgrDeplacement(*x).x, AgrDeplacement(*x).y) > 0.1f) return x; return nil; }
+		for(std::string g : { std::string(e.animGroup[0]), std::string(e.animGroup[1]), std::string(e.animGroup[2]), std::string(e.animGroup[3]),
+		                      std::string(e.female ? "F_Girls" : "F_Adult"), std::string("F_Jocks") }){
+			if(g.compare(0, 2, "F_") != 0) continue;
+			if(!groupes.count(g)){
+				std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb);
+				if(b){ AgrLireGroupe(b, nb, v); free(b); }
+				groupes[g] = v;
+			}
+			const AgrAnim *meilleur = nil; float ecart = 1e9f;
+			for(const AgrAnim &an : groupes[g]){
+				if(!an.decodee) continue;
+				CVector d = AgrDeplacement(an); float dist = hypotf(d.x, d.y), v = dist / an.duree;
+				if(dist < 0.3f || fabsf(d.x) > 0.2f * dist || d.y < 0 || v < 0.8f || v > 1.8f) continue;
+				float pire = 0;
+				for(int o = 2; o < AGR_OS - 1; o++){
+					float q0[4], q1[4];
+					if(!AgrRotation(an, o, 0, q0) || !AgrRotation(an, o, an.duree * 0.9999f, q1)) continue;
+					pire = fmaxf(pire, 1 - fabsf(q0[0]*q1[0] + q0[1]*q1[1] + q0[2]*q1[2] + q0[3]*q1[3]));
+				}
+				if(pire > 0.01f) continue;                                    // ne boucle pas
+				if(fabsf(v - 1.3f) < ecart){ ecart = fabsf(v - 1.3f); meilleur = &an; }
+			}
+			if(meilleur) return meilleur;
+		}
+		return nil;
+	};
+	struct PietonAnime {
+		outil::Anime *an; const AgrAnim *anim; float decalage; std::string groupe;
+		bool marche = false; CMarcheur corps; CVector depart; float cap = 0, vitesse = 0, horloge = 0, bloque = 0; uint32 hasard = 1;
+	};
 	std::vector<PietonAnime> animes;
 	Morceau *mPietons = nil;
 	if(pietons > 0){
@@ -326,9 +386,19 @@ main(int argc, char **argv)
 			outil::Anime *an = new outil::Anime;
 			if(m->s->AjouterModele(a, e.model, NifFromPlacement(CVector(x, y, z), CVector(1, 1, 1), q), bras, an)){
 				poses++;
-				const AgrAnim *att = (fige || bras) ? nil : Attente(e);
-				printf("  piéton %-22s %-10s (%.1f, %.1f, %.2f)%s\n", e.model, e.type, x, y, z, att ? "  animé" : "");
-				if(att) animes.push_back({an, att, k * 0.77f, ""}); else delete an;
+				const AgrAnim *pas = (fige || bras || attente) ? nil : PasDeMarche(e);
+				const AgrAnim *att = (fige || bras || pas) ? nil : Attente(e);
+				printf("  piéton %-22s %-10s (%.1f, %.1f, %.2f)%s\n", e.model, e.type, x, y, z, pas ? "  marche" : att ? "  attente" : "");
+				if(pas || att){
+					PietonAnime p; p.an = an; p.anim = pas ? pas : att; p.decalage = k * 0.77f;
+					if(pas){
+						CVector d = AgrDeplacement(*pas);
+						p.marche = true; p.vitesse = hypotf(d.x, d.y) / pas->duree;
+						p.cap = atan2f(cy - y, cx - x) + PI;                 // dos au centre : ils s'éloignent
+						p.corps.pos = CVector(x, y, z); p.depart = p.corps.pos; p.hasard = 12345u + k * 7919u;
+					}
+					animes.push_back(p);
+				}else delete an;
 			}else{ delete an; printf("  piéton %-22s : modèle introuvable dans World.img\n", e.model); }
 		}
 		if(poses > 0){ m->Preparer(); v.morceaux.push_back(m); mPietons = m; }
@@ -337,15 +407,47 @@ main(int argc, char **argv)
 	}
 
 	// Pose tous les piétons animés à l'instant t.
+	// Avance le monde des piétons jusqu'à l'instant t (pas de 1/60 s au plus :
+	// la marche suit le sol et les murs pas à pas), puis les pose.
+	float tPietons = 0;
 	auto Animer = [&](float t){
 		if(!mPietons || animes.empty()) return;
-		for(PietonAnime &p : animes) mPietons->s->Reposer(*p.an, *p.anim, t + p.decalage);
+		while(tPietons < t){
+			float dt = fminf(1.0f / 60, t - tPietons); tPietons += dt;
+			for(PietonAnime &p : animes){
+				p.horloge += dt;
+				if(!p.marche) continue;
+				CVector avant = p.corps.pos;
+				p.corps.Avancer(sol, cosf(p.cap) * p.vitesse * dt, sinf(p.cap) * p.vitesse * dt, dt);
+				float fait = hypotf(p.corps.pos.x - avant.x, p.corps.pos.y - avant.y);
+				p.bloque = fait < 0.3f * p.vitesse * dt ? p.bloque + dt : 0;
+				if(p.bloque > 0.25f){
+					// Contre un mur : un quart à un demi-tour, d'un côté au hasard.
+					p.hasard = p.hasard * 1103515245u + 12345u;
+					float quart = (90 + (p.hasard >> 16) % 90) * PI / 180;
+					p.cap += (p.hasard >> 8 & 1) ? quart : -quart; p.bloque = 0;
+				}
+			}
+		}
+		for(PietonAnime &p : animes){
+			if(p.marche){
+				// Le corps animé regarde vers +y de son repère : +y suit le cap.
+				float lacetP = -(p.cap - PI / 2);
+				float q[4] = { 0, 0, sinf(lacetP / 2), cosf(lacetP / 2) };
+				p.an->place = NifFromPlacement(p.corps.pos, CVector(1, 1, 1), q);
+			}
+			mPietons->s->Reposer(*p.an, *p.anim, p.horloge + p.decalage);
+		}
 		mPietons->Preparer();
 	};
 	if(!animes.empty()){
 		auto t0 = std::chrono::steady_clock::now();
 		Animer(temps);
-		printf("  %zu piéton(s) animé(s), pose et peau recalculées en %.2f ms\n", animes.size(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+		printf("  %zu piéton(s) animé(s) : %.1f s simulées, pose et peau comprises, en %.1f ms\n", animes.size(), temps, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+		for(const PietonAnime &p : animes) if(p.marche && temps > 0)
+			printf("    marche %.2f m/s (%.3f s par cycle) : %.1f m du départ, %s\n", p.vitesse, p.anim->duree,
+			       hypotf(p.corps.pos.x - p.an->place.t.x, p.corps.pos.y - p.an->place.t.y) >= 0 ? hypotf(p.corps.pos.x - p.depart.x, p.corps.pos.y - p.depart.y) : 0,
+			       p.corps.auSol ? "au sol" : "en l'air");
 	}
 
 	CMarcheur corps;
@@ -443,7 +545,7 @@ main(int argc, char **argv)
 			static float attente = 0; attente += dt;
 			if(attente > 0.5f){ attente = 0; Actualiser(cam.pos.x, cam.pos.y); }
 		}
-		{ static float horlogeAnim = temps; horlogeAnim += dt; Animer(horlogeAnim); }
+		{ static float horlogeAnim = temps; horlogeAnim += dt > 0.1f ? 0.1f : dt; Animer(horlogeAnim); }
 		auto t0 = horloge::now();
 		v.Rendre(cam);
 		cumul += std::chrono::duration<double, std::milli>(horloge::now() - t0).count(); images++;

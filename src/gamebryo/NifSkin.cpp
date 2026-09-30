@@ -3,12 +3,13 @@
 #include <cstring>
 
 static void
-Parcourir(const CNifFile &f, int32 bloc, const NifTransform &parent, int profondeur, NifTransform *out, const NifMatrix33 *pose, bool espaceEntite)
+Parcourir(const CNifFile &f, int32 bloc, const NifTransform &parent, int profondeur, NifTransform *out, const NifMatrix33 *pose, bool espaceEntite, const CVector *decalage)
 {
 	if(bloc < 0 || bloc >= f.numBlocks || profondeur > 64 || f.blocks[bloc].data == nil) return;
 	const NifBlock &b = f.blocks[bloc];
 	if(b.kind != NIF_NODE && b.kind != NIF_TRISHAPE && b.kind != NIF_TRISTRIPS) return;
-	const NifAVObject &o = *(const NifAVObject*)b.data;
+	NifAVObject o = *(const NifAVObject*)b.data;
+	if(decalage){ o.translation.x += decalage[bloc].x; o.translation.y += decalage[bloc].y; o.translation.z += decalage[bloc].z; }
 	NifTransform t = (espaceEntite && profondeur <= 1) ? parent : NifCompose(parent, o);
 	if(pose && b.kind == NIF_NODE){
 		// la rotation de pose s'ajoute dans le repère local du nœud
@@ -18,15 +19,15 @@ Parcourir(const CNifFile &f, int32 bloc, const NifTransform &parent, int profond
 	out[bloc] = t;
 	if(b.kind == NIF_NODE){
 		const NifNode *n = (const NifNode*)b.data;
-		for(int32 i = 0; i < n->numChildren; i++) Parcourir(f, n->children[i], t, profondeur + 1, out, pose, espaceEntite);
+		for(int32 i = 0; i < n->numChildren; i++) Parcourir(f, n->children[i], t, profondeur + 1, out, pose, espaceEntite, decalage);
 	}
 }
 
 void
-NifWorldTransforms(const CNifFile &f, NifTransform *out, const NifMatrix33 *pose, bool espaceEntite)
+NifWorldTransforms(const CNifFile &f, NifTransform *out, const NifMatrix33 *pose, bool espaceEntite, const CVector *decalage)
 {
 	for(int32 i = 0; i < f.numBlocks; i++) out[i] = NifIdentity();
-	Parcourir(f, 0, NifIdentity(), 0, out, pose, espaceEntite);
+	Parcourir(f, 0, NifIdentity(), 0, out, pose, espaceEntite, decalage);
 }
 
 static NifTransform

@@ -62,6 +62,30 @@ main(void)
 	for(int i = 0; i < 300; i++) b.Avancer(m2, 0.02f, 0, 1 / 60.0f);
 	Verifier(b.pos.x < 2 && fabsf(b.pos.z) < 1e-3f, "une marche d'un mètre ne se monte pas");
 
+	// La grille ne change aucun résultat : un monde de marches, de murs et de
+	// rampes au hasard, 2 000 requêtes de sol et de poussée, avec et sans.
+	{
+		CMondeCollision m;
+		uint32 h = 12345;
+		auto Hasard = [&](float a, float b){ h = h * 1103515245u + 12345u; return a + (b - a) * ((h >> 8) & 0xffff) / 65535.0f; };
+		for(int k = 0; k < 400; k++){
+			CVector c(Hasard(-40, 40), Hasard(-40, 40), Hasard(0, 3));
+			m.AjouterTriangle(c, CVector(c.x + Hasard(-3, 3), c.y + Hasard(-3, 3), c.z + Hasard(-1, 1)), CVector(c.x + Hasard(-3, 3), c.y + Hasard(-3, 3), c.z + Hasard(-1, 1)));
+		}
+		CMondeCollision g = m; g.Indexer(4.0f);
+		int ecarts = 0;
+		for(int k = 0; k < 2000; k++){
+			float x = Hasard(-45, 45), y = Hasard(-45, 45), z1 = 0, z2 = 0;
+			bool s1 = m.Sol(x, y, 5, 10, &z1), s2 = g.Sol(x, y, 5, 10, &z2);
+			if(s1 != s2 || (s1 && z1 != z2)) ecarts++;
+			CVector c1(x, y, Hasard(0, 3)), c2 = c1;
+			int32 n1 = m.Repousser(c1, 0.3f), n2 = g.Repousser(c2, 0.3f);
+			if(n1 != n2 || c1.x != c2.x || c1.y != c2.y) ecarts++;
+		}
+		Verifier(ecarts == 0, "grille : mêmes sols et mêmes poussées que sans elle");
+		printf("  grille : 2 000 requêtes, %d écart\n", ecarts);
+	}
+
 	printf("test_marche : %s\n", g_ko ? "ECHEC" : "ok");
 	return g_ko ? 1 : 0;
 }

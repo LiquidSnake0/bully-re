@@ -224,5 +224,28 @@ recomposé et la peau recalculée en place : 0,88 ms pour 11 piétons.
 fichier. Le choix de l'animation par catégorie est une approximation : le
 jeu choisit par ses arbres d'action (`Act/`).
 
-Prochaine étape : les positions (le bassin qui monte et descend, les
-déplacements), les autres encodages, puis faire marcher les piétons.
+## Les piétons marchent (30.09.2026, nuit)
+
+Chaque piéton prend dans ses groupes `F_*` (ceux de l'IDE, sinon `F_Adult`
+puis `F_Jocks`) le cycle qui boucle, avance droit vers +y et va le plus près
+de 1,3 m/s (`docs/agr.md`, « La marche »). Il avance de ce que parcourt la
+flèche `ARROW`, sur le corps de collision de la caméra (sol, marches, murs) ;
+bloqué un quart de seconde, il tourne d'un quart à un demi-tour au hasard.
+Son bassin monte et descend comme dans l'animation, son corps est tourné
+dans le sens de la marche. Dans la cour de l'école, après 10 s simulées : 11
+marcheurs, tous au sol, de 1,11 à 1,67 m/s, entre 5 et 17 m de leur départ.
+`--attente` les garde sur place, `--anim groupe:n` impose une animation à
+tous pour la regarder.
+
+**Les collisions en grille.** Onze marcheurs testaient chacun, à chaque pas,
+les 25 000 triangles de collision du dehors : 2,8 s de calcul pour 5 s
+simulées. `CMondeCollision::Indexer` range les triangles dans une grille en
+plan de cases de 4 m ; `Sol` et `Repousser` ne testent plus que ceux des
+cases touchées (avec trois rayons de marge pour la poussée), pris dans leur
+ordre d'origine. Résultat identique (même image au pixel près, mêmes
+positions des promenades de contrôle, 0 écart sur 2 000 requêtes au hasard
+dans `tests/test_marche`), pour 11 ms au lieu de 2 800.
+
+Prochaine étape : les autres encodages des `.agr`, les transitions entre
+attente et marche, et des trajets moins aléatoires (les chemins des
+piétons du jeu).

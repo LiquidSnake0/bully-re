@@ -111,8 +111,9 @@ collision volumes carry you on the floor, up steps and against walls.
 Outdoors, neighbouring zones load and unload as you move (`outils/carte`
 maps the 85 placement files), so you can go from the school to the
 business district. `--pietons n` places the game's pedestrians, deformed by
-their own skeleton and **animated** with the game's own idle animations: the
-`.agr` animation format is worked out ([docs/agr.md](docs/agr.md), in French).
+their own skeleton and **animated** with the game's own animations (the
+`.agr` animation format is worked out, [docs/agr.md](docs/agr.md), in French):
+they **walk** around, on the floor and against the walls.
 
 See [docs/journal.md](docs/journal.md) for the running log (in French).
 

@@ -29,6 +29,21 @@ struct CMondeCollision {
 	// Repousse une sphère hors des volumes, seulement à l'horizontale (on ne se
 	// fait pas soulever par un mur) ; rend le nombre de contacts.
 	int32 Repousser(CVector &centre, float rayon) const;
+
+	// Grille en plan (x, y) des triangles : chaque case liste ceux dont la
+	// boîte la touche. Sol et Repousser ne testent plus que les triangles des
+	// cases concernées, pris dans leur ordre d'origine : même résultat, au
+	// lieu de parcourir tout le monde (25 000 triangles dehors) à chaque pas.
+	// À refaire après tout ajout de triangles ; sans elle, tout est testé.
+	void Indexer(float cellule = 4.0f);
+
+	float gx0 = 0, gy0 = 0, gCellule = 0;
+	int32 gNx = 0, gNy = 0;
+	std::vector<int32> gDebut, gListe;                    // cases → plage dans gListe (index de triangle)
+	mutable std::vector<uint32> gVu; mutable uint32 gTour = 0;
+	// Triangles (index du premier sommet) dont la boîte en plan touche le
+	// rectangle, triés dans l'ordre d'origine.
+	void Candidats(float x0, float y0, float x1, float y1, std::vector<int32> &out) const;
 };
 
 // Le corps qui marche : pieds en `pos`, yeux à `hauteurYeux` au-dessus.
