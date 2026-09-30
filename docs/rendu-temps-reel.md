@@ -168,5 +168,36 @@ Meilleur de trois mesures de 40 images, avant → après : cour de l'école
 39,7 → 29,9 ms, quartier d'affaires 42,1 → 28,2 ms (35 i/s), salle de boxe
 3,1 → 2,3 ms.
 
-Prochaine étape : les piétons, ou un arbre de partition pour les collisions
-(dehors, chaque pas teste 25 000 triangles).
+## Les piétons, premier pas (30.09.2026)
+
+Les 259 entrées « peds » des `.idb` donnent le modèle (`DOGirl_Zoe_EG.nif`
+dans World.img) et le dictionnaire de textures de chaque piéton. Sans rien
+décoder de plus, ils se dessinent déjà : les sommets d'un modèle animé sont
+stockés dans sa **pose de repos** (les bras écartés), et c'est cette pose que
+la visite affiche. `--pietons n` en pose n, pris dans toute la liste, en
+cercle à 8 m devant la caméra, les pieds sur le sol du décor, tournés vers le
+centre. Ce que ça a demandé :
+
+- **Les formes cachées.** Un piéton porte deux aides d'édition : `Mesh`, une
+  tige de 8 m, et `Editable Poly`, une flèche au sol. La première a le
+  drapeau « caché » de Gamebryo (bit 0 des drapeaux, APP_CULLED), que le
+  parcours des formes respecte désormais, pour les nœuds comme pour les
+  formes : le décor n'en change pas (0, 1 et 39 pixels sur les trois vues de
+  référence). La seconde n'est pas cachée mais ne déclare aucune texture :
+  pour les piétons, on l'écarte.
+- **Le dictionnaire d'hiver.** L'IDE associe souvent un piéton à sa variante
+  d'hiver (`GRGirl_Lola_W`), qui ne contient pas les textures du modèle de
+  base : une texture introuvable est cherchée ensuite dans le dictionnaire
+  qui porte le nom du modèle.
+- **Le sens du lacet.** Un piéton regarde vers −y dans son repère, et c'est le
+  conjugué du quaternion de placement qui tourne les sommets (`docs/ipl.md`) :
+  le lacet se donne donc avec un signe moins. Vérifié par le calcul sur
+  quatre directions avant de l'être à l'image.
+- Un dictionnaire absent ne plantait jamais, parce qu'on ne cherchait que des
+  dictionnaires existants : sa structure est maintenant initialisée à zéro.
+
+Sur 12 piétons demandés dans la cour de l'école, 11 sont posés ; le douzième,
+`special7`, est une entrée de l'IDE sans modèle.
+
+Prochaine étape : le squelette (`NiSkinInstance`, `NiSkinData`,
+`NiSkinPartition`) pour déformer le corps, puis les animations des `.agr`.

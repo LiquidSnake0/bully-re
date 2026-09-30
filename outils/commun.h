@@ -37,9 +37,11 @@ struct Archives {
 	int32 monde = -1, ide = -1;
 	std::map<std::string, std::string> txdDe;     // modèle → dictionnaire de textures
 	std::map<int32, std::string> modeleDe;        // identifiant → modèle
+	std::vector<CPedIdeEntry> pietons;            // la section « peds », dans l'ordre des identifiants
 };
 inline Archives *g_arch = nil;
 template<class E> inline int32 Retenir(const E &e){ g_arch->txdDe[Minuscules(e.model)] = e.txd; g_arch->modeleDe[e.id] = e.model; return 0; }
+inline int32 RetenirPieton(const CPedIdeEntry &e){ g_arch->pietons.push_back(e); return Retenir(e); }
 
 inline uint8 *LireEntree(int32 image, const char *imgPath, const char *nom, uint32 *bytes){
 	const CDirectoryEntry *d = CdStream::ms_images[image].Find(nom);
@@ -61,7 +63,7 @@ inline bool Ouvrir(Archives &a){
 	a.ide = CdStream::AddImage("Objects\\ide.img");
 	if(a.monde < 0 || a.ide < 0){ fprintf(stderr, "archives introuvables : BULLY_DATA doit pointer sur la racine du jeu\n"); return false; }
 	g_arch = &a;
-	CIdeBinary::ms_objHandler = Retenir<CObjIdeEntry>;  CIdeBinary::ms_pedHandler = Retenir<CPedIdeEntry>;
+	CIdeBinary::ms_objHandler = Retenir<CObjIdeEntry>;  CIdeBinary::ms_pedHandler = RetenirPieton;
 	CIdeBinary::ms_carHandler = Retenir<CCarIdeEntry>;  CIdeBinary::ms_weapHandler = Retenir<CWeapIdeEntry>;
 	CIdeBinary::ms_panmHandler = Retenir<CPanmIdeEntry>; CIdeBinary::ms_simpleHandler = Retenir<CSimpleIdeEntry>;
 	const CdImage &img = CdStream::ms_images[a.ide];
@@ -85,7 +87,7 @@ inline std::string TxdDe(const Archives &a, const std::string &modele){
 // Un dictionnaire de textures décodé : base du .tga → RGBA du niveau 0.
 struct Texture { std::vector<uint8> rgba; RasterTexture rt; const NifPixelData *px = nil; const NifPalette *pal = nil; };
 struct Dictionnaire {
-	CNifFile nft; uint8 *buf = nil;
+	CNifFile nft{}; uint8 *buf = nil;             // {} : à zéro, pour qu'un dictionnaire absent se libère sans rien toucher
 	std::map<std::string, Texture> textures;
 	~Dictionnaire(){ nft.Free(); free(buf); }
 };

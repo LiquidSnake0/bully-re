@@ -19,6 +19,9 @@ struct Scene {
 	std::vector<uint8> triDeuxFaces;                     // par triangle : 1 si la forme se dessine des deux côtés
 	std::vector<std::string> texNoms; std::vector<const RasterTexture*> texPtr;
 	int modeles = 0, manquants = 0;
+	// Les piétons portent sous leur corps des formes d'aide sans texture (une
+	// flèche au sol, « Editable Poly ») que le jeu ne montre pas.
+	bool sansAidesNonTexturees = false;
 	std::vector<CIplInst> placements;                    // gardés pour poser les collisions
 	// Un bloc par modèle placé : ses plages de sommets et de triangles, et sa
 	// sphère englobante. La visite rejette un modèle entier (hors du champ, trop
@@ -42,12 +45,18 @@ struct Scene {
 		for(size_t k = 0; k < texNoms.size(); k++) if(texNoms[k] == cle) return (int32)k;
 		texNoms.push_back(cle); texPtr.push_back(&t->second.rt); return (int32)texNoms.size() - 1;
 	}
-	struct Ctx { Scene *s; Dictionnaire *d; NifTransform place; };
+	struct Ctx { Scene *s; Dictionnaire *d, *secours; NifTransform place; };
 	static void Forme(const CNifFile &f, int32, const NifGeometry &g, const NifGeometryData &d, const NifTransform &t, void *ctx){
 		Ctx &c = *(Ctx*)ctx; Scene &s = *c.s;
 		if(!d.vertices || !d.triangles) return;
 		bool avecUv = d.uv && d.numUVSets > 0;
-		int32 tex = avecUv ? s.IndexTexture(c.d, TextureDeBase(f, g)) : -1;
+		std::string nomTex = TextureDeBase(f, g);
+		if(s.sansAidesNonTexturees && nomTex.empty()) return;
+		int32 tex = avecUv ? s.IndexTexture(c.d, nomTex) : -1;
+		// Le dictionnaire de l'IDE peut être une variante (l'hiver, « _W ») qui
+		// ne contient pas toutes les textures du modèle : on essaie alors celui
+		// qui porte le nom du modèle.
+		if(avecUv && tex < 0 && c.secours) tex = s.IndexTexture(c.secours, nomTex);
 		uint8 mode = RASTER_OPAQUE, seuil = 128;
 		ModeAlpha(f, g, &mode, &seuil);
 		uint8 deux = DeuxFaces(f, g) ? 1 : 0;
@@ -69,7 +78,8 @@ struct Scene {
 		CNifFile nif;
 		if(!nif.Load(buf, nb)){ free(buf); manquants++; return false; }
 		size_t avant = tri.size(), ptAvant = pts.size();
-		Ctx c{this, Dico(TxdDe(a, modele)), place};
+		std::string txd = TxdDe(a, modele);
+		Ctx c{this, Dico(txd), Minuscules(txd.c_str()) != Minuscules(modele.c_str()) ? Dico(modele) : nil, place};
 		NifWalkShapes(nif, Forme, &c);
 		nif.Free(); free(buf);
 		modeles++;

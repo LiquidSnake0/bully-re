@@ -52,6 +52,7 @@ Parcourir(const CNifFile &f, int32 bloc, const NifTransform &parent, int profond
 	const NifBlock &b = f.blocks[bloc];
 	if(b.kind == NIF_NODE){
 		const NifNode *n = (const NifNode*)b.data;
+		if(n->flags & 1) return;                    // APP_CULLED : Gamebryo ne dessine pas ce qui est caché
 		// profondeur 0 : Scene Root ; 1 : le nœud du modèle, dont l'entité remplace la transformation
 		NifTransform t = (espaceEntite && profondeur <= 1) ? parent : NifCompose(parent, *n);
 		for(int32 i = 0; i < n->numChildren; i++)
@@ -60,6 +61,7 @@ Parcourir(const CNifFile &f, int32 bloc, const NifTransform &parent, int profond
 	}
 	if(b.kind != NIF_TRISHAPE && b.kind != NIF_TRISTRIPS) return;
 	const NifGeometry *g = (const NifGeometry*)b.data;
+	if(g->flags & 1) return;                        // forme cachée (aide d'édition, tige de repère)
 	if(g->data < 0 || g->data >= f.numBlocks || f.blocks[g->data].data == nil) return;
 	const NifGeometryData *d = (const NifGeometryData*)f.blocks[g->data].data;
 	// Une forme directement sous Scene Root est elle-même le nœud du modèle

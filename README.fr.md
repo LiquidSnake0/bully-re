@@ -58,7 +58,8 @@ du jeu :
   sur les volumes de collision du jeu (sol, marches, murs) ; dehors, les
   scènes voisines se chargent et se libèrent pendant qu'on avance
   (`outils/carte` dresse la carte des 85 fichiers de placements) : on passe
-  de l'école au quartier d'affaires ;
+  de l'école au quartier d'affaires ; `--pietons n` pose des piétons du jeu
+  (pose de repos, sans animation pour l'instant) ;
 - la numérotation du streaming ([docs/streaming.md](docs/streaming.md)) et
   les pools ([docs/pools.md](docs/pools.md)) ;
 - la grille du monde, ses listes et ses dix pools d'entités

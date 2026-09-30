@@ -375,3 +375,9 @@ en échec plutôt que de les masquer.
   arrière. Modèles triés du plus proche au plus lointain (la transparence à
   l'envers), boucle par pixel allégée. École 39,7 → 29,9 ms, quartier
   d'affaires 42,1 → 28,2 ms, boxe 3,1 → 2,3 ms.
+- Suite : **les premiers piétons**. `--pietons n` pose des piétons de la
+  section « peds » (modèles et textures du jeu, pose de repos) en cercle dans
+  la visite. Formes cachées (APP_CULLED) respectées partout, textures cherchées
+  dans le dictionnaire du modèle quand celui de l'IDE est une variante
+  d'hiver, lacet au signe du conjugué du quaternion. 11 piétons sur 12 dans la
+  cour de l'école. Suite : le squelette, puis les animations.

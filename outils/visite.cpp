@@ -1,7 +1,7 @@
 // Visite temps réel d'une scène du jeu, à la première personne.
 //   BULLY_DATA=<racine> build/outils/visite <fichier.ipb> [--pos x y z lacet tangage] [--marche]
 //                                          [--image sortie.ppm] [--banc n] [--promenade n]
-//                                          [--monde] [--rayon m] [--survol n]
+//                                          [--monde] [--rayon m] [--survol n] [--pietons n]
 //
 // Le rendu est entièrement logiciel (src/render : Camera + RasterTrianglePersp),
 // dans une image de 400 × 240, la définition de l'écran du haut de la New
@@ -35,6 +35,11 @@
 // intérieurs (i*) restent des scènes seules, posées à part dans le monde.
 // --survol n vole n images droit devant, à 12 m/s et sans collisions, et
 // affiche ce qui se charge et se libère : l'enchaînement se vérifie sans écran.
+//
+// --pietons n pose n piétons de la section « peds » du jeu en cercle, 8 m
+// devant la caméra de départ, les pieds sur le sol, tournés vers le centre. Ils sont dans
+// leur pose de repos (les bras écartés) : ni squelette animé ni IA pour
+// l'instant, seulement les modèles, leurs textures et leur place.
 #include "commun.h"
 #include "scene.h"
 #include "monde.h"
@@ -184,13 +189,14 @@ int
 main(int argc, char **argv)
 {
 	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--marche] [--image sortie.ppm] [--banc n] [--promenade n] [--monde] [--rayon m]\n"); return 2; }
-	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
+	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
 	for(int i = 2; i < argc; i++){
 		if(strcmp(argv[i], "--image") == 0 && i + 1 < argc) image = argv[++i];
 		else if(strcmp(argv[i], "--banc") == 0 && i + 1 < argc) banc = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--promenade") == 0 && i + 1 < argc){ promenade = atoi(argv[++i]); marche = true; }
 		else if(strcmp(argv[i], "--marche") == 0) marche = true;
 		else if(strcmp(argv[i], "--survol") == 0 && i + 1 < argc) survol = atoi(argv[++i]);
+		else if(strcmp(argv[i], "--pietons") == 0 && i + 1 < argc) pietons = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--monde") == 0) monde = true;
 		else if(strcmp(argv[i], "--rayon") == 0 && i + 1 < argc) rayon = (float)atof(argv[++i]);
 		else if(strcmp(argv[i], "--pos") == 0 && i + 5 < argc){ pos = true; px = (float)atof(argv[++i]); py = (float)atof(argv[++i]); pz = (float)atof(argv[++i]); lacet = (float)atof(argv[++i]); tangage = (float)atof(argv[++i]); }
@@ -269,6 +275,33 @@ main(int argc, char **argv)
 		size_t t = 0; for(Morceau *m : v.morceaux) t += m->s->tri.size() / 3;
 		printf("  %zu morceau(x) chargé(s), %zu triangles, collisions : %zu triangles, %zu sphères\n", v.morceaux.size(), t, sol.tri.size() / 3, sol.sphCentre.size());
 	}
+	// Les piétons : un morceau à part, sans collisions, hors de la carte (il
+	// n'est jamais libéré par l'enchaînement des scènes).
+	if(pietons > 0){
+		std::vector<const CPedIdeEntry*> liste;
+		for(const CPedIdeEntry &e : a.pietons) if(e.id > 1) liste.push_back(&e);   // 0 le joueur, 1 le piéton par défaut
+		Morceau *m = new Morceau; m->nom = "(piétons)"; m->s = new outil::Scene; m->s->sansAidesNonTexturees = true;
+		float cx = cam.pos.x + 8 * cosf(cam.yaw), cy = cam.pos.y + 8 * sinf(cam.yaw);
+		int poses = 0;
+		for(int k = 0; k < pietons && !liste.empty(); k++){
+			const CPedIdeEntry &e = *liste[(size_t)k * liste.size() / pietons % liste.size()];
+			float ang = k * 2 * PI / pietons, r = k % 2 ? 4.0f : 3.0f;
+			float x = cx + r * cosf(ang), y = cy + r * sinf(ang), z;
+			if(!sol.Sol(x, y, cam.pos.z + 2.0f, 50.0f, &z)) z = cam.pos.z - 1.6f;
+			// Face au centre. Le modèle regarde vers −y dans son repère, et c'est
+			// le conjugué du quaternion de placement qui tourne les sommets
+			// (docs/ipl.md) : d'où le signe moins.
+			float lacetP = -(atan2f(cy - y, cx - x) + PI / 2);
+			float q[4] = { 0, 0, sinf(lacetP / 2), cosf(lacetP / 2) };
+			if(m->s->AjouterModele(a, e.model, NifFromPlacement(CVector(x, y, z), CVector(1, 1, 1), q))){
+				poses++; printf("  piéton %-22s %-10s (%.1f, %.1f, %.2f)\n", e.model, e.type, x, y, z);
+			}else printf("  piéton %-22s : modèle introuvable dans World.img\n", e.model);
+		}
+		if(poses > 0){ m->Preparer(); v.morceaux.push_back(m); }
+		else delete m;
+		printf("  %d piéton(s) posé(s)\n", poses);
+	}
+
 	CMarcheur corps;
 	auto PoserCorps = [&](void){
 		corps.pos = CVector(cam.pos.x, cam.pos.y, cam.pos.z - corps.hauteurYeux);

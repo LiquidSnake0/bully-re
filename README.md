@@ -110,7 +110,8 @@ the game's own alpha modes; SDL2 only opens the window
 collision volumes carry you on the floor, up steps and against walls.
 Outdoors, neighbouring zones load and unload as you move (`outils/carte`
 maps the 85 placement files), so you can go from the school to the
-business district.
+business district. `--pietons n` places the game's pedestrians (rest pose,
+no animation yet).
 
 See [docs/journal.md](docs/journal.md) for the running log (in French).
 
