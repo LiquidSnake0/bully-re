@@ -388,3 +388,9 @@ en échec plutôt que de les masquer.
   une pose, déformation des sommets), `tests/test_skin`. Les piétons sont
   déformés par leur squelette ; `--bras` leur baisse les bras (pose de
   démonstration). Suite : les animations des `.agr`.
+- Suite : **les animations**. Format `.agr` déchiffré pour le type 1002 (2 772
+  animations sur 3 443) : le décompresseur d'images clés trouvé dans
+  `bully.exe` (0x6b1710, quaternion sur 44 bits, instant sur 9, lien vers la
+  clé précédente sur 11), l'ordre des 36 pistes établi sur les os immobiles de
+  Jimmy. `src/anim/Agr`, `tests/test_agr`, `docs/agr.md`. Les piétons de la
+  visite jouent l'attente de leur catégorie, en temps réel.

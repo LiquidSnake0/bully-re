@@ -3,6 +3,7 @@
 #include "commun.h"
 #include "../src/gamebryo/NifTransform.h"
 #include "../src/gamebryo/NifSkin.h"
+#include "../src/anim/Agr.h"
 #include "../src/core/IplFile.h"
 #include "../src/collision/ColModel.h"
 #include "../src/collision/Marche.h"
@@ -34,6 +35,17 @@ inline void PoseBrasBaisses(const CNifFile &f, NifMatrix33 *pose){
 		pose[ua] = NifAxisRotation(1, meilleur);
 	}
 }
+
+// Un modèle animé gardé en mémoire après son ajout : son NIF, sa place, la
+// plage de ses sommets dans la scène, et les 36 nœuds que les pistes des .agr
+// animent (l'ordre des nœuds sous « Dummy », docs/agr.md).
+struct Anime {
+	CNifFile nif{}; uint8 *buf = nil;
+	NifTransform place;
+	int32 ptDebut = 0, ptFin = 0, bloc = -1;
+	int32 noeuds[AGR_OS];
+	~Anime(){ nif.Free(); free(buf); }
+};
 
 struct Scene {
 	Archives *arch = nil;
@@ -70,13 +82,22 @@ struct Scene {
 		for(size_t k = 0; k < texNoms.size(); k++) if(texNoms[k] == cle) return (int32)k;
 		texNoms.push_back(cle); texPtr.push_back(&t->second.rt); return (int32)texNoms.size() - 1;
 	}
-	struct Ctx { Scene *s; Dictionnaire *d, *secours; NifTransform place; const NifTransform *mondes; };
+	struct Ctx { Scene *s; Dictionnaire *d, *secours; NifTransform place; const NifTransform *mondes; int32 *ecrire; };
 	static void Forme(const CNifFile &f, int32 bloc, const NifGeometry &g, const NifGeometryData &d, const NifTransform &t, void *ctx){
 		Ctx &c = *(Ctx*)ctx; Scene &s = *c.s;
 		if(!d.vertices || !d.triangles) return;
 		bool avecUv = d.uv && d.numUVSets > 0;
 		std::string nomTex = TextureDeBase(f, g);
 		if(s.sansAidesNonTexturees && nomTex.empty()) return;
+		if(c.ecrire){
+			// Mise à jour d'un modèle animé : mêmes formes, mêmes sommets, dans le
+			// même ordre ; seules les positions changent.
+			std::vector<CVector> peau;
+			if(c.mondes && g.skin >= 0){ peau.resize(d.numVertices); if(!NifSkinVertices(f, bloc, c.mondes, peau.data())) peau.clear(); }
+			for(int i = 0; i < d.numVertices; i++)
+				s.pts[(*c.ecrire)++] = NifApply(c.place, peau.empty() ? NifApply(t, d.vertices[i]) : peau[i]);
+			return;
+		}
 		int32 tex = avecUv ? s.IndexTexture(c.d, nomTex) : -1;
 		// Le dictionnaire de l'IDE peut être une variante (l'hiver, « _W ») qui
 		// ne contient pas toutes les textures du modèle : on essaie alors celui
@@ -100,7 +121,8 @@ struct Scene {
 	}
 	// Ajoute un modèle placé par `place` (transformation du modèle vers le monde).
 	// `brasBaisses` : les formes à peau prennent la pose de PoseBrasBaisses.
-	bool AjouterModele(Archives &a, const std::string &modele, const NifTransform &place, bool brasBaisses = false){
+	// `garder` : le NIF reste en mémoire dans cet objet, pour Reposer ensuite.
+	bool AjouterModele(Archives &a, const std::string &modele, const NifTransform &place, bool brasBaisses = false, Anime *garder = nil){
 		arch = &a;
 		uint32 nb; uint8 *buf = LireMonde(a, modele + ".nif", &nb);
 		if(buf == nil){ manquants++; return false; }
@@ -120,9 +142,24 @@ struct Scene {
 			mondes.resize(nif.numBlocks);
 			NifWorldTransforms(nif, mondes.data(), pose.data());
 		}
-		Ctx c{this, Dico(txd), Minuscules(txd.c_str()) != Minuscules(modele.c_str()) ? Dico(modele) : nil, place, mondes.empty() ? nil : mondes.data()};
+		Ctx c{this, Dico(txd), Minuscules(txd.c_str()) != Minuscules(modele.c_str()) ? Dico(modele) : nil, place, mondes.empty() ? nil : mondes.data(), nil};
 		NifWalkShapes(nif, Forme, &c);
-		nif.Free(); free(buf);
+		if(garder){
+			garder->nif = nif; garder->buf = buf; garder->place = place;
+			garder->ptDebut = (int32)ptAvant; garder->ptFin = (int32)pts.size();
+			garder->bloc = tri.size() > avant ? (int32)blocs.size() : -1;
+			for(int32 k = 0; k < AGR_OS; k++) garder->noeuds[k] = -1;
+			// Les 36 nœuds animés : l'arbre sous « Dummy », dans l'ordre du fichier.
+			int32 n = 0, dummy = NifFindNode(nif, "Dummy");
+			std::vector<int32> pile; if(dummy >= 0) pile.push_back(dummy);
+			while(!pile.empty() && n < AGR_OS){
+				int32 b = pile.back(); pile.pop_back();
+				if(b < 0 || b >= nif.numBlocks || nif.blocks[b].kind != NIF_NODE || !nif.blocks[b].data) continue;
+				garder->noeuds[n++] = b;
+				const NifNode *nd = (const NifNode*)nif.blocks[b].data;
+				for(int32 i = nd->numChildren - 1; i >= 0; i--) pile.push_back(nd->children[i]);
+			}
+		}else{ nif.Free(); free(buf); }
 		modeles++;
 		if(tri.size() > avant){
 			Bloc b{(int32)ptAvant, (int32)pts.size(), (int32)avant, (int32)tri.size(), CVector(0, 0, 0), 0};
@@ -135,6 +172,38 @@ struct Scene {
 		}
 		return tri.size() > avant;
 	}
+	// Met un modèle animé dans la pose de `anim` à l'instant t (s) : chaque os
+	// animé prend la rotation de sa piste à la place de la sienne (sa position
+	// reste celle du fichier), puis la peau est recalculée en place.
+	void Reposer(Anime &an, const AgrAnim &anim, float t){
+		const CNifFile &f = an.nif;
+		std::vector<NifMatrix33> pose(f.numBlocks, NifAxisRotation(0, 0));
+		for(int32 k = 1; k < AGR_OS; k++){                // la piste 0 (Dummy) ne bouge pas le modèle
+			int32 b = an.noeuds[k]; float q[4], m[3][3];
+			if(b < 0 || !AgrRotation(anim, k, t, q)) continue;
+			AgrMatrice(q, m);
+			const NifMatrix33 &r = ((const NifAVObject*)f.blocks[b].data)->rotation;
+			// pose = rᵀ · m : composée après la rotation du nœud, elle la remplace.
+			for(int i = 0; i < 3; i++) for(int j = 0; j < 3; j++){
+				float v = 0; for(int k2 = 0; k2 < 3; k2++) v += r.m[k2][i] * m[k2][j];
+				pose[b].m[i][j] = v;
+			}
+		}
+		std::vector<NifTransform> mondes(f.numBlocks);
+		NifWorldTransforms(f, mondes.data(), pose.data());
+		int32 ecrire = an.ptDebut;
+		Ctx c{this, nil, nil, an.place, mondes.data(), &ecrire};
+		NifWalkShapes(f, Forme, &c);
+		if(an.bloc >= 0){
+			Bloc &b = blocs[an.bloc];
+			CVector mn = pts[b.ptDebut], mx = mn;
+			for(int32 i = b.ptDebut; i < b.ptFin; i++){ const CVector &p = pts[i]; mn.x = fminf(mn.x, p.x); mn.y = fminf(mn.y, p.y); mn.z = fminf(mn.z, p.z); mx.x = fmaxf(mx.x, p.x); mx.y = fmaxf(mx.y, p.y); mx.z = fmaxf(mx.z, p.z); }
+			b.centre = CVector((mn.x+mx.x)/2, (mn.y+mx.y)/2, (mn.z+mx.z)/2); b.rayon = 0;
+			for(int32 i = b.ptDebut; i < b.ptFin; i++){ float dx = pts[i].x-b.centre.x, dy = pts[i].y-b.centre.y, dz = pts[i].z-b.centre.z; b.rayon = fmaxf(b.rayon, dx*dx+dy*dy+dz*dz); }
+			b.rayon = sqrtf(b.rayon);
+		}
+	}
+
 	// `coupe` : fraction de la hauteur au-dessus de laquelle les triangles ne
 	// sont pas dessinés (1 = tout dessiner), pour regarder dans une pièce.
 	bool Rendre(const std::string &sortie, float azim, float elev, int32 taille, float coupe = 1.0f){

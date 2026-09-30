@@ -210,4 +210,19 @@ bras tourne autour de son y local de l'angle qui amène la main 5 cm à
 l'extérieur de l'épaule (36° pour Jimmy, 51° pour Kirby et ses épaulières).
 C'est une pose de démonstration, pas une animation du jeu.
 
-Prochaine étape : les animations des `.agr`, pour que les piétons bougent.
+## Les animations (30.09.2026, fin de soirée)
+
+Le format des `.agr` est déchiffré pour le type 1002 (`docs/agr.md`), trouvé
+dans le code de `bully.exe` (le décompresseur d'images clés en 0x6b1710) puis
+vérifié sur les 550 fichiers. Chaque piéton de la visite joue maintenant
+l'attente de sa catégorie (`IDLE_GSF_A` pour une élève, `IDLE_JOCK_A`,
+`IDLE_GREAS_A`, `IDLE_AUTH_A` pour un préfet ou un flic…), décalée dans le
+temps d'un piéton à l'autre. Dans la fenêtre, ils bougent en temps réel ; à
+chaque image, les rotations des 36 os sont interpolées (slerp), le squelette
+recomposé et la peau recalculée en place : 0,88 ms pour 11 piétons.
+`--temps s` rend l'image à un instant donné, `--fige` garde la pose du
+fichier. Le choix de l'animation par catégorie est une approximation : le
+jeu choisit par ses arbres d'action (`Act/`).
+
+Prochaine étape : les positions (le bassin qui monte et descend, les
+déplacements), les autres encodages, puis faire marcher les piétons.

@@ -2,6 +2,7 @@
 //   BULLY_DATA=<racine> build/outils/visite <fichier.ipb> [--pos x y z lacet tangage] [--marche]
 //                                          [--image sortie.ppm] [--banc n] [--promenade n]
 //                                          [--monde] [--rayon m] [--survol n] [--pietons n] [--bras]
+//                                          [--fige] [--temps s]
 //
 // Le rendu est entièrement logiciel (src/render : Camera + RasterTrianglePersp),
 // dans une image de 400 × 240, la définition de l'écran du haut de la New
@@ -39,11 +40,15 @@
 // --pietons n pose n piétons de la section « peds » du jeu en cercle, 8 m
 // devant la caméra de départ, les pieds sur le sol, tournés vers le centre. Ils sont dans
 // leur pose du fichier (les bras écartés), déformés par leur squelette
-// (src/gamebryo/NifSkin) ; --bras leur met les bras le long du corps, une
-// pose de démonstration en attendant les animations du jeu.
+// (src/gamebryo/NifSkin), et ils jouent l'attente de leur catégorie tirée des
+// .agr du jeu (IDLE_GSF_A pour une élève, IDLE_JOCK_A pour un sportif… ; le
+// vrai jeu choisit par ses arbres d'action, c'est ici une approximation).
+// --fige les laisse dans la pose du fichier, --bras dans une pose de
+// démonstration (bras le long du corps), --temps s rend l'image à cet instant.
 #include "commun.h"
 #include "scene.h"
 #include "monde.h"
+#include "../src/anim/Agr.h"
 #include "../src/render/Camera.h"
 #include <algorithm>
 #include <chrono>
@@ -190,7 +195,7 @@ int
 main(int argc, char **argv)
 {
 	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--marche] [--image sortie.ppm] [--banc n] [--promenade n] [--monde] [--rayon m]\n"); return 2; }
-	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0; bool bras = false; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
+	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0; bool bras = false, fige = false; float temps = 0; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
 	for(int i = 2; i < argc; i++){
 		if(strcmp(argv[i], "--image") == 0 && i + 1 < argc) image = argv[++i];
 		else if(strcmp(argv[i], "--banc") == 0 && i + 1 < argc) banc = atoi(argv[++i]);
@@ -199,6 +204,8 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--survol") == 0 && i + 1 < argc) survol = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--pietons") == 0 && i + 1 < argc) pietons = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--bras") == 0) bras = true;
+		else if(strcmp(argv[i], "--fige") == 0) fige = true;
+		else if(strcmp(argv[i], "--temps") == 0 && i + 1 < argc) temps = (float)atof(argv[++i]);
 		else if(strcmp(argv[i], "--monde") == 0) monde = true;
 		else if(strcmp(argv[i], "--rayon") == 0 && i + 1 < argc) rayon = (float)atof(argv[++i]);
 		else if(strcmp(argv[i], "--pos") == 0 && i + 5 < argc){ pos = true; px = (float)atof(argv[++i]); py = (float)atof(argv[++i]); pz = (float)atof(argv[++i]); lacet = (float)atof(argv[++i]); tangage = (float)atof(argv[++i]); }
@@ -279,6 +286,27 @@ main(int argc, char **argv)
 	}
 	// Les piétons : un morceau à part, sans collisions, hors de la carte (il
 	// n'est jamais libéré par l'enchaînement des scènes).
+	// L'attente de chaque catégorie de piéton (le groupe .agr, sa première
+	// animation décodée), chargée une fois.
+	std::map<std::string, std::vector<AgrAnim>> groupes;
+	auto Attente = [&](const CPedIdeEntry &e) -> const AgrAnim* {
+		std::string t = e.type, g;
+		if(t == "JOCK") g = "IDLE_JOCK_A"; else if(t == "GREASER") g = "IDLE_GREAS_A"; else if(t == "NERD") g = "IDLE_NERD_A";
+		else if(t == "PREPPY") g = "IDLE_PREP_A"; else if(t == "BULLY") g = "IDLE_BULLY_A"; else if(t == "DROPOUT") g = "IDLE_DOUT_A";
+		else if(t == "PREFECT" || t == "COP") g = "IDLE_AUTH_A";
+		else if(t == "TOWNPERSON") g = e.female ? "IDLE_CIVF_A" : "IDLE_CIVM_A";
+		else g = e.female ? "IDLE_GSF_A" : "IDLE_GSM_A";
+		if(!groupes.count(g)){
+			std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb);
+			if(b){ AgrLireGroupe(b, nb, v); free(b); }
+			groupes[g] = v;
+		}
+		for(const AgrAnim &an : groupes[g]) if(an.decodee) return &an;
+		return nil;
+	};
+	struct PietonAnime { outil::Anime *an; const AgrAnim *anim; float decalage; std::string groupe; };
+	std::vector<PietonAnime> animes;
+	Morceau *mPietons = nil;
 	if(pietons > 0){
 		std::vector<const CPedIdeEntry*> liste;
 		for(const CPedIdeEntry &e : a.pietons) if(e.id > 1) liste.push_back(&e);   // 0 le joueur, 1 le piéton par défaut
@@ -295,13 +323,29 @@ main(int argc, char **argv)
 			// (docs/ipl.md) : d'où le signe moins.
 			float lacetP = -(atan2f(cy - y, cx - x) + PI / 2);
 			float q[4] = { 0, 0, sinf(lacetP / 2), cosf(lacetP / 2) };
-			if(m->s->AjouterModele(a, e.model, NifFromPlacement(CVector(x, y, z), CVector(1, 1, 1), q), bras)){
-				poses++; printf("  piéton %-22s %-10s (%.1f, %.1f, %.2f)\n", e.model, e.type, x, y, z);
-			}else printf("  piéton %-22s : modèle introuvable dans World.img\n", e.model);
+			outil::Anime *an = new outil::Anime;
+			if(m->s->AjouterModele(a, e.model, NifFromPlacement(CVector(x, y, z), CVector(1, 1, 1), q), bras, an)){
+				poses++;
+				const AgrAnim *att = (fige || bras) ? nil : Attente(e);
+				printf("  piéton %-22s %-10s (%.1f, %.1f, %.2f)%s\n", e.model, e.type, x, y, z, att ? "  animé" : "");
+				if(att) animes.push_back({an, att, k * 0.77f, ""}); else delete an;
+			}else{ delete an; printf("  piéton %-22s : modèle introuvable dans World.img\n", e.model); }
 		}
-		if(poses > 0){ m->Preparer(); v.morceaux.push_back(m); }
+		if(poses > 0){ m->Preparer(); v.morceaux.push_back(m); mPietons = m; }
 		else delete m;
 		printf("  %d piéton(s) posé(s)\n", poses);
+	}
+
+	// Pose tous les piétons animés à l'instant t.
+	auto Animer = [&](float t){
+		if(!mPietons || animes.empty()) return;
+		for(PietonAnime &p : animes) mPietons->s->Reposer(*p.an, *p.anim, t + p.decalage);
+		mPietons->Preparer();
+	};
+	if(!animes.empty()){
+		auto t0 = std::chrono::steady_clock::now();
+		Animer(temps);
+		printf("  %zu piéton(s) animé(s), pose et peau recalculées en %.2f ms\n", animes.size(), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
 	}
 
 	CMarcheur corps;
@@ -399,6 +443,7 @@ main(int argc, char **argv)
 			static float attente = 0; attente += dt;
 			if(attente > 0.5f){ attente = 0; Actualiser(cam.pos.x, cam.pos.y); }
 		}
+		{ static float horlogeAnim = temps; horlogeAnim += dt; Animer(horlogeAnim); }
 		auto t0 = horloge::now();
 		v.Rendre(cam);
 		cumul += std::chrono::duration<double, std::milli>(horloge::now() - t0).count(); images++;

@@ -14,6 +14,7 @@ g++ $FLAGS tests/test_cdstream.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp 
 g++ $FLAGS tests/test_ide.cpp src/core/IdeBinary.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_ide
 g++ $FLAGS tests/test_col.cpp src/collision/ColModel.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_col
 g++ $FLAGS tests/test_ipl.cpp src/core/IplFile.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_ipl
+g++ $FLAGS tests/test_agr.cpp src/anim/Agr.cpp src/gamebryo/NifSkin.cpp src/gamebryo/NifTransform.cpp src/gamebryo/NifFile.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_agr
 g++ $FLAGS tests/test_skin.cpp src/gamebryo/NifSkin.cpp src/gamebryo/NifTransform.cpp src/gamebryo/NifFile.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_skin
 g++ $FLAGS tests/test_nif.cpp src/gamebryo/NifFile.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_nif
 g++ $FLAGS tests/test_nft.cpp src/gamebryo/NifFile.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_nft
@@ -32,7 +33,7 @@ g++ $FLAGS tests/test_camera.cpp src/render/Camera.cpp src/render/SoftRaster.cpp
 g++ $FLAGS -O2 outils/carte.cpp src/core/IplFile.cpp src/core/IdeBinary.cpp src/core/CdStream.cpp src/gamebryo/NifTransform.cpp src/gamebryo/NifSkin.cpp src/gamebryo/TextureDecode.cpp src/gamebryo/NifFile.cpp src/collision/Marche.cpp src/collision/ColModel.cpp src/render/SoftRaster.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/outils/carte
 # Visite temps réel : SDL2 pour la fenêtre seulement ; sans SDL2, la visite se compile quand même et ne
 # garde que --image et --banc.
-VISITE="outils/visite.cpp src/collision/Marche.cpp src/collision/ColModel.cpp src/render/Camera.cpp src/render/SoftRaster.cpp src/gamebryo/NifTransform.cpp src/gamebryo/NifSkin.cpp src/gamebryo/TextureDecode.cpp src/gamebryo/NifFile.cpp src/core/IplFile.cpp src/core/IdeBinary.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp"
+VISITE="outils/visite.cpp src/anim/Agr.cpp src/collision/Marche.cpp src/collision/ColModel.cpp src/render/Camera.cpp src/render/SoftRaster.cpp src/gamebryo/NifTransform.cpp src/gamebryo/NifSkin.cpp src/gamebryo/TextureDecode.cpp src/gamebryo/NifFile.cpp src/core/IplFile.cpp src/core/IdeBinary.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp"
 if command -v sdl2-config >/dev/null 2>&1; then
 	g++ $FLAGS -O2 $VISITE $(sdl2-config --cflags --libs) -o build/outils/visite
 else
@@ -40,4 +41,4 @@ else
 fi
 # test_world ne lit aucun fichier du jeu : il vérifie l'arithmétique de la grille et les listes.
 g++ $FLAGS tests/test_world.cpp src/core/World.cpp src/core/Lists.cpp src/entities/Physical.cpp src/entities/Entity.cpp tests/hote/Entite.cpp -o build/tests/test_world
-echo "tests prêts : test_surface, test_pedstats, test_carcols, test_handling, test_objectdata, test_cdstream, test_ide, test_col, test_ipl, test_nif, test_nft, test_texture, test_transform, test_placement, test_camera, test_marche, test_skin, test_world ; outils : build/outils/nif2obj, build/outils/rendu, build/outils/scene, build/outils/carte, build/outils/visite"
+echo "tests prêts : test_surface, test_pedstats, test_carcols, test_handling, test_objectdata, test_cdstream, test_ide, test_col, test_ipl, test_nif, test_nft, test_texture, test_transform, test_placement, test_camera, test_marche, test_skin, test_agr, test_world ; outils : build/outils/nif2obj, build/outils/rendu, build/outils/scene, build/outils/carte, build/outils/visite"

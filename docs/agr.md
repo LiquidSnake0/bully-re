@@ -1,0 +1,81 @@
+# Les animations `.agr`
+
+550 groupes d'animations dans `Stream/World.img` (identifiants de streaming
+0x58ac à 0x5af0, nommés `%s.AGR` par 0x52e990). Format établi le 30.09.2026,
+à partir du code de `bully.exe` décompilé et vérifié sur tous les fichiers.
+
+## Un groupe, des animations
+
+Un `.agr` est une suite d'animations mises bout à bout :
+
+| taille | contenu |
+|---|---|
+| u32 | 0x100 |
+| u32 | type, l'encodage des images clés : 999 à 1004 |
+| u32 | nombre d'images clés |
+| u32 | 0 |
+| f32 | durée en secondes |
+| n × taille | les images clés |
+| 8 × m | les positions, jusqu'à l'animation suivante |
+
+Taille d'une image clé selon le type, lue dans 0x6b2ca0 : 999 → 32 octets,
+1000 → 20, 1001 → 12, **1002 → 8**, 1003 → 20, 1004 → 12. Chaque type a son
+décodeur (0x6b8f40 aiguille : 1001 → 0x6b70e0, 1002 → 0x6b7540, 1000 →
+0x6b7aa0, 1003 → 0x6b7f50, 1004 → 0x6b83b0, 999 → 0x6b8940).
+
+Relevé : 3 443 animations dans les 550 fichiers, dont **2 772 de type 1002**,
+239 de 1003, 174 de 1001, 143 de 999, 72 de 1004, 43 de 1000. Toutes les
+attentes des piétons (`IDLE_GSF_A`, `IDLE_JOCK_A`…) et leurs déplacements
+sont en 1002. Les 74 fichiers que le décodeur ne découpe pas encore sont des
+animations d'objets (portes, cloches, drapeaux) dans les autres encodages.
+
+## Le type 1002
+
+Une image clé tient en 8 octets, deux mots w0 et w1, décompressés par
+0x6b1710 :
+
+| bits | contenu |
+|---|---|
+| w0 0-10 | index de l'image clé **précédente** du même os (0 : aucune) |
+| w0 11-19 | instant, en 511e de la durée (constante 0x941f38 = 1/511) |
+| w0 20 | signe de x |
+| w0 21-30 | \|x\| en 1023e (constante 0x941f40 = 1/1023) |
+| w0 31 | signe de y |
+| w1 0-9 | \|y\| |
+| w1 10 | signe de z |
+| w1 11-20 | \|z\| |
+| w1 21 | signe de w |
+| w1 22-31 | \|w\| |
+
+Soit un quaternion (w, x, y, z) sur 44 bits. Les images clés de tous les os
+sont entrelacées dans l'ordre du temps, chacune pointant la précédente de son
+os : un format pensé pour le streaming, qu'on lit d'un seul passage. Les 36
+premières sont la pose de départ des 36 os. Sur les 2 749 animations
+décodées, toutes les images clés ont une norme de 1 à 0,0015 près, sauf ~500
+de norme nulle, sur les bras et les mains de 63 animations : une absence de
+donnée pour cet os, qu'on saute.
+
+**Les 36 os** sont les nœuds du squelette sous `Dummy`, dans l'ordre du
+fichier : Dummy, Root, Root Pelvis, Root L Thigh, Root L Calf, Root L Foot,
+Root R Thigh, Root R Calf, Root R Foot, Root01, Root Spine, Root Spine1,
+Root Spine2, Root Neck, Root Head, Root Ponytail1, Root EyeLids, Root Brow,
+Root Eyes, Root L Clavicle, Root L UpperArm, Root L Forearm, Root L Hand,
+Root L Finger0, Root L Finger1, Root L Finger11, Left_Shoulder,
+Root R Clavicle… Right_Shoulder, ARROW. Établi en comparant la rotation de
+départ de chaque piste à la rotation locale de chaque nœud de Jimmy : les os
+immobiles de l'animation (bassin, colonne, visage, clavicules, doigts)
+tombent sur leur nœud à 0,001 près (`tests/test_agr`). Les nœuds portent
+aussi une étiquette `tag=N` dans leur `UserPropBuffer` (0 Root, 1 Pelvis, 2 à
+7 colonne et tête, 31-37 bras gauche, 41-43 jambe gauche, 51-53 jambe
+droite ; le visage porte `EyeLids`, `EyeBalls`).
+
+**La rotation remplace celle du nœud** (sa translation reste celle du
+fichier), dans la même convention que les NiAVObject : la matrice construite
+de façon usuelle depuis le quaternion est celle que le nœud stocke ligne par
+ligne.
+
+**Les positions** : u16 index d'image clé (l'instant est celui de cette clé),
+i16 x, y, z en millimètres. La première animation de `Player_Tired` en a 60,
+autour de z = 0,845 m : la hauteur du bassin. Pas encore appliquées.
+
+Code : `src/anim/Agr` ; test : `tests/test_agr`.
