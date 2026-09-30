@@ -96,4 +96,42 @@ Pas encore d'arbre de partition : chaque image teste tous les triangles de la
 scène, ce qui suffit à cette taille (moins de mille triangles de collision
 pour la salle de boxe).
 
-Prochaine étape : enchaîner les scènes voisines (le streaming des secteurs).
+## Enchaîner les scènes voisines (30.09.2026)
+
+Le monde extérieur n'est pas une scène : ce sont 41 fichiers de placements
+qu'on charge selon l'endroit où l'on est. `outils/carte` lit les 85 `.ipb` de
+`World.img` et donne l'emprise de chacun (`outils/monde.h`, `CarteDesIpb`) :
+
+- **`t*`**, les quartiers : `tschool` (l'école), `tbusines`, `trich`,
+  `tindust`, `tcarni`, `tgokart`, `tjyard`, `tBMX`. Bâtiments, sols, grilles ;
+  de 200 à 500 m de côté.
+- **`zone_*`**, les tuiles : `zone_school1..6`, `zone_busines1..8`,
+  `zone_indust1..6`, `zone_rich1..11`, `zone_carn1`. Le mobilier urbain
+  (lampadaires, poteaux, appliques), 80 à 150 m de côté.
+- **`tGlobal`** : le relief (`GLOBALSKIN*`), les pylônes, la rivière, sur
+  toute la carte ; son emprise couvre tout, il est toujours chargé.
+- **`i*`**, les intérieurs : posés à part (la salle de boxe est à z = 294),
+  ils restent des scènes seules. `iMGRace*` sont les parcours des courses,
+  `ttest` et `ftest` des terrains d'essai : écartés.
+
+La visite, avec un fichier extérieur ou `--monde`, charge tout ce dont
+l'emprise est à moins de `--rayon` mètres (60 par défaut) et libère ce qui
+s'éloigne au-delà du double ; l'écart entre les deux seuils évite de charger
+et libérer en boucle à une frontière. Chaque fichier devient un morceau :
+sa géométrie, son éclairage, ses collisions ; celles de tous les morceaux sont
+réunies à chaque changement. Vérifié par `--survol 3600` (une minute droit
+vers l'est à 12 m/s, sans collisions) : depuis la cour de l'école (60, −100),
+les tuiles de l'école se chargent puis se libèrent, `tbusines` arrive à
+x = 300, `tschool` part à x = 492, et l'on finit dans le quartier d'affaires.
+
+**Rejet par modèle.** Dehors, c'est 300 000 à 460 000 triangles chargés. La
+scène garde maintenant un bloc par modèle placé (plages de sommets et de
+triangles, sphère englobante) ; la visite rejette les modèles hors du cône de
+vue ou au-delà de 250 m avant de passer leurs sommets dans le repère caméra.
+Images identiques au pixel près (salle de boxe et école comparées avant et
+après), et : salle de boxe 4,3 → 3,1 ms, cour de l'école 65,6 → 47,3 ms
+(21 i/s, 78 000 triangles dessinés, 178 modèles retenus), quartier d'affaires
+39,8 ms. Le rasteriseur lui-même est désormais le poste principal.
+
+Prochaine étape : alléger le rendu extérieur (niveaux de détail, arbre de
+partition pour les collisions), puis les piétons.

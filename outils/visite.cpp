@@ -1,6 +1,7 @@
 // Visite temps réel d'une scène du jeu, à la première personne.
 //   BULLY_DATA=<racine> build/outils/visite <fichier.ipb> [--pos x y z lacet tangage] [--marche]
 //                                          [--image sortie.ppm] [--banc n] [--promenade n]
+//                                          [--monde] [--rayon m] [--survol n]
 //
 // Le rendu est entièrement logiciel (src/render : Camera + RasterTrianglePersp),
 // dans une image de 400 × 240, la définition de l'écran du haut de la New
@@ -24,8 +25,19 @@
 // écran. --promenade n marche n images droit devant (en mode marche) et
 // affiche le trajet : on vérifie sans écran qu'on tient au sol et qu'un mur
 // arrête.
+//
+// Dehors, les scènes s'enchaînent. Le monde extérieur est découpé en fichiers
+// de placements : les quartiers « t* » (bâtiments, sols), les tuiles « zone_* »
+// (mobilier urbain) et tGlobal (relief, pylônes, sur toute la carte). Avec un
+// de ces fichiers, ou --monde, la visite charge tous ceux dont l'emprise est à
+// moins de --rayon mètres (60 par défaut) et libère ceux qui s'éloignent au-delà
+// du double, pendant qu'on marche : on passe d'un quartier à l'autre. Les
+// intérieurs (i*) restent des scènes seules, posées à part dans le monde.
+// --survol n vole n images droit devant, à 12 m/s et sans collisions, et
+// affiche ce qui se charge et se libère : l'enchaînement se vérifie sans écran.
 #include "commun.h"
 #include "scene.h"
+#include "monde.h"
 #include "../src/render/Camera.h"
 #include <chrono>
 #include <cmath>
@@ -35,12 +47,16 @@
 
 namespace {
 
-struct Visite {
-	outil::Scene *s;
-	std::vector<float> ombre;               // éclairage par triangle, calculé une fois
-	std::vector<CVector> vue;               // sommets dans le repère caméra, par image
-	RasterImage img;
-	int32 dessines = 0;
+// Une scène chargée : sa géométrie, son éclairage par triangle, ses sommets
+// dans le repère caméra (recalculés à chaque image) et ses collisions.
+struct Morceau {
+	std::string nom;
+	outil::Scene *s = nil;
+	std::vector<float> ombre;
+	std::vector<CVector> vue;
+	CMondeCollision col;
+	std::vector<int32> visibles;            // blocs retenus pour l'image en cours
+	~Morceau(){ delete s; }
 
 	void Preparer(void){
 		float lum[3] = {0.4f, -0.6f, 0.7f}; float ln = sqrtf(lum[0]*lum[0]+lum[1]*lum[1]+lum[2]*lum[2]); for(float &q : lum) q /= ln;
@@ -52,22 +68,54 @@ struct Visite {
 			ombre[i/3] = 0.45f + 0.55f * fabsf((nx*lum[0]+ny*lum[1]+nz*lum[2])/nn);
 		}
 		vue.resize(s->pts.size());
-		img = RasterCreate(400, 240, 0, 0, 0);
 	}
+};
+
+struct Visite {
+	std::vector<Morceau*> morceaux;
+	RasterImage img;
+	int32 dessines = 0;
+
+	Visite(void){ img = RasterCreate(400, 240, 0, 0, 0); }
+
+	float loin = 250;                       // au-delà, un modèle n'est pas dessiné (mètres)
+	int32 modelesVus = 0;
 
 	void Rendre(const Camera &cam){
 		RasterClear(img, 128, 150, 170);
-		for(size_t i = 0; i < s->pts.size(); i++) vue[i] = cam.ToView(s->pts[i]);
 		float foc = (cam.h * 0.5f) / tanf(cam.fovY * 0.5f);
 		float mx = cam.w * 0.5f / foc, my = cam.h * 0.5f / foc;   // demi-ouverture en x/z et y/z
-		dessines = 0;
-		// Deux passes : les opaques et le test alpha écrivent la profondeur,
-		// puis le mélange et l'ajout se posent par-dessus sans l'écrire.
+		// Pour une sphère, le plan latéral x = mx·z est à distance (x − mx·z) / √(1 + mx²).
+		float kx = sqrtf(1 + mx * mx), ky = sqrtf(1 + my * my);
+		// Les modèles visibles d'abord : sphère contre le cône de vue et la distance.
+		// Seuls leurs sommets passent dans le repère caméra.
+		for(Morceau *m : morceaux){
+			const outil::Scene *s = m->s;
+			m->visibles.clear();
+			for(size_t b = 0; b < s->blocs.size(); b++){
+				const outil::Scene::Bloc &bl = s->blocs[b];
+				CVector c = cam.ToView(bl.centre); float r = bl.rayon;
+				if(c.z < cam.near_ - r || c.z > loin + r) continue;
+				if(c.x - mx * c.z > r * kx || -c.x - mx * c.z > r * kx) continue;
+				if(c.y - my * c.z > r * ky || -c.y - my * c.z > r * ky) continue;
+				m->visibles.push_back((int32)b);
+				for(int32 i = bl.ptDebut; i < bl.ptFin; i++) m->vue[i] = cam.ToView(s->pts[i]);
+			}
+		}
+		dessines = 0; modelesVus = 0;
+		for(Morceau *m : morceaux) modelesVus += (int32)m->visibles.size();
+		// Deux passes, sur tous les morceaux : les opaques et le test alpha
+		// écrivent la profondeur, puis le mélange et l'ajout se posent par-dessus
+		// sans l'écrire.
 		for(int passe = 0; passe < 2; passe++)
-		for(size_t i = 0; i < s->tri.size(); i += 3){
+		for(Morceau *m : morceaux){
+		const outil::Scene *s = m->s;
+		for(int32 b : m->visibles){
+		const outil::Scene::Bloc &bl = s->blocs[b];
+		for(int32 i = bl.triDebut; i < bl.triFin; i += 3){
 			uint8 mode = s->triMode[i/3];
 			if((mode >= RASTER_MELANGE) != (passe == 1)) continue;
-			CVector v[3] = { vue[s->tri[i]], vue[s->tri[i+1]], vue[s->tri[i+2]] };
+			CVector v[3] = { m->vue[s->tri[i]], m->vue[s->tri[i+1]], m->vue[s->tri[i+2]] };
 			// Rejet grossier contre le cône de vue : les trois sommets du même côté d'un plan.
 			if(v[0].z < cam.near_ && v[1].z < cam.near_ && v[2].z < cam.near_) continue;
 			if(v[0].x >  mx * v[0].z && v[1].x >  mx * v[1].z && v[2].x >  mx * v[2].z) continue;
@@ -78,16 +126,29 @@ struct Visite {
 			RasterPVertex o[6];
 			int32 n = CameraClipProject(cam, v, uv, o);
 			int32 tx = s->triTex[i/3];
-			for(int32 k = 0; k < n; k++) RasterTrianglePersp(img, &o[k*3], tx >= 0 ? s->texPtr[tx] : nil, ombre[i/3], (eRasterMode)mode, s->triSeuil[i/3]);
+			for(int32 k = 0; k < n; k++) RasterTrianglePersp(img, &o[k*3], tx >= 0 ? s->texPtr[tx] : nil, m->ombre[i/3], (eRasterMode)mode, s->triSeuil[i/3]);
 			dessines += n;
+		}
+		}
 		}
 	}
 };
+
+// Les fichiers du monde extérieur, ceux qui s'enchaînent : quartiers, tuiles et
+// relief. Pas les intérieurs, ni les courses (iMGRace*), ni les terrains d'essai.
+bool
+Exterieur(const std::string &nom)
+{
+	std::string n = outil::Minuscules(nom.c_str());
+	if(n == "ttest.ipb" || n == "ftest.ipb") return false;
+	return n.compare(0, 5, "zone_") == 0 || n[0] == 't';
+}
 
 // Point de départ : en dehors de la boîte de la scène, en hauteur, regardant son centre.
 Camera
 Depart(const outil::Scene &s)
 {
+	// (intérieurs : la scène entière est petite, on la regarde de dehors)
 	CVector mn = s.pts[0], mx = s.pts[0];
 	for(auto &p : s.pts){ mn.x = fminf(mn.x, p.x); mn.y = fminf(mn.y, p.y); mn.z = fminf(mn.z, p.z); mx.x = fmaxf(mx.x, p.x); mx.y = fmaxf(mx.y, p.y); mx.z = fmaxf(mx.z, p.z); }
 	CVector c((mn.x+mx.x)/2, (mn.y+mx.y)/2, (mn.z+mx.z)/2);
@@ -104,44 +165,115 @@ Depart(const outil::Scene &s)
 int
 main(int argc, char **argv)
 {
-	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--image sortie.ppm] [--banc n]\n"); return 2; }
-	std::string ipb = argv[1], image; int banc = 0, promenade = 0; bool pos = false, marche = false; float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0;
+	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--marche] [--image sortie.ppm] [--banc n] [--promenade n] [--monde] [--rayon m]\n"); return 2; }
+	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
 	for(int i = 2; i < argc; i++){
 		if(strcmp(argv[i], "--image") == 0 && i + 1 < argc) image = argv[++i];
 		else if(strcmp(argv[i], "--banc") == 0 && i + 1 < argc) banc = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--promenade") == 0 && i + 1 < argc){ promenade = atoi(argv[++i]); marche = true; }
 		else if(strcmp(argv[i], "--marche") == 0) marche = true;
+		else if(strcmp(argv[i], "--survol") == 0 && i + 1 < argc) survol = atoi(argv[++i]);
+		else if(strcmp(argv[i], "--monde") == 0) monde = true;
+		else if(strcmp(argv[i], "--rayon") == 0 && i + 1 < argc) rayon = (float)atof(argv[++i]);
 		else if(strcmp(argv[i], "--pos") == 0 && i + 5 < argc){ pos = true; px = (float)atof(argv[++i]); py = (float)atof(argv[++i]); pz = (float)atof(argv[++i]); lacet = (float)atof(argv[++i]); tangage = (float)atof(argv[++i]); }
 	}
 
 	outil::Archives a;
 	if(!outil::Ouvrir(a)) return 1;
-	outil::Scene s;
-	if(!outil::ChargerPlacements(a, ipb, s)) return 1;
-	Visite v; v.s = &s; v.Preparer();
-	Camera cam = Depart(s);
-	if(pos){ cam.pos = CVector(px, py, pz); cam.yaw = lacet * PI / 180; cam.pitch = tangage * PI / 180; }
-
-	// Collisions : chargées une fois pour tout le monde, posées pour cette scène.
+	// Collisions : chargées une fois pour tout le monde, posées par morceau.
 	std::map<std::string, CColModel*> cols;
 	outil::ChargerToutesCollisions(a, cols);
-	CMondeCollision monde; int poses, sans;
-	outil::PoserCollisions(a, s, cols, monde, &poses, &sans);
-	printf("  collisions : %zu modèles connus, %d posés dans la scène (%d sans volume), %zu triangles, %zu sphères\n",
-	       cols.size(), poses, sans, monde.tri.size() / 3, monde.sphCentre.size());
+
+	Visite v;
+	CMondeCollision sol;                    // les collisions de tous les morceaux chargés
+	auto Charger = [&](const std::string &nom) -> bool {
+		Morceau *m = new Morceau; m->nom = nom; m->s = new outil::Scene;
+		if(!outil::ChargerPlacements(a, nom, *m->s)){ delete m; return false; }
+		m->Preparer();
+		int poses, sans; outil::PoserCollisions(a, *m->s, cols, m->col, &poses, &sans);
+		printf("  collisions : %d posées (%d sans volume), %zu triangles, %zu sphères\n", poses, sans, m->col.tri.size() / 3, m->col.sphCentre.size());
+		v.morceaux.push_back(m);
+		return true;
+	};
+	auto Refaire = [&](void){
+		sol = CMondeCollision();
+		for(Morceau *m : v.morceaux){
+			sol.tri.insert(sol.tri.end(), m->col.tri.begin(), m->col.tri.end());
+			sol.sphCentre.insert(sol.sphCentre.end(), m->col.sphCentre.begin(), m->col.sphCentre.end());
+			sol.sphRayon.insert(sol.sphRayon.end(), m->col.sphRayon.begin(), m->col.sphRayon.end());
+		}
+	};
+
+	// Dehors : la carte des emprises, puis ce qui est à portée de (x, y).
+	std::vector<outil::EmpriseIpb> carte;
+	if(monde){
+		for(const auto &e : outil::CarteDesIpb(a)) if(Exterieur(e.nom)) carte.push_back(e);
+		printf("monde extérieur : %zu fichiers de placements, rayon %.0f m\n", carte.size(), rayon);
+	}
+	// Charge ce qui entre dans le rayon, libère ce qui sort du double. Rend
+	// vrai si la liste a changé (il faut alors refaire les collisions).
+	auto Actualiser = [&](float x, float y) -> bool {
+		bool change = false;
+		for(auto it = v.morceaux.begin(); it != v.morceaux.end();){
+			const outil::EmpriseIpb *e = nil;
+			for(const auto &c : carte) if(c.nom == (*it)->nom) e = &c;
+			if(e && e->Distance(x, y) > 2 * rayon){ printf("  libère %s\n", (*it)->nom.c_str()); delete *it; it = v.morceaux.erase(it); change = true; }
+			else ++it;
+		}
+		for(const auto &e : carte){
+			if(e.Distance(x, y) > rayon) continue;
+			bool deja = false; for(Morceau *m : v.morceaux) if(m->nom == e.nom) deja = true;
+			if(!deja && Charger(e.nom)) change = true;
+		}
+		if(change) Refaire();
+		return change;
+	};
+
+	Camera cam;
+	if(!monde){
+		if(!Charger(ipb)) return 1;
+		Refaire();
+		cam = Depart(*v.morceaux[0]->s);
+	}else{
+		// Départ au centre du fichier demandé, à hauteur d'yeux au-dessus du sol.
+		const outil::EmpriseIpb *e = nil;
+		for(const auto &c : carte) if(strcasecmp(c.nom.c_str(), ipb.c_str()) == 0) e = &c;
+		float cx = e ? (e->xmin + e->xmax) / 2 : 0, cy = e ? (e->ymin + e->ymax) / 2 : 0;
+		if(pos){ cx = px; cy = py; }
+		Actualiser(cx, cy);
+		if(v.morceaux.empty()){ fprintf(stderr, "rien à moins de %.0f m de (%.0f, %.0f)\n", rayon, cx, cy); return 1; }
+		float z = e ? e->zmax + 60 : 100, zs;
+		if(sol.Sol(cx, cy, z, 400.0f, &zs)) z = zs;
+		cam.pos = CVector(cx, cy, z + 1.6f); cam.yaw = 0; cam.pitch = 0;
+	}
+	if(pos){ cam.pos = CVector(px, py, pz); cam.yaw = lacet * PI / 180; cam.pitch = tangage * PI / 180; }
+	{
+		size_t t = 0; for(Morceau *m : v.morceaux) t += m->s->tri.size() / 3;
+		printf("  %zu morceau(x) chargé(s), %zu triangles, collisions : %zu triangles, %zu sphères\n", v.morceaux.size(), t, sol.tri.size() / 3, sol.sphCentre.size());
+	}
 	CMarcheur corps;
 	auto PoserCorps = [&](void){
 		corps.pos = CVector(cam.pos.x, cam.pos.y, cam.pos.z - corps.hauteurYeux);
-		float z; if(monde.Sol(corps.pos.x, corps.pos.y, cam.pos.z, 100.0f, &z)) corps.pos.z = z;
+		float z; if(sol.Sol(corps.pos.x, corps.pos.y, cam.pos.z, 100.0f, &z)) corps.pos.z = z;
 		corps.vz = 0;
 	};
 	if(marche) PoserCorps();
 	auto Pas = [&](float avant, float droite, float dt){
 		float dx = cosf(cam.yaw) * avant + sinf(cam.yaw) * droite, dy = sinf(cam.yaw) * avant - cosf(cam.yaw) * droite;
-		corps.Avancer(monde, dx, dy, dt);
+		corps.Avancer(sol, dx, dy, dt);
 		cam.pos = CVector(corps.pos.x, corps.pos.y, corps.pos.z + corps.hauteurYeux);
 	};
 
+	if(survol > 0){
+		for(int k = 1; k <= survol; k++){
+			cam.Move(12.0f / 60, 0, 0);
+			if(k % 30 == 0 && Actualiser(cam.pos.x, cam.pos.y)){
+				size_t t = 0; for(Morceau *m : v.morceaux) t += m->s->tri.size() / 3;
+				printf("  %5.1f s : %.0f %.0f, %zu morceau(x), %zu triangles\n", k / 60.0f, cam.pos.x, cam.pos.y, v.morceaux.size(), t);
+			}
+		}
+		if(image.empty()) return 0;
+	}
 	if(promenade > 0){
 		printf("  départ : pieds %.2f %.2f %.2f\n", corps.pos.x, corps.pos.y, corps.pos.z);
 		int arrets = 0; CVector avant = corps.pos;
@@ -150,6 +282,7 @@ main(int argc, char **argv)
 			float fait = hypotf(corps.pos.x - avant.x, corps.pos.y - avant.y);
 			if(fait < 0.3f * 3.0f / 60) arrets++;
 			avant = corps.pos;
+			if(monde && k % 30 == 0) Actualiser(corps.pos.x, corps.pos.y);
 			if(k % 60 == 0) printf("  %4.1f s : pieds %.2f %.2f %.2f %s\n", k / 60.0f, corps.pos.x, corps.pos.y, corps.pos.z, corps.auSol ? "au sol" : "en l'air");
 		}
 		printf("  %d images sur %d presque immobiles (bloqué par un mur)\n", arrets, promenade);
@@ -163,7 +296,7 @@ main(int argc, char **argv)
 		float yaw0 = cam.yaw;
 		for(int k = 0; k < n; k++){ cam.yaw = yaw0 + k * (2 * PI / n); v.Rendre(cam); }
 		double ms = std::chrono::duration<double, std::milli>(horloge::now() - t0).count() / n;
-		printf("  %d image(s) 400×240, %.1f ms par image (%.0f i/s), %d triangles dessinés à la dernière\n", n, ms, 1000.0 / ms, v.dessines);
+		printf("  %d image(s) 400×240, %.1f ms par image (%.0f i/s), %d triangles dessinés à la dernière (%d modèles retenus)\n", n, ms, 1000.0 / ms, v.dessines, v.modelesVus);
 		if(!image.empty()){ cam.yaw = yaw0; v.Rendre(cam); bool ok = RasterWritePPM(v.img, image.c_str()); printf("  → %s%s\n", image.c_str(), ok ? "" : " (échec)"); }
 		return 0;
 	}
@@ -209,6 +342,10 @@ main(int argc, char **argv)
 		cam.pitch += (k[SDL_SCANCODE_UP] ? rot : 0) - (k[SDL_SCANCODE_DOWN] ? rot : 0);
 		if(cam.pitch > 1.5f) cam.pitch = 1.5f; if(cam.pitch < -1.5f) cam.pitch = -1.5f;
 
+		if(monde){
+			static float attente = 0; attente += dt;
+			if(attente > 0.5f){ attente = 0; Actualiser(cam.pos.x, cam.pos.y); }
+		}
 		auto t0 = horloge::now();
 		v.Rendre(cam);
 		cumul += std::chrono::duration<double, std::milli>(horloge::now() - t0).count(); images++;
@@ -216,7 +353,7 @@ main(int argc, char **argv)
 		SDL_RenderClear(ren); SDL_RenderCopy(ren, tex, nil, nil); SDL_RenderPresent(ren);
 		if(images == 30){
 			char titre[160];
-			snprintf(titre, sizeof titre, "bully-re : %s — %s — rendu %.1f ms, %d triangles — %.1f %.1f %.1f", ipb.c_str(), marche ? "marche" : "vol", cumul / images, v.dessines, cam.pos.x, cam.pos.y, cam.pos.z);
+			snprintf(titre, sizeof titre, "bully-re : %s (%zu) — %s — rendu %.1f ms, %d triangles — %.1f %.1f %.1f", ipb.c_str(), v.morceaux.size(), marche ? "marche" : "vol", cumul / images, v.dessines, cam.pos.x, cam.pos.y, cam.pos.z);
 			SDL_SetWindowTitle(win, titre); cumul = 0; images = 0;
 		}
 	}

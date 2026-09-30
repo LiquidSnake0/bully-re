@@ -357,3 +357,15 @@ en échec plutôt que de les masquer.
   près et reste au sol. Leçon : `NOGO_` est une zone interdite, un volume
   fermé ; l'exclure faisait sortir de la zone jouable et tomber dans le vide.
 
+
+## 30.09.2026 — les scènes s'enchaînent
+
+- `outils/carte` : les 85 fichiers de placements et leur emprise. Le monde
+  extérieur = les quartiers `t*`, les tuiles `zone_*` (mobilier urbain) et
+  `tGlobal` (relief, sur toute la carte) ; les intérieurs `i*` sont à part.
+- La visite charge ce qui est à moins de 60 m et libère ce qui passe au-delà
+  de 120 m, pendant qu'on avance : de la cour de l'école au quartier
+  d'affaires sans rechargement. `--survol n` le vérifie sans écran.
+- Rejet par modèle (sphère contre cône de vue et 250 m) : même image au
+  pixel près, école 65,6 → 47,3 ms, boxe 4,3 → 3,1 ms.
+- Détails : `docs/rendu-temps-reel.md`.
