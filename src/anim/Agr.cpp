@@ -16,6 +16,46 @@ DecoderCle(uint32 w0, uint32 w1, float q[4])
 	q[0] = (w1 >> 22) * e * ((w1 >> 21 & 1) ? -1.0f : 1.0f);
 }
 
+static uint16 Lire16(const uint8 *p){ uint16 v; memcpy(&v, p, 2); return v; }
+static int16 LireI16(const uint8 *p){ int16 v; memcpy(&v, p, 2); return v; }
+static float LireF(const uint8 *p){ float v; memcpy(&v, p, 4); return v; }
+
+// Une image clé de n'importe quel type : index de la précédente du même os,
+// instant en fraction de la durée, quaternion (w, x, y, z), et translation pour
+// les types qui la portent. Décodeurs de bully.exe : 1002 0x6b1710, 1004 idem +
+// 0x6b1870, 1001 0x6b4970, 1003 idem + 0x6b1830, 1000 et 999 0x6b5440.
+static void
+DecoderCleType(int32 type, const uint8 *k, uint32 *prec, float *t, float q[4], CVector *tr)
+{
+	if(type == 1002 || type == 1004){
+		uint32 w0 = Lire32(k), w1 = Lire32(k + 4);
+		*prec = w0 & 0x7ff;
+		*t = ((w0 >> 11) & 0x1ff) / 511.0f;
+		DecoderCle(w0, w1, q);
+		if(tr){
+			// 3 composantes signées en centimètres : x 10 bits (signe bit 10),
+			// y 10 bits (signe bit 21), z 9 bits (signe bit 31). Échelle 0,01.
+			uint32 v = Lire32(k + 8);
+			tr->x = (v & 0x3ff) * 0.01f * ((v >> 10 & 1) ? -1.0f : 1.0f);
+			tr->y = ((v >> 11) & 0x3ff) * 0.01f * ((v >> 21 & 1) ? -1.0f : 1.0f);
+			tr->z = ((v >> 22) & 0x1ff) * 0.01f * ((v >> 31 & 1) ? -1.0f : 1.0f);
+		}
+		return;
+	}
+	*prec = Lire16(k);
+	*t = Lire16(k + 2) / 65535.0f;                            // constante 0x941f28
+	if(type == 1001 || type == 1003){
+		// Quatre i16 en 32767e, rangés x, y, z, w (w à +10).
+		const float e = 1.0f / 32767;
+		q[1] = LireI16(k + 4) * e; q[2] = LireI16(k + 6) * e; q[3] = LireI16(k + 8) * e; q[0] = LireI16(k + 10) * e;
+		if(tr) *tr = CVector(LireI16(k + 12) * 0.001f, LireI16(k + 14) * 0.001f, LireI16(k + 16) * 0.001f);   // mm, +18 bourrage
+	}else{
+		// 1000 et 999 : quatre floats rangés w, x, y, z ; 999 ajoute trois floats en mètres.
+		q[0] = LireF(k + 4); q[1] = LireF(k + 8); q[2] = LireF(k + 12); q[3] = LireF(k + 16);
+		if(tr) *tr = CVector(LireF(k + 20), LireF(k + 24), LireF(k + 28));
+	}
+}
+
 static bool
 EnTete(const uint8 *p, const uint8 *fin)
 {
@@ -28,50 +68,65 @@ EnTete(const uint8 *p, const uint8 *fin)
 bool
 AgrLireGroupe(const uint8 *buf, uint32 taille, std::vector<AgrAnim> &out)
 {
-	const uint8 *p = buf, *fin = buf + taille;
-	while(fin > buf && fin[-1] == 0) fin--;                  // les secteurs sont complétés de zéros
+	const uint8 *p = buf, *finReelle = buf + taille, *fin = finReelle;
+	// Les secteurs sont complétés de zéros. On les retire pour trouver la fin
+	// des positions, mais pas pour les images clés : une clé 1003 finit par
+	// deux octets de bourrage nuls, souvent précédés d'une translation nulle.
+	while(fin > buf && fin[-1] == 0) fin--;
 	while(p + 20 <= fin && EnTete(p, fin)){
 		AgrAnim a;
 		a.type = (int32)Lire32(p + 4); a.numCles = (int32)Lire32(p + 8); memcpy(&a.duree, p + 16, 4);
 		const uint8 *cles = p + 20;
 		const uint8 *apres = cles + (size_t)a.numCles * kTailleCle[a.type - 999];
-		if(apres > fin) return false;
+		if(apres > finReelle) return false;
 		// La fin de la section de positions : l'en-tête suivant, cherché de 4 en 4.
 		const uint8 *suivant = apres;
 		while(suivant + 20 <= fin && !EnTete(suivant, fin)) suivant += 4;
-		if(suivant + 20 > fin) suivant = fin;
-		if(a.type == 1002 && a.numCles >= AGR_OS){
+		if(suivant + 20 > fin) suivant = fin > apres ? fin : apres;
+		if(a.numCles > 0){
+			const int32 tc = kTailleCle[a.type - 999];
 			std::vector<int32> os(a.numCles, -1);
 			std::vector<float> t(a.numCles);
 			std::vector<std::array<float, 4>> q(a.numCles);
+			std::vector<uint32> prec(a.numCles);
+			std::vector<CVector> tr(a.numCles);
+			const bool translation = a.type == 999 || a.type == 1003 || a.type == 1004;
 			for(int32 i = 0; i < a.numCles; i++){
-				uint32 w0 = Lire32(cles + 8 * i), w1 = Lire32(cles + 8 * i + 4);
-				t[i] = ((w0 >> 11) & 0x1ff) / 511.0f * a.duree;
-				DecoderCle(w0, w1, q[i].data());
+				const uint8 *k = cles + (size_t)tc * i;
+				DecoderCleType(a.type, k, &prec[i], &t[i], q[i].data(), translation ? &tr[i] : nullptr);
+				t[i] *= a.duree;
 			}
-			// Chaque clé désigne la précédente du même os ; les 36 premières sont
-			// les têtes. Les clés sont rangées dans l'ordre du temps : un seul
-			// passage suffit pour propager l'os.
-			for(int32 i = 0; i < AGR_OS; i++) os[i] = i;
-			bool ok = true;
-			for(int32 i = AGR_OS; i < a.numCles; i++){
-				uint32 prec = Lire32(cles + 8 * i) & 0x7ff;
-				if((int32)prec >= i || os[prec] < 0){ ok = false; break; }
-				os[i] = os[prec];
+			// Les têtes de piste ouvrent l'animation : précédente 0 et instant nul.
+			// « Précédente 0 » veut aussi dire « la clé 0 » : la deuxième clé de
+			// l'os 0 a le même champ, mais un instant non nul. 36 os pour un
+			// piéton, de 1 à 33 pour les objets (2 pour le ballon, 15 pour le vélo).
+			int32 tetes = 0;
+			while(tetes < a.numCles && tetes < AGR_OS && prec[tetes] == 0 && t[tetes] == 0) tetes++;
+			a.numOs = tetes;
+			// Chaque autre clé désigne la précédente du même os, dans l'ordre du
+			// temps : un seul passage suffit pour propager l'os.
+			for(int32 i = 0; i < tetes; i++) os[i] = i;
+			bool ok = tetes > 0;
+			for(int32 i = tetes; i < a.numCles && ok; i++){
+				if((int32)prec[i] >= i || os[prec[i]] < 0){ ok = false; break; }
+				os[i] = os[prec[i]];
 			}
 			if(ok){
 				for(int32 i = 0; i < a.numCles; i++){
-					// Une clé nulle (norme 0, sur les bras de 63 animations) veut dire
-					// « pas de donnée pour cet os à cet instant » : on la saute.
+					// Une clé nulle (norme 0, sur les bras de 63 animations 1002) veut
+					// dire « pas de donnée pour cet os à cet instant » : on la saute.
 					float n2 = q[i][0]*q[i][0] + q[i][1]*q[i][1] + q[i][2]*q[i][2] + q[i][3]*q[i][3];
 					if(n2 < 0.25f) continue;
 					AgrCle c; c.t = t[i]; memcpy(c.q, q[i].data(), sizeof c.q);
 					a.pistes[os[i]].push_back(c);
+					if(translation){ AgrPosition ps; ps.t = t[i]; ps.p = tr[i]; a.positions[os[i]].push_back(ps); }
 				}
 				for(int32 k = 0; k < AGR_OS; k++)
 					for(size_t j = 1; j < a.pistes[k].size(); j++) if(a.pistes[k][j].t < a.pistes[k][j-1].t) ok = false;
 				a.decodee = ok;
-				// Positions : index d'image clé → instant de cette clé.
+				// Positions à part (types sans translation dans la clé) : index
+				// d'image clé → instant et os de cette clé.
+				if(!translation)
 				for(const uint8 *r = apres; r + 8 <= suivant; r += 8){
 					uint16 k; int16 x, y, z;
 					memcpy(&k, r, 2); memcpy(&x, r + 2, 2); memcpy(&y, r + 4, 2); memcpy(&z, r + 6, 2);

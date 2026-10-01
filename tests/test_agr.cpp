@@ -9,6 +9,7 @@
 #include "../src/anim/Agr.h"
 #include <cstdio>
 #include <cstring>
+#include <strings.h>
 #include <cstdlib>
 #include <cmath>
 #include <vector>
@@ -94,6 +95,42 @@ main(void)
 	VERIF(justes == 12);
 	printf("  ordre des pistes : %d os immobiles sur 12 sur la rotation de leur nœud\n", justes);
 	f.Free(); free(nb); free(b);
+
+	// Toute l'archive : les six encodages se décodent (999 à 1004), 36 pistes
+	// unitaires chacune ; les types à translation dans la clé (999, 1003, 1004)
+	// donnent leurs positions sans enregistrements à part.
+	int total[6] = {0}, ok[6] = {0}, fichiers = 0, sansTr = 0;
+	const CdImage &im = CdStream::ms_images[0];
+	for(int32 e = 0; e < im.m_numEntries; e++){
+		const char *nom = im.m_entries[e].name; size_t l = strlen(nom);
+		if(l < 4 || strcasecmp(nom + l - 4, ".agr") != 0) continue;
+		uint32 tn; uint8 *tb = Lire(nom, &tn);
+		std::vector<AgrAnim> g;
+		if(tb && AgrLireGroupe(tb, tn, g)){
+			fichiers++;
+			for(const AgrAnim &x : g){
+				int k = x.type - 999; total[k]++;
+				bool unitaire = true;
+				for(int o = 0; o < x.numOs && unitaire; o++)
+					for(const AgrCle &c : x.pistes[o]){
+						float n2 = c.q[0]*c.q[0] + c.q[1]*c.q[1] + c.q[2]*c.q[2] + c.q[3]*c.q[3];
+						if(fabsf(n2 - 1) > 0.02f){ unitaire = false; break; }
+					}
+				if(x.decodee && unitaire) ok[k]++;
+				if((x.type == 999 || x.type == 1003 || x.type == 1004) && x.decodee && x.positions[0].empty()) sansTr++;
+			}
+		}
+		free(tb);
+	}
+	const int attendus[6] = { 143, 43, 177, 2772, 239, 72 };   // 3 446 animations, 550 fichiers
+	for(int k = 0; k < 6; k++){
+		printf("  type %d : %d / %d animations décodées\n", 999 + k, ok[k], total[k]);
+		VERIF(total[k] == attendus[k]);
+	}
+	printf("  %d fichiers .agr\n", fichiers);
+	VERIF(ok[0] == total[0] && ok[1] == total[1] && ok[2] == total[2] && ok[4] == total[4] && ok[5] == total[5]);
+	VERIF(sansTr == 0);
+	VERIF(fichiers == 550);
 	printf("test_agr : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;
 }

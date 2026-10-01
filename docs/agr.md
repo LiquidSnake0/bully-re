@@ -23,11 +23,51 @@ Taille d'une image clé selon le type, lue dans 0x6b2ca0 : 999 → 32 octets,
 décodeur (0x6b8f40 aiguille : 1001 → 0x6b70e0, 1002 → 0x6b7540, 1000 →
 0x6b7aa0, 1003 → 0x6b7f50, 1004 → 0x6b83b0, 999 → 0x6b8940).
 
-Relevé : 3 443 animations dans les 550 fichiers, dont **2 772 de type 1002**,
-239 de 1003, 174 de 1001, 143 de 999, 72 de 1004, 43 de 1000. Toutes les
-attentes des piétons (`IDLE_GSF_A`, `IDLE_JOCK_A`…) et leurs déplacements
-sont en 1002. Les 74 fichiers que le décodeur ne découpe pas encore sont des
-animations d'objets (portes, cloches, drapeaux) dans les autres encodages.
+Relevé : **3 446 animations dans les 550 fichiers, toutes décodées**, dont
+2 772 de type 1002, 239 de 1003, 177 de 1001, 143 de 999, 72 de 1004, 43 de
+1000. Toutes les attentes des piétons (`IDLE_GSF_A`, `IDLE_JOCK_A`…) et leurs
+déplacements sont en 1002 ; les objets (portes, cloches, drapeaux, vélo) se
+répartissent dans les six.
+
+## Les six encodages (établis le 01.10.2026)
+
+Ils vont par paires : le même quaternion, avec ou sans translation dans la
+clé. Les types sans translation ont des enregistrements de position après les
+clés (format plus bas) ; les types avec translation n'en ont **jamais**.
+
+| type | clé | précédente | instant | quaternion | translation | décodeurs |
+|---|---|---|---|---|---|---|
+| 1000 | 20 o | u16 +0 | u16 +2 | 4 × f32 +4, ordre w x y z | positions à part | 0x6b5440 |
+| 999 | 32 o | u16 +0 | u16 +2 | 4 × f32 +4, ordre w x y z | 3 × f32 +20, mètres | 0x6b5440 |
+| 1001 | 12 o | u16 +0 | u16 +2 | 4 × i16 +4 en 32767e, ordre **x y z w** | positions à part | 0x6b4970 |
+| 1003 | 20 o | u16 +0 | u16 +2 | comme 1001 | 3 × i16 +12, millimètres (+18 bourrage) | 0x6b4970, 0x6b1830 |
+| 1002 | 8 o | w0 bits 0-10 | w0 bits 11-19, 511e | compressé (ci-dessous) | positions à part | 0x6b1710 |
+| 1004 | 12 o | comme 1002 | comme 1002 | comme 1002 | u32 +8 compressé, centimètres | 0x6b1710, 0x6b1870 |
+
+L'instant u16 est en 65 535e de la durée (constante 0x941f28 = 1/65 535), les
+composantes i16 en 32 767e (0x941f30). La translation du 1004 tient en un mot :
+x = bits 0-9 (signe bit 10), y = bits 11-20 (signe bit 21), z = bits 22-30
+(9 bits, signe bit 31), le tout × 0,01 (0x900d30) : ±10,23 m au centimètre. Le
+bassin de `1_02_MeetWithGary` y tombe à 0,87 m, la hauteur de bassin des
+piétons en 1002. Les 1 732 400 images clés des six types ont une norme de 1,
+sauf les 624 clés nulles du 1002 (plus bas).
+
+**Le nombre d'os n'est pas fixe** : 36 pour un piéton, de 1 (`DartBrd`) à 33
+(`Slingsh`) pour un objet, et le même dans tous les encodages d'un même objet
+(2 pour `ANIBBALL`, 15 pour `Bike`, 26 pour `SIAMESE`). Les têtes de piste
+ouvrent l'animation : précédente 0 **et** instant nul. Le champ seul ne suffit
+pas, « précédente 0 » veut aussi dire « la clé 0 » : la deuxième clé de l'os 0
+porte le même champ, mais un instant non nul.
+
+Les décodeurs de lecture du moteur (0x6b70e0 pour 1001, 0x6b7aa0 pour 1000,
+0x6b7f50 pour 1003, 0x6b83b0 pour 1004, 0x6b8940 pour 999) lisent tous la
+clé 35, ARROW, et en tirent un angle de cap par la conversion
+quaternion → axe et angle (ramené dans [0, 360[).
+
+**Piège de lecture** : les secteurs sont complétés de zéros, mais une clé 1003
+finit par deux octets de bourrage nuls, souvent après une translation nulle.
+Retirer les zéros de fin avant de découper tronquait la dernière animation de
+74 fichiers : on ne les retire que pour chercher la fin des positions.
 
 ## Le type 1002
 
@@ -94,4 +134,4 @@ animations qui avancent, mais vers −y : ce sont des reculs et des esquives
 de fin redonne celle du début à 0,0013 près), autour de 1,07 s pour deux pas,
 de 1,1 à 1,7 m/s.
 
-Code : `src/anim/Agr` ; test : `tests/test_agr`.
+Code : `src/anim/Agr` ; test : `tests/test_agr` (Player_Tired, puis les 550 fichiers).

@@ -31,13 +31,14 @@ struct AgrPosition { float t; CVector p; };      // instant (s), position (m) da
 struct AgrAnim {
 	int32 type = 0;
 	int32 numCles = 0;
+	int32 numOs = 0;                             // pistes : 36 pour un piéton, moins pour un objet
 	float duree = 0;
-	bool decodee = false;                        // vrai pour le type 1002
+	bool decodee = false;                        // les six types (999 à 1004) se décodent
 	std::vector<AgrCle> pistes[AGR_OS];          // par os, dans l'ordre du temps
 	std::vector<AgrPosition> positions[AGR_OS];  // par os : l'os de l'image clé que chaque enregistrement désigne
 };
 
-// Découpe un groupe en animations et décode celles de type 1002.
+// Découpe un groupe en animations et les décode, quel que soit le type.
 bool AgrLireGroupe(const uint8 *buf, uint32 taille, std::vector<AgrAnim> &out);
 
 // Rotation d'un os à l'instant t (s, ramené dans la durée), interpolée
