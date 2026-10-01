@@ -14,6 +14,10 @@ int32 CIplFile::ms_numInst, CIplFile::ms_numRail, CIplFile::ms_numSpec, CIplFile
 int32 CIplFile::ms_lastTag;
 
 static inline int32 RdInt(const uint8 *&p) { int32 v; memcpy(&v, p, 4); p += 4; return v; }
+static inline float RdFloat(const uint8 *&p) { float v; memcpy(&v, p, 4); p += 4; return v; }
+
+const char *const kIplPoiPeriode[IPL_POI_NUM_PERIODES] = { "AFTERNOON", "MORETIRED", "SLIGHTLYTIRED", "TIRED", "TOOTIRED",
+                                                          "EARLYCLASS", "EVENING", "LATECLASS", "LUNCH", "MORNING" };
 // chaîne à longueur préfixée sur un octet
 static void RdName(const uint8 *&p, char *dest, int32 size)
 {
@@ -98,12 +102,18 @@ CIplFile::Load(const uint8 *data, uint32 size)
 			for(int32 i = 0; i < count; i++){
 				CIplPois g; memset(&g, 0, sizeof(g));
 				RdName(p, g.name, sizeof(g.name));
-				g.unk = RdInt(p);
+				g.zone = RdInt(p);
 				g.numPoints = RdInt(p);
 				for(int32 k = 0; k < g.numPoints; k++){
 					CIplPoiPoint pt; memset(&pt, 0, sizeof(pt));
-					for(int j = 0; j < 4; j++) RdName(p, pt.s[j], sizeof(pt.s[j]));
-					for(int j = 0; j < 21; j++) pt.d[j] = RdInt(p);
+					RdName(p, pt.genre, sizeof(pt.genre)); RdName(p, pt.nom, sizeof(pt.nom));
+					RdName(p, pt.type, sizeof(pt.type)); RdName(p, pt.clique, sizeof(pt.clique));
+					pt.max = RdInt(p);
+					pt.pos.x = RdFloat(p); pt.pos.y = RdFloat(p); pt.pos.z = RdFloat(p);
+					for(int j = 0; j < 3; j++) pt.lacetTangageRoulis[j] = RdFloat(p);
+					for(int j = 0; j < IPL_POI_NUM_PERIODES; j++) pt.periodes[j] = RdInt(p) != 0;
+					pt.utiliseRayon = RdInt(p) != 0; pt.rayon = RdFloat(p);
+					pt.ignorePopulation = RdInt(p) != 0; pt.limite = RdInt(p);
 					ms_numPois++;
 					if(ms_poisHandler) ms_poisHandler(g, pt);
 				}

@@ -162,5 +162,28 @@ mur ; un couple enlacé face à face ; un fumeur dos au mur, mais à un mètre d
 lui plutôt qu'appuyé. `--galerie groupe[:réf][@a-b]` aligne les animations
 d'un groupe devant la caméra, une par piéton, pour les reconnaître ;
 `outils/sonde_poi.cpp` (non construit) mesure durée, boucle, bassin et cap.
-Restent : la section `pois` des .ipb, les autres types (Brawl, Harassment,
-Back_Alley…), et le décodage des arbres d'actions.
+Restent : les autres types (Brawl, Harassment, Back_Alley…), et le décodage
+des arbres d'actions.
+
+## La section `pois` des .ipb
+
+C'est la forme compilée d'une partie de ces blocs. Les 846 points des .ipb
+(30 fichiers zone_*) se retrouvent tous, valeur pour valeur, dans sept
+fichiers de Trigger.img : eventsSchoolgrounds (209), eventsRichArea (158),
+MainMap_hangouts (155), eventsDowntown (110), eventsPoorArea (96),
+eventsIndustrialArea (90), PedPoi (28). Le groupe porte le nom du bloc et
+son AREACODE ; chaque point ses quatre chaînes GENDER, NAME, TYPE, PEDTYPE,
+puis 21 mots : MAX, POIPOINT, YAWPITCHROLL, les dix périodes (0 ou 1),
+USERADIUS, RADIUS (flottant), IGNOREPOPULATION, OVERRIDELIMIT. Les périodes
+sont rangées dans l'ordre alphabétique de leurs mots-clés (AFTERNOON,
+MORETIRED, SLIGHTLYTIRED, TIRED, TOOTIRED, EARLYCLASS, EVENING, LATECLASS,
+LUNCH, MORNING), ordre établi en rapprochant les 846 points de leurs
+jumeaux du texte : chaque position vote pour un seul mot-clé, 846 fois sur 846.
+Les intérieurs (eventsSchoolHalls, tschool_hangouts, dortoirs, magasins…) et
+les missions n'existent qu'en texte. Trois TYPE valent « Specific_Event" »,
+guillemet compris dans les octets (zone_indust3, zone_rich1, zone_rich11) :
+le texte actuel ne l'a plus, les .ipb viennent d'une version antérieure.
+
+Code : `src/core/IplFile` (CIplPois, CIplPoiPoint, kIplPoiPeriode) ; test :
+`tests/test_ipl` ; sonde : `outils/sonde_pois.cpp`. La visite garde
+Trigger.img, qui contient tout.

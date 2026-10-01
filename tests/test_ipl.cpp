@@ -34,6 +34,13 @@ static char g_rail[64];
 static int32 g_railPts;
 static int32 GarderRail(const CIplRail &e) { strcpy(g_rail, e.name); g_railPts = e.numPoints; return 0; }
 
+static CIplPois g_poiGroupe; static CIplPoiPoint g_poi; static int32 g_nPoi = 0, g_poiGuillemet = 0;
+static int32 GarderPoi(const CIplPois &g, const CIplPoiPoint &p){
+	if(g_nPoi++ == 0){ g_poiGroupe = g; g_poi = p; }
+	if(strchr(p.type, '"')) g_poiGuillemet++;
+	return 0;
+}
+
 int
 main(void)
 {
@@ -57,6 +64,7 @@ main(void)
 	}
 	int32 fichiers = 0, entiers = 0;
 	CIplFile::ms_instHandler = nil; CIplFile::ms_railHandler = nil;
+	CIplFile::ms_poisHandler = GarderPoi;
 	for(int32 i = 0; i < CdStream::ms_images[0].m_numEntries; i++){
 		const char *n = CdStream::ms_images[0].m_entries[i].name;
 		size_t l = strnlen(n, CDSTREAM_NAME_LEN);
@@ -70,6 +78,16 @@ main(void)
 	}
 	printf("%d fichiers .ipb, %d lus en entier ; inst %d, rail %d, pont %d, pois %d, prop %d, spec %d\n", fichiers, entiers, CIplFile::ms_numInst, CIplFile::ms_numRail, CIplFile::ms_numPont, CIplFile::ms_numPois, CIplFile::ms_numProp, CIplFile::ms_numSpec);
 	VERIF(fichiers == 85 && entiers == 85);
+	// Les points d'intérêt : 846, le premier celui d'un « Kissing » de zone_busines1
+	// (le même que dans eventsDowntown de Trigger.img) ; trois TYPE à guillemet en trop.
+	printf("pois : %d points, %d TYPE à guillemet en trop ; premier « %s » zone %d [%s] [%s] (%.3f, %.3f, %.3f)\n", CIplFile::ms_numPois, g_poiGuillemet,
+	       g_poiGroupe.name, g_poiGroupe.zone, g_poi.type, g_poi.clique, g_poi.pos.x, g_poi.pos.y, g_poi.pos.z);
+	VERIF(CIplFile::ms_numPois == 846 && g_nPoi == 846 && g_poiGuillemet == 3);
+	VERIF(strcmp(g_poiGroupe.name, "Kissing") == 0 && g_poiGroupe.zone == 0 && g_poiGroupe.numPoints == 2);
+	VERIF(strcmp(g_poi.genre, "Both") == 0 && strcmp(g_poi.type, "Couple") == 0 && strcmp(g_poi.clique, "DEFAULT") == 0 && g_poi.max == 1);
+	VERIF(eq(g_poi.pos.x, 537.093f) && eq(g_poi.pos.y, -65.826f) && eq(g_poi.pos.z, 5.437f));
+	VERIF(g_poi.periodes[IPL_POI_AFTERNOON] && g_poi.periodes[IPL_POI_EVENING] && g_poi.periodes[IPL_POI_LUNCH] && g_poi.periodes[IPL_POI_MORNING]);
+	VERIF(!g_poi.periodes[IPL_POI_EARLYCLASS] && !g_poi.periodes[IPL_POI_TOOTIRED] && !g_poi.utiliseRayon && g_poi.limite == 0);
 	printf(echecs ? "%d échec(s)\n" : "tout passe\n", echecs);
 	return echecs != 0;
 }

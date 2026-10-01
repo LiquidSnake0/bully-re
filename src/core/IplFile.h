@@ -64,16 +64,33 @@ struct CIplPont {
 	char s3[68], s4[16];
 };
 
-// Un point d'intérêt (« pois ») : un groupe nommé (« Smokers »…) de
-// points, chacun avec quatre chaînes (« Both », « », « Wall », « PREPPY »…)
-// et 21 dwords non encore interprétés.
+// Un point d'intérêt (« pois », docs/trigger.md) : la forme compilée des
+// blocs POI de DAT/Trigger.img. Les 846 points des .ipb (30 fichiers zone_*)
+// sont tous, valeur pour valeur, des points de sept fichiers de Trigger.img
+// (eventsSchoolgrounds, eventsRichArea, MainMap_hangouts, eventsDowntown,
+// eventsPoorArea, eventsIndustrialArea, PedPoi) : même nom de bloc, AREACODE,
+// position, lacet, rayon. Les intérieurs et les missions n'y sont pas.
+// Par point : GENDER, NAME, TYPE, PEDTYPE (chaînes préfixées), puis 21 mots :
+// MAX, POIPOINT (3 flottants), YAWPITCHROLL (3), les dix périodes (0 ou 1),
+// USERADIUS, RADIUS (flottant), IGNOREPOPULATION, OVERRIDELIMIT. Les périodes
+// sont rangées dans l'ordre alphabétique de leurs mots-clés (kIplPoiPeriode).
+// Trois TYPE valent « Specific_Event" » avec un guillemet en trop, dans les
+// octets mêmes (zone_indust3, zone_rich1, zone_rich11).
+enum { IPL_POI_AFTERNOON, IPL_POI_MORETIRED, IPL_POI_SLIGHTLYTIRED, IPL_POI_TIRED, IPL_POI_TOOTIRED,
+       IPL_POI_EARLYCLASS, IPL_POI_EVENING, IPL_POI_LATECLASS, IPL_POI_LUNCH, IPL_POI_MORNING, IPL_POI_NUM_PERIODES };
+extern const char *const kIplPoiPeriode[IPL_POI_NUM_PERIODES];
 struct CIplPoiPoint {
-	char s[4][64];
-	int32 d[21];
+	char genre[64], nom[64], type[64], clique[64];
+	int32 max;
+	CVector pos;
+	float lacetTangageRoulis[3];
+	bool periodes[IPL_POI_NUM_PERIODES];
+	bool utiliseRayon; float rayon;
+	bool ignorePopulation; int32 limite;
 };
 struct CIplPois {
 	char name[64];
-	int32 unk;
+	int32 zone;                          // AREACODE
 	int32 numPoints;
 };
 
