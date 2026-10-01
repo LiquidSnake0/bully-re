@@ -8,6 +8,7 @@ int32 (*CIplFile::ms_occlHandler)(const CIplOccl &e) = nil;
 int32 (*CIplFile::ms_propHandler)(const char *name) = nil;
 int32 (*CIplFile::ms_pontHandler)(const CIplPont &e) = nil;
 int32 (*CIplFile::ms_poisHandler)(const CIplPois &g, const CIplPoiPoint &p) = nil;
+int32 (*CIplFile::ms_pthxHandler)(const CIplPthx &t) = nil;
 int32 CIplFile::ms_numInst, CIplFile::ms_numRail, CIplFile::ms_numSpec, CIplFile::ms_numProj,
       CIplFile::ms_numOccl, CIplFile::ms_numProp, CIplFile::ms_numPerm, CIplFile::ms_numPont, CIplFile::ms_numPois, CIplFile::ms_numTrig, CIplFile::ms_numPthx;
 int32 CIplFile::ms_lastTag;
@@ -117,9 +118,12 @@ CIplFile::Load(const uint8 *data, uint32 size)
 			break;
 		case IPL_PTHX:
 			for(int32 i = 0; i < count; i++){
-				char name[256]; RdName(p, name, sizeof(name));
-				RdInt(p); RdInt(p); int32 n = RdInt(p);
-				p += n * 36;
+				CIplPthx t; RdName(p, t.name, sizeof(t.name));
+				t.a = RdInt(p); t.b = RdInt(p); t.numPoints = RdInt(p);
+				t.points = (const CIplPthxPoint*)p;
+				if(p + (size_t)t.numPoints * 36 > end) return false;
+				if(ms_pthxHandler) ms_pthxHandler(t);
+				p += t.numPoints * 36;
 				ms_numPthx++;
 			}
 			break;

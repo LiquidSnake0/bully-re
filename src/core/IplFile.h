@@ -77,6 +77,17 @@ struct CIplPois {
 	int32 numPoints;
 };
 
+// Un trajet « pthx » (0x434570) : un nom, deux mots, puis des points de
+// trois triplets (0x434370 les remet à trois rappels distincts). Le sens des
+// champs est établi dans docs/ipl.md.
+struct CIplPthxPoint { float v[3][3]; };
+struct CIplPthx {
+	char name[256];
+	int32 a, b;
+	int32 numPoints;
+	const CIplPthxPoint *points;    // dans le tampon du fichier, valide pendant le rappel
+};
+
 class CIplFile
 {
 public:
@@ -86,6 +97,7 @@ public:
 	static int32 (*ms_propHandler)(const char *name);
 	static int32 (*ms_pontHandler)(const CIplPont &e);
 	static int32 (*ms_poisHandler)(const CIplPois &g, const CIplPoiPoint &p);
+	static int32 (*ms_pthxHandler)(const CIplPthx &t);
 	static int32 ms_numInst, ms_numRail, ms_numSpec, ms_numProj, ms_numOccl, ms_numProp, ms_numPerm, ms_numPont, ms_numPois, ms_numTrig, ms_numPthx;
 	static int32 ms_lastTag;        // tag de la dernière section rencontrée (diagnostic)
 

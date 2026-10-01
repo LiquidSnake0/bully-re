@@ -3,7 +3,7 @@
 //                                          [--image sortie.ppm] [--banc n] [--promenade n]
 //                                          [--monde] [--rayon m] [--survol n] [--pietons n] [--bras]
 //                                          [--fige] [--attente] [--temps s] [--anim groupe:n] [--sans-objets]
-//                                          [--vue x y z lacet tangage]
+//                                          [--vue x y z lacet tangage] [--patrouilles n]
 //
 // Le rendu est entièrement logiciel (src/render : Camera + RasterTrianglePersp),
 // dans une image de 400 × 240, la définition de l'écran du haut de la New
@@ -56,6 +56,7 @@
 #include "scene.h"
 #include "monde.h"
 #include "../src/anim/Agr.h"
+#include "../src/core/TriggerFile.h"
 #include "../src/render/Camera.h"
 #include <algorithm>
 #include <chrono>
@@ -219,7 +220,7 @@ int
 main(int argc, char **argv)
 {
 	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--marche] [--image sortie.ppm] [--banc n] [--promenade n] [--monde] [--rayon m]\n"); return 2; }
-	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
+	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0, patrouilles = 0; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
 	for(int i = 2; i < argc; i++){
 		if(strcmp(argv[i], "--image") == 0 && i + 1 < argc) image = argv[++i];
 		else if(strcmp(argv[i], "--banc") == 0 && i + 1 < argc) banc = atoi(argv[++i]);
@@ -229,6 +230,7 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--pietons") == 0 && i + 1 < argc) pietons = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--bras") == 0) bras = true;
 		else if(strcmp(argv[i], "--fige") == 0) fige = true;
+		else if(strcmp(argv[i], "--patrouilles") == 0 && i + 1 < argc) patrouilles = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--sans-objets") == 0) objets = false;
 		else if(strcmp(argv[i], "--attente") == 0) attente = true;
 		else if(strcmp(argv[i], "--anim") == 0 && i + 1 < argc) imposee = argv[++i];
@@ -390,12 +392,28 @@ main(int argc, char **argv)
 		const AgrAnim *pas = nil, *att = nil;
 		bool enAttente = false; float tEtat = 0, dureeEtat = 0;
 		const AgrAnim *avant = nil; float horlogeAvant = 0, fondu = 0;
+		// Un piéton de patrouille suit un trajet de DAT/Trigger.img : il marche
+		// vers le point `cible`, s'y arrête le temps écrit (attente du point et
+		// de ses actions), tourné vers l'orientation de l'action, puis repart.
+		const CTriggerPath *trajet = nil; int32 cible = 0; float attenteRestante = 0, capVise = 0;
 		float Hasard(float a, float b){ hasard = hasard * 1103515245u + 12345u; return a + (b - a) * ((hasard >> 8) & 0xffff) / 65535.0f; }
 	};
 	const float FONDU = 0.3f;
 	std::vector<PietonAnime> animes;
 	Morceau *mPietons = nil;
-	if(pietons > 0){
+	// Les trajets de DAT/Trigger.img, lus une fois si on en veut.
+	std::vector<CTriggerPath> tousTrajets;
+	if(patrouilles > 0){
+		int32 im = CdStream::AddImage("DAT\\Trigger.img");
+		const CdImage &img = CdStream::ms_images[im >= 0 ? im : 0];
+		for(int32 e = 0; im >= 0 && e < img.m_numEntries; e++){
+			uint32 nb; uint8 *b = outil::LireEntree(im, "DAT\\Trigger.img", img.m_entries[e].name, &nb);
+			CTriggerFile f; if(b && f.Load(b, nb)) for(CTriggerPath &t : f.paths) if(t.points.size() >= 2) tousTrajets.push_back(std::move(t));
+			free(b);
+		}
+		printf("  %zu trajets lus dans DAT/Trigger.img\n", tousTrajets.size());
+	}
+	if(pietons > 0 || patrouilles > 0){
 		std::vector<const CPedIdeEntry*> liste;
 		for(const CPedIdeEntry &e : a.pietons) if(e.id > 1) liste.push_back(&e);   // 0 le joueur, 1 le piéton par défaut
 		Morceau *m = new Morceau; m->nom = "(piétons)"; m->s = new outil::Scene; m->s->sansAidesNonTexturees = true;
@@ -430,6 +448,54 @@ main(int argc, char **argv)
 				}else delete an;
 			}else{ delete an; printf("  piéton %-22s : modèle introuvable dans World.img\n", e.model); }
 		}
+		// Les patrouilles : les trajets dont un point est à moins de `rayon` de la
+		// caméra (et à moins de 6 m en hauteur), les plus proches d'abord, un
+		// piéton chacun, posé sur le premier point.
+		if(patrouilles > 0){
+			std::vector<std::pair<float, const CTriggerPath*>> proches;
+			for(const CTriggerPath &t : tousTrajets){
+				// Les trajets d'ambiance seulement : pas ceux des missions (« 1_02B_… »,
+				// « 3_S11_… »), ni ceux des tests (« GLOBALTESTPATH2 », « TestPath… »).
+				std::string n = outil::Minuscules(t.nom.c_str());
+				if(n.size() > 2 && isdigit((unsigned char)n[0]) && n[1] == '_') continue;
+				if(n.find("test") != std::string::npos) continue;
+				float d = 1e9f;
+				for(const CTriggerPathPoint &q : t.points)
+					if(fabsf(q.pos.z - (cam.pos.z - 1.6f)) < 6) d = fminf(d, hypotf(q.pos.x - cam.pos.x, q.pos.y - cam.pos.y));
+				if(d < rayon) proches.push_back({d, &t});
+			}
+			std::sort(proches.begin(), proches.end(), [](const auto &x, const auto &y){ return x.first < y.first; });
+			auto Contient = [](const std::string &n, const char *m){ std::string a = outil::Minuscules(n.c_str()); return a.find(m) != std::string::npos; };
+			int k = 0;
+			for(auto &pr : proches){
+				if(k >= patrouilles) break;
+				const CTriggerPath &t = *pr.second;
+				// Un préfet pour une ronde de préfet, sinon un piéton de la liste.
+				bool prefet = Contient(t.nom, "patrol") || Contient(t.nom, "prefect");
+				const CPedIdeEntry *choix = nil;
+				for(size_t j = 0; j < liste.size() && !choix; j++){
+					const CPedIdeEntry &e = *liste[(j + k * 7) % liste.size()];
+					if(!prefet || strcasecmp(e.type, "PREFECT") == 0) choix = &e;
+				}
+				if(!choix) continue;
+				const CTriggerPathPoint &p0 = t.points[0], &p1 = t.points[1];
+				float z = p0.pos.z; sol.Sol(p0.pos.x, p0.pos.y, p0.pos.z + 2.0f, 10.0f, &z);
+				float cap = atan2f(p1.pos.y - p0.pos.y, p1.pos.x - p0.pos.x);
+				float lacetP = -(cap - PI / 2);
+				float q[4] = { 0, 0, sinf(lacetP / 2), cosf(lacetP / 2) };
+				outil::Anime *an = new outil::Anime;
+				if(!m->s->AjouterModele(a, choix->model, NifFromPlacement(CVector(p0.pos.x, p0.pos.y, z), CVector(1, 1, 1), q), false, an)){ delete an; continue; }
+				const AgrAnim *pas = PasDeMarche(*choix), *att = Attente(*choix);
+				if(!pas){ delete an; continue; }
+				PietonAnime pa; pa.an = an; pa.anim = pas; pa.pas = pas; pa.att = att; pa.decalage = k * 0.53f; pa.hasard = 777u + k * 7919u;
+				CVector d = AgrDeplacement(*pas);
+				pa.marche = true; pa.vitesse = hypotf(d.x, d.y) / pas->duree;
+				pa.cap = pa.capVise = cap; pa.corps.pos = CVector(p0.pos.x, p0.pos.y, z); pa.depart = pa.corps.pos;
+				pa.trajet = &t; pa.cible = 1;
+				animes.push_back(pa); poses++; k++;
+				printf("  patrouille « %s » (%zu points, à %.0f m) : %s %s\n", t.nom.c_str(), t.points.size(), pr.first, choix->model, choix->type);
+			}
+		}
 		if(poses > 0){ m->Preparer(); v.morceaux.push_back(m); mPietons = m; }
 		else delete m;
 		printf("  %d piéton(s) posé(s)\n", poses);
@@ -446,7 +512,36 @@ main(int argc, char **argv)
 			for(PietonAnime &p : animes){
 				p.horloge += dt;
 				if(p.fondu > 0){ p.horlogeAvant += dt; p.fondu -= dt; }
-				if(p.pas && p.att){
+				auto Basculer = [&](bool versAttente){
+					if(versAttente == p.enAttente || (versAttente && !p.att)) return;
+					p.avant = p.anim; p.horlogeAvant = p.horloge + p.decalage;
+					p.enAttente = versAttente; p.anim = versAttente ? p.att : p.pas;
+					p.horloge = 0; p.decalage = 0; p.fondu = FONDU; p.tEtat = 0;
+				};
+				if(p.trajet){
+					const std::vector<CTriggerPathPoint> &pts = p.trajet->points;
+					if(p.enAttente || p.attenteRestante > 0){
+						p.attenteRestante -= dt;
+						if(p.attenteRestante <= 0) Basculer(false);
+					}else{
+						const CTriggerPathPoint &c = pts[p.cible];
+						float dx = c.pos.x - p.corps.pos.x, dy = c.pos.y - p.corps.pos.y;
+						p.capVise = atan2f(dy, dx);
+						if(hypotf(dx, dy) < 0.5f || p.bloque > 2.0f){
+							// Arrivé (ou coincé : on passe au point suivant). L'attente du
+							// point et celles de ses actions ; l'action oriente le piéton
+							// (lacet en degrés, 0 vers +y comme les caps GTA).
+							float w = c.attente; bool oriente = false; float lacet = 0;
+							for(const CTriggerAction &ac : c.actions){ w += ac.attente; oriente = true; lacet = ac.orientation[0]; }
+							if(oriente) p.capVise = (lacet + 90) * PI / 180;
+							p.cible = (p.cible + 1) % (int32)pts.size(); p.bloque = 0;
+							if(w > 0.05f){ p.attenteRestante = w; Basculer(true); }
+						}
+					}
+					// Le cap tourne vers le cap visé, 4 rad/s au plus.
+					float e = remainderf(p.capVise - p.cap, 2 * PI), pasMax = 4.0f * dt;
+					p.cap += e > pasMax ? pasMax : e < -pasMax ? -pasMax : e;
+				}else if(p.pas && p.att){
 					p.tEtat += dt;
 					if(p.tEtat > p.dureeEtat){
 						p.avant = p.anim; p.horlogeAvant = p.horloge + p.decalage;
@@ -465,7 +560,7 @@ main(int argc, char **argv)
 				p.corps.Avancer(sol, cosf(p.cap) * p.vitesse * part * dt, sinf(p.cap) * p.vitesse * part * dt, dt);
 				float fait = hypotf(p.corps.pos.x - avant.x, p.corps.pos.y - avant.y);
 				p.bloque = fait < 0.3f * p.vitesse * part * dt ? p.bloque + dt : 0;
-				if(p.bloque > 0.25f){
+				if(p.bloque > 0.25f && !p.trajet){
 					// Contre un mur : un quart à un demi-tour, d'un côté au hasard.
 					p.hasard = p.hasard * 1103515245u + 12345u;
 					float quart = (90 + (p.hasard >> 16) % 90) * PI / 180;
@@ -495,6 +590,9 @@ main(int argc, char **argv)
 			       p.corps.auSol ? "au sol" : "en l'air"),
 			printf("      %s depuis %.1f s (prochain changement à %.1f s)%s, en (%.2f, %.2f, %.2f) cap %.0f°\n", p.enAttente ? "à l'arrêt" : "en marche", p.tEtat, p.dureeEtat, p.fondu > 0 ? ", en fondu" : "",
 			       p.corps.pos.x, p.corps.pos.y, p.corps.pos.z, p.cap * 180 / PI);
+		for(const PietonAnime &p : animes) if(p.trajet)
+			printf("    patrouille « %s » : vers le point %d sur %zu, %s, en (%.2f, %.2f, %.2f), à %.1f m de son départ\n", p.trajet->nom.c_str(), p.cible, p.trajet->points.size(),
+			       p.enAttente ? "à l'arrêt" : "en marche", p.corps.pos.x, p.corps.pos.y, p.corps.pos.z, hypotf(p.corps.pos.x - p.depart.x, p.corps.pos.y - p.depart.y));
 	}
 
 	CMarcheur corps;
