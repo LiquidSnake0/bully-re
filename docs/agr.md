@@ -135,3 +135,24 @@ de fin redonne celle du début à 0,0013 près), autour de 1,07 s pour deux pas,
 de 1,1 à 1,7 m/s.
 
 Code : `src/anim/Agr` ; test : `tests/test_agr` (Player_Tired, puis les 550 fichiers).
+
+## Les objets animés (01.10.2026)
+
+Un modèle animé est déclaré dans la section `panm` des `.idb` (props.ide) : id,
+modèle, txd, **groupe .agr**, groupe de piéton. 237 modèles. Les pistes d'un
+objet animent les nœuds **sous « Root »**, en profondeur dans l'ordre du
+fichier, la piste 0 étant « Root » lui-même (un piéton part de « Dummy »).
+Vérifié avec `outils/sonde_objets` : les têtes de piste retrouvent la
+rotation et la translation de leur nœud à 0,001 près (boîte aux lettres,
+dé, porte, les 19 os du rideau du carnaval, les 23 de l'armure ; seuls les os
+symétriques de l'armure, de même pose, se confondent). Les translations des
+pistes sont absolues, dans le repère du parent, comme celle du nœud.
+
+Un groupe d'objet mêle des animations de décor et des animations
+d'événement : dans celui de `PortaPoo`, la première qui bouge projette la
+cabine à 13 m. La visite joue en boucle, parmi celles qui bougent, une qui
+reste sur place (dérive des positions < 1 m), de préférence cyclique.
+Les placements du monde ne posent que quelques objets animés (8 au carnaval :
+deux `PortaPoo` qui tanguent, six figurants `CARNI0*` ; un garage à vélos à
+l'école, un interrupteur à l'asile) : les portes et coffres viennent des
+scripts.

@@ -2,7 +2,7 @@
 //   BULLY_DATA=<racine> build/outils/visite <fichier.ipb> [--pos x y z lacet tangage] [--marche]
 //                                          [--image sortie.ppm] [--banc n] [--promenade n]
 //                                          [--monde] [--rayon m] [--survol n] [--pietons n] [--bras]
-//                                          [--fige] [--attente] [--temps s] [--anim groupe:n]
+//                                          [--fige] [--attente] [--temps s] [--anim groupe:n] [--sans-objets]
 //
 // Le rendu est entièrement logiciel (src/render : Camera + RasterTrianglePersp),
 // dans une image de 400 × 240, la définition de l'écran du haut de la New
@@ -87,6 +87,23 @@ struct Morceau {
 			ombre[i/3] = 0.45f + 0.55f * fabsf((nx*lum[0]+ny*lum[1]+nz*lum[2])/nn);
 		}
 		vue.resize(s->pts.size());
+	}
+	// Recalcule l'éclairage des seuls triangles [debut, fin[ (un objet animé).
+	void PreparerTriangles(int32 debut, int32 fin){
+		float lum[3] = {0.4f, -0.6f, 0.7f}; float ln = sqrtf(lum[0]*lum[0]+lum[1]*lum[1]+lum[2]*lum[2]); for(float &q : lum) q /= ln;
+		for(int32 i = debut; i < fin; i += 3){
+			const CVector &A = s->pts[s->tri[i]], &B = s->pts[s->tri[i+1]], &C = s->pts[s->tri[i+2]];
+			float ux = B.x-A.x, uy = B.y-A.y, uz = B.z-A.z, wx = C.x-A.x, wy = C.y-A.y, wz = C.z-A.z;
+			float nx = uy*wz-uz*wy, ny = uz*wx-ux*wz, nz = ux*wy-uy*wx, nn = sqrtf(nx*nx+ny*ny+nz*nz); if(nn < 1e-9f) nn = 1;
+			ombre[i/3] = 0.45f + 0.55f * fabsf((nx*lum[0]+ny*lum[1]+nz*lum[2])/nn);
+		}
+	}
+	// Pose les objets animés du morceau à l'instant t (s).
+	void AnimerObjets(float t){
+		for(outil::Anime *o : s->objets){
+			s->Reposer(*o, *o->anim, t + o->decalage);
+			if(o->bloc >= 0){ const outil::Scene::Bloc &b = s->blocs[o->bloc]; PreparerTriangles(b.triDebut, b.triFin); }
+		}
 	}
 };
 
@@ -201,7 +218,7 @@ int
 main(int argc, char **argv)
 {
 	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--marche] [--image sortie.ppm] [--banc n] [--promenade n] [--monde] [--rayon m]\n"); return 2; }
-	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0; bool bras = false, fige = false, attente = false; float temps = 0; std::string imposee; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
+	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0; bool bras = false, fige = false, attente = false, objets = true; float temps = 0; std::string imposee; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
 	for(int i = 2; i < argc; i++){
 		if(strcmp(argv[i], "--image") == 0 && i + 1 < argc) image = argv[++i];
 		else if(strcmp(argv[i], "--banc") == 0 && i + 1 < argc) banc = atoi(argv[++i]);
@@ -211,6 +228,7 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--pietons") == 0 && i + 1 < argc) pietons = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--bras") == 0) bras = true;
 		else if(strcmp(argv[i], "--fige") == 0) fige = true;
+		else if(strcmp(argv[i], "--sans-objets") == 0) objets = false;
 		else if(strcmp(argv[i], "--attente") == 0) attente = true;
 		else if(strcmp(argv[i], "--anim") == 0 && i + 1 < argc) imposee = argv[++i];
 		else if(strcmp(argv[i], "--temps") == 0 && i + 1 < argc) temps = (float)atof(argv[++i]);
@@ -228,7 +246,7 @@ main(int argc, char **argv)
 	Visite v;
 	CMondeCollision sol;                    // les collisions de tous les morceaux chargés
 	auto Charger = [&](const std::string &nom) -> bool {
-		Morceau *m = new Morceau; m->nom = nom; m->s = new outil::Scene;
+		Morceau *m = new Morceau; m->nom = nom; m->s = new outil::Scene; m->s->animerObjets = objets;
 		if(!outil::ChargerPlacements(a, nom, *m->s)){ delete m; return false; }
 		m->Preparer();
 		int poses, sans; outil::PoserCollisions(a, *m->s, cols, m->col, &poses, &sans);
@@ -489,6 +507,11 @@ main(int argc, char **argv)
 	}
 
 	using horloge = std::chrono::steady_clock;
+	{
+		auto t0 = horloge::now(); size_t n = 0;
+		for(Morceau *m : v.morceaux){ m->AnimerObjets(temps); n += m->s->objets.size(); }
+		if(n) printf("  %zu objet(s) animé(s) posé(s) à %.2f s en %.2f ms\n", n, temps, std::chrono::duration<double, std::milli>(horloge::now() - t0).count());
+	}
 	if(!image.empty() || banc > 0){
 		auto t0 = horloge::now();
 		int n = banc > 0 ? banc : 1;
@@ -545,7 +568,7 @@ main(int argc, char **argv)
 			static float attente = 0; attente += dt;
 			if(attente > 0.5f){ attente = 0; Actualiser(cam.pos.x, cam.pos.y); }
 		}
-		{ static float horlogeAnim = temps; horlogeAnim += dt > 0.1f ? 0.1f : dt; Animer(horlogeAnim); }
+		{ static float horlogeAnim = temps; horlogeAnim += dt > 0.1f ? 0.1f : dt; Animer(horlogeAnim); for(Morceau *m : v.morceaux) m->AnimerObjets(horlogeAnim); }
 		auto t0 = horloge::now();
 		v.Rendre(cam);
 		cumul += std::chrono::duration<double, std::milli>(horloge::now() - t0).count(); images++;

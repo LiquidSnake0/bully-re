@@ -44,6 +44,9 @@ struct Anime {
 	NifTransform place;
 	int32 ptDebut = 0, ptFin = 0, bloc = -1;
 	int32 noeuds[AGR_OS];
+	bool objet = false;                  // vrai si l'arbre animé part de « Root » (objet) et non de « Dummy » (piéton)
+	const AgrAnim *anim = nil;           // pour un objet : l'animation qu'il joue en boucle
+	float decalage = 0;                  // pour un objet : son avance dans la boucle (s)
 	~Anime(){ nif.Free(); free(buf); }
 };
 
@@ -65,8 +68,12 @@ struct Scene {
 	// loin) avant de toucher à ses sommets.
 	struct Bloc { int32 ptDebut, ptFin, triDebut, triFin; CVector centre; float rayon; };
 	std::vector<Bloc> blocs;
+	// Les objets animés (section panm des .idb : portes, cloches, drapeaux…),
+	// gardés si `animerObjets` est vrai au chargement des placements.
+	bool animerObjets = false;
+	std::vector<Anime*> objets;
 
-	~Scene(){ for(auto &d : dicos) delete d.second; }
+	~Scene(){ for(auto &d : dicos) delete d.second; for(Anime *o : objets) delete o; }
 
 	Dictionnaire *Dico(const std::string &txd){
 		std::string k = Minuscules(txd.c_str());
@@ -94,8 +101,11 @@ struct Scene {
 			// même ordre ; seules les positions changent.
 			std::vector<CVector> peau;
 			if(c.mondes && g.skin >= 0){ peau.resize(d.numVertices); if(!NifSkinVertices(f, bloc, c.mondes, peau.data())) peau.clear(); }
+			// Une forme rigide suit son nœud animé : sa transformation vient des
+			// transformations recalculées, pas de celles du fichier.
+			const NifTransform &ta = c.mondes ? c.mondes[bloc] : t;
 			for(int i = 0; i < d.numVertices; i++)
-				s.pts[(*c.ecrire)++] = NifApply(c.place, peau.empty() ? NifApply(t, d.vertices[i]) : peau[i]);
+				s.pts[(*c.ecrire)++] = NifApply(c.place, peau.empty() ? NifApply(ta, d.vertices[i]) : peau[i]);
 			return;
 		}
 		int32 tex = avecUv ? s.IndexTexture(c.d, nomTex) : -1;
@@ -149,8 +159,12 @@ struct Scene {
 			garder->ptDebut = (int32)ptAvant; garder->ptFin = (int32)pts.size();
 			garder->bloc = tri.size() > avant ? (int32)blocs.size() : -1;
 			for(int32 k = 0; k < AGR_OS; k++) garder->noeuds[k] = -1;
-			// Les 36 nœuds animés : l'arbre sous « Dummy », dans l'ordre du fichier.
+			// Les nœuds animés, en profondeur dans l'ordre du fichier : l'arbre
+			// sous « Dummy » pour un piéton (36 os), sous « Root » pour un objet
+			// (la piste 0 est Root lui-même, docs/agr.md).
 			int32 n = 0, dummy = NifFindNode(nif, "Dummy");
+			garder->objet = dummy < 0;
+			if(dummy < 0) dummy = NifFindNode(nif, "Root");
 			std::vector<int32> pile; if(dummy >= 0) pile.push_back(dummy);
 			while(!pile.empty() && n < AGR_OS){
 				int32 b = pile.back(); pile.pop_back();
@@ -180,7 +194,24 @@ struct Scene {
 	void Reposer(Anime &an, const AgrAnim &anim, float t){
 		const CNifFile &f = an.nif;
 		std::vector<NifMatrix33> pose(f.numBlocks, NifAxisRotation(0, 0));
-		for(int32 k = 1; k < AGR_OS; k++){                // la piste 0 (Dummy) ne bouge pas le modèle
+		std::vector<CVector> decalage(f.numBlocks, CVector(0, 0, 0));
+		// Un objet : chaque piste remplace la rotation de son nœud, et sa
+		// translation quand l'animation en porte une (positions absolues dans le
+		// repère du parent, comme celle du nœud).
+		for(int32 k = an.objet ? 0 : 1; an.objet && k < anim.numOs && k < AGR_OS; k++){
+			int32 b = an.noeuds[k]; float q[4], m[3][3]; CVector p;
+			if(b < 0) continue;
+			const NifAVObject &o = *(const NifAVObject*)f.blocks[b].data;
+			if(AgrRotation(anim, k, t, q)){
+				AgrMatrice(q, m);
+				for(int i = 0; i < 3; i++) for(int j = 0; j < 3; j++){
+					float v = 0; for(int k2 = 0; k2 < 3; k2++) v += o.rotation.m[k2][i] * m[k2][j];
+					pose[b].m[i][j] = v;
+				}
+			}
+			if(AgrPositionOs(anim, k, t, &p)) decalage[b] = CVector(p.x - o.translation.x, p.y - o.translation.y, p.z - o.translation.z);
+		}
+		for(int32 k = 1; !an.objet && k < AGR_OS; k++){   // la piste 0 (Dummy) ne bouge pas le modèle
 			int32 b = an.noeuds[k]; float q[4], m[3][3];
 			if(b < 0 || !AgrRotation(anim, k, t, q)) continue;
 			AgrMatrice(q, m);
@@ -191,9 +222,8 @@ struct Scene {
 				pose[b].m[i][j] = v;
 			}
 		}
-		std::vector<CVector> decalage(f.numBlocks, CVector(0, 0, 0));
 		CVector r0, rt;
-		if(an.noeuds[1] >= 0 && AgrPositionOs(anim, 1, 0, &r0) && AgrPositionOs(anim, 1, t, &rt)){
+		if(!an.objet && an.noeuds[1] >= 0 && AgrPositionOs(anim, 1, 0, &r0) && AgrPositionOs(anim, 1, t, &rt)){
 			CVector f0(0, 0, 0), ft(0, 0, 0);
 			AgrPositionOs(anim, AGR_OS - 1, 0, &f0); AgrPositionOs(anim, AGR_OS - 1, t, &ft);
 			decalage[an.noeuds[1]] = CVector(rt.x - r0.x - (ft.x - f0.x), rt.y - r0.y - (ft.y - f0.y), rt.z - r0.z - (ft.z - f0.z));
@@ -262,6 +292,58 @@ inline bool JamaisDessine(const std::string &nom){
 inline std::vector<CIplInst> *g_inst = nil;
 inline int32 GarderInst(const CIplInst &e){ g_inst->push_back(e); return 0; }
 
+// L'animation qu'un modèle animé (section panm) joue en boucle : dans son
+// groupe .agr, la première qui bouge vraiment (un objet a souvent une pose
+// fixe en tête de groupe). Les groupes sont lus une fois.
+inline bool AgrBouge(const AgrAnim &x){
+	if(!x.decodee || x.duree <= 0) return false;
+	for(int32 k = 0; k < x.numOs; k++){
+		const std::vector<AgrCle> &p = x.pistes[k];
+		for(size_t j = 1; j < p.size(); j++){
+			float c = fabsf(p[0].q[0]*p[j].q[0] + p[0].q[1]*p[j].q[1] + p[0].q[2]*p[j].q[2] + p[0].q[3]*p[j].q[3]);
+			if(c < 0.999f) return true;                // plus de ~5° d'écart
+		}
+		const std::vector<AgrPosition> &v = x.positions[k];
+		for(size_t j = 1; j < v.size(); j++) if(fabsf(v[j].p.x - v[0].p.x) + fabsf(v[j].p.y - v[0].p.y) + fabsf(v[j].p.z - v[0].p.z) > 0.02f) return true;
+	}
+	return false;
+}
+inline std::map<std::string, std::vector<AgrAnim>> g_groupesObjets;
+inline const AgrAnim *AnimationObjet(Archives &a, const std::string &modele){
+	auto it = a.agrDe.find(Minuscules(modele.c_str()));
+	if(it == a.agrDe.end()) return nil;
+	std::string g = Minuscules(it->second.c_str());
+	if(!g_groupesObjets.count(g)){
+		std::vector<AgrAnim> v; uint32 nb; uint8 *b = LireMonde(a, it->second + ".agr", &nb);
+		if(b){ AgrLireGroupe(b, nb, v); free(b); }
+		g_groupesObjets[g] = std::move(v);
+	}
+	// Parmi celles qui bougent, on écarte celles qui emportent l'objet (la
+	// cabine de PortaPoo projetée à 13 m) : une animation de décor reste sur
+	// place. On préfère une boucle (pose de fin = pose de départ), puis la plus
+	// longue.
+	const AgrAnim *meilleur = nil; float note = -1;
+	for(const AgrAnim &x : g_groupesObjets[g]){
+		if(!AgrBouge(x)) continue;
+		float derive = 0;
+		for(int32 k = 0; k < x.numOs; k++){
+			const std::vector<AgrPosition> &v = x.positions[k];
+			for(const AgrPosition &p : v) derive = fmaxf(derive, fabsf(p.p.x - v[0].p.x) + fabsf(p.p.y - v[0].p.y) + fabsf(p.p.z - v[0].p.z));
+		}
+		if(derive > 1.0f) continue;
+		bool boucle = true;
+		for(int32 k = 0; k < x.numOs && boucle; k++){
+			const std::vector<AgrCle> &p = x.pistes[k];
+			if(p.size() < 2) continue;
+			float c = fabsf(p.front().q[0]*p.back().q[0] + p.front().q[1]*p.back().q[1] + p.front().q[2]*p.back().q[2] + p.front().q[3]*p.back().q[3]);
+			if(c < 0.999f) boucle = false;
+		}
+		float n = (boucle ? 1000.0f : 0.0f) + x.duree;
+		if(n > note){ note = n; meilleur = &x; }
+	}
+	return meilleur;
+}
+
 // Place dans `s` tous les modèles d'un fichier de placements « Ipl$ » (.ipb).
 inline bool ChargerPlacements(Archives &a, const std::string &ipb, Scene &s){
 	uint32 nb; uint8 *buf = LireMonde(a, ipb, &nb);
@@ -276,10 +358,20 @@ inline bool ChargerPlacements(Archives &a, const std::string &ipb, Scene &s){
 		std::string modele = e.name;
 		if(modele.empty()){ auto it = a.modeleDe.find(e.modelId); if(it == a.modeleDe.end()) continue; modele = it->second; }
 		if(JamaisDessine(modele)){ ignores++; continue; }
-		if(s.AjouterModele(a, modele, NifFromPlacement(e.pos, e.scale, e.rot))) compte[modele]++;
+		const AgrAnim *anim = s.animerObjets ? AnimationObjet(a, modele) : nil;
+		Anime *garde = anim ? new Anime : nil;
+		if(s.AjouterModele(a, modele, NifFromPlacement(e.pos, e.scale, e.rot), false, garde)){
+			compte[modele]++;
+			if(garde){
+				garde->anim = anim; garde->decalage = (float)(s.objets.size() % 7) * 0.37f; s.objets.push_back(garde); garde = nil;
+				printf("    objet animé : %s (%s, %d os, %.2f s) en %.1f %.1f %.1f\n", modele.c_str(), a.agrDe[Minuscules(modele.c_str())].c_str(), anim->numOs, anim->duree, e.pos.x, e.pos.y, e.pos.z);
+			}
+		}
+		delete garde;
 	}
-	printf("  %d modèles placés (%d introuvables, %d jamais dessinés ignorés), %zu triangles, %zu textures, %zu modèles distincts\n",
-	       s.modeles, s.manquants, ignores, s.tri.size() / 3, s.texNoms.size(), compte.size());
+	printf("  %d modèles placés (%d introuvables, %d jamais dessinés ignorés), %zu triangles, %zu textures, %zu modèles distincts%s\n",
+	       s.modeles, s.manquants, ignores, s.tri.size() / 3, s.texNoms.size(), compte.size(),
+	       s.objets.empty() ? "" : (", " + std::to_string(s.objets.size()) + " objets animés").c_str());
 	return !s.tri.empty();
 }
 

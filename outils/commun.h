@@ -38,10 +38,13 @@ struct Archives {
 	std::map<std::string, std::string> txdDe;     // modèle → dictionnaire de textures
 	std::map<int32, std::string> modeleDe;        // identifiant → modèle
 	std::vector<CPedIdeEntry> pietons;            // la section « peds », dans l'ordre des identifiants
+	std::vector<CPanmIdeEntry> panm;              // les modèles animés (props.ide)
+	std::map<std::string, std::string> agrDe;     // modèle animé (minuscules) → groupe .agr
 };
 inline Archives *g_arch = nil;
 template<class E> inline int32 Retenir(const E &e){ g_arch->txdDe[Minuscules(e.model)] = e.txd; g_arch->modeleDe[e.id] = e.model; return 0; }
 inline int32 RetenirPieton(const CPedIdeEntry &e){ g_arch->pietons.push_back(e); return Retenir(e); }
+inline int32 RetenirPanm(const CPanmIdeEntry &e){ g_arch->panm.push_back(e); g_arch->agrDe[Minuscules(e.model)] = e.agr; return Retenir(e); }
 
 inline uint8 *LireEntree(int32 image, const char *imgPath, const char *nom, uint32 *bytes){
 	const CDirectoryEntry *d = CdStream::ms_images[image].Find(nom);
@@ -65,7 +68,7 @@ inline bool Ouvrir(Archives &a){
 	g_arch = &a;
 	CIdeBinary::ms_objHandler = Retenir<CObjIdeEntry>;  CIdeBinary::ms_pedHandler = RetenirPieton;
 	CIdeBinary::ms_carHandler = Retenir<CCarIdeEntry>;  CIdeBinary::ms_weapHandler = Retenir<CWeapIdeEntry>;
-	CIdeBinary::ms_panmHandler = Retenir<CPanmIdeEntry>; CIdeBinary::ms_simpleHandler = Retenir<CSimpleIdeEntry>;
+	CIdeBinary::ms_panmHandler = RetenirPanm; CIdeBinary::ms_simpleHandler = Retenir<CSimpleIdeEntry>;
 	const CdImage &img = CdStream::ms_images[a.ide];
 	for(int32 k = 0; k < img.m_numEntries; k++){
 		const char *n = img.m_entries[k].name; size_t L = strlen(n);
