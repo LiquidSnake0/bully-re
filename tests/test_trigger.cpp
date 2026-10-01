@@ -21,7 +21,8 @@ main(void)
 	VERIF(im >= 0);
 	if(im < 0){ printf("test_trigger : ECHEC\n"); return 1; }
 	const CdImage &img = CdStream::ms_images[im];
-	int fichiers = 0, lus = 0, trajets = 0, points = 0, actions = 0, incoherences = 0, perim = 0, zones = 0, comptesFaux = 0;
+	int fichiers = 0, lus = 0, trajets = 0, points = 0, actions = 0, incoherences = 0, perim = 0, zones = 0, comptesFaux = 0, pois = 0, poiPoints = 0, poisFaux = 0;
+	CTriggerFile carnaval;
 	CTriggerFile pop;
 	const CTriggerPath *ronde = nil; CTriggerFile garde;
 	for(int32 e = 0; e < img.m_numEntries; e++){
@@ -35,6 +36,9 @@ main(void)
 		if(ok && f.Load(b, n)){
 			lus++; trajets += (int)f.paths.size(); incoherences += f.incoherences;
 			perim += (int)f.perimetres.size(); zones += (int)f.zones.size();
+			pois += (int)f.pois.size(); for(const CTriggerPoi &p : f.pois) poiPoints += (int)p.points.size();
+			if((int)f.pois.size() != f.nPois) poisFaux++;
+			if(strcasecmp(d.name, "PedPoi.dat") == 0) carnaval = f;
 			if((int)f.perimetres.size() != f.nPerimeters || (int)f.zones.size() != f.nTriggers){ comptesFaux++; printf("  comptes : %s (%zu/%d périmètres, %zu/%d déclencheurs)\n", d.name, f.perimetres.size(), f.nPerimeters, f.zones.size(), f.nTriggers); }
 			if(strcasecmp(d.name, "Population.dat") == 0) pop = f;
 			for(const CTriggerPath &t : f.paths){ points += (int)t.points.size(); for(const CTriggerPathPoint &p : t.points) actions += (int)p.actions.size(); }
@@ -91,6 +95,20 @@ main(void)
 		VERIF(riche->Contient(pop.perimetres, 448.9f, 350.9f, 5) && !riche->Contient(pop.perimetres, 448.9f + 400, 350.9f, 5));
 		printf("  RichArea : %d le jour (1 preppy, 5 citadins), %d au couvre-feu, polygone de %zu points relatif à (%.0f, %.0f)\n",
 		       riche->total[MOMENT_JOUR], riche->total[MOMENT_COUVREFEU], pop.perimetres[riche->perimetre].x.size(), riche->pos.x, riche->pos.y);
+	}
+	// Les points d'intérêt : 338 blocs, 1 199 points, comptes d'en-tête justes.
+	printf("  %d points d'intérêt, %d points, %d fichier(s) au compte NPOIS faux\n", pois, poiPoints, poisFaux);
+	VERIF(pois == 338 && poiPoints == 1199 && poisFaux == 0);
+	VERIF(!carnaval.pois.empty());
+	if(!carnaval.pois.empty()){
+		const CTriggerPoi &c = carnaval.pois[0];
+		VERIF(c.nom == "F_CarnivalWalker" && c.points.size() == 7);
+		const CTriggerPoiPoint &p0 = c.points[0], &p1 = c.points[1];
+		VERIF(p0.type == "Specific_Event" && p0.clique == "DEFAULT" && p0.genre == "Both" && p0.nom == "F_CarnivalWalker");
+		VERIF(fabsf(p0.pos.x - 148.578995f) < 1e-3f && fabsf(p0.pos.y - 438.484985f) < 1e-3f);
+		VERIF(p0.periodes[POI_AFTERNOON] && !p0.periodes[POI_MORETIRED] && p0.periodes[POI_SLIGHTLYTIRED] && !p0.periodes[POI_TOOTIRED]);
+		VERIF(p1.periodes[POI_MORETIRED] && p0.ignorePopulation && p0.limite == 15);
+		printf("  %s : %zu points, le premier en (%.1f, %.1f), actif l'après-midi, pas « très fatigué »\n", c.nom.c_str(), c.points.size(), p0.pos.x, p0.pos.y);
 	}
 	printf("test_trigger : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;

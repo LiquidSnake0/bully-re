@@ -46,6 +46,8 @@ std::string Guillemets(const std::string &s){
 const char *const kPopCategorie[POP_NUM] = { "PREFECT", "NERD", "JOCK", "DROPOUT", "GREASER", "PREPPY", "STUDENT",
                                             "COP", "TEACHER", "TOWNPERSON", "SHOPKEEP", "BULLY" };
 const char *const kMoment[MOMENT_NUM] = { "DAY", "CLASS", "NIGHT", "CURFEW" };
+const char *const kPoiPeriode[POI_NUM_PERIODES] = { "MORNING", "EARLYCLASS", "LUNCH", "LATECLASS", "AFTERNOON", "EVENING",
+                                                    "SLIGHTLYTIRED", "TIRED", "MORETIRED", "TOOTIRED" };
 
 bool
 CTriggerZone::Contient(const std::vector<CTriggerPerimeter> &perimetres, float x, float y, float z) const
@@ -126,6 +128,35 @@ CTriggerFile::Load(const uint8 *data, uint32 size)
 			}
 			if(prof != 0) return false;
 			zones.push_back(std::move(z));
+		}
+		else if(l.mot == "POI"){
+			corps = true;
+			if(!l.Suivante() || l.mot != "BEGIN") return false;
+			// Un point commence à son GENDER (le premier champ de chaque point) ;
+			// NAME vient deux fois : celui du bloc, puis celui de chaque point.
+			CTriggerPoi poi; CTriggerPoiPoint *pt = nil;
+			while(l.Suivante() && l.mot != "END"){
+				bool vrai = l.reste.find("TRUE") != std::string::npos;
+				if(l.mot == "GENDER"){ poi.points.emplace_back(); pt = &poi.points.back(); pt->genre = Guillemets(l.reste); continue; }
+				if(!pt){
+					if(l.mot == "NAME") poi.nom = Guillemets(l.reste);
+					else if(l.mot == "AREACODE") poi.zone = atoi(l.reste.c_str());
+					continue;
+				}
+				if(l.mot == "NAME") pt->nom = Guillemets(l.reste);
+				else if(l.mot == "TYPE") pt->type = Guillemets(l.reste);
+				else if(l.mot == "PEDTYPE") pt->clique = Guillemets(l.reste);
+				else if(l.mot == "MAX") pt->max = atoi(l.reste.c_str());
+				else if(l.mot == "POIPOINT"){ float v[3] = {0, 0, 0}; Nombres(l.reste, v, 3); pt->pos = CVector(v[0], v[1], v[2]); }
+				else if(l.mot == "YAWPITCHROLL") Nombres(l.reste, pt->lacetTangageRoulis, 3);
+				else if(l.mot == "USERADIUS") pt->utiliseRayon = vrai;
+				else if(l.mot == "RADIUS") Nombres(l.reste, &pt->rayon, 1);
+				else if(l.mot == "IGNOREPOPULATION") pt->ignorePopulation = vrai;
+				else if(l.mot == "OVERRIDELIMIT") pt->limite = atoi(l.reste.c_str());
+				else for(int k = 0; k < POI_NUM_PERIODES; k++) if(l.mot == kPoiPeriode[k]) pt->periodes[k] = vrai;
+			}
+			if(l.mot != "END") return false;
+			pois.push_back(std::move(poi));
 		}
 		else if(l.mot == "PATH"){
 			corps = true;

@@ -10,3 +10,4 @@ export/index.sqlite
 build/
 # sorties de outils/nif2obj : dérivées des données du jeu, jamais dans le dépôt
 export-obj/
+__pycache__/

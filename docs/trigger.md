@@ -82,3 +82,36 @@ Code : `src/core/TriggerFile` ; test : `tests/test_trigger` ; dans la visite :
 d'ambiance les plus proches ; il va de point en point, s'arrête le temps
 écrit, tourné selon l'action (lacet en degrés, 0 vers +y), en fondu marche ↔
 attente.
+
+## Points d'intérêt (POI)
+
+Un bloc `POI` / `BEGIN` : `NAME`, `AREACODE`, `NPOIPOINTS`, puis chaque point,
+qui commence par son `GENDER` (Both, Male, Female) : `NAME` (le comportement,
+« F_ClassSmokers », souvent vide), `TYPE` (DEFAULT, Specific_Event, Hang_Out,
+Sitting_Spot, Scenario, Couple, Wall, Spectator, Brawl…), `PEDTYPE` (DEFAULT
+ou une catégorie de piéton), `MAX`, `POIPOINT x, y, z`, `YAWPITCHROLL` (en
+degrés, 0 vers +y), les périodes où le point sert, `USERADIUS` / `RADIUS`,
+`IGNOREPOPULATION`, `OVERRIDELIMIT` ; `END` ferme le bloc. Relevé : 338 blocs,
+1 199 points, comptes NPOIS justes partout (eventsRichArea, eventsPoorArea,
+eventsSchoolHalls, eventsDowntown, MainMap_hangouts, PedPoi…).
+
+Les périodes sont celles de `Config/timeCycl.dat`, la classe coupée en deux :
+MORNING, EARLYCLASS (= FIRST_CLASS), LUNCH, LATECLASS (= SECOND_CLASS),
+AFTERNOON, EVENING ; le couvre-feu en paliers de fatigue SLIGHTLYTIRED,
+TIRED, MORETIRED, TOOTIRED (les fonctions F_StartCurfew_* de STimeCycle.lur).
+Les heures de ces paliers ne sont pas dans les données : la visite suppose
+23 h, minuit, 1 h et 2 h (l'évanouissement de 2 h).
+
+La clique d'un point : PEDTYPE, ou TYPE quand il nomme une catégorie. Les
+blocs `trich_nerds`, `trich_greasers`… ont PEDTYPE DEFAULT : la visite déduit
+la clique du nom, une déduction (le jeu peut la lire ailleurs).
+
+Dans la visite : `--poi n` pose un piéton sur les n points actifs les plus
+proches (à l'heure de `--heure`), de la clique et du genre demandés, debout
+à l'attente, tourné selon le lacet ; il disparaît quand aucune période du
+point n'est en cours. Les variantes à part de l'IDE (colonne unique = −1 :
+costumes d'Halloween, sous-vêtements, Gary) ne servent qu'en dernier recours.
+Vérifié au carnaval : l'aboyeuse de `F_CBarkerGame` (lacet 135°) fait face à
+l'allée, dos au stand de tir. Un piéton à l'attente regarde vers −y de son
+repère, celui qui marche vers +y. Restent : les animations propres à chaque
+TYPE (assis, adossé, en couple), et la section `pois` des .ipb.

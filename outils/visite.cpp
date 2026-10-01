@@ -3,7 +3,7 @@
 //                                          [--image sortie.ppm] [--banc n] [--promenade n]
 //                                          [--monde] [--rayon m] [--survol n] [--pietons n] [--bras]
 //                                          [--fige] [--attente] [--temps s] [--anim groupe:n] [--sans-objets]
-//                                          [--vue x y z lacet tangage] [--patrouilles n]
+//                                          [--vue x y z lacet tangage] [--patrouilles n] [--poi n]
 //                                          [--population auto|jour|classe|nuit|couvrefeu] [--heure HH:MM]
 //                                          [--saison automne|hiver|ete|printemps] [--meteo n] [--sans-ciel]
 //
@@ -63,6 +63,7 @@
 #include "../src/render/TimeCycle.h"
 #include "../src/render/Camera.h"
 #include <algorithm>
+#include <set>
 #include <chrono>
 #include <cmath>
 #ifndef VISITE_SANS_SDL
@@ -316,7 +317,7 @@ int
 main(int argc, char **argv)
 {
 	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--marche] [--image sortie.ppm] [--banc n] [--promenade n] [--monde] [--rayon m]\n"); return 2; }
-	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0, patrouilles = 0, moment = -1; CHorloge heureJeu; std::string saison = "automne"; int meteo = 0; bool sansCiel = false; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
+	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0, patrouilles = 0, nPoi = 0, moment = -1; CHorloge heureJeu; std::string saison = "automne"; int meteo = 0; bool sansCiel = false; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
 	for(int i = 2; i < argc; i++){
 		if(strcmp(argv[i], "--image") == 0 && i + 1 < argc) image = argv[++i];
 		else if(strcmp(argv[i], "--banc") == 0 && i + 1 < argc) banc = atoi(argv[++i]);
@@ -327,6 +328,7 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--bras") == 0) bras = true;
 		else if(strcmp(argv[i], "--fige") == 0) fige = true;
 		else if(strcmp(argv[i], "--patrouilles") == 0 && i + 1 < argc) patrouilles = atoi(argv[++i]);
+		else if(strcmp(argv[i], "--poi") == 0 && i + 1 < argc) nPoi = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--saison") == 0 && i + 1 < argc) saison = argv[++i];
 		else if(strcmp(argv[i], "--meteo") == 0 && i + 1 < argc) meteo = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--sans-ciel") == 0) sansCiel = true;
@@ -524,6 +526,9 @@ main(int argc, char **argv)
 		// Un piéton de population erre sans sortir de sa zone (Population.dat).
 		const CTriggerZone *zone = nil;
 		int32 momentPop = -1;                 // -1 : toujours là ; sinon le moment où il est de sortie
+		// Un piéton de point d'intérêt reste à son point, à l'attente, tant
+		// qu'une des périodes du point est en cours.
+		const CTriggerPoiPoint *poi = nil;
 		float Hasard(float a, float b){ hasard = hasard * 1103515245u + 12345u; return a + (b - a) * ((hasard >> 8) & 0xffff) / 65535.0f; }
 	};
 	const float FONDU = 0.3f;
@@ -536,6 +541,27 @@ main(int argc, char **argv)
 	bool momentsTous = moment == MOMENT_NUM;
 	if(momentsTous){ moment = heureJeu.Moment(); printf("  il est %02d:%02d : moment %s\n", heureJeu.Heure(), heureJeu.Minute(), kMoment[moment]); }
 	std::vector<CTriggerPath> tousTrajets;
+	std::vector<CTriggerPoi> tousPoi;
+	// La période d'un point d'intérêt à cette heure. Les périodes de jour sont
+	// celles de timeCycl.dat (FIRST_CLASS = EARLYCLASS, SECOND_CLASS = LATECLASS) ;
+	// le couvre-feu se découpe en paliers de fatigue (F_StartCurfew_SlightlyTired…
+	// TooTired dans STimeCycle.lur), dont les heures ne sont écrites nulle part
+	// dans les données : 23 h, minuit, 1 h, 2 h (l'évanouissement de 2 h), supposées.
+	auto PeriodePoi = [&](int32 h) -> int32 {
+		std::string p = CHorloge::PeriodeA(h);
+		if(p == "MORNING") return POI_MORNING;
+		if(p == "FIRST_CLASS") return POI_EARLYCLASS;
+		if(p == "LUNCH_TIME") return POI_LUNCH;
+		if(p == "SECOND_CLASS") return POI_LATECLASS;
+		if(p == "AFTERNOON") return POI_AFTERNOON;
+		if(p == "EVENING") return POI_EVENING;
+		return h == 23 ? POI_SLIGHTLYTIRED : h == 0 ? POI_TIRED : h == 1 ? POI_MORETIRED : POI_TOOTIRED;
+	};
+	auto Present = [&](const PietonAnime &p) -> bool {
+		if(p.momentPop >= 0 && p.momentPop != heureJeu.Moment()) return false;
+		if(p.poi && !p.poi->periodes[PeriodePoi(heureJeu.Heure())]) return false;
+		return true;
+	};
 	CTriggerFile population;
 	if(moment >= 0){
 		int32 im = CdStream::AddImage("DAT\\Trigger.img");
@@ -553,7 +579,18 @@ main(int argc, char **argv)
 		}
 		printf("  %zu trajets lus dans DAT/Trigger.img\n", tousTrajets.size());
 	}
-	if(pietons > 0 || patrouilles > 0 || moment >= 0){
+	if(nPoi > 0){
+		int32 im = CdStream::AddImage("DAT\\Trigger.img");
+		const CdImage &img = CdStream::ms_images[im >= 0 ? im : 0];
+		for(int32 e = 0; im >= 0 && e < img.m_numEntries; e++){
+			uint32 nb; uint8 *b = outil::LireEntree(im, "DAT\\Trigger.img", img.m_entries[e].name, &nb);
+			CTriggerFile f; if(b && f.Load(b, nb)) for(CTriggerPoi &q : f.pois) tousPoi.push_back(std::move(q));
+			free(b);
+		}
+		size_t n = 0; for(const CTriggerPoi &q : tousPoi) n += q.points.size();
+		printf("  %zu points d'intérêt (%zu points) lus dans DAT/Trigger.img, période %s\n", tousPoi.size(), n, kPoiPeriode[PeriodePoi(heureJeu.Heure())]);
+	}
+	if(pietons > 0 || patrouilles > 0 || moment >= 0 || nPoi > 0){
 		std::vector<const CPedIdeEntry*> liste;
 		for(const CPedIdeEntry &e : a.pietons) if(e.id > 1) liste.push_back(&e);   // 0 le joueur, 1 le piéton par défaut
 		Morceau *m = new Morceau; m->nom = "(piétons)"; m->s = new outil::Scene; m->s->sansAidesNonTexturees = true;
@@ -636,6 +673,75 @@ main(int argc, char **argv)
 				printf("  patrouille « %s » (%zu points, à %.0f m) : %s %s\n", t.nom.c_str(), t.points.size(), pr.first, choix->model, choix->type);
 			}
 		}
+		// Les points d'intérêt : les points à moins de `rayon` de la caméra (pas
+		// au-dessus d'elle, pas 50 m plus bas : une vue d'en haut les garde), actifs à l'heure du jeu, les plus proches
+		// d'abord. Sur chacun, un piéton de la clique demandée (PEDTYPE, DEFAULT :
+		// n'importe quel élève ou citadin) et du genre demandé, debout au point,
+		// tourné selon son lacet, à l'attente.
+		if(nPoi > 0){
+			int32 per = PeriodePoi(heureJeu.Heure());
+			std::vector<std::pair<float, std::pair<const CTriggerPoi*, const CTriggerPoiPoint*>>> proches;
+			for(const CTriggerPoi &q : tousPoi) for(const CTriggerPoiPoint &pt : q.points){
+				if(!pt.periodes[per] || pt.pos.z > cam.pos.z + 4 || pt.pos.z < cam.pos.z - 50) continue;
+				float d = hypotf(pt.pos.x - cam.pos.x, pt.pos.y - cam.pos.y);
+				if(d < rayon) proches.push_back({d, {&q, &pt}});
+			}
+			std::sort(proches.begin(), proches.end(), [](const auto &x, const auto &y){ return x.first < y.first; });
+			printf("  %zu point(s) d'intérêt actif(s) à moins de %.0f m\n", proches.size(), rayon);
+			int k = 0; std::set<std::string> dejaPoses;
+			for(auto &pr : proches){
+				if(k >= nPoi) break;
+				const CTriggerPoi &q = *pr.second.first; const CTriggerPoiPoint &pt = *pr.second.second;
+				// La clique : PEDTYPE, ou TYPE quand il nomme une catégorie (« trich_nerds » :
+				// PEDTYPE DEFAULT, TYPE NERD).
+				std::string clique = pt.clique;
+				if(strcasecmp(clique.c_str(), "DEFAULT") == 0)
+					for(const CPedIdeEntry *e : liste) if(strcasecmp(e->type, pt.type.c_str()) == 0){ clique = e->type; break; }
+				// Sinon le nom du bloc, quand il nomme une clique (« trich_nerds », « trich_greasers ») :
+				// une déduction, le jeu peut aussi bien la lire ailleurs.
+				if(strcasecmp(clique.c_str(), "DEFAULT") == 0){
+					std::string n = outil::Minuscules(q.nom.c_str());
+					static const char *const mots[][2] = { {"nerd", "NERD"}, {"greaser", "GREASER"}, {"jock", "JOCK"}, {"prep", "PREPPY"},
+					                                        {"bull", "BULLY"}, {"dropout", "DROPOUT"}, {"townie", "DROPOUT"} };
+					for(auto &mt : mots) if(n.find(mt[0]) != std::string::npos){ clique = mt[1]; break; }
+				}
+				bool tous = strcasecmp(clique.c_str(), "DEFAULT") == 0;
+				float z = pt.pos.z; sol.Sol(pt.pos.x, pt.pos.y, pt.pos.z + 2.0f, 10.0f, &z);
+				// Le lacet en degrés, 0 vers +y, comme l'orientation des actions de trajet.
+				// Un piéton à l'attente regarde vers −y de son repère (le corps qui
+				// marche, lui, vers +y) : d'où + PI / 2, comme pour --pietons.
+				float cap = (pt.lacetTangageRoulis[0] + 90) * PI / 180, lacetP = -(cap + PI / 2);
+				float qr[4] = { 0, 0, sinf(lacetP / 2), cosf(lacetP / 2) };
+				// Le premier candidat qui convient et dont le modèle est dans le monde.
+				// Les gens de tous les jours pas encore posés d'abord, puis les déjà
+				// posés ; les variantes à part (unique = −1 : costumes d'Halloween,
+				// sous-vêtements, Gary…) en dernier recours.
+				const CPedIdeEntry *choix = nil; outil::Anime *an = nil;
+				for(size_t j = 0; j < 3 * liste.size() && !choix; j++){
+					const CPedIdeEntry &e = *liste[(j + k * 13) % liste.size()];
+					size_t passe = j / liste.size();
+					if((passe == 2) != (e.unique < 0)) continue;
+					if(passe == 0 && dejaPoses.count(e.model)) continue;
+					if(pt.genre == "Male" && e.female) continue;
+					if(pt.genre == "Female" && !e.female) continue;
+					if(tous){
+						// N'importe quel élève ou citadin : pas l'autorité, ni les commerçants.
+						if(strcasecmp(e.type, "PREFECT") == 0 || strcasecmp(e.type, "COP") == 0 || strcasecmp(e.type, "TEACHER") == 0 || strcasecmp(e.type, "SHOPKEEP") == 0) continue;
+					}else if(strcasecmp(e.type, clique.c_str()) != 0) continue;
+					an = new outil::Anime;
+					if(m->s->AjouterModele(a, e.model, NifFromPlacement(CVector(pt.pos.x, pt.pos.y, z), CVector(1, 1, 1), qr), false, an)) choix = &e;
+					else{ delete an; an = nil; }
+				}
+				if(!choix){ printf("  point d'intérêt « %s » : aucun piéton %s %s\n", q.nom.c_str(), clique.c_str(), pt.genre.c_str()); continue; }
+				const AgrAnim *att = Attente(*choix);
+				if(!att){ delete an; printf("  point d'intérêt « %s » : pas d'attente pour %s\n", q.nom.c_str(), choix->model); continue; }
+				PietonAnime pa; pa.an = an; pa.anim = att; pa.att = att; pa.enAttente = true; pa.decalage = k * 0.37f; pa.poi = &pt;
+				pa.cap = cap; pa.corps.pos = CVector(pt.pos.x, pt.pos.y, z); pa.depart = pa.corps.pos;
+				animes.push_back(pa); poses++; k++; dejaPoses.insert(choix->model);
+				printf("  point d'intérêt « %s » %s%s%s (à %.0f m, lacet %.0f°) : %s %s\n", q.nom.c_str(), pt.type.c_str(), pt.nom.empty() ? "" : " ", pt.nom.c_str(),
+				       pr.first, pt.lacetTangageRoulis[0], choix->model, choix->type);
+			}
+		}
 		// La population du jeu : la plus petite zone peuplée qui contient les pieds
 		// de la caméra, et pour le moment demandé, autant de piétons de chaque
 		// catégorie que le fichier l'écrit, posés au hasard à moins de 20 m, sur
@@ -715,8 +821,8 @@ main(int argc, char **argv)
 				printf("  il est %02d:%02d : passage de %s à %s\n", heureJeu.Heure(), heureJeu.Minute(), kMoment[avantMoment], kMoment[heureJeu.Moment()]);
 			for(PietonAnime &p : animes){
 				// Un piéton hors de son moment n'existe pas pour l'instant : caché, figé.
-				if(p.momentPop >= 0){
-					bool absent = p.momentPop != heureJeu.Moment();
+				if(p.momentPop >= 0 || p.poi){
+					bool absent = !Present(p);
 					if(p.an->bloc >= 0) mPietons->s->blocs[p.an->bloc].cache = absent;
 					if(absent) continue;
 				}
@@ -781,7 +887,7 @@ main(int argc, char **argv)
 			}
 		}
 		for(PietonAnime &p : animes){
-			if(p.momentPop >= 0 && p.momentPop != heureJeu.Moment()) continue;
+			if(!Present(p)) continue;
 			if(p.marche){
 				// Le corps animé regarde vers +y de son repère : +y suit le cap.
 				float lacetP = -(p.cap - PI / 2);
@@ -797,7 +903,7 @@ main(int argc, char **argv)
 		auto t0 = std::chrono::steady_clock::now();
 		Animer(temps);
 		printf("  %zu piéton(s) animé(s) : %.1f s simulées, pose et peau comprises, en %.1f ms\n", animes.size(), temps, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
-		for(const PietonAnime &p : animes) if(p.marche && temps > 0 && (p.momentPop < 0 || p.momentPop == heureJeu.Moment()))
+		for(const PietonAnime &p : animes) if(p.marche && temps > 0 && Present(p))
 			printf("    marche %.2f m/s (%.3f s par cycle) : %.1f m du départ, %s\n", p.vitesse, p.anim->duree,
 			       hypotf(p.corps.pos.x - p.an->place.t.x, p.corps.pos.y - p.an->place.t.y) >= 0 ? hypotf(p.corps.pos.x - p.depart.x, p.corps.pos.y - p.depart.y) : 0,
 			       p.corps.auSol ? "au sol" : "en l'air"),

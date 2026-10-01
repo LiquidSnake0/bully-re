@@ -68,11 +68,39 @@ struct CTriggerZone {
 	bool Contient(const std::vector<CTriggerPerimeter> &perimetres, float x, float y, float z) const;
 };
 
+// Un point d'intérêt (bloc POI) : un endroit où un piéton vient faire quelque
+// chose (traîner, s'asseoir, s'adosser au mur, fumer, se battre…), pour certaines
+// périodes de la journée. Les périodes sont celles de timeCycl.dat, avec la
+// classe en deux (EARLYCLASS, LATECLASS) et le couvre-feu en paliers de fatigue.
+enum { POI_MORNING, POI_EARLYCLASS, POI_LUNCH, POI_LATECLASS, POI_AFTERNOON, POI_EVENING,
+       POI_SLIGHTLYTIRED, POI_TIRED, POI_MORETIRED, POI_TOOTIRED, POI_NUM_PERIODES };
+extern const char *const kPoiPeriode[POI_NUM_PERIODES];   // « MORNING »…
+
+struct CTriggerPoiPoint {
+	std::string nom;                     // le comportement (« F_ClassSmokers »), souvent vide
+	std::string type;                    // Hang_Out, Sitting_Spot, Wall, Couple, Specific_Event…
+	std::string genre = "Both";          // Both, Male, Female
+	std::string clique = "DEFAULT";      // PEDTYPE : DEFAULT ou une catégorie (GREASER…)
+	int32 max = 0;
+	CVector pos;
+	float lacetTangageRoulis[3] = {0, 0, 0};
+	bool periodes[POI_NUM_PERIODES] = {false};
+	bool utiliseRayon = false; float rayon = 0;
+	bool ignorePopulation = false; int32 limite = 0;    // OVERRIDELIMIT
+};
+
+struct CTriggerPoi {
+	std::string nom;
+	int32 zone = 0;
+	std::vector<CTriggerPoiPoint> points;
+};
+
 struct CTriggerFile {
 	int32 nPaths = 0, nPoints = 0, nPerimeters = 0, nTriggers = 0, nPois = 0;   // l'en-tête
 	std::vector<CTriggerPath> paths;
 	std::vector<CTriggerPerimeter> perimetres;
 	std::vector<CTriggerZone> zones;     // les blocs TRIGGER, rattachés au périmètre qui les précède
+	std::vector<CTriggerPoi> pois;
 	int32 incoherences = 0;              // trajets dont NPATHPOINTS ne correspond pas aux points écrits
 
 	// Analyse le texte d'un fichier ; faux si l'en-tête manque, si un bloc
