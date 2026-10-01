@@ -72,6 +72,14 @@ struct Scene {
 	// gardés si `animerObjets` est vrai au chargement des placements.
 	bool animerObjets = false;
 	std::vector<Anime*> objets;
+	// Les modèles à horaire (tobj) : pour chaque bloc, les heures d'allumage et
+	// d'extinction, ou (-2, -2) s'il est toujours là. « -1 » pour l'allumage
+	// (les lumières de nuit dl_*_nlights, dl_*_winglow) est pris pour la tombée
+	// du jour, 19 h, l'heure où timecyc passe à la nuit : une hypothèse.
+	std::vector<std::pair<int32, int32>> horaires;
+	// Les lumières 2dfx des modèles posés, dans le monde.
+	struct Lumiere { CVector pos; float rgb[3], alpha, taille, distance; };
+	std::vector<Lumiere> lumieres;
 
 	~Scene(){ for(auto &d : dicos) delete d.second; for(Anime *o : objets) delete o; }
 
@@ -381,8 +389,25 @@ inline bool ChargerPlacements(Archives &a, const std::string &ipb, Scene &s){
 		if(JamaisDessine(modele)){ ignores++; continue; }
 		const AgrAnim *anim = s.animerObjets ? AnimationObjet(a, modele) : nil;
 		Anime *garde = anim ? new Anime : nil;
-		if(s.AjouterModele(a, modele, NifFromPlacement(e.pos, e.scale, e.rot), false, garde)){
+		size_t blocsAvant = s.blocs.size();
+		NifTransform place = NifFromPlacement(e.pos, e.scale, e.rot);
+		if(s.AjouterModele(a, modele, place, false, garde)){
 			compte[modele]++;
+			auto h = a.horaireDe.find(Minuscules(modele.c_str()));
+			std::pair<int32, int32> hor = h != a.horaireDe.end() ? h->second : std::make_pair(-2, -2);
+			if(hor.first == -1) hor.first = 19;
+			while(s.horaires.size() < s.blocs.size()) s.horaires.push_back(s.horaires.size() >= blocsAvant ? hor : std::make_pair(-2, -2));
+			// Les lumières du modèle : leur position est dans l'espace du modèle.
+			int32 id = e.modelId;
+			if(id < 0) for(auto &m : a.modeleDe) if(strcasecmp(m.second.c_str(), modele.c_str()) == 0){ id = m.first; break; }
+			auto fx = a.effetsDe.find(id);
+			if(fx != a.effetsDe.end())
+				for(const C2dEffectIdeEntry &x : fx->second){
+					Scene::Lumiere l; l.pos = NifApply(place, CVector(x.pos[0], x.pos[1], x.pos[2]));
+					for(int c = 0; c < 3; c++) l.rgb[c] = (float)x.col[c];
+					l.alpha = x.col[3] / 255.0f; l.taille = x.size; l.distance = x.dist;
+					s.lumieres.push_back(l);
+				}
 			if(garde){
 				garde->anim = anim; garde->decalage = (float)(s.objets.size() % 7) * 0.37f; s.objets.push_back(garde); garde = nil;
 				printf("    objet animé : %s (%s, %d os, %.2f s) en %.1f %.1f %.1f\n", modele.c_str(), a.agrDe[Minuscules(modele.c_str())].c_str(), anim->numOs, anim->duree, e.pos.x, e.pos.y, e.pos.z);
@@ -393,6 +418,7 @@ inline bool ChargerPlacements(Archives &a, const std::string &ipb, Scene &s){
 	printf("  %d modèles placés (%d introuvables, %d jamais dessinés ignorés), %zu triangles, %zu textures, %zu modèles distincts%s\n",
 	       s.modeles, s.manquants, ignores, s.tri.size() / 3, s.texNoms.size(), compte.size(),
 	       s.objets.empty() ? "" : (", " + std::to_string(s.objets.size()) + " objets animés").c_str());
+	{ int t = 0; for(auto &h : s.horaires) if(h.first >= 0) t++; if(t || !s.lumieres.empty()) printf("  %d modèle(s) à horaire, %zu lumière(s)\n", t, s.lumieres.size()); }
 	return !s.tri.empty();
 }
 

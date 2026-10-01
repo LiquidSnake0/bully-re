@@ -40,10 +40,17 @@ struct Archives {
 	std::vector<CPedIdeEntry> pietons;            // la section « peds », dans l'ordre des identifiants
 	std::vector<CPanmIdeEntry> panm;              // les modèles animés (props.ide)
 	std::map<std::string, std::string> agrDe;     // modèle animé (minuscules) → groupe .agr
+	std::map<std::string, std::pair<int32, int32>> horaireDe;   // modèle tobj (minuscules) → heures d'allumage, d'extinction
+	std::map<int32, std::vector<C2dEffectIdeEntry>> effetsDe;   // id de modèle → ses effets 2dfx (lumières)
 };
 inline Archives *g_arch = nil;
 template<class E> inline int32 Retenir(const E &e){ g_arch->txdDe[Minuscules(e.model)] = e.txd; g_arch->modeleDe[e.id] = e.model; return 0; }
 inline int32 RetenirPieton(const CPedIdeEntry &e){ g_arch->pietons.push_back(e); return Retenir(e); }
+inline int32 RetenirObj(const CObjIdeEntry &e){
+	if(e.section == IDE_TOBJ) g_arch->horaireDe[Minuscules(e.model)] = { e.timeOn, e.timeOff };
+	return Retenir(e);
+}
+inline int32 Retenir2dfx(const C2dEffectIdeEntry &e){ g_arch->effetsDe[e.id].push_back(e); return 0; }
 inline int32 RetenirPanm(const CPanmIdeEntry &e){ g_arch->panm.push_back(e); g_arch->agrDe[Minuscules(e.model)] = e.agr; return Retenir(e); }
 
 inline uint8 *LireEntree(int32 image, const char *imgPath, const char *nom, uint32 *bytes){
@@ -66,7 +73,7 @@ inline bool Ouvrir(Archives &a){
 	a.ide = CdStream::AddImage("Objects\\ide.img");
 	if(a.monde < 0 || a.ide < 0){ fprintf(stderr, "archives introuvables : BULLY_DATA doit pointer sur la racine du jeu\n"); return false; }
 	g_arch = &a;
-	CIdeBinary::ms_objHandler = Retenir<CObjIdeEntry>;  CIdeBinary::ms_pedHandler = RetenirPieton;
+	CIdeBinary::ms_objHandler = RetenirObj; CIdeBinary::ms_2dfxHandler = Retenir2dfx;  CIdeBinary::ms_pedHandler = RetenirPieton;
 	CIdeBinary::ms_carHandler = Retenir<CCarIdeEntry>;  CIdeBinary::ms_weapHandler = Retenir<CWeapIdeEntry>;
 	CIdeBinary::ms_panmHandler = RetenirPanm; CIdeBinary::ms_simpleHandler = Retenir<CSimpleIdeEntry>;
 	const CdImage &img = CdStream::ms_images[a.ide];

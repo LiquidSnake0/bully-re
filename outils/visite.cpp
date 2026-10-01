@@ -164,6 +164,55 @@ struct Visite {
 			}
 		}
 	}
+	// Les halos des lumières 2dfx, ajoutés par-dessus la scène : un disque doux
+	// de la couleur de la lumière, de rayon `taille` mètres, plus fort quand le
+	// jour baisse. Une lumière derrière un mur (la profondeur au centre est plus
+	// proche de plus de 40 cm) n'est pas dessinée.
+	int32 halos = 0;
+	void Lumieres(const Camera &cam){
+		halos = 0;
+		if(!ciel || !midi) return;
+		float jour = (ciel->soleil[0] + ciel->soleil[1] + ciel->soleil[2]) / fmaxf(midi->soleil[0] + midi->soleil[1] + midi->soleil[2], 1);
+		float intensite = 0.1f + 0.9f * fminf(fmaxf((1 - jour) / 0.7f, 0), 1);
+		float foc = (cam.h * 0.5f) / tanf(cam.fovY * 0.5f);
+		for(Morceau *m : morceaux)
+		for(const outil::Scene::Lumiere &l : m->s->lumieres){
+			CVector v = cam.ToView(l.pos);
+			if(v.z < cam.near_ || v.z > l.distance * 3) continue;
+			RasterPVertex p = cam.Project(v, 0, 0);
+			int32 cx = (int32)p.x, cy = (int32)p.y;
+			if(cx < 0 || cy < 0 || cx >= img.w || cy >= img.h) continue;
+			float d = img.depth[cy * img.w + cx];
+			if(d < 0 && -1.0f / d < v.z - 0.4f) continue;
+			float R = l.taille * foc / v.z; if(R < 1.5f) R = 1.5f; if(R > 80) R = 80;
+			float k = intensite * l.alpha * fminf(1.0f, 1.5f - v.z / (l.distance * 3));
+			for(int32 y = (int32)(p.y - R); y <= (int32)(p.y + R); y++){
+				if(y < 0 || y >= img.h) continue;
+				for(int32 x = (int32)(p.x - R); x <= (int32)(p.x + R); x++){
+					if(x < 0 || x >= img.w) continue;
+					float r = sqrtf((x - p.x) * (x - p.x) + (y - p.y) * (y - p.y)) / R;
+					if(r >= 1) continue;
+					float a = k * (1 - r) * (1 - r);
+					uint8 *q = img.rgb + (y * img.w + x) * 3;
+					for(int c = 0; c < 3; c++) q[c] = (uint8)fminf(q[c] + a * l.rgb[c], 255);
+				}
+			}
+			halos++;
+		}
+	}
+	// Les modèles à horaire (tobj) : visibles de l'heure d'allumage à celle
+	// d'extinction (une plage qui finit avant de commencer passe minuit).
+	void Horaires(int32 heure){
+		for(Morceau *m : morceaux){
+			outil::Scene *s = m->s;
+			for(size_t b = 0; b < s->horaires.size() && b < s->blocs.size(); b++){
+				auto h = s->horaires[b];
+				if(h.first < 0) continue;
+				bool on = h.first <= h.second ? (heure >= h.first && heure < h.second) : (heure >= h.first || heure < h.second);
+				s->blocs[b].cache = !on;
+			}
+		}
+	}
 	void Rendre(const Camera &cam){
 		RasterClear(img, 128, 150, 170);
 		if(ciel && midi) Ambiance(cam, true);
@@ -231,6 +280,7 @@ struct Visite {
 		}
 		}
 		if(ciel && midi) Ambiance(cam, false);
+		Lumieres(cam);
 	}
 };
 
@@ -322,7 +372,7 @@ main(int argc, char **argv)
 		int32 n = CFileMgr::LoadFile("Config\\timeCycl.dat", b.data(), (int32)b.size(), "rb");
 		if(!(n > 0 && CHorloge::ChargerPeriodes((const char*)b.data(), (size_t)n))) printf("  timeCycl.dat illisible : périodes par défaut\n");
 	}
-	auto MajCiel = [&](void){ if(v.ciel) etatCiel = cycle.Etat(meteo, heureJeu.minutes / 60.0f); };
+	auto MajCiel = [&](void){ if(v.ciel) etatCiel = cycle.Etat(meteo, heureJeu.minutes / 60.0f); v.Horaires(heureJeu.Heure()); };
 	CMondeCollision sol;                    // les collisions de tous les morceaux chargés
 	auto Charger = [&](const std::string &nom) -> bool {
 		Morceau *m = new Morceau; m->nom = nom; m->s = new outil::Scene; m->s->animerObjets = objets;
@@ -811,7 +861,7 @@ main(int argc, char **argv)
 		float yaw0 = cam.yaw;
 		for(int k = 0; k < n; k++){ cam.yaw = yaw0 + k * (2 * PI / n); (MajCiel(), v.Rendre(cam)); }
 		double ms = std::chrono::duration<double, std::milli>(horloge::now() - t0).count() / n;
-		printf("  %d image(s) 400×240, %.1f ms par image (%.0f i/s), %d triangles dessinés à la dernière (%d modèles retenus, %d faces arrière)\n", n, ms, 1000.0 / ms, v.dessines, v.modelesVus, v.arriere);
+		printf("  %d image(s) 400×240, %.1f ms par image (%.0f i/s), %d triangles dessinés à la dernière (%d modèles retenus, %d faces arrière, %d halos)\n", n, ms, 1000.0 / ms, v.dessines, v.modelesVus, v.arriere, v.halos);
 		if(!image.empty()){ cam.yaw = yaw0; (MajCiel(), v.Rendre(cam)); bool ok = RasterWritePPM(v.img, image.c_str()); printf("  → %s%s\n", image.c_str(), ok ? "" : " (échec)"); }
 		return 0;
 	}
