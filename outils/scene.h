@@ -47,6 +47,12 @@ struct Anime {
 	bool objet = false;                  // vrai si l'arbre animé part de « Root » (objet) et non de « Dummy » (piéton)
 	const AgrAnim *anim = nil;           // pour un objet : l'animation qu'il joue en boucle
 	float decalage = 0;                  // pour un objet : son avance dans la boucle (s)
+	// Pour un piéton : 0, le bassin bouge de ce qu'il bouge depuis le début de
+	// l'animation (la marche, l'attente) ; sinon la hauteur du bassin debout du
+	// squelette de l'animation (0,86 m pour POI_*, Sitting_Boys, NPC_*…), et la
+	// piste du bassin compte en absolu, mise à l'échelle du modèle (repos de son
+	// Root / référence) : un piéton s'assoit vraiment.
+	float bassinRef = 0;
 	~Anime(){ nif.Free(); free(buf); }
 };
 
@@ -246,6 +252,13 @@ struct Scene {
 			CVector r0, rt, f0(0, 0, 0), ft(0, 0, 0);
 			if(!AgrPositionOs(x, 1, 0, &r0) || !AgrPositionOs(x, 1, tx, &rt)) return false;
 			AgrPositionOs(x, AGR_OS - 1, 0, &f0); AgrPositionOs(x, AGR_OS - 1, tx, &ft);
+			if(an.bassinRef > 0){
+				// En absolu : l'écart à la pose debout de référence, à l'échelle du modèle.
+				const CVector &repos = ((const NifAVObject*)f.blocks[an.noeuds[1]].data)->translation;
+				float k = repos.z / an.bassinRef;
+				*d = CVector((rt.x - (ft.x - f0.x)) * k, (rt.y - (ft.y - f0.y)) * k, (rt.z - an.bassinRef) * k);
+				return true;
+			}
 			*d = CVector(rt.x - r0.x - (ft.x - f0.x), rt.y - r0.y - (ft.y - f0.y), rt.z - r0.z - (ft.z - f0.z));
 			return true;
 		};

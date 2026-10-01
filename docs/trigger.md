@@ -107,11 +107,52 @@ blocs `trich_nerds`, `trich_greasers`… ont PEDTYPE DEFAULT : la visite déduit
 la clique du nom, une déduction (le jeu peut la lire ailleurs).
 
 Dans la visite : `--poi n` pose un piéton sur les n points actifs les plus
-proches (à l'heure de `--heure`), de la clique et du genre demandés, debout
-à l'attente, tourné selon le lacet ; il disparaît quand aucune période du
-point n'est en cours. Les variantes à part de l'IDE (colonne unique = −1 :
-costumes d'Halloween, sous-vêtements, Gary) ne servent qu'en dernier recours.
-Vérifié au carnaval : l'aboyeuse de `F_CBarkerGame` (lacet 135°) fait face à
-l'allée, dos au stand de tir. Un piéton à l'attente regarde vers −y de son
-repère, celui qui marche vers +y. Restent : les animations propres à chaque
-TYPE (assis, adossé, en couple), et la section `pois` des .ipb.
+proches (à l'heure de `--heure`), de la clique et du genre demandés, tourné
+selon le lacet ; il disparaît quand aucune période du point n'est en cours.
+Les variantes à part de l'IDE (colonne unique = −1 : costumes d'Halloween,
+sous-vêtements, Gary) ne servent qu'en dernier recours.
+
+**Le lacet** : le piéton regarde vers lacet + 180° (0 = +x). Établi sur les
+places assises : les quatre « Sitting » autour de (597, −90), lacets 320, 45,
+140 et 230, regardent alors vers l'extérieur à 2-4° près, et le banc de
+(530, −148), lacet 290, tourne le dos à son mur. (Le corps animé regarde vers
++y de son repère, l'attente comme la marche : le bassin de toutes ces
+animations a le même cap.) La première lecture, « 0 vers +y », reposait sur
+une aboyeuse du carnaval jugée à l'œil : elle était fausse. L'orientation des
+actions de trajet (`--patrouilles`) suit encore cette première lecture, non
+revérifiée.
+
+**L'animation selon le type** : les arbres d'actions (`Act/AI_POI.cat`, même
+format binaire que Globals.cat) ne sont pas décodés. Les correspondances
+viennent des noms de blocs et de la galerie :
+
+| Type (blocs) | Groupe .agr | Animations |
+|---|---|---|
+| Sitting_Spot (« Sitting ») | Sitting_Boys | 2-6, assis sur un banc (bassin 0,60 m) |
+| Wall (« Smoking », « Smokers ») | POI_Smoking | 0, 2-4, fume adossé (bassin reculé de 18 cm) |
+| F_ClassSmokers | POI_Smoking | 5-8, fume debout |
+| Spectator | NPC_Spectator | 0-2 |
+| Hang_Out | Hang_Talking | les boucles (0-7, 9, 10) |
+| Couple (« Kissing ») | NPC_Love | 5 et 6, deux piétons face à face |
+| le reste | IDLE_* | l'attente de la clique |
+
+Autres poses relevées : Sitting_Boys 1 et 7-9 assis par terre jambes
+tendues, 0 la transition debout → assis ; POI_Gen 0-1 assis bas, 8-14 en
+tailleur par terre, 15 une marche, 2-3 et 16 debout.
+
+Ces animations sont faites pour un squelette dont le bassin debout est à
+0,86 m (les F_Girls : 1,10 m). Leur piste de bassin compte en absolu
+(`Anime::bassinRef`), mise à l'échelle du modèle : repos de son Root / 0,86
+(0,906 m pour un petit, 1,018 pour un adulte, 1,094 pour Beatrice : le
+rapport à la longueur de cuisse vaut 2,2-2,3 partout). La marche et l'attente
+gardent le bassin relatif à leur début. Un couple : NPC_Love 5 et 6 avancent
+déjà le bassin de 0,30 et 0,50 m vers l'autre ; chacun recule d'autant (à son
+échelle) pour finir à 35 cm.
+
+Vérifié à l'image près de (530, −148) : Beatrice assise sur le banc, dos au
+mur ; un couple enlacé face à face ; un fumeur dos au mur, mais à un mètre de
+lui plutôt qu'appuyé. `--galerie groupe[:réf][@a-b]` aligne les animations
+d'un groupe devant la caméra, une par piéton, pour les reconnaître ;
+`outils/sonde_poi.cpp` (non construit) mesure durée, boucle, bassin et cap.
+Restent : la section `pois` des .ipb, les autres types (Brawl, Harassment,
+Back_Alley…), et le décodage des arbres d'actions.

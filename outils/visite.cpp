@@ -3,7 +3,7 @@
 //                                          [--image sortie.ppm] [--banc n] [--promenade n]
 //                                          [--monde] [--rayon m] [--survol n] [--pietons n] [--bras]
 //                                          [--fige] [--attente] [--temps s] [--anim groupe:n] [--sans-objets]
-//                                          [--vue x y z lacet tangage] [--patrouilles n] [--poi n]
+//                                          [--vue x y z lacet tangage] [--patrouilles n] [--poi n] [--galerie groupe[:réf][@a-b]] [--modele m]
 //                                          [--population auto|jour|classe|nuit|couvrefeu] [--heure HH:MM]
 //                                          [--saison automne|hiver|ete|printemps] [--meteo n] [--sans-ciel]
 //
@@ -317,7 +317,7 @@ int
 main(int argc, char **argv)
 {
 	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--marche] [--image sortie.ppm] [--banc n] [--promenade n] [--monde] [--rayon m]\n"); return 2; }
-	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0, patrouilles = 0, nPoi = 0, moment = -1; CHorloge heureJeu; std::string saison = "automne"; int meteo = 0; bool sansCiel = false; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
+	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0, patrouilles = 0, nPoi = 0, nGalerie = 0, moment = -1; CHorloge heureJeu; std::string saison = "automne"; int meteo = 0; bool sansCiel = false; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee, galerie, modeleGalerie; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
 	for(int i = 2; i < argc; i++){
 		if(strcmp(argv[i], "--image") == 0 && i + 1 < argc) image = argv[++i];
 		else if(strcmp(argv[i], "--banc") == 0 && i + 1 < argc) banc = atoi(argv[++i]);
@@ -329,6 +329,8 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--fige") == 0) fige = true;
 		else if(strcmp(argv[i], "--patrouilles") == 0 && i + 1 < argc) patrouilles = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--poi") == 0 && i + 1 < argc) nPoi = atoi(argv[++i]);
+		else if(strcmp(argv[i], "--galerie") == 0 && i + 1 < argc){ galerie = argv[++i]; nGalerie = 1; }
+		else if(strcmp(argv[i], "--modele") == 0 && i + 1 < argc) modeleGalerie = argv[++i];
 		else if(strcmp(argv[i], "--saison") == 0 && i + 1 < argc) saison = argv[++i];
 		else if(strcmp(argv[i], "--meteo") == 0 && i + 1 < argc) meteo = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--sans-ciel") == 0) sansCiel = true;
@@ -590,7 +592,7 @@ main(int argc, char **argv)
 		size_t n = 0; for(const CTriggerPoi &q : tousPoi) n += q.points.size();
 		printf("  %zu points d'intérêt (%zu points) lus dans DAT/Trigger.img, période %s\n", tousPoi.size(), n, kPoiPeriode[PeriodePoi(heureJeu.Heure())]);
 	}
-	if(pietons > 0 || patrouilles > 0 || moment >= 0 || nPoi > 0){
+	if(pietons > 0 || patrouilles > 0 || moment >= 0 || nPoi > 0 || nGalerie > 0){
 		std::vector<const CPedIdeEntry*> liste;
 		for(const CPedIdeEntry &e : a.pietons) if(e.id > 1) liste.push_back(&e);   // 0 le joueur, 1 le piéton par défaut
 		Morceau *m = new Morceau; m->nom = "(piétons)"; m->s = new outil::Scene; m->s->sansAidesNonTexturees = true;
@@ -624,6 +626,37 @@ main(int argc, char **argv)
 					animes.push_back(p);
 				}else delete an;
 			}else{ delete an; printf("  piéton %-22s : modèle introuvable dans World.img\n", e.model); }
+		}
+		// La galerie : toutes les animations d'un groupe, une par piéton, en rang
+		// à 6 m devant la caméra, 1,2 m d'écart, face à elle, de gauche (n° 0) à
+		// droite. Les .agr ne nomment pas leurs animations : c'est l'œil qui dit
+		// laquelle est assise, adossée, etc. « --galerie groupe[:réf][@a-b] », la
+		// référence du bassin debout valant 0,86 m par défaut.
+		if(nGalerie > 0){
+			// « groupe[:réf][@a-b] » : la plage a-b restreint aux animations a à b.
+			size_t arob = galerie.find('@'); int de = 0, a2 = 1 << 30;
+			if(arob != std::string::npos){ sscanf(galerie.c_str() + arob + 1, "%d-%d", &de, &a2); galerie = galerie.substr(0, arob); }
+			size_t c = galerie.find(':'); std::string g = galerie.substr(0, c);
+			float ref = c == std::string::npos ? 0.86f : (float)atof(galerie.c_str() + c + 1);
+			if(!groupes.count(g)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); } groupes[g] = v; }
+			const std::vector<AgrAnim> &ga = groupes[g];
+			const CPedIdeEntry *choix = nil;
+			for(const CPedIdeEntry *e : liste) if(modeleGalerie.empty() ? (strcasecmp(e->type, "STUDENT") == 0 && !e->female && e->unique >= 0) : strcasecmp(e->model, modeleGalerie.c_str()) == 0){ choix = e; break; }
+			int fin = std::min(a2, (int)ga.size() - 1); float n = (float)(fin - de + 1);
+			for(size_t i = (size_t)de; choix && (int)i <= fin; i++){
+				if(!ga[i].decodee) continue;
+				float lat = ((float)(i - de) - (n - 1) / 2.0f) * 1.2f;
+				float x = cam.pos.x + 6 * cosf(cam.yaw) + lat * sinf(cam.yaw), y = cam.pos.y + 6 * sinf(cam.yaw) - lat * cosf(cam.yaw), z;
+				if(!sol.Sol(x, y, cam.pos.z + 2.0f, 50.0f, &z)) z = cam.pos.z - 1.6f;
+				float cap = cam.yaw + PI, lacetP = -(cap - PI / 2);
+				float q[4] = { 0, 0, sinf(lacetP / 2), cosf(lacetP / 2) };
+				outil::Anime *an = new outil::Anime;
+				if(!m->s->AjouterModele(a, choix->model, NifFromPlacement(CVector(x, y, z), CVector(1, 1, 1), q), false, an)){ delete an; break; }
+				an->bassinRef = ref;
+				PietonAnime pa; pa.an = an; pa.anim = &ga[i]; pa.att = &ga[i]; pa.enAttente = true; pa.cap = cap; pa.corps.pos = CVector(x, y, z);
+				animes.push_back(pa); poses++;
+				printf("  galerie %s n° %zu : %.2f s, %s\n", g.c_str(), i, ga[i].duree, choix->model);
+			}
 		}
 		// Les patrouilles : les trajets dont un point est à moins de `rayon` de la
 		// caméra (et à moins de 6 m en hauteur), les plus proches d'abord, un
@@ -706,40 +739,88 @@ main(int argc, char **argv)
 					for(auto &mt : mots) if(n.find(mt[0]) != std::string::npos){ clique = mt[1]; break; }
 				}
 				bool tous = strcasecmp(clique.c_str(), "DEFAULT") == 0;
-				float z = pt.pos.z; sol.Sol(pt.pos.x, pt.pos.y, pt.pos.z + 2.0f, 10.0f, &z);
-				// Le lacet en degrés, 0 vers +y, comme l'orientation des actions de trajet.
-				// Un piéton à l'attente regarde vers −y de son repère (le corps qui
-				// marche, lui, vers +y) : d'où + PI / 2, comme pour --pietons.
-				float cap = (pt.lacetTangageRoulis[0] + 90) * PI / 180, lacetP = -(cap + PI / 2);
-				float qr[4] = { 0, 0, sinf(lacetP / 2), cosf(lacetP / 2) };
-				// Le premier candidat qui convient et dont le modèle est dans le monde.
-				// Les gens de tous les jours pas encore posés d'abord, puis les déjà
-				// posés ; les variantes à part (unique = −1 : costumes d'Halloween,
-				// sous-vêtements, Gary…) en dernier recours.
-				const CPedIdeEntry *choix = nil; outil::Anime *an = nil;
-				for(size_t j = 0; j < 3 * liste.size() && !choix; j++){
-					const CPedIdeEntry &e = *liste[(j + k * 13) % liste.size()];
-					size_t passe = j / liste.size();
-					if((passe == 2) != (e.unique < 0)) continue;
-					if(passe == 0 && dejaPoses.count(e.model)) continue;
-					if(pt.genre == "Male" && e.female) continue;
-					if(pt.genre == "Female" && !e.female) continue;
-					if(tous){
-						// N'importe quel élève ou citadin : pas l'autorité, ni les commerçants.
-						if(strcasecmp(e.type, "PREFECT") == 0 || strcasecmp(e.type, "COP") == 0 || strcasecmp(e.type, "TEACHER") == 0 || strcasecmp(e.type, "SHOPKEEP") == 0) continue;
-					}else if(strcasecmp(e.type, clique.c_str()) != 0) continue;
-					an = new outil::Anime;
-					if(m->s->AjouterModele(a, e.model, NifFromPlacement(CVector(pt.pos.x, pt.pos.y, z), CVector(1, 1, 1), qr), false, an)) choix = &e;
-					else{ delete an; an = nil; }
+				// L'animation selon le type du point. Les arbres d'actions (AI_POI.cat)
+				// qui la choisissent ne sont pas décodés : chaque correspondance vient
+				// des noms de blocs (Wall = « Smoking », Couple = « Kissing »…) et de la
+				// galerie (--galerie), à l'œil. Toutes ces animations ont le bassin
+				// debout à 0,86 m : il compte en absolu (Anime::bassinRef).
+				std::string groupe; std::vector<int> choixAnims; bool couple = false;
+				if(pt.type == "Sitting_Spot"){ groupe = "Sitting_Boys"; choixAnims = {2, 3, 4, 5, 6}; }          // assis sur un banc
+				else if(pt.nom == "F_ClassSmokers"){ groupe = "POI_Smoking"; choixAnims = {5, 6, 7, 8}; }      // fume debout
+				else if(pt.type == "Wall"){ groupe = "POI_Smoking"; choixAnims = {0, 2, 3, 4}; }              // fume adossé au mur
+				else if(pt.type == "Spectator"){ groupe = "NPC_Spectator"; choixAnims = {0, 1, 2}; }
+				else if(pt.type == "Hang_Out"){ groupe = "Hang_Talking"; choixAnims = {0, 1, 2, 3, 4, 5, 6, 7, 9, 10}; }
+				else if(pt.type == "Couple"){ groupe = "NPC_Love"; choixAnims = {5, 6}; couple = true; }       // l'un en face de l'autre
+				const std::vector<AgrAnim> *ga = nil;
+				if(!groupe.empty()){
+					if(!groupes.count(groupe)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, groupe + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); } groupes[groupe] = v; }
+					ga = &groupes[groupe];
 				}
-				if(!choix){ printf("  point d'intérêt « %s » : aucun piéton %s %s\n", q.nom.c_str(), clique.c_str(), pt.genre.c_str()); continue; }
-				const AgrAnim *att = Attente(*choix);
-				if(!att){ delete an; printf("  point d'intérêt « %s » : pas d'attente pour %s\n", q.nom.c_str(), choix->model); continue; }
-				PietonAnime pa; pa.an = an; pa.anim = att; pa.att = att; pa.enAttente = true; pa.decalage = k * 0.37f; pa.poi = &pt;
-				pa.cap = cap; pa.corps.pos = CVector(pt.pos.x, pt.pos.y, z); pa.depart = pa.corps.pos;
-				animes.push_back(pa); poses++; k++; dejaPoses.insert(choix->model);
-				printf("  point d'intérêt « %s » %s%s%s (à %.0f m, lacet %.0f°) : %s %s\n", q.nom.c_str(), pt.type.c_str(), pt.nom.empty() ? "" : " ", pt.nom.c_str(),
-				       pr.first, pt.lacetTangageRoulis[0], choix->model, choix->type);
+				// Le lacet en degrés : le piéton regarde vers lacet + 180° (0 = +x). Établi
+				// sur les places assises : les quatre « Sitting » autour de (597, −90)
+				// (lacets 320, 45, 140, 230) regardent alors chacune vers l'extérieur, à
+				// 2-4° près, et le banc de (530, −148) (290) tourne le dos à son mur.
+				// Le corps animé regarde vers +y de son repère, comme celui qui marche.
+				float capPoint = (pt.lacetTangageRoulis[0] + 180) * PI / 180;
+				// Un couple : deux piétons face à face sur le point, de genres opposés quand
+				// le point le permet.
+				int places = couple ? 2 : 1; bool premierFemme = false;
+				for(int pl = 0; pl < places; pl++){
+					float cap = capPoint + (pl ? PI : 0), lacetP = -(cap - PI / 2);
+					float px = pt.pos.x, py = pt.pos.y;
+					float z = pt.pos.z; sol.Sol(px, py, pt.pos.z + 2.0f, 10.0f, &z);
+					float qr[4] = { 0, 0, sinf(lacetP / 2), cosf(lacetP / 2) };
+					// Le premier candidat qui convient et dont le modèle est dans le monde.
+					// Les gens de tous les jours pas encore posés d'abord, puis les déjà
+					// posés ; les variantes à part (unique = −1 : costumes d'Halloween,
+					// sous-vêtements, Gary…) en dernier recours.
+					const CPedIdeEntry *choix = nil; outil::Anime *an = nil;
+					for(size_t j = 0; j < 3 * liste.size() && !choix; j++){
+						const CPedIdeEntry &e = *liste[(j + k * 13 + pl * 5) % liste.size()];
+						size_t passe = j / liste.size();
+						if((passe == 2) != (e.unique < 0)) continue;
+						if(passe == 0 && dejaPoses.count(e.model)) continue;
+						if(pt.genre == "Male" && e.female) continue;
+						if(pt.genre == "Female" && !e.female) continue;
+						if(couple && pl == 1 && pt.genre == "Both" && passe < 2 && (bool)e.female == premierFemme) continue;
+						if(tous){
+							// N'importe quel élève ou citadin : pas l'autorité, ni les commerçants.
+							if(strcasecmp(e.type, "PREFECT") == 0 || strcasecmp(e.type, "COP") == 0 || strcasecmp(e.type, "TEACHER") == 0 || strcasecmp(e.type, "SHOPKEEP") == 0) continue;
+						}else if(strcasecmp(e.type, clique.c_str()) != 0) continue;
+						an = new outil::Anime;
+						if(m->s->AjouterModele(a, e.model, NifFromPlacement(CVector(px, py, z), CVector(1, 1, 1), qr), false, an)) choix = &e;
+						else{ delete an; an = nil; }
+					}
+					if(!choix){ printf("  point d'intérêt « %s » : aucun piéton %s %s\n", q.nom.c_str(), clique.c_str(), pt.genre.c_str()); break; }
+					if(pl == 0) premierFemme = choix->female != 0;
+					const AgrAnim *att = nil; int n = -1;
+					if(ga){
+						n = couple ? choixAnims[pl] : choixAnims[k % choixAnims.size()];
+						if(n < (int)ga->size() && (*ga)[n].decodee){ att = &(*ga)[n]; an->bassinRef = 0.86f; }
+					}
+					if(!att){ att = Attente(*choix); n = -1; }
+					// Un couple : les animations avancent déjà le bassin vers l'autre (0,30 et
+					// 0,50 m, NPC_Love n° 5 et 6). Chacun recule de cette avance, à l'échelle
+					// de son modèle, pour que les deux bassins finissent à 35 cm.
+					if(couple && n >= 0 && an->noeuds[1] >= 0){
+						CVector r0; float k2 = ((const NifAVObject*)an->nif.blocks[an->noeuds[1]].data)->translation.z / an->bassinRef;
+						if(AgrPositionOs(*att, 1, 0, &r0)){
+							float recul = r0.y * k2 + 0.175f;
+							px = pt.pos.x - recul * cosf(cap); py = pt.pos.y - recul * sinf(cap);
+							sol.Sol(px, py, pt.pos.z + 2.0f, 10.0f, &z);
+							an->place = NifFromPlacement(CVector(px, py, z), CVector(1, 1, 1), qr);
+						}
+					}
+					if(!att){ delete an; printf("  point d'intérêt « %s » : pas d'attente pour %s\n", q.nom.c_str(), choix->model); break; }
+					PietonAnime pa; pa.an = an; pa.anim = att; pa.att = att; pa.enAttente = true; pa.decalage = k * 0.37f; pa.poi = &pt;
+					pa.cap = cap; pa.corps.pos = CVector(px, py, z); pa.depart = pa.corps.pos;
+					animes.push_back(pa); poses++; dejaPoses.insert(choix->model);
+					printf("  point d'intérêt « %s » %s%s%s (à %.0f m, lacet %.0f°) : %s %s, %s", q.nom.c_str(), pt.type.c_str(), pt.nom.empty() ? "" : " ", pt.nom.c_str(),
+					       pr.first, pt.lacetTangageRoulis[0], choix->model, choix->type, n >= 0 ? groupe.c_str() : "attente");
+					if(n >= 0) printf(" n° %d", n);
+					printf("\n");
+				}
+				k++;
 			}
 		}
 		// La population du jeu : la plus petite zone peuplée qui contient les pieds
