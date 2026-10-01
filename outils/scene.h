@@ -66,7 +66,7 @@ struct Scene {
 	// Un bloc par modèle placé : ses plages de sommets et de triangles, et sa
 	// sphère englobante. La visite rejette un modèle entier (hors du champ, trop
 	// loin) avant de toucher à ses sommets.
-	struct Bloc { int32 ptDebut, ptFin, triDebut, triFin; CVector centre; float rayon; };
+	struct Bloc { int32 ptDebut, ptFin, triDebut, triFin; CVector centre; float rayon; bool cache = false; };   // cache : pas dessiné (un piéton hors de son moment)
 	std::vector<Bloc> blocs;
 	// Les objets animés (section panm des .idb : portes, cloches, drapeaux…),
 	// gardés si `animerObjets` est vrai au chargement des placements.
@@ -176,7 +176,7 @@ struct Scene {
 		}else{ nif.Free(); free(buf); }
 		modeles++;
 		if(tri.size() > avant){
-			Bloc b{(int32)ptAvant, (int32)pts.size(), (int32)avant, (int32)tri.size(), CVector(0, 0, 0), 0};
+			Bloc b{(int32)ptAvant, (int32)pts.size(), (int32)avant, (int32)tri.size(), CVector(0, 0, 0), 0, false};
 			CVector mn = pts[ptAvant], mx = pts[ptAvant];
 			for(size_t i = ptAvant; i < pts.size(); i++){ const CVector &p = pts[i]; mn.x = fminf(mn.x, p.x); mn.y = fminf(mn.y, p.y); mn.z = fminf(mn.z, p.z); mx.x = fmaxf(mx.x, p.x); mx.y = fmaxf(mx.y, p.y); mx.z = fmaxf(mx.z, p.z); }
 			b.centre = CVector((mn.x+mx.x)/2, (mn.y+mx.y)/2, (mn.z+mx.z)/2);

@@ -4,7 +4,7 @@
 //                                          [--monde] [--rayon m] [--survol n] [--pietons n] [--bras]
 //                                          [--fige] [--attente] [--temps s] [--anim groupe:n] [--sans-objets]
 //                                          [--vue x y z lacet tangage] [--patrouilles n]
-//                                          [--population jour|classe|nuit|couvrefeu]
+//                                          [--population auto|jour|classe|nuit|couvrefeu] [--heure HH:MM]
 //
 // Le rendu est entièrement logiciel (src/render : Camera + RasterTrianglePersp),
 // dans une image de 400 × 240, la définition de l'écran du haut de la New
@@ -58,6 +58,7 @@
 #include "monde.h"
 #include "../src/anim/Agr.h"
 #include "../src/core/TriggerFile.h"
+#include "../src/core/Horloge.h"
 #include "../src/render/Camera.h"
 #include <algorithm>
 #include <chrono>
@@ -135,6 +136,7 @@ struct Visite {
 			m->visibles.clear(); m->profondeur.clear();
 			for(size_t b = 0; b < s->blocs.size(); b++){
 				const outil::Scene::Bloc &bl = s->blocs[b];
+				if(bl.cache) continue;
 				CVector c = cam.ToView(bl.centre); float r = bl.rayon;
 				if(c.z < cam.near_ - r || c.z > loin + r) continue;
 				if(c.x - mx * c.z > r * kx || -c.x - mx * c.z > r * kx) continue;
@@ -221,7 +223,7 @@ int
 main(int argc, char **argv)
 {
 	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--marche] [--image sortie.ppm] [--banc n] [--promenade n] [--monde] [--rayon m]\n"); return 2; }
-	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0, patrouilles = 0, moment = -1; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
+	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0, patrouilles = 0, moment = -1; CHorloge heureJeu; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
 	for(int i = 2; i < argc; i++){
 		if(strcmp(argv[i], "--image") == 0 && i + 1 < argc) image = argv[++i];
 		else if(strcmp(argv[i], "--banc") == 0 && i + 1 < argc) banc = atoi(argv[++i]);
@@ -232,10 +234,11 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--bras") == 0) bras = true;
 		else if(strcmp(argv[i], "--fige") == 0) fige = true;
 		else if(strcmp(argv[i], "--patrouilles") == 0 && i + 1 < argc) patrouilles = atoi(argv[++i]);
+		else if(strcmp(argv[i], "--heure") == 0 && i + 1 < argc){ int hh = 8, mm = 0; sscanf(argv[++i], "%d:%d", &hh, &mm); heureJeu.Regler(hh, mm); }
 		else if(strcmp(argv[i], "--population") == 0 && i + 1 < argc){
 			std::string m = argv[++i];
-			moment = m == "jour" ? MOMENT_JOUR : m == "classe" ? MOMENT_CLASSE : m == "nuit" ? MOMENT_NUIT : m == "couvrefeu" ? MOMENT_COUVREFEU : -1;
-			if(moment < 0){ fprintf(stderr, "--population jour|classe|nuit|couvrefeu\n"); return 1; }
+			moment = m == "jour" ? MOMENT_JOUR : m == "classe" ? MOMENT_CLASSE : m == "nuit" ? MOMENT_NUIT : m == "couvrefeu" ? MOMENT_COUVREFEU : m == "auto" ? MOMENT_NUM : -1;
+			if(moment < 0){ fprintf(stderr, "--population auto|jour|classe|nuit|couvrefeu\n"); return 1; }
 		}
 		else if(strcmp(argv[i], "--sans-objets") == 0) objets = false;
 		else if(strcmp(argv[i], "--attente") == 0) attente = true;
@@ -404,12 +407,18 @@ main(int argc, char **argv)
 		const CTriggerPath *trajet = nil; int32 cible = 0; float attenteRestante = 0, capVise = 0;
 		// Un piéton de population erre sans sortir de sa zone (Population.dat).
 		const CTriggerZone *zone = nil;
+		int32 momentPop = -1;                 // -1 : toujours là ; sinon le moment où il est de sortie
 		float Hasard(float a, float b){ hasard = hasard * 1103515245u + 12345u; return a + (b - a) * ((hasard >> 8) & 0xffff) / 65535.0f; }
 	};
 	const float FONDU = 0.3f;
 	std::vector<PietonAnime> animes;
 	Morceau *mPietons = nil;
 	// Les trajets de DAT/Trigger.img, lus une fois si on en veut.
+	// --population auto : le moment de la journée vient de l'horloge du jeu.
+	// La population des quatre moments est posée d'avance ; seuls les piétons du
+	// moment courant sont dessinés et animés : à chaque changement, la relève.
+	bool momentsTous = moment == MOMENT_NUM;
+	if(momentsTous){ moment = heureJeu.Moment(); printf("  il est %02d:%02d : moment %s\n", heureJeu.Heure(), heureJeu.Minute(), kMoment[moment]); }
 	std::vector<CTriggerPath> tousTrajets;
 	CTriggerFile population;
 	if(moment >= 0){
@@ -526,15 +535,16 @@ main(int argc, char **argv)
 			}
 			if(!ici) printf("  population : aucune zone peuplée ici\n");
 			else{
-				printf("  population : zone « %s » (%.0f m²), %s : %d piéton(s)", ici->nom.c_str(), aire, kMoment[moment], ici->total[moment]);
-				for(int c = 0; c < POP_NUM; c++) if(ici->population[moment][c]) printf(", %d %s", ici->population[moment][c], kPopCategorie[c]);
-				printf("\n");
 				uint32 h = 2024u; auto Alea = [&](void){ h = h * 1103515245u + 12345u; return ((h >> 8) & 0xffff) / 65535.0f; };
 				int n = 0;
+				for(int mo = momentsTous ? 0 : moment; mo <= (momentsTous ? MOMENT_NUM - 1 : moment); mo++){
+				printf("  population : zone « %s » (%.0f m²), %s : %d piéton(s)", ici->nom.c_str(), aire, kMoment[mo], ici->total[mo]);
+				for(int c = 0; c < POP_NUM; c++) if(ici->population[mo][c]) printf(", %d %s", ici->population[mo][c], kPopCategorie[c]);
+				printf("\n");
 				for(int c = 0; c < POP_NUM; c++){
 					std::vector<const CPedIdeEntry*> modeles;
 					for(const CPedIdeEntry *e : liste) if(strcasecmp(e->type, kPopCategorie[c]) == 0) modeles.push_back(e);
-					for(int i = 0; i < ici->population[moment][c] && !modeles.empty(); i++){
+					for(int i = 0; i < ici->population[mo][c] && !modeles.empty(); i++){
 						const CPedIdeEntry &e = *modeles[(i * 5 + n) % modeles.size()];
 						float x = 0, y = 0, z = 0; bool trouve = false;
 						for(int essai = 0; essai < 40 && !trouve; essai++){
@@ -551,11 +561,13 @@ main(int argc, char **argv)
 						if(!pas && !att){ delete an; continue; }
 						PietonAnime pa; pa.an = an; pa.anim = pas ? pas : att; pa.pas = pas; pa.att = att;
 						pa.decalage = n * 0.61f; pa.hasard = 4242u + n * 7919u; pa.dureeEtat = pa.Hasard(2, 10); pa.zone = ici;
+						if(momentsTous) pa.momentPop = mo;
 						if(pas){ CVector d = AgrDeplacement(*pas); pa.marche = true; pa.vitesse = hypotf(d.x, d.y) / pas->duree; }
 						pa.cap = cap; pa.corps.pos = CVector(x, y, z); pa.depart = pa.corps.pos;
 						animes.push_back(pa); poses++; n++;
 						printf("    %-22s %-10s (%.1f, %.1f, %.2f)\n", e.model, e.type, x, y, z);
 					}
+				}
 				}
 			}
 		}
@@ -569,10 +581,29 @@ main(int argc, char **argv)
 	// la marche suit le sol et les murs pas à pas), puis les pose.
 	float tPietons = 0;
 	auto Animer = [&](float t){
-		if(!mPietons || animes.empty()) return;
+		if(!mPietons || animes.empty()){
+			// Sans piétons, l'horloge avance quand même.
+			if(t > tPietons){
+				int32 avantMoment = heureJeu.Moment(); heureJeu.Avancer(t - tPietons); tPietons = t;
+				if(heureJeu.Moment() != avantMoment)
+					printf("  il est %02d:%02d : passage de %s à %s\n", heureJeu.Heure(), heureJeu.Minute(), kMoment[avantMoment], kMoment[heureJeu.Moment()]);
+			}
+			return;
+		}
 		while(tPietons < t){
 			float dt = fminf(1.0f / 60, t - tPietons); tPietons += dt;
+			// L'horloge du jeu : une minute par seconde ; on annonce chaque changement de moment.
+			int32 avantMoment = heureJeu.Moment();
+			heureJeu.Avancer(dt);
+			if(heureJeu.Moment() != avantMoment)
+				printf("  il est %02d:%02d : passage de %s à %s\n", heureJeu.Heure(), heureJeu.Minute(), kMoment[avantMoment], kMoment[heureJeu.Moment()]);
 			for(PietonAnime &p : animes){
+				// Un piéton hors de son moment n'existe pas pour l'instant : caché, figé.
+				if(p.momentPop >= 0){
+					bool absent = p.momentPop != heureJeu.Moment();
+					if(p.an->bloc >= 0) mPietons->s->blocs[p.an->bloc].cache = absent;
+					if(absent) continue;
+				}
 				p.horloge += dt;
 				if(p.fondu > 0){ p.horlogeAvant += dt; p.fondu -= dt; }
 				auto Basculer = [&](bool versAttente){
@@ -634,6 +665,7 @@ main(int argc, char **argv)
 			}
 		}
 		for(PietonAnime &p : animes){
+			if(p.momentPop >= 0 && p.momentPop != heureJeu.Moment()) continue;
 			if(p.marche){
 				// Le corps animé regarde vers +y de son repère : +y suit le cap.
 				float lacetP = -(p.cap - PI / 2);
