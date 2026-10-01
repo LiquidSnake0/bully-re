@@ -5,6 +5,7 @@
 //                                          [--fige] [--attente] [--temps s] [--anim groupe:n] [--sans-objets]
 //                                          [--vue x y z lacet tangage] [--patrouilles n]
 //                                          [--population auto|jour|classe|nuit|couvrefeu] [--heure HH:MM]
+//                                          [--saison automne|hiver|ete|printemps] [--meteo n] [--sans-ciel]
 //
 // Le rendu est entièrement logiciel (src/render : Camera + RasterTrianglePersp),
 // dans une image de 400 × 240, la définition de l'écran du haut de la New
@@ -59,6 +60,7 @@
 #include "../src/anim/Agr.h"
 #include "../src/core/TriggerFile.h"
 #include "../src/core/Horloge.h"
+#include "../src/render/TimeCycle.h"
 #include "../src/render/Camera.h"
 #include <algorithm>
 #include <chrono>
@@ -123,8 +125,48 @@ struct Visite {
 	struct Rang { float z; int32 morceau, bloc; };
 	std::vector<Rang> ordre;                // les modèles à dessiner, triés
 
+	// Le cycle jour-nuit (Config/timecyc*.dat) : si `ciel` est donné, le fond
+	// devient le dégradé du ciel, la scène prend la teinte de l'heure et se
+	// fond dans le brouillard (docs/timecycle.md). Sinon, l'ancien fond fixe.
+	const CTimeCycleHeure *ciel = nil; const CTimeCycleHeure *midi = nil;
+	// `avant` : peint le ciel dans l'image vide, avant la scène (les surfaces
+	// transparentes se posent ensuite dessus sans écrire la profondeur) ; sinon,
+	// après la scène, teinte et brouillard sur les pixels qui ont une profondeur.
+	void Ambiance(const Camera &cam, bool avant){
+		const CTimeCycleHeure &e = *ciel;
+		// Teinte : 60 % le soleil, 40 % la lumière ambiante du monde, rapportés à
+		// ceux de midi (la scène telle qu'on la dessine) ; une approximation, pas
+		// le calcul d'éclairage du jeu.
+		float t[3];
+		for(int c = 0; c < 3; c++){
+			float v = 0.6f * e.soleil[c] / fmaxf(midi->soleil[c], 1) + 0.4f * e.ambMonde[c] / fmaxf(midi->ambMonde[c], 1);
+			t[c] = fminf(fmaxf(v, 0.12f), 1.3f);
+		}
+		float foc = (cam.h * 0.5f) / tanf(cam.fovY * 0.5f), s60 = sinf(PI / 3);
+		for(int32 y = 0; y < img.h; y++){
+			// Le ciel selon l'élévation du rayon : le bas à l'horizon, le haut à 60°.
+			float elev = cam.pitch + atanf((img.h * 0.5f - y) / foc);
+			float u = fminf(fmaxf(sinf(elev) / s60, 0), 1);
+			float ciel3[3] = { e.cielBas[0] + u * (e.cielHaut[0] - e.cielBas[0]), e.cielBas[1] + u * (e.cielHaut[1] - e.cielBas[1]), e.cielBas[2] + u * (e.cielHaut[2] - e.cielBas[2]) };
+			for(int32 x = 0; x < img.w; x++){
+				int32 i = y * img.w + x; uint8 *p = img.rgb + i * 3;
+				float d = img.depth[i];
+				if(d >= 1e29f){ if(avant) for(int c = 0; c < 3; c++) p[c] = (uint8)ciel3[c]; continue; }
+				if(avant) continue;
+				// Profondeur : −1/w, w la distance le long de l'axe de vue.
+				float dist = d < 0 ? -1.0f / d : 0;
+				float f = fminf(fmaxf((dist - e.fogSt) / fmaxf(e.farClp - e.fogSt, 1), 0), 1) * 0.8f;
+				for(int c = 0; c < 3; c++){
+					float v = p[c] * t[c];
+					v = v + f * (e.cielBas[c] - v);
+					p[c] = (uint8)fminf(fmaxf(v, 0), 255);
+				}
+			}
+		}
+	}
 	void Rendre(const Camera &cam){
 		RasterClear(img, 128, 150, 170);
+		if(ciel && midi) Ambiance(cam, true);
 		float foc = (cam.h * 0.5f) / tanf(cam.fovY * 0.5f);
 		float mx = cam.w * 0.5f / foc, my = cam.h * 0.5f / foc;   // demi-ouverture en x/z et y/z
 		// Pour une sphère, le plan latéral x = mx·z est à distance (x − mx·z) / √(1 + mx²).
@@ -188,6 +230,7 @@ struct Visite {
 			dessines += n;
 		}
 		}
+		if(ciel && midi) Ambiance(cam, false);
 	}
 };
 
@@ -223,7 +266,7 @@ int
 main(int argc, char **argv)
 {
 	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--marche] [--image sortie.ppm] [--banc n] [--promenade n] [--monde] [--rayon m]\n"); return 2; }
-	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0, patrouilles = 0, moment = -1; CHorloge heureJeu; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
+	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0, patrouilles = 0, moment = -1; CHorloge heureJeu; std::string saison = "automne"; int meteo = 0; bool sansCiel = false; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
 	for(int i = 2; i < argc; i++){
 		if(strcmp(argv[i], "--image") == 0 && i + 1 < argc) image = argv[++i];
 		else if(strcmp(argv[i], "--banc") == 0 && i + 1 < argc) banc = atoi(argv[++i]);
@@ -234,6 +277,9 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--bras") == 0) bras = true;
 		else if(strcmp(argv[i], "--fige") == 0) fige = true;
 		else if(strcmp(argv[i], "--patrouilles") == 0 && i + 1 < argc) patrouilles = atoi(argv[++i]);
+		else if(strcmp(argv[i], "--saison") == 0 && i + 1 < argc) saison = argv[++i];
+		else if(strcmp(argv[i], "--meteo") == 0 && i + 1 < argc) meteo = atoi(argv[++i]);
+		else if(strcmp(argv[i], "--sans-ciel") == 0) sansCiel = true;
 		else if(strcmp(argv[i], "--heure") == 0 && i + 1 < argc){ int hh = 8, mm = 0; sscanf(argv[++i], "%d:%d", &hh, &mm); heureJeu.Regler(hh, mm); }
 		else if(strcmp(argv[i], "--population") == 0 && i + 1 < argc){
 			std::string m = argv[++i];
@@ -257,6 +303,26 @@ main(int argc, char **argv)
 	outil::ChargerToutesCollisions(a, cols);
 
 	Visite v;
+	// Le cycle jour-nuit de la saison (automne par défaut : chapitre 1), météo 0
+	// (beau temps), à l'heure du jeu. --sans-ciel garde l'ancien fond fixe.
+	static CTimeCycle cycle; static CTimeCycleHeure etatCiel;
+	if(!sansCiel){
+		const char *f = saison == "hiver" ? "Config\\timecycW.dat" : saison == "ete" ? "Config\\timecycS.dat" : saison == "printemps" ? "Config\\sbtimecycS.dat" : "Config\\timecycF.dat";
+		static std::vector<uint8> b(1 << 20);
+		int32 n = CFileMgr::LoadFile(f, b.data(), (int32)b.size(), "rb");
+		if(n > 0 && cycle.Load((const char*)b.data(), (size_t)n)){
+			if(meteo < 0 || meteo >= (int32)cycle.heures.size()) meteo = 0;
+			v.midi = &cycle.heures[meteo][12]; v.ciel = &etatCiel;
+			printf("  cycle jour-nuit : %s, météo « %s »\n", f, cycle.meteos[meteo].c_str());
+		}else printf("  cycle jour-nuit : %s illisible, fond fixe\n", f);
+	}
+	// Les périodes de la journée (Config/timeCycl.dat) : elles fixent le moment de population.
+	{
+		std::vector<uint8> b(1 << 16);
+		int32 n = CFileMgr::LoadFile("Config\\timeCycl.dat", b.data(), (int32)b.size(), "rb");
+		if(!(n > 0 && CHorloge::ChargerPeriodes((const char*)b.data(), (size_t)n))) printf("  timeCycl.dat illisible : périodes par défaut\n");
+	}
+	auto MajCiel = [&](void){ if(v.ciel) etatCiel = cycle.Etat(meteo, heureJeu.minutes / 60.0f); };
 	CMondeCollision sol;                    // les collisions de tous les morceaux chargés
 	auto Charger = [&](const std::string &nom) -> bool {
 		Morceau *m = new Morceau; m->nom = nom; m->s = new outil::Scene; m->s->animerObjets = objets;
@@ -681,7 +747,7 @@ main(int argc, char **argv)
 		auto t0 = std::chrono::steady_clock::now();
 		Animer(temps);
 		printf("  %zu piéton(s) animé(s) : %.1f s simulées, pose et peau comprises, en %.1f ms\n", animes.size(), temps, std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
-		for(const PietonAnime &p : animes) if(p.marche && temps > 0)
+		for(const PietonAnime &p : animes) if(p.marche && temps > 0 && (p.momentPop < 0 || p.momentPop == heureJeu.Moment()))
 			printf("    marche %.2f m/s (%.3f s par cycle) : %.1f m du départ, %s\n", p.vitesse, p.anim->duree,
 			       hypotf(p.corps.pos.x - p.an->place.t.x, p.corps.pos.y - p.an->place.t.y) >= 0 ? hypotf(p.corps.pos.x - p.depart.x, p.corps.pos.y - p.depart.y) : 0,
 			       p.corps.auSol ? "au sol" : "en l'air"),
@@ -743,10 +809,10 @@ main(int argc, char **argv)
 		auto t0 = horloge::now();
 		int n = banc > 0 ? banc : 1;
 		float yaw0 = cam.yaw;
-		for(int k = 0; k < n; k++){ cam.yaw = yaw0 + k * (2 * PI / n); v.Rendre(cam); }
+		for(int k = 0; k < n; k++){ cam.yaw = yaw0 + k * (2 * PI / n); (MajCiel(), v.Rendre(cam)); }
 		double ms = std::chrono::duration<double, std::milli>(horloge::now() - t0).count() / n;
 		printf("  %d image(s) 400×240, %.1f ms par image (%.0f i/s), %d triangles dessinés à la dernière (%d modèles retenus, %d faces arrière)\n", n, ms, 1000.0 / ms, v.dessines, v.modelesVus, v.arriere);
-		if(!image.empty()){ cam.yaw = yaw0; v.Rendre(cam); bool ok = RasterWritePPM(v.img, image.c_str()); printf("  → %s%s\n", image.c_str(), ok ? "" : " (échec)"); }
+		if(!image.empty()){ cam.yaw = yaw0; (MajCiel(), v.Rendre(cam)); bool ok = RasterWritePPM(v.img, image.c_str()); printf("  → %s%s\n", image.c_str(), ok ? "" : " (échec)"); }
 		return 0;
 	}
 
@@ -797,7 +863,7 @@ main(int argc, char **argv)
 		}
 		{ static float horlogeAnim = temps; horlogeAnim += dt > 0.1f ? 0.1f : dt; Animer(horlogeAnim); for(Morceau *m : v.morceaux) m->AnimerObjets(horlogeAnim); }
 		auto t0 = horloge::now();
-		v.Rendre(cam);
+		(MajCiel(), v.Rendre(cam));
 		cumul += std::chrono::duration<double, std::milli>(horloge::now() - t0).count(); images++;
 		SDL_UpdateTexture(tex, nil, v.img.rgb, 400 * 3);
 		SDL_RenderClear(ren); SDL_RenderCopy(ren, tex, nil, nil); SDL_RenderPresent(ren);
