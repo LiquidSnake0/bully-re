@@ -80,8 +80,17 @@ dans le parc du quartier riche.
 Code : `src/core/TriggerFile` ; test : `tests/test_trigger` ; dans la visite :
 `--patrouilles n` pose un piéton (un préfet pour une ronde) sur les n trajets
 d'ambiance les plus proches ; il va de point en point, s'arrête le temps
-écrit, tourné selon l'action (lacet en degrés, 0 vers +y), en fondu marche ↔
-attente.
+écrit, tourné selon l'action, en fondu marche ↔ attente. Les actions d'un
+point passent l'une après l'autre, chacune son temps (3_05_2Patrol : 38° puis
+−38°, un regard à gauche puis à droite), puis vient l'attente du point.
+
+**L'orientation d'une action** : le piéton regarde vers son lacet (degrés,
+0 = +x). Établi à la cafétéria (ischool.ipb) : la file de `CafPath1`
+(y = −272,6, lacet 90) fait face au comptoir, vers +y ; la cantinière
+d'`AMBLUNCHLADYPATH` regarde les élèves côté comptoir (lacet 270) et la
+cuisine au fond (lacet 90). Vérifié à l'image après 14 et 24 s de marche.
+Ce n'est pas la règle des points d'intérêt (lacet + 180°) : ORIENTATION et
+YAWPITCHROLL ne s'écrivent pas dans le même repère.
 
 ## Points d'intérêt (POI)
 
@@ -118,9 +127,8 @@ places assises : les quatre « Sitting » autour de (597, −90), lacets 320, 45
 (530, −148), lacet 290, tourne le dos à son mur. (Le corps animé regarde vers
 +y de son repère, l'attente comme la marche : le bassin de toutes ces
 animations a le même cap.) La première lecture, « 0 vers +y », reposait sur
-une aboyeuse du carnaval jugée à l'œil : elle était fausse. L'orientation des
-actions de trajet (`--patrouilles`) suit encore cette première lecture, non
-revérifiée.
+une aboyeuse du carnaval jugée à l'œil : elle était fausse. Les actions de
+trajet suivent une autre règle (voir plus haut).
 
 **L'animation selon le type** : les arbres d'actions (`Act/AI_POI.cat`, même
 format binaire que Globals.cat) ne sont pas décodés. Les correspondances

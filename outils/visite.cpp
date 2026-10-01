@@ -525,6 +525,7 @@ main(int argc, char **argv)
 		// vers le point `cible`, s'y arrête le temps écrit (attente du point et
 		// de ses actions), tourné vers l'orientation de l'action, puis repart.
 		const CTriggerPath *trajet = nil; int32 cible = 0; float attenteRestante = 0, capVise = 0;
+		const CTriggerPathPoint *arret = nil; float attenteTotale = 0;   // le point où il attend, et l'attente entière
 		// Un piéton de population erre sans sortir de sa zone (Population.dat).
 		const CTriggerZone *zone = nil;
 		int32 momentPop = -1;                 // -1 : toujours là ; sinon le moment où il est de sortie
@@ -919,18 +920,31 @@ main(int argc, char **argv)
 					const std::vector<CTriggerPathPoint> &pts = p.trajet->points;
 					if(p.enAttente || p.attenteRestante > 0){
 						p.attenteRestante -= dt;
+						// Les actions du point, dans l'ordre, chacune le temps écrit :
+						// le piéton se tourne vers l'orientation de celle en cours.
+						if(p.arret && !p.arret->actions.empty()){
+							float ecoule = p.attenteTotale - p.attenteRestante, fin = 0;
+							for(const CTriggerAction &ac : p.arret->actions){
+								p.capVise = ac.orientation[0] * PI / 180;
+								fin += ac.attente; if(ecoule < fin) break;
+							}
+						}
 						if(p.attenteRestante <= 0) Basculer(false);
 					}else{
 						const CTriggerPathPoint &c = pts[p.cible];
 						float dx = c.pos.x - p.corps.pos.x, dy = c.pos.y - p.corps.pos.y;
 						p.capVise = atan2f(dy, dx);
 						if(hypotf(dx, dy) < 0.5f || p.bloque > 2.0f){
-							// Arrivé (ou coincé : on passe au point suivant). L'attente du
-							// point et celles de ses actions ; l'action oriente le piéton
-							// (lacet en degrés, 0 vers +y comme les caps GTA).
-							float w = c.attente; bool oriente = false; float lacet = 0;
-							for(const CTriggerAction &ac : c.actions){ w += ac.attente; oriente = true; lacet = ac.orientation[0]; }
-							if(oriente) p.capVise = (lacet + 90) * PI / 180;
+							// Arrivé (ou coincé : on passe au point suivant). Les actions
+							// d'abord, l'une après l'autre, puis l'attente du point. Une
+							// action regarde vers son lacet (degrés, 0 = +x) : établi à la
+							// cafétéria, où la file de CafPath1 (lacet 90) fait face au
+							// comptoir, vers +y. (Pas la règle des points d'intérêt, lacet
+							// + 180° : ORIENTATION et YAWPITCHROLL ne s'écrivent pas pareil.)
+							float w = c.attente;
+							for(const CTriggerAction &ac : c.actions) w += ac.attente;
+							p.arret = &c; p.attenteTotale = w;
+							if(!c.actions.empty()) p.capVise = c.actions[0].orientation[0] * PI / 180;
 							p.cible = (p.cible + 1) % (int32)pts.size(); p.bloque = 0;
 							if(w > 0.05f){ p.attenteRestante = w; Basculer(true); }
 						}
