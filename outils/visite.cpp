@@ -4,6 +4,7 @@
 //                                          [--monde] [--rayon m] [--survol n] [--pietons n] [--bras]
 //                                          [--fige] [--attente] [--temps s] [--anim groupe:n] [--sans-objets]
 //                                          [--vue x y z lacet tangage] [--patrouilles n]
+//                                          [--population jour|classe|nuit|couvrefeu]
 //
 // Le rendu est entièrement logiciel (src/render : Camera + RasterTrianglePersp),
 // dans une image de 400 × 240, la définition de l'écran du haut de la New
@@ -220,7 +221,7 @@ int
 main(int argc, char **argv)
 {
 	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--marche] [--image sortie.ppm] [--banc n] [--promenade n] [--monde] [--rayon m]\n"); return 2; }
-	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0, patrouilles = 0; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
+	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0, patrouilles = 0, moment = -1; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
 	for(int i = 2; i < argc; i++){
 		if(strcmp(argv[i], "--image") == 0 && i + 1 < argc) image = argv[++i];
 		else if(strcmp(argv[i], "--banc") == 0 && i + 1 < argc) banc = atoi(argv[++i]);
@@ -231,6 +232,11 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--bras") == 0) bras = true;
 		else if(strcmp(argv[i], "--fige") == 0) fige = true;
 		else if(strcmp(argv[i], "--patrouilles") == 0 && i + 1 < argc) patrouilles = atoi(argv[++i]);
+		else if(strcmp(argv[i], "--population") == 0 && i + 1 < argc){
+			std::string m = argv[++i];
+			moment = m == "jour" ? MOMENT_JOUR : m == "classe" ? MOMENT_CLASSE : m == "nuit" ? MOMENT_NUIT : m == "couvrefeu" ? MOMENT_COUVREFEU : -1;
+			if(moment < 0){ fprintf(stderr, "--population jour|classe|nuit|couvrefeu\n"); return 1; }
+		}
 		else if(strcmp(argv[i], "--sans-objets") == 0) objets = false;
 		else if(strcmp(argv[i], "--attente") == 0) attente = true;
 		else if(strcmp(argv[i], "--anim") == 0 && i + 1 < argc) imposee = argv[++i];
@@ -396,6 +402,8 @@ main(int argc, char **argv)
 		// vers le point `cible`, s'y arrête le temps écrit (attente du point et
 		// de ses actions), tourné vers l'orientation de l'action, puis repart.
 		const CTriggerPath *trajet = nil; int32 cible = 0; float attenteRestante = 0, capVise = 0;
+		// Un piéton de population erre sans sortir de sa zone (Population.dat).
+		const CTriggerZone *zone = nil;
 		float Hasard(float a, float b){ hasard = hasard * 1103515245u + 12345u; return a + (b - a) * ((hasard >> 8) & 0xffff) / 65535.0f; }
 	};
 	const float FONDU = 0.3f;
@@ -403,6 +411,13 @@ main(int argc, char **argv)
 	Morceau *mPietons = nil;
 	// Les trajets de DAT/Trigger.img, lus une fois si on en veut.
 	std::vector<CTriggerPath> tousTrajets;
+	CTriggerFile population;
+	if(moment >= 0){
+		int32 im = CdStream::AddImage("DAT\\Trigger.img");
+		uint32 nb; uint8 *b = im >= 0 ? outil::LireEntree(im, "DAT\\Trigger.img", "Population.dat", &nb) : nil;
+		if(!b || !population.Load(b, nb)) fprintf(stderr, "Population.dat illisible\n");
+		free(b);
+	}
 	if(patrouilles > 0){
 		int32 im = CdStream::AddImage("DAT\\Trigger.img");
 		const CdImage &img = CdStream::ms_images[im >= 0 ? im : 0];
@@ -413,7 +428,7 @@ main(int argc, char **argv)
 		}
 		printf("  %zu trajets lus dans DAT/Trigger.img\n", tousTrajets.size());
 	}
-	if(pietons > 0 || patrouilles > 0){
+	if(pietons > 0 || patrouilles > 0 || moment >= 0){
 		std::vector<const CPedIdeEntry*> liste;
 		for(const CPedIdeEntry &e : a.pietons) if(e.id > 1) liste.push_back(&e);   // 0 le joueur, 1 le piéton par défaut
 		Morceau *m = new Morceau; m->nom = "(piétons)"; m->s = new outil::Scene; m->s->sansAidesNonTexturees = true;
@@ -496,6 +511,54 @@ main(int argc, char **argv)
 				printf("  patrouille « %s » (%zu points, à %.0f m) : %s %s\n", t.nom.c_str(), t.points.size(), pr.first, choix->model, choix->type);
 			}
 		}
+		// La population du jeu : la plus petite zone peuplée qui contient les pieds
+		// de la caméra, et pour le moment demandé, autant de piétons de chaque
+		// catégorie que le fichier l'écrit, posés au hasard à moins de 20 m, sur
+		// le sol, dans la zone.
+		if(moment >= 0){
+			const CTriggerZone *ici = nil; float aire = 1e18f;
+			CVector pieds(cam.pos.x, cam.pos.y, cam.pos.z - 1.6f);
+			for(const CTriggerZone &z : population.zones){
+				if(!z.aPopulation || !z.Contient(population.perimetres, pieds.x, pieds.y, pieds.z)) continue;
+				const CTriggerPerimeter &pe = population.perimetres[z.perimetre];
+				float A = 0; for(size_t i = 0, j = pe.x.size() - 1; i < pe.x.size(); j = i++) A += pe.x[j] * pe.y[i] - pe.x[i] * pe.y[j];
+				if(fabsf(A) / 2 < aire){ aire = fabsf(A) / 2; ici = &z; }
+			}
+			if(!ici) printf("  population : aucune zone peuplée ici\n");
+			else{
+				printf("  population : zone « %s » (%.0f m²), %s : %d piéton(s)", ici->nom.c_str(), aire, kMoment[moment], ici->total[moment]);
+				for(int c = 0; c < POP_NUM; c++) if(ici->population[moment][c]) printf(", %d %s", ici->population[moment][c], kPopCategorie[c]);
+				printf("\n");
+				uint32 h = 2024u; auto Alea = [&](void){ h = h * 1103515245u + 12345u; return ((h >> 8) & 0xffff) / 65535.0f; };
+				int n = 0;
+				for(int c = 0; c < POP_NUM; c++){
+					std::vector<const CPedIdeEntry*> modeles;
+					for(const CPedIdeEntry *e : liste) if(strcasecmp(e->type, kPopCategorie[c]) == 0) modeles.push_back(e);
+					for(int i = 0; i < ici->population[moment][c] && !modeles.empty(); i++){
+						const CPedIdeEntry &e = *modeles[(i * 5 + n) % modeles.size()];
+						float x = 0, y = 0, z = 0; bool trouve = false;
+						for(int essai = 0; essai < 40 && !trouve; essai++){
+							float r = 3 + 17 * Alea(), a2 = 2 * PI * Alea();
+							x = pieds.x + r * cosf(a2); y = pieds.y + r * sinf(a2);
+							trouve = sol.Sol(x, y, pieds.z + 20.0f, 40.0f, &z) && ici->Contient(population.perimetres, x, y, z + 0.1f);
+						}
+						if(!trouve) continue;
+						float cap = 2 * PI * Alea(), lacetP = -(cap - PI / 2);
+						float q[4] = { 0, 0, sinf(lacetP / 2), cosf(lacetP / 2) };
+						outil::Anime *an = new outil::Anime;
+						if(!m->s->AjouterModele(a, e.model, NifFromPlacement(CVector(x, y, z), CVector(1, 1, 1), q), false, an)){ delete an; continue; }
+						const AgrAnim *pas = PasDeMarche(e), *att = Attente(e);
+						if(!pas && !att){ delete an; continue; }
+						PietonAnime pa; pa.an = an; pa.anim = pas ? pas : att; pa.pas = pas; pa.att = att;
+						pa.decalage = n * 0.61f; pa.hasard = 4242u + n * 7919u; pa.dureeEtat = pa.Hasard(2, 10); pa.zone = ici;
+						if(pas){ CVector d = AgrDeplacement(*pas); pa.marche = true; pa.vitesse = hypotf(d.x, d.y) / pas->duree; }
+						pa.cap = cap; pa.corps.pos = CVector(x, y, z); pa.depart = pa.corps.pos;
+						animes.push_back(pa); poses++; n++;
+						printf("    %-22s %-10s (%.1f, %.1f, %.2f)\n", e.model, e.type, x, y, z);
+					}
+				}
+			}
+		}
 		if(poses > 0){ m->Preparer(); v.morceaux.push_back(m); mPietons = m; }
 		else delete m;
 		printf("  %d piéton(s) posé(s)\n", poses);
@@ -557,6 +620,8 @@ main(int argc, char **argv)
 				float part = p.enAttente ? f : 1 - f;
 				if(part <= 0){ p.bloque = 0; continue; }
 				CVector avant = p.corps.pos;
+				// Un piéton de population fait demi-tour au bord de sa zone.
+				if(p.zone && !p.zone->Contient(population.perimetres, p.corps.pos.x + cosf(p.cap) * 0.6f, p.corps.pos.y + sinf(p.cap) * 0.6f, p.corps.pos.z + 0.1f)) p.cap += PI;
 				p.corps.Avancer(sol, cosf(p.cap) * p.vitesse * part * dt, sinf(p.cap) * p.vitesse * part * dt, dt);
 				float fait = hypotf(p.corps.pos.x - avant.x, p.corps.pos.y - avant.y);
 				p.bloque = fait < 0.3f * p.vitesse * part * dt ? p.bloque + dt : 0;

@@ -49,9 +49,33 @@ jeu (`TINDUST_BAR_DOOR_CAM_PORT`, un point, un trajet de caméra). Ses points
 sont trois triplets (0x434370 : trois rappels distincts), dont seul le premier,
 une position, est non nul dans le seul exemple.
 
-`Population.dat` déclare par zone (TRIGGER avec POPULATIONDATA) le nombre de
-piétons par catégorie selon le moment : POPULATION_DAY, _CLASS, _NIGHT,
-_CURFEW. Pas encore lu.
+## Périmètres, déclencheurs et population (01.10.2026)
+
+Un bloc `PERIMETER` (placement, ISDOOR, HEIGHT, DEPTH, puis des
+PERIMETERPOINTX / PERIMETERPOINTY) est suivi de « `NTRIGGERS k` » et des k
+blocs `TRIGGER` qui l'utilisent. Hors de l'en-tête, NTRIGGERS est donc un
+compte par périmètre. **Les points du périmètre sont relatifs à la POSITION du
+déclencheur** (et tournés de son YAW) : le polygone de `RichArea` va de -273
+à +261 autour de (449, 351) ; lu en absolu, la zone ne contiendrait pas sa
+propre position. La zone s'étend en hauteur de POSITION.z à + ZHEIGHT.
+Relevé : 2 694 périmètres, 2 546 déclencheurs. Une incohérence d'origine :
+`tschool_trees.dat` annonce un déclencheur et s'arrête après l'en-tête.
+
+Un déclencheur peut porter `POPULATIONDATA` : pour chacun des quatre moments
+(POPULATION_DAY, _CLASS, _NIGHT, _CURFEW), un TOTAL et le compte des douze
+catégories de piétons (PREFECT, NERD, JOCK, DROPOUT, GREASER, PREPPY,
+STUDENT, COP, TEACHER, TOWNPERSON, SHOPKEEP, BULLY, la colonne type de la
+section peds) ; et `AMBIENTVEHICLEDATA` : TOTAL, CAR, BIKE, POLICECAR par
+moment. `Population.dat` : 37 périmètres, 34 zones dont 27 peuplées ;
+`RichArea` = 6 le jour (1 preppy, 5 citadins), 3 au couvre-feu. Les zones
+s'emboîtent (la ville, puis une boutique) : la plus petite qui contient un
+point fait foi. `DT_ComicShop` a sa position au bord de son polygone en L.
+
+Dans la visite : `--population jour|classe|nuit|couvrefeu` prend la plus
+petite zone peuplée sous la caméra et y pose, à moins de 20 m, le nombre de
+piétons de chaque catégorie que le fichier écrit pour ce moment ; ils errent
+(marche et attente en fondu) et font demi-tour au bord de la zone. Vérifié
+dans le parc du quartier riche.
 
 Code : `src/core/TriggerFile` ; test : `tests/test_trigger` ; dans la visite :
 `--patrouilles n` pose un piéton (un préfet pour une ronde) sur les n trajets

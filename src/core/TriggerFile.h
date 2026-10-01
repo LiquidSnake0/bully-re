@@ -32,12 +32,50 @@ struct CTriggerPath {
 	std::vector<CTriggerPathPoint> points;
 };
 
+// Un périmètre : un polygone horizontal, ses points relatifs à la position du
+// déclencheur qui le suit (et tournés de son lacet), plus une hauteur.
+struct CTriggerPerimeter {
+	std::string placement;
+	bool porte = false;                  // ISDOOR
+	float hauteur = 0, profondeur = 0;   // HEIGHT, DEPTH
+	std::vector<float> x, y;
+};
+
+// Les catégories de piétons des tableaux de population, dans l'ordre du fichier.
+enum { POP_PREFECT, POP_NERD, POP_JOCK, POP_DROPOUT, POP_GREASER, POP_PREPPY, POP_STUDENT,
+       POP_COP, POP_TEACHER, POP_TOWNPERSON, POP_SHOPKEEP, POP_BULLY, POP_NUM };
+// Les moments de la journée : DAY, CLASS, NIGHT, CURFEW.
+enum { MOMENT_JOUR, MOMENT_CLASSE, MOMENT_NUIT, MOMENT_COUVREFEU, MOMENT_NUM };
+extern const char *const kPopCategorie[POP_NUM];     // « PREFECT », « NERD »…
+extern const char *const kMoment[MOMENT_NUM];        // « DAY », « CLASS »…
+
+struct CTriggerZone {
+	std::string nom;                     // TRIGGERNAME
+	int32 zone = 0;                      // AREACODE
+	CVector pos;                         // POSITION
+	float lacet = 0;                     // YAW (degrés)
+	float zHauteur = 0;                  // ZHEIGHT
+	bool mission = false;                // ISMISSIONSPECIFIC
+	int32 perimetre = -1;                // index dans `perimetres`, -1 si aucun
+	bool aPopulation = false;
+	int32 total[MOMENT_NUM] = {0};
+	int32 population[MOMENT_NUM][POP_NUM] = {{0}};
+	bool aVehicules = false;
+	int32 vehicules[MOMENT_NUM][4] = {{0}};   // TOTAL, CAR, BIKE, POLICECAR
+
+	// Vrai si (x, y, z) est dans la zone : dans le polygone du périmètre
+	// (ramené au repère du déclencheur) et entre pos.z et pos.z + zHauteur.
+	bool Contient(const std::vector<CTriggerPerimeter> &perimetres, float x, float y, float z) const;
+};
+
 struct CTriggerFile {
 	int32 nPaths = 0, nPoints = 0, nPerimeters = 0, nTriggers = 0, nPois = 0;   // l'en-tête
 	std::vector<CTriggerPath> paths;
+	std::vector<CTriggerPerimeter> perimetres;
+	std::vector<CTriggerZone> zones;     // les blocs TRIGGER, rattachés au périmètre qui les précède
 	int32 incoherences = 0;              // trajets dont NPATHPOINTS ne correspond pas aux points écrits
 
 	// Analyse le texte d'un fichier ; faux si l'en-tête manque, si un bloc
-	// PATH n'est pas fermé, ou si le nombre de trajets diffère de l'en-tête.
+	// bloc n'est pas fermé, ou si le nombre de trajets diffère de l'en-tête.
 	bool Load(const uint8 *data, uint32 size);
 };
