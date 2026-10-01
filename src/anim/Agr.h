@@ -55,6 +55,10 @@ bool AgrPositionOs(const AgrAnim &a, int32 os, float t, CVector *p);
 // personnage avance à chaque cycle. (0, 0, 0) pour une animation sur place.
 CVector AgrDeplacement(const AgrAnim &a);
 
+// Interpolation sphérique entre deux quaternions (w, x, y, z), par le plus
+// court chemin ; u = 0 donne a, u = 1 donne b.
+void AgrSlerp(const float a[4], const float b[4], float u, float out[4]);
+
 // Quaternion (w, x, y, z) → matrice 3 × 3, dans la convention des NiAVObject
 // (docs/nif.md) : la matrice lue ligne par ligne redonne ce quaternion.
 void AgrMatrice(const float q[4], float m[3][3]);

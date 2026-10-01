@@ -3,6 +3,7 @@
 //                                          [--image sortie.ppm] [--banc n] [--promenade n]
 //                                          [--monde] [--rayon m] [--survol n] [--pietons n] [--bras]
 //                                          [--fige] [--attente] [--temps s] [--anim groupe:n] [--sans-objets]
+//                                          [--vue x y z lacet tangage]
 //
 // Le rendu est entièrement logiciel (src/render : Camera + RasterTrianglePersp),
 // dans une image de 400 × 240, la définition de l'écran du haut de la New
@@ -218,7 +219,7 @@ int
 main(int argc, char **argv)
 {
 	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--marche] [--image sortie.ppm] [--banc n] [--promenade n] [--monde] [--rayon m]\n"); return 2; }
-	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0; bool bras = false, fige = false, attente = false, objets = true; float temps = 0; std::string imposee; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
+	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
 	for(int i = 2; i < argc; i++){
 		if(strcmp(argv[i], "--image") == 0 && i + 1 < argc) image = argv[++i];
 		else if(strcmp(argv[i], "--banc") == 0 && i + 1 < argc) banc = atoi(argv[++i]);
@@ -234,6 +235,7 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--temps") == 0 && i + 1 < argc) temps = (float)atof(argv[++i]);
 		else if(strcmp(argv[i], "--monde") == 0) monde = true;
 		else if(strcmp(argv[i], "--rayon") == 0 && i + 1 < argc) rayon = (float)atof(argv[++i]);
+		else if(strcmp(argv[i], "--vue") == 0 && i + 5 < argc){ vue = true; for(int j = 0; j < 5; j++) vueV[j] = (float)atof(argv[++i]); }
 		else if(strcmp(argv[i], "--pos") == 0 && i + 5 < argc){ pos = true; px = (float)atof(argv[++i]); py = (float)atof(argv[++i]); pz = (float)atof(argv[++i]); lacet = (float)atof(argv[++i]); tangage = (float)atof(argv[++i]); }
 	}
 
@@ -382,7 +384,15 @@ main(int argc, char **argv)
 	struct PietonAnime {
 		outil::Anime *an; const AgrAnim *anim; float decalage; std::string groupe;
 		bool marche = false; CMarcheur corps; CVector depart; float cap = 0, vitesse = 0, horloge = 0, bloque = 0; uint32 hasard = 1;
+		// Un piéton qui a une marche et une attente alterne les deux : il marche
+		// 5 à 10 s, s'arrête 2 à 4 s, repart. Chaque changement est un fondu de
+		// FONDU secondes, os par os, et la vitesse au sol suit le fondu.
+		const AgrAnim *pas = nil, *att = nil;
+		bool enAttente = false; float tEtat = 0, dureeEtat = 0;
+		const AgrAnim *avant = nil; float horlogeAvant = 0, fondu = 0;
+		float Hasard(float a, float b){ hasard = hasard * 1103515245u + 12345u; return a + (b - a) * ((hasard >> 8) & 0xffff) / 65535.0f; }
 	};
+	const float FONDU = 0.3f;
 	std::vector<PietonAnime> animes;
 	Morceau *mPietons = nil;
 	if(pietons > 0){
@@ -405,15 +415,16 @@ main(int argc, char **argv)
 			if(m->s->AjouterModele(a, e.model, NifFromPlacement(CVector(x, y, z), CVector(1, 1, 1), q), bras, an)){
 				poses++;
 				const AgrAnim *pas = (fige || bras || attente) ? nil : PasDeMarche(e);
-				const AgrAnim *att = (fige || bras || pas) ? nil : Attente(e);
-				printf("  piéton %-22s %-10s (%.1f, %.1f, %.2f)%s\n", e.model, e.type, x, y, z, pas ? "  marche" : att ? "  attente" : "");
+				const AgrAnim *att = (fige || bras) ? nil : Attente(e);
+				printf("  piéton %-22s %-10s (%.1f, %.1f, %.2f)%s\n", e.model, e.type, x, y, z, pas && att ? "  marche et attente" : pas ? "  marche" : att ? "  attente" : "");
 				if(pas || att){
 					PietonAnime p; p.an = an; p.anim = pas ? pas : att; p.decalage = k * 0.77f;
+					p.pas = pas; p.att = att; p.hasard = 12345u + k * 7919u; p.dureeEtat = p.Hasard(5, 10);
 					if(pas){
 						CVector d = AgrDeplacement(*pas);
 						p.marche = true; p.vitesse = hypotf(d.x, d.y) / pas->duree;
 						p.cap = atan2f(cy - y, cx - x) + PI;                 // dos au centre : ils s'éloignent
-						p.corps.pos = CVector(x, y, z); p.depart = p.corps.pos; p.hasard = 12345u + k * 7919u;
+						p.corps.pos = CVector(x, y, z); p.depart = p.corps.pos;
 					}
 					animes.push_back(p);
 				}else delete an;
@@ -434,11 +445,26 @@ main(int argc, char **argv)
 			float dt = fminf(1.0f / 60, t - tPietons); tPietons += dt;
 			for(PietonAnime &p : animes){
 				p.horloge += dt;
+				if(p.fondu > 0){ p.horlogeAvant += dt; p.fondu -= dt; }
+				if(p.pas && p.att){
+					p.tEtat += dt;
+					if(p.tEtat > p.dureeEtat){
+						p.avant = p.anim; p.horlogeAvant = p.horloge + p.decalage;
+						p.enAttente = !p.enAttente;
+						p.anim = p.enAttente ? p.att : p.pas;
+						p.horloge = 0; p.decalage = 0; p.fondu = FONDU; p.tEtat = 0;
+						p.dureeEtat = p.enAttente ? p.Hasard(2, 4) : p.Hasard(5, 10);
+					}
+				}
 				if(!p.marche) continue;
+				// La part de marche : 1 en marchant, 0 à l'arrêt, suivant le fondu entre les deux.
+				float f = p.fondu > 0 ? p.fondu / FONDU : 0;
+				float part = p.enAttente ? f : 1 - f;
+				if(part <= 0){ p.bloque = 0; continue; }
 				CVector avant = p.corps.pos;
-				p.corps.Avancer(sol, cosf(p.cap) * p.vitesse * dt, sinf(p.cap) * p.vitesse * dt, dt);
+				p.corps.Avancer(sol, cosf(p.cap) * p.vitesse * part * dt, sinf(p.cap) * p.vitesse * part * dt, dt);
 				float fait = hypotf(p.corps.pos.x - avant.x, p.corps.pos.y - avant.y);
-				p.bloque = fait < 0.3f * p.vitesse * dt ? p.bloque + dt : 0;
+				p.bloque = fait < 0.3f * p.vitesse * part * dt ? p.bloque + dt : 0;
 				if(p.bloque > 0.25f){
 					// Contre un mur : un quart à un demi-tour, d'un côté au hasard.
 					p.hasard = p.hasard * 1103515245u + 12345u;
@@ -454,7 +480,8 @@ main(int argc, char **argv)
 				float q[4] = { 0, 0, sinf(lacetP / 2), cosf(lacetP / 2) };
 				p.an->place = NifFromPlacement(p.corps.pos, CVector(1, 1, 1), q);
 			}
-			mPietons->s->Reposer(*p.an, *p.anim, p.horloge + p.decalage);
+			if(p.fondu > 0 && p.avant) mPietons->s->Reposer(*p.an, *p.avant, p.horlogeAvant, p.anim, p.horloge + p.decalage, 1 - p.fondu / FONDU);
+			else mPietons->s->Reposer(*p.an, *p.anim, p.horloge + p.decalage);
 		}
 		mPietons->Preparer();
 	};
@@ -465,7 +492,9 @@ main(int argc, char **argv)
 		for(const PietonAnime &p : animes) if(p.marche && temps > 0)
 			printf("    marche %.2f m/s (%.3f s par cycle) : %.1f m du départ, %s\n", p.vitesse, p.anim->duree,
 			       hypotf(p.corps.pos.x - p.an->place.t.x, p.corps.pos.y - p.an->place.t.y) >= 0 ? hypotf(p.corps.pos.x - p.depart.x, p.corps.pos.y - p.depart.y) : 0,
-			       p.corps.auSol ? "au sol" : "en l'air");
+			       p.corps.auSol ? "au sol" : "en l'air"),
+			printf("      %s depuis %.1f s (prochain changement à %.1f s)%s, en (%.2f, %.2f, %.2f) cap %.0f°\n", p.enAttente ? "à l'arrêt" : "en marche", p.tEtat, p.dureeEtat, p.fondu > 0 ? ", en fondu" : "",
+			       p.corps.pos.x, p.corps.pos.y, p.corps.pos.z, p.cap * 180 / PI);
 	}
 
 	CMarcheur corps;
@@ -512,6 +541,9 @@ main(int argc, char **argv)
 		for(Morceau *m : v.morceaux){ m->AnimerObjets(temps); n += m->s->objets.size(); }
 		if(n) printf("  %zu objet(s) animé(s) posé(s) à %.2f s en %.2f ms\n", n, temps, std::chrono::duration<double, std::milli>(horloge::now() - t0).count());
 	}
+	// --vue x y z lacet tangage : la caméra du rendu seulement, posée après la
+	// simulation (les piétons, eux, sont posés autour de la caméra de départ).
+	if(vue){ cam.pos = CVector(vueV[0], vueV[1], vueV[2]); cam.yaw = vueV[3] * PI / 180; cam.pitch = vueV[4] * PI / 180; }
 	if(!image.empty() || banc > 0){
 		auto t0 = horloge::now();
 		int n = banc > 0 ? banc : 1;

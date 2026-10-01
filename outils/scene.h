@@ -191,7 +191,11 @@ struct Scene {
 	// (Root) bouge de ce qu'il bouge dans l'animation depuis son début, moins
 	// le trajet de la flèche (ARROW) : c'est le piéton entier qui avance, pas
 	// son bassin. Puis la peau est recalculée en place.
-	void Reposer(Anime &an, const AgrAnim &anim, float t){
+	// `autre`, s'il est donné : une seconde animation à l'instant `tAutre`, mêlée
+	// à la première avec le poids `poids` (0 : la première seule, 1 : l'autre
+	// seule), os par os en interpolation sphérique, et le décalage du bassin en
+	// linéaire. Sert aux fondus entre la marche et l'attente des piétons.
+	void Reposer(Anime &an, const AgrAnim &anim, float t, const AgrAnim *autre = nil, float tAutre = 0, float poids = 0){
 		const CNifFile &f = an.nif;
 		std::vector<NifMatrix33> pose(f.numBlocks, NifAxisRotation(0, 0));
 		std::vector<CVector> decalage(f.numBlocks, CVector(0, 0, 0));
@@ -211,9 +215,15 @@ struct Scene {
 			}
 			if(AgrPositionOs(anim, k, t, &p)) decalage[b] = CVector(p.x - o.translation.x, p.y - o.translation.y, p.z - o.translation.z);
 		}
+		bool melange = autre && poids > 0;
+		if(melange && poids >= 1){ return Reposer(an, *autre, tAutre); }
 		for(int32 k = 1; !an.objet && k < AGR_OS; k++){   // la piste 0 (Dummy) ne bouge pas le modèle
-			int32 b = an.noeuds[k]; float q[4], m[3][3];
-			if(b < 0 || !AgrRotation(anim, k, t, q)) continue;
+			int32 b = an.noeuds[k]; float q[4], q2[4], m[3][3];
+			if(b < 0) continue;
+			bool a1 = AgrRotation(anim, k, t, q), a2 = melange && AgrRotation(*autre, k, tAutre, q2);
+			if(!a1 && !a2) continue;
+			if(a1 && a2){ float r[4]; AgrSlerp(q, q2, poids, r); memcpy(q, r, sizeof q); }
+			else if(a2) memcpy(q, q2, sizeof q);
 			AgrMatrice(q, m);
 			const NifMatrix33 &r = ((const NifAVObject*)f.blocks[b].data)->rotation;
 			// pose = rᵀ · m : composée après la rotation du nœud, elle la remplace.
@@ -222,11 +232,22 @@ struct Scene {
 				pose[b].m[i][j] = v;
 			}
 		}
-		CVector r0, rt;
-		if(!an.objet && an.noeuds[1] >= 0 && AgrPositionOs(anim, 1, 0, &r0) && AgrPositionOs(anim, 1, t, &rt)){
-			CVector f0(0, 0, 0), ft(0, 0, 0);
-			AgrPositionOs(anim, AGR_OS - 1, 0, &f0); AgrPositionOs(anim, AGR_OS - 1, t, &ft);
-			decalage[an.noeuds[1]] = CVector(rt.x - r0.x - (ft.x - f0.x), rt.y - r0.y - (ft.y - f0.y), rt.z - r0.z - (ft.z - f0.z));
+		// Le bassin (Root) bouge de ce qu'il bouge dans l'animation depuis son
+		// début, moins le trajet de la flèche (ARROW).
+		auto Bassin = [&](const AgrAnim &x, float tx, CVector *d) -> bool {
+			CVector r0, rt, f0(0, 0, 0), ft(0, 0, 0);
+			if(!AgrPositionOs(x, 1, 0, &r0) || !AgrPositionOs(x, 1, tx, &rt)) return false;
+			AgrPositionOs(x, AGR_OS - 1, 0, &f0); AgrPositionOs(x, AGR_OS - 1, tx, &ft);
+			*d = CVector(rt.x - r0.x - (ft.x - f0.x), rt.y - r0.y - (ft.y - f0.y), rt.z - r0.z - (ft.z - f0.z));
+			return true;
+		};
+		if(!an.objet && an.noeuds[1] >= 0){
+			CVector d1(0, 0, 0), d2(0, 0, 0);
+			bool b1 = Bassin(anim, t, &d1), b2 = melange && Bassin(*autre, tAutre, &d2);
+			float w = melange ? poids : 0;
+			if(!b1) d1 = CVector(0, 0, 0);
+			if(!b2) d2 = d1;
+			if(b1 || b2) decalage[an.noeuds[1]] = CVector(d1.x + w * (d2.x - d1.x), d1.y + w * (d2.y - d1.y), d1.z + w * (d2.z - d1.z));
 		}
 		std::vector<NifTransform> mondes(f.numBlocks);
 		NifWorldTransforms(f, mondes.data(), pose.data(), true, decalage.data());

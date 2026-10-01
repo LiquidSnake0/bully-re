@@ -142,8 +142,8 @@ AgrLireGroupe(const uint8 *buf, uint32 taille, std::vector<AgrAnim> &out)
 	return !out.empty();
 }
 
-static void
-Slerp(const float a[4], const float b0[4], float u, float out[4])
+void
+AgrSlerp(const float a[4], const float b0[4], float u, float out[4])
 {
 	float b[4] = { b0[0], b0[1], b0[2], b0[3] };
 	float c = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3];
@@ -166,7 +166,7 @@ AgrRotation(const AgrAnim &a, int32 os, float t, float q[4])
 	if(t >= p.back().t){ memcpy(q, p.back().q, 16); return true; }
 	size_t j = 1; while(j < p.size() && p[j].t < t) j++;
 	float dt = p[j].t - p[j-1].t;
-	Slerp(p[j-1].q, p[j].q, dt > 1e-6f ? (t - p[j-1].t) / dt : 0, q);
+	AgrSlerp(p[j-1].q, p[j].q, dt > 1e-6f ? (t - p[j-1].t) / dt : 0, q);
 	return true;
 }
 

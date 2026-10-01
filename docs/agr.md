@@ -156,3 +156,16 @@ Les placements du monde ne posent que quelques objets animés (8 au carnaval :
 deux `PortaPoo` qui tanguent, six figurants `CARNI0*` ; un garage à vélos à
 l'école, un interrupteur à l'asile) : les portes et coffres viennent des
 scripts.
+
+## Attente et marche : les fondus (01.10.2026)
+
+Dans la visite, un piéton qui a un cycle de marche (groupes `F_*`) et une
+attente (`IDLE_*`) alterne les deux : il marche 5 à 10 s, s'arrête 2 à 4 s,
+repart. Chaque changement est un fondu de 0,3 s : `Scene::Reposer` reçoit une
+seconde animation et un poids, interpole chaque os en sphérique
+(`AgrSlerp`) et le décalage du bassin en linéaire, et la vitesse au sol suit
+le même poids (pas de glissade à l'arrêt). Vérifié à l'image avec
+`--vue x y z lacet tangage`, qui pose la caméra du rendu après la simulation :
+la siamoise de la boxe referme son pas en 0,3 s et parcourt 33, 16 puis 4 cm
+avant de s'arrêter. Le choix du jeu (quelle attente, quand, combien de temps)
+viendra des scripts et de l'IA des piétons ; les durées ici sont des tirages.
