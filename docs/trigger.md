@@ -142,6 +142,8 @@ viennent des noms de blocs et de la galerie :
 | Spectator | NPC_Spectator | 0-2 |
 | Hang_Out | Hang_Talking | les boucles (0-7, 9, 10) |
 | Couple (« Kissing ») | NPC_Love | 5 et 6, deux piétons face à face |
+| Brawl (« Brawls ») | NPC_AggroTaunt | 0 et 3, deux piétons de la clique face à face à 1,2 m (ils se provoquent) |
+| Harassment | NPC_AggroTaunt | 1 pour l'agresseur, la victime (autre clique, ni autorité ni citadin) à l'attente, à 1 m |
 | le reste | IDLE_* | l'attente de la clique |
 
 Autres poses relevées : Sitting_Boys 1 et 7-9 assis par terre jambes
@@ -162,8 +164,16 @@ mur ; un couple enlacé face à face ; un fumeur dos au mur, mais à un mètre d
 lui plutôt qu'appuyé. `--galerie groupe[:réf][@a-b]` aligne les animations
 d'un groupe devant la caméra, une par piéton, pour les reconnaître ;
 `outils/sonde_poi.cpp` (non construit) mesure durée, boucle, bassin et cap.
-Restent : les autres types (Brawl, Harassment, Back_Alley…), et le décodage
-des arbres d'actions.
+Bagarre et harcèlement ne montrent que le face-à-face : les coups eux-mêmes
+viennent sans doute de `Grap` (59 animations d'empoignade, bassins décalés
+par paires) ou de `Gfight`, calé sur un bassin debout à 1,06-1,11 m comme les
+F_Girls (un combat de filles, probablement) ; ni l'un ni l'autre n'est encore
+identifié. Vérifié à l'image en centre-ville : les dropouts de « Brawls »
+(542, −60) face à face, et l'agresseur de « StudentHarassment » (537, −47,5)
+devant un nerd.
+
+Restent : Back_Alley et School_Grounds (à l'attente), les coups des
+bagarres, et le décodage des arbres d'actions.
 
 ## La section `pois` des .ipb
 

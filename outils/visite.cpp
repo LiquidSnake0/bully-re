@@ -752,6 +752,13 @@ main(int argc, char **argv)
 				else if(pt.type == "Spectator"){ groupe = "NPC_Spectator"; choixAnims = {0, 1, 2}; }
 				else if(pt.type == "Hang_Out"){ groupe = "Hang_Talking"; choixAnims = {0, 1, 2, 3, 4, 5, 6, 7, 9, 10}; }
 				else if(pt.type == "Couple"){ groupe = "NPC_Love"; choixAnims = {5, 6}; couple = true; }       // l'un en face de l'autre
+				// Deux piétons face à face à `ecartDuo` mètres : une bagarre qui se prépare
+				// (les deux se provoquent, NPC_AggroTaunt) ou un harcèlement (l'agresseur
+				// provoque, la victime, d'une autre clique, reste à l'attente : -1). Les
+				// coups eux-mêmes (Grap, Gfight) ne sont pas encore identifiés.
+				bool duo = false, harcelement = false; float ecartDuo = 0;
+				if(pt.type == "Brawl"){ groupe = "NPC_AggroTaunt"; choixAnims = {0, 3}; duo = true; ecartDuo = 1.2f; }
+				else if(pt.type == "Harassment"){ groupe = "NPC_AggroTaunt"; choixAnims = {1, -1}; duo = harcelement = true; ecartDuo = 1.0f; }
 				const std::vector<AgrAnim> *ga = nil;
 				if(!groupe.empty()){
 					if(!groupes.count(groupe)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, groupe + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); } groupes[groupe] = v; }
@@ -765,10 +772,11 @@ main(int argc, char **argv)
 				float capPoint = (pt.lacetTangageRoulis[0] + 180) * PI / 180;
 				// Un couple : deux piétons face à face sur le point, de genres opposés quand
 				// le point le permet.
-				int places = couple ? 2 : 1; bool premierFemme = false;
+				int places = couple || duo ? 2 : 1; bool premierFemme = false; std::string cliqueAgresseur;
 				for(int pl = 0; pl < places; pl++){
 					float cap = capPoint + (pl ? PI : 0), lacetP = -(cap - PI / 2);
 					float px = pt.pos.x, py = pt.pos.y;
+					if(duo){ float dd = (pl ? 0.5f : -0.5f) * ecartDuo; px += dd * cosf(capPoint); py += dd * sinf(capPoint); }
 					float z = pt.pos.z; sol.Sol(px, py, pt.pos.z + 2.0f, 10.0f, &z);
 					float qr[4] = { 0, 0, sinf(lacetP / 2), cosf(lacetP / 2) };
 					// Le premier candidat qui convient et dont le modèle est dans le monde.
@@ -784,7 +792,11 @@ main(int argc, char **argv)
 						if(pt.genre == "Male" && e.female) continue;
 						if(pt.genre == "Female" && !e.female) continue;
 						if(couple && pl == 1 && pt.genre == "Both" && passe < 2 && (bool)e.female == premierFemme) continue;
-						if(tous){
+						if(harcelement && pl == 1){
+							// La victime : un élève d'une autre clique que l'agresseur.
+							if(strcasecmp(e.type, cliqueAgresseur.c_str()) == 0 || strcasecmp(e.type, "PREFECT") == 0 || strcasecmp(e.type, "COP") == 0 ||
+							   strcasecmp(e.type, "TEACHER") == 0 || strcasecmp(e.type, "SHOPKEEP") == 0 || strcasecmp(e.type, "TOWNPERSON") == 0) continue;
+						}else if(tous){
 							// N'importe quel élève ou citadin : pas l'autorité, ni les commerçants.
 							if(strcasecmp(e.type, "PREFECT") == 0 || strcasecmp(e.type, "COP") == 0 || strcasecmp(e.type, "TEACHER") == 0 || strcasecmp(e.type, "SHOPKEEP") == 0) continue;
 						}else if(strcasecmp(e.type, clique.c_str()) != 0) continue;
@@ -793,11 +805,11 @@ main(int argc, char **argv)
 						else{ delete an; an = nil; }
 					}
 					if(!choix){ printf("  point d'intérêt « %s » : aucun piéton %s %s\n", q.nom.c_str(), clique.c_str(), pt.genre.c_str()); break; }
-					if(pl == 0) premierFemme = choix->female != 0;
+					if(pl == 0){ premierFemme = choix->female != 0; cliqueAgresseur = choix->type; }
 					const AgrAnim *att = nil; int n = -1;
 					if(ga){
-						n = couple ? choixAnims[pl] : choixAnims[k % choixAnims.size()];
-						if(n < (int)ga->size() && (*ga)[n].decodee){ att = &(*ga)[n]; an->bassinRef = 0.86f; }
+						n = couple || duo ? choixAnims[pl] : choixAnims[k % choixAnims.size()];
+						if(n >= 0 && n < (int)ga->size() && (*ga)[n].decodee){ att = &(*ga)[n]; an->bassinRef = 0.86f; }
 					}
 					if(!att){ att = Attente(*choix); n = -1; }
 					// Un couple : les animations avancent déjà le bassin vers l'autre (0,30 et
