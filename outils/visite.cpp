@@ -909,7 +909,11 @@ main(int argc, char **argv)
 				if(pt.type == "Brawl"){
 					// GRAP_IDLE_GV + _RCV, GRAP_MOUNT_IDLE_GV + _RCV, GRAP_MOUNT_HIT_F + MOUNT_IDLE_RCV.
 					static const int paires[3][2] = { {7, 6}, {25, 24}, {45, 24} };
-					groupe = "Grap"; choixAnims = { paires[k % 3][0], paires[k % 3][1] }; duo = prise = true;
+					// La paire se tire de la position du point : stable quel que soit l'ordre de
+					// chargement des blocs (le rang dans un bloc d'un seul point donnait toujours
+					// la première).
+					int ip = (int)fabsf(floorf(pt.pos.x) * 7 + floorf(pt.pos.y) * 13) % 3;
+					groupe = "Grap"; choixAnims = { paires[ip][0], paires[ip][1] }; duo = prise = true;
 				}
 				else if(pt.type == "Harassment"){ groupe = "NPC_AggroTaunt"; choixAnims = {1, -1}; duo = harcelement = true; ecartDuo = 1.0f; }   // REAC_BRING_IT
 				const std::vector<AgrAnim> *ga = nil;
@@ -1042,12 +1046,17 @@ main(int argc, char **argv)
 						if(groupe == "POI_Smoking" && pt.type == "Wall"){ fichier = "Ambient.cat"; racine = "Wall_Smoke"; depuis = "./Wall_Start"; }
 						else if(groupe == "POI_Smoking"){ fichier = "5_02.cat"; racine = "StandingSmoke"; depuis = "./Light"; }
 						else if(couple){ fichier = "NPC_Ambient.cat"; racine = "Hold"; depuis = "."; passif = choix->female && pl == 1; }
+						// Les bagarres (Grapples.cat) : le combat de filles (Init / Loop / Out) et les
+						// montées des garçons ; la prise debout (GRAP_IDLE) n'y est pas jouée par une
+						// piste Animation et garde sa table.
+						else if(filles){ fichier = "Grapples.cat"; racine = "GirlFight_Init"; depuis = "./GirlFight_Init/Give"; passif = pl == 1; }
+						else if(prise && choixAnims[0] != 7){ fichier = "Grapples.cat"; racine = "mount"; depuis = "./MountIdle/Give"; passif = pl == 1; }
 						outil::Arbre *ar = fichier.empty() ? nil : ArbreDe(fichier);
 						int32 r = ar ? ar->Chercher(racine.c_str()) : -1;
-						if(ar && r >= 0 && couple) r = ar->noeuds[r].parent;           // le banc qui contient Hold, Held, Hold_Idle
+						if(ar && r >= 0 && (couple || filles)) r = ar->noeuds[r].parent;   // le banc qui contient Hold / Held, ou GirlFight_Init / Loop / Out
 						int32 d = r >= 0 ? (couple ? ar->Chercher(racine.c_str()) : ar->Resoudre(r, depuis)) : -1;
 						if(d >= 0){
-							pa.parArbre = true; pa.der.arbre = ar; pa.der.racine = r; pa.departArbre = passif ? -1 : d;
+							pa.parArbre = true; pa.der.arbre = ar; pa.der.racine = r; pa.der.redepart = d; pa.departArbre = passif ? -1 : d;
 							if(pa.points) pa.pointTenu = 0;                                   // l'arbre allume lui-même
 							static std::set<std::string> vus;
 							if(vus.insert(fichier + "/" + racine).second) printf("    arbre %s, %s : départ %s\n", fichier.c_str(), ar->Nom(r).c_str(), ar->Nom(d).c_str());
@@ -1056,7 +1065,7 @@ main(int argc, char **argv)
 					pa.cap = cap; pa.corps.pos = CVector(px, py, z); pa.depart = pa.corps.pos;
 					animes.push_back(pa); poses++; dejaPoses.insert(choix->model);
 					// Les deux membres d'un couple se répondent (PlayOnTarget).
-					if(couple && pl == 1 && animes.size() >= 2){ animes.back().partenaire = (int32)animes.size() - 2; animes[animes.size() - 2].partenaire = (int32)animes.size() - 1; }
+					if((couple || prise) && pl == 1 && animes.size() >= 2){ animes.back().partenaire = (int32)animes.size() - 2; animes[animes.size() - 2].partenaire = (int32)animes.size() - 1; }
 					printf("  point d'intérêt « %s » %s%s%s (à %.0f m, lacet %.0f°) : %s %s, %s", q.nom.c_str(), pt.type.c_str(), pt.nom.empty() ? "" : " ", pt.nom.c_str(),
 					       pr.first, pt.lacetTangageRoulis[0], choix->model, choix->type, n >= 0 ? groupe.c_str() : "attente");
 					if(n >= 0) printf(" n° %d", n);
@@ -1306,6 +1315,11 @@ main(int argc, char **argv)
 			printf("    arbre « %s » : nœud %s, %.2f s (animation %.2f sur %.2f), %d transitions%s%s\n", p.poi ? p.poi->type.c_str() : "?", p.der.arbre->Nom(p.der.noeud).c_str(), p.der.t,
 			       p.horloge, p.anim ? p.anim->duree : 0.0f, p.der.transitions, p.tenu ? ", cigarette : " : "",
 			       !p.tenu ? "" : p.pointTenu && p.points->Point(p.pointTenu) ? p.points->Point(p.pointTenu)->nom.c_str() : "aucune");
+		if(getenv("BULLY_TRACE")) for(const PietonAnime &p : animes) if(p.parArbre && p.der.arbre){
+			printf("    trace « %s » :", p.poi ? p.poi->type.c_str() : "?");
+			for(int32 n : p.der.trace) printf(" %s/%s", p.der.arbre->Nom(p.der.arbre->noeuds[n].parent).c_str(), p.der.arbre->Nom(n).c_str());
+			printf("\n");
+		}
 		for(const PietonAnime &p : animes) if(!p.programme.empty() && !p.parArbre)
 			printf("    programme « %s » : étape %zu/%zu, encore %d fois, %.2f s sur %.2f (temps du nœud %.2f)%s%s%s\n", p.poi ? p.poi->type.c_str() : "?", p.etape + 1, p.programme.size(),
 			       p.reste, p.horloge, p.programme[p.etape].Fin(), (p.horloge - p.programme[p.etape].depart) / p.programme[p.etape].vitesse, p.fondu > 0 ? ", en fondu" : "",

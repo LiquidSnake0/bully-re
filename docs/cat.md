@@ -115,18 +115,40 @@ l'objet :
 ## Un exécuteur simplifié
 
 `outils/arbres.h` déroule un arbre pour un piéton de la visite, au lieu des
-programmes écrits à la main. C'est une approximation : les chemins
-(`.`, `..`, noms hachés), la piste Animation (champs 16 à 52), `sequence` à la
-fin d'une animation, `Opportunity` prise au hasard une fois ouverte, conditions
-`WeightedRandom` (tirage), `ActionRequest` / `IsScriptedAmbient` (fausses),
-`Not`, `PlayOnTarget` (le partenaire ; le nœud visé est passif : on n'y entre
-que sur ordre, on n'en sort que par sa `sequence`), mode 1 qui fige la
-dernière pose, et un nœud qui lâche l'objet ressort au-dessus de celui qui
-l'avait pris. Pilotés par un arbre : fumeurs au mur (Ambient.cat,
-`Wall_Smoke`, départ `Wall_Start`), fumeurs debout (5_02.cat,
-`StandingSmoke`, départ `light`), couples (NPC_Ambient.cat, banc de `Hold` ;
-le garçon part de `Hold`, la fille suit par `PlayOnTarget`). Les bagarres
-gardent leurs tables.
+programmes écrits à la main. C'est une approximation, avec ces règles :
+
+- chemins `.`, `..` et noms hachés ; une cible hors du sous-arbre est ignorée ;
+- piste Animation : champs 16 (durée de vie dans le nœud, même en boucle) à 52 ;
+  mode 1 : la dernière pose reste figée ;
+- fin d'une animation : `sequence` ; sinon un nœud jouable qui offre des
+  occasions se rejoue (état d'attente), un autre revient au nœud jouable ancêtre
+  le plus proche, à défaut au départ (un banc choisit un enfant une fois, il ne
+  rejoue pas ses frères) ; un nœud qui lâche l'objet ressort au-dessus de celui
+  qui l'avait pris ;
+- `Opportunity` : prise au hasard (15 % par seconde) dans sa fenêtre (12 à 16)
+  si les conditions du nœud visé passent ; `OpportunityRandomLatch` : à coup
+  sûr, à un instant tiré entre ses champs 76 et 80 ;
+- `Execute` dans un nœud sans animation : un saut ;
+- conditions : `WeightedRandom` tire au sort ; `ActionRequest`,
+  `IsScriptedAmbient`, `false`, `IsPlayer`, `IsAuthority`, `PedModelID`,
+  `Health`, `DamagePending`, `HitTime` sont fausses ; `Not` inverse la suivante ;
+  `OR` : une au moins ; les autres passent ;
+- `PlayOnTarget` envoie le partenaire ; le nœud visé est passif : on n'y entre
+  que sur ordre, on n'en sort que par sa `sequence`.
+
+Pilotés par un arbre :
+
+| Point | Arbre | Sous-arbre, départ |
+|---|---|---|
+| fumeur au mur | Ambient.cat | `Wall_Smoke`, `Wall_Start` |
+| fumeur debout | 5_02.cat | `StandingSmoke`, `light` |
+| couple | NPC_Ambient.cat | banc de `Hold` ; le garçon part de `Hold`, la fille suit |
+| bagarre de filles | Grapples.cat | banc de `GirlFight_Init` : Init → Loop (5 à 10 s) → Out |
+| bagarre au sol | Grapples.cat | `mount`, `MountIdle/Give` : `MountOpps` choisit le coup selon la clique (`FacePunch`, `KneeDrop`, `Headbutt`, `Dismount`…) |
+
+La prise debout (`GRAP_IDLE_GV` / `_RCV`) n'est jouée par aucune piste
+Animation de Grapples.cat : elle garde sa table. `BULLY_TRACE=1` affiche les
+derniers nœuds traversés par chaque piéton.
 
 La visite (`outils/visite.cpp`) applique 40, 44 et 48 aux étapes de ses
 programmes : au premier point d'intérêt, elle lit les pistes `Animation` des

@@ -10,8 +10,9 @@
 //    son champ 16 (commun à toutes les pistes) borne sa durée dans le nœud,
 //    même pour une boucle ;
 //    sinon on choisit un enfant parmi ceux dont les conditions passent ;
-//  - à la fin d'une animation qui ne boucle pas : la piste « sequence », sinon
-//    un enfant, sinon le parent ;
+//  - à la fin d'une animation qui ne boucle pas : la piste « sequence » ; sinon
+//    un nœud jouable qui offre des occasions se rejoue (état d'attente), un
+//    autre revient au nœud jouable ancêtre le plus proche, à défaut au départ ;
 //  - une Opportunity, son instant passé (champ 12), est prise au hasard
 //    (CHANCE par seconde) si les conditions du nœud visé passent ;
 //  - conditions : WeightedRandom tire au sort, ActionRequest et
@@ -108,20 +109,25 @@ public:
 	}
 	// Les conditions du nœud, selon les règles ci-dessus.
 	bool Conditions(int32 i, float hasard) const {
-		static const uint32 kNot = ActionHash("Not"), kAleatoire = ActionHash("WeightedRandom"),
-		                    kRequete = ActionHash("ActionRequest"), kScripte = ActionHash("IsScriptedAmbient");
-		bool inverser = false;
+		static const uint32 kNot = ActionHash("Not"), kOu = ActionHash("OR"), kAleatoire = ActionHash("WeightedRandom");
+		// Fausses ici : elles attendent un script, le joueur, un modèle précis ou
+		// un coup reçu.
+		static const uint32 kFausses[] = { ActionHash("ActionRequest"), ActionHash("IsScriptedAmbient"), ActionHash("false"),
+			ActionHash("IsPlayer"), ActionHash("IsAuthority"), ActionHash("PedModelID"), ActionHash("Health"),
+			ActionHash("DamagePending"), ActionHash("HitTime") };
+		bool inverser = false, ou = false, une = false, toutes = true;
 		for(int32 c : noeuds[i].n->conditions){
 			uint32 t = f.TypeCondition(c);
 			if(t == kNot){ inverser = !inverser; continue; }
+			if(t == kOu){ ou = true; continue; }
 			bool v = true;
-			if(t == kRequete || t == kScripte) v = false;
-			else if(t == kAleatoire) v = hasard < 0.5f;
+			for(uint32 x : kFausses) if(t == x) v = false;
+			if(t == kAleatoire) v = hasard < 0.5f;
 			if(inverser) v = !v;
 			inverser = false;
-			if(!v) return false;
+			une = une || v; toutes = toutes && v;
 		}
-		return true;
+		return noeuds[i].n->conditions.empty() || (ou ? une : toutes);
 	}
 	std::string Nom(int32 i) const {
 		if(i < 0) return "?";
@@ -154,29 +160,37 @@ struct ArbreSorties {
 // Le déroulement d'un arbre pour un piéton.
 struct Deroulement {
 	const Arbre *arbre = nil;
-	int32 racine = -1, noeud = -1;      // racine : le nœud d'où l'on repart quand on en sort
+	int32 racine = -1, noeud = -1;      // racine : le sous-arbre dont on ne sort pas
+	int32 redepart = -1;                 // le nœud où l'on reprend quand on revient à la racine
 	float t = 0;                         // temps du nœud (s)
 	float duree = -1, fin = -1, vitesse = 1, depart = 0; int32 mode = 0;
 	float finPiste = -1;                 // champ 16 de la piste Animation : sa durée de vie dans le nœud (s), même en boucle
 	bool animEnCours = false;
 	struct Evenement { float t; uint32 point; bool fait; };
 	std::vector<Evenement> props;
-	struct Occasion { float t; std::string chemin; };
+	struct Occasion { float t, tmax; std::string chemin; bool sure; };
 	std::vector<Occasion> occasions;
 	std::string suite;                   // la piste « sequence »
 	static constexpr float CHANCE = 0.15f;
 	int32 transitions = 0;
+	std::vector<int32> trace;            // les derniers nœuds traversés (diagnostic)
 
 	void Entrer(int32 i, const ArbreSorties &s, int profondeur = 0){
-		if(!arbre || i < 0 || profondeur > 16) return;
-		// On ne sort pas de la racine : on y revient.
+		if(!arbre) return;
+		// Une impasse (trop de sauts sans animation) : on reprend au départ.
+		if(i < 0 || profondeur > 16){ if(profondeur > 32 || redepart < 0) return; i = redepart; }
+		// On ne sort pas de la racine : on y revient, et l'on reprend au départ.
 		if(!Dans(i)) i = racine;
+		if(i == racine && redepart >= 0 && profondeur < 16) i = redepart;
 		noeud = i; t = 0; animEnCours = false; duree = -1; fin = -1; vitesse = 1; depart = 0; mode = 0; finPiste = -1;
 		props.clear(); occasions.clear(); suite.clear(); transitions++;
+		trace.push_back(i); if(trace.size() > 24) trace.erase(trace.begin());
 		static const uint32 kAnim = ActionHash("Animation"), kSeq = ActionHash("sequence"), kOcc = ActionHash("Opportunity"),
 			kCible = ActionHash("PlayOnTarget"), kAtt = ActionHash("PropAttach"), kAttEx = ActionHash("PropAttachEx"),
-			kDet = ActionHash("PropDetach"), kDetEx = ActionHash("PropDetachEx");
+			kDet = ActionHash("PropDetach"), kDetEx = ActionHash("PropDetachEx"),
+			kExec = ActionHash("Execute"), kLatch = ActionHash("OpportunityRandomLatch");
 		std::vector<CActionTrack> pistes = arbre->Pistes(i);
+		std::vector<std::string> sauts;
 		for(const CActionTrack &p : pistes){
 			float t12 = Flottant(p, 12, 0);
 			if(p.type == kAnim && !animEnCours){
@@ -185,12 +199,21 @@ struct Deroulement {
 				duree = s.jouer ? s.jouer(p.Mot(24) & 0x7fffffff, mode, depart, fin, vitesse, Flottant(p, 52, -1)) : -1;
 				animEnCours = duree > 0;
 			}else if(p.type == kSeq) suite = arbre->Chaine(p, 32);
-			else if(p.type == kOcc){ std::string c = arbre->Chaine(p, 32); if(!c.empty()) occasions.push_back({t12, c}); }
+			else if(p.type == kOcc){ std::string c = arbre->Chaine(p, 32); if(!c.empty()) occasions.push_back({t12, Flottant(p, 16, -1), c, false}); }
+			// OpportunityRandomLatch : prise à coup sûr à un instant tiré entre 76 et 80.
+			else if(p.type == kLatch){ std::string c = arbre->Chaine(p, 32); float a = Flottant(p, 76, 0), b = Flottant(p, 80, a);
+				if(!c.empty()) occasions.push_back({t12 + a + (b - a) * s.hasard(), -1, c, true}); }
+			else if(p.type == kExec){ std::string c = arbre->Chaine(p, 32); if(!c.empty()) sauts.push_back(c); }
 			else if(p.type == kCible){ std::string c = arbre->Chaine(p, 32); int32 j = arbre->Resoudre(i, c); if(j >= 0 && s.partenaire) s.partenaire(j); }
 			// PropAttachEx : le point en 28 ; PropAttach : en 24 ; Detach : 0.
 			else if(p.type == kAttEx) props.push_back({t12, p.Mot(28), false});
 			else if(p.type == kAtt) props.push_back({t12, p.Mot(24), false});
 			else if(p.type == kDet || p.type == kDetEx) props.push_back({t12, 0, false});
+		}
+		// Sans animation, un Execute vers un nœud du sous-arbre est un saut.
+		if(!animEnCours) for(const std::string &c : sauts){
+			int32 j = arbre->Resoudre(i, c);
+			if(j >= 0 && j != i && Dans(j) && !arbre->passif[j]){ Entrer(j, s, profondeur + 1); return; }
 		}
 		if(!animEnCours) Descendre(s, profondeur);
 	}
@@ -200,10 +223,10 @@ struct Deroulement {
 		for(Evenement &e : props) if(!e.fait && t >= e.t){ e.fait = true; if(s.accrocher) s.accrocher(e.point); }
 		// Les occasions, une fois ouvertes.
 		for(const Occasion &o : occasions){
-			if(t < o.t) continue;
-			if(s.hasard() >= CHANCE * dt) continue;
+			if(t < o.t || (o.tmax >= 0 && t > o.tmax)) continue;
+			if(!o.sure && s.hasard() >= CHANCE * dt) continue;
 			int32 j = arbre->Resoudre(noeud, o.chemin);
-			if(j >= 0 && j != noeud && !arbre->passif[j] && arbre->Conditions(j, s.hasard())){ Entrer(j, s); return; }
+			if(j >= 0 && j != noeud && Dans(j) && !arbre->passif[j] && arbre->Conditions(j, s.hasard())){ Entrer(j, s); return; }
 		}
 		// La fin de l'animation : une boucle (mode 2) ne finit pas ; le mode 1 fige
 		// la dernière pose (AnimationTrack, FUN_006c0c60) et attend le partenaire ;
@@ -211,14 +234,14 @@ struct Deroulement {
 		bool expiree = animEnCours && finPiste > 0 && t >= finPiste;
 		if(animEnCours && ((mode != 2 && mode != 1) || expiree)){
 			if(expiree || depart + t * vitesse >= Bout()){
-				if(!suite.empty()){ int32 j = arbre->Resoudre(noeud, suite); if(j >= 0){ Entrer(j, s); return; } }
+				if(!suite.empty()){ int32 j = arbre->Resoudre(noeud, suite); if(j >= 0 && Dans(j)){ Entrer(j, s); return; } }
 				if(arbre->passif[noeud]) return;
 				// Un nœud qui lâche l'objet ressort au-dessus du nœud qui l'avait pris.
 				if(arbre->lache[noeud]){
 					for(int32 k = arbre->noeuds[noeud].parent; k >= 0 && Dans(k); k = arbre->noeuds[k].parent)
 						if(arbre->accroche[k]){ int32 p = arbre->noeuds[k].parent; Entrer(p >= 0 && Dans(p) ? p : racine, s); return; }
 				}
-				Descendre(s, 0);
+				Finir(s);
 			}
 		}
 	}
@@ -239,12 +262,29 @@ private:
 		uint32 m = p.Mot(pos); float v; memcpy(&v, &m, 4); return v;
 	}
 	// Un enfant dont les conditions passent (au hasard parmi eux), sinon le parent.
+	// Un nœud fini sans « sequence » : un banc a choisi son enfant une fois, il ne
+	// rejoue pas ses frères. Un nœud jouable qui offre des occasions est un état
+	// d'attente : il se rejoue ; sinon on revient au nœud jouable ancêtre le plus
+	// proche, à défaut au départ.
+	void Finir(const ArbreSorties &s){
+		if(arbre->noeuds[noeud].n->genre == 'n' && !occasions.empty()){ Entrer(noeud, s); return; }
+		for(int32 k = arbre->noeuds[noeud].parent; k >= 0 && Dans(k); k = arbre->noeuds[k].parent)
+			if(arbre->noeuds[k].n->genre == 'n' && !arbre->passif[k]){ Entrer(k, s); return; }
+		Entrer(racine, s);
+	}
+	// Choisir un enfant (entrée dans un banc ou un nœud sans animation).
 	void Descendre(const ArbreSorties &s, int profondeur){
-		std::vector<int32> ok;
-		for(int32 e : arbre->Enfants(noeud)) if(!arbre->passif[e] && arbre->Conditions(e, s.hasard())) ok.push_back(e);
-		if(!ok.empty()){ Entrer(ok[(size_t)(s.hasard() * ok.size()) % ok.size()], s, profondeur + 1); return; }
-		int32 p = arbre->noeuds[noeud].parent;
-		Entrer(p >= 0 && Dans(p) && p != noeud ? p : racine, s, profondeur + 1);
+		int32 ici = noeud;
+		for(int32 haut = noeud; haut >= 0 && Dans(haut); ){
+			// Au premier tour, les enfants du nœud qu'on quitte ; ensuite, les frères.
+			std::vector<int32> ok;
+			for(int32 e : arbre->Enfants(haut))
+				if((haut == noeud || e != ici) && !arbre->passif[e] && arbre->Conditions(e, s.hasard())) ok.push_back(e);
+			if(!ok.empty()){ Entrer(ok[(size_t)(s.hasard() * ok.size()) % ok.size()], s, profondeur + 1); return; }
+			if(haut == racine) break;
+			ici = haut; haut = arbre->noeuds[haut].parent;
+		}
+		Entrer(racine, s, profondeur + 1);
 	}
 };
 
