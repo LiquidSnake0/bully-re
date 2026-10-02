@@ -1047,16 +1047,22 @@ main(int argc, char **argv)
 						else if(groupe == "POI_Smoking"){ fichier = "5_02.cat"; racine = "StandingSmoke"; depuis = "./Light"; }
 						else if(couple){ fichier = "NPC_Ambient.cat"; racine = "Hold"; depuis = "."; passif = choix->female && pl == 1; }
 						// Les bagarres (Grapples.cat) : le combat de filles (Init / Loop / Out) et les
-						// montées des garçons ; la prise debout (GRAP_IDLE) n'y est pas jouée par une
-						// piste Animation et garde sa table.
+						// montées des garçons.
 						else if(filles){ fichier = "Grapples.cat"; racine = "GirlFight_Init"; depuis = "./GirlFight_Init/Give"; passif = pl == 1; }
 						else if(prise && choixAnims[0] != 7){ fichier = "Grapples.cat"; racine = "mount"; depuis = "./MountIdle/Give"; passif = pl == 1; }
+						// La prise debout : Ambient.cat, LockerStuff/StuffGrap (empoignade
+						// GRAP_INIT, puis Hold_Idle, vol d'arme…).
+						else if(prise){ fichier = "Ambient.cat"; racine = "StuffGrap"; depuis = "./GrappleSuccess/Pull_In_heavy/Give"; passif = pl == 1; }
 						outil::Arbre *ar = fichier.empty() ? nil : ArbreDe(fichier);
 						int32 r = ar ? ar->Chercher(racine.c_str()) : -1;
 						if(ar && r >= 0 && (couple || filles)) r = ar->noeuds[r].parent;   // le banc qui contient Hold / Held, ou GirlFight_Init / Loop / Out
 						int32 d = r >= 0 ? (couple ? ar->Chercher(racine.c_str()) : ar->Resoudre(r, depuis)) : -1;
 						if(d >= 0){
-							pa.parArbre = true; pa.der.arbre = ar; pa.der.racine = r; pa.der.redepart = d; pa.departArbre = passif ? -1 : d;
+							// Le vol d'arme (Ambient.cat, GrappleOpps/Scripted/WeaponSteal) suppose une
+							// arme sur la cible, et ses animations (C_Player) se placent par TargetSync,
+							// non géré : on ne le visite pas.
+							if(ar->interdits.empty()) ar->interdits.push_back(ActionHash("WeaponSteal"));
+							pa.parArbre = true; pa.der.arbre = ar; pa.der.racine = r; pa.der.redepart = passif ? -1 : d; pa.der.suiveur = passif; pa.departArbre = passif ? -1 : d;
 							if(pa.points) pa.pointTenu = 0;                                   // l'arbre allume lui-même
 							static std::set<std::string> vus;
 							if(vus.insert(fichier + "/" + racine).second) printf("    arbre %s, %s : départ %s\n", fichier.c_str(), ar->Nom(r).c_str(), ar->Nom(d).c_str());
@@ -1152,8 +1158,17 @@ main(int argc, char **argv)
 		};
 		so.accrocher = [&, i](uint32 point){ animes[i].pointTenu = point; };
 		so.partenaire = [&, i](int32 noeud){
+			// Un ordre au partenaire peut en déclencher un en retour : on coupe au-delà
+			// de deux allers-retours (sinon la pile déborde).
+			static int profondeur = 0;
 			int32 j = animes[i].partenaire;
-			if(j >= 0 && j < (int32)animes.size() && animes[j].der.arbre == animes[i].der.arbre){ animes[j].arbreParti = true; animes[j].der.Entrer(noeud, Sorties((size_t)j)); }
+			if(profondeur > 2 || j < 0 || j >= (int32)animes.size() || animes[j].der.arbre != animes[i].der.arbre) return;
+			profondeur++;
+			// Le rôle passe avec l'ordre : qui l'envoie mène, qui le reçoit suit.
+			animes[i].der.suiveur = false; animes[j].der.suiveur = true;
+			if(animes[i].der.redepart < 0) animes[i].der.redepart = animes[j].der.redepart >= 0 ? animes[j].der.redepart : animes[i].der.racine;
+			animes[j].arbreParti = true; animes[j].der.Entrer(noeud, Sorties((size_t)j));
+			profondeur--;
 		};
 		so.hasard = [&, i]() -> float { return animes[i].Hasard(0, 1); };
 		return so;

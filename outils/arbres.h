@@ -70,6 +70,12 @@ public:
 		return true;
 	}
 	std::vector<bool> passif, accroche, lache;
+	// Des nœuds qu'on ne visite pas, par nom (le vol d'arme : nos piétons n'en ont pas).
+	std::vector<uint32> interdits;
+	bool Interdit(int32 i) const {
+		for(int32 k = i; k >= 0; k = noeuds[k].parent) for(uint32 h : interdits) if(noeuds[k].n->hachage == h) return true;
+		return false;
+	}
 	// Le premier nœud (en profondeur) qui porte ce nom.
 	int32 Chercher(const char *nom) const {
 		uint32 h = ActionHash(nom);
@@ -109,12 +115,13 @@ public:
 	}
 	// Les conditions du nœud, selon les règles ci-dessus.
 	bool Conditions(int32 i, float hasard) const {
+		if(Interdit(i)) return false;
 		static const uint32 kNot = ActionHash("Not"), kOu = ActionHash("OR"), kAleatoire = ActionHash("WeightedRandom");
 		// Fausses ici : elles attendent un script, le joueur, un modèle précis ou
 		// un coup reçu.
 		static const uint32 kFausses[] = { ActionHash("ActionRequest"), ActionHash("IsScriptedAmbient"), ActionHash("false"),
 			ActionHash("IsPlayer"), ActionHash("IsAuthority"), ActionHash("PedModelID"), ActionHash("Health"),
-			ActionHash("DamagePending"), ActionHash("HitTime") };
+			ActionHash("DamagePending"), ActionHash("HitTime"), ActionHash("PropTargetInteractive"), ActionHash("TargetRelativeOrientation") };
 		bool inverser = false, ou = false, une = false, toutes = true;
 		for(int32 c : noeuds[i].n->conditions){
 			uint32 t = f.TypeCondition(c);
@@ -162,6 +169,7 @@ struct Deroulement {
 	const Arbre *arbre = nil;
 	int32 racine = -1, noeud = -1;      // racine : le sous-arbre dont on ne sort pas
 	int32 redepart = -1;                 // le nœud où l'on reprend quand on revient à la racine
+	bool suiveur = false;                // ne bouge que sur ordre du partenaire : à la fin, il fige sa pose
 	float t = 0;                         // temps du nœud (s)
 	float duree = -1, fin = -1, vitesse = 1, depart = 0; int32 mode = 0;
 	float finPiste = -1;                 // champ 16 de la piste Animation : sa durée de vie dans le nœud (s), même en boucle
@@ -182,6 +190,9 @@ struct Deroulement {
 		// On ne sort pas de la racine : on y revient, et l'on reprend au départ.
 		if(!Dans(i)) i = racine;
 		if(i == racine && redepart >= 0 && profondeur < 16) i = redepart;
+		// Un suiveur qu'on envoie vers un nœud sans animation en applique les
+		// effets mais garde son animation et son nœud.
+		Deroulement avant = *this;
 		noeud = i; t = 0; animEnCours = false; duree = -1; fin = -1; vitesse = 1; depart = 0; mode = 0; finPiste = -1;
 		props.clear(); occasions.clear(); suite.clear(); transitions++;
 		trace.push_back(i); if(trace.size() > 24) trace.erase(trace.begin());
@@ -209,6 +220,22 @@ struct Deroulement {
 			else if(p.type == kAttEx) props.push_back({t12, p.Mot(28), false});
 			else if(p.type == kAtt) props.push_back({t12, p.Mot(24), false});
 			else if(p.type == kDet || p.type == kDetEx) props.push_back({t12, 0, false});
+		}
+		// Avec une animation, un Execute fait jouer au partenaire le PlayOnTarget de
+		// la feuille visée (ou du premier enfant dont les conditions passent) :
+		// Execute ./TargetOrientation met la cible en RCV/Front.
+		if(animEnCours) for(const std::string &c : sauts){
+			int32 j = arbre->Resoudre(i, c);
+			if(j < 0 || j == i || !Dans(j)) continue;
+			if(arbre->noeuds[j].n->genre == 'b')
+				for(int32 e : arbre->Enfants(j)) if(arbre->Conditions(e, s.hasard())){ j = e; break; }
+			for(const CActionTrack &p : arbre->Pistes(j))
+				if(p.type == kCible){ int32 k = arbre->Resoudre(j, arbre->Chaine(p, 32)); if(k >= 0 && s.partenaire) s.partenaire(k); }
+		}
+		if(!animEnCours && suiveur && avant.animEnCours){
+			int32 tr = transitions; std::vector<int32> tc = trace;
+			*this = avant; transitions = tr; trace = tc;
+			return;
 		}
 		// Sans animation, un Execute vers un nœud du sous-arbre est un saut.
 		if(!animEnCours) for(const std::string &c : sauts){
@@ -267,6 +294,7 @@ private:
 	// d'attente : il se rejoue ; sinon on revient au nœud jouable ancêtre le plus
 	// proche, à défaut au départ.
 	void Finir(const ArbreSorties &s){
+		if(suiveur){ suite.clear(); occasions.clear(); return; }
 		if(arbre->noeuds[noeud].n->genre == 'n' && !occasions.empty()){ Entrer(noeud, s); return; }
 		for(int32 k = arbre->noeuds[noeud].parent; k >= 0 && Dans(k); k = arbre->noeuds[k].parent)
 			if(arbre->noeuds[k].n->genre == 'n' && !arbre->passif[k]){ Entrer(k, s); return; }

@@ -134,7 +134,13 @@ programmes écrits à la main. C'est une approximation, avec ces règles :
   `Health`, `DamagePending`, `HitTime` sont fausses ; `Not` inverse la suivante ;
   `OR` : une au moins ; les autres passent ;
 - `PlayOnTarget` envoie le partenaire ; le nœud visé est passif : on n'y entre
-  que sur ordre, on n'en sort que par sa `sequence`.
+  que sur ordre, on n'en sort que par sa `sequence`. Le rôle passe avec l'ordre :
+  qui l'envoie mène, qui le reçoit suit ; un suiveur fige sa pose à la fin de
+  son animation et, envoyé vers un nœud sans animation, en applique les effets
+  sans quitter le sien. Dans un nœud animé, un `Execute` fait jouer au
+  partenaire le `PlayOnTarget` de la feuille visée (`./TargetOrientation`) ;
+- `TargetSync` (placement relatif des deux piétons) n'est pas géré : les paires
+  partagent leur origine, les décalages de bassin des animations font le reste.
 
 Pilotés par un arbre :
 
@@ -145,9 +151,10 @@ Pilotés par un arbre :
 | couple | NPC_Ambient.cat | banc de `Hold` ; le garçon part de `Hold`, la fille suit |
 | bagarre de filles | Grapples.cat | banc de `GirlFight_Init` : Init → Loop (5 à 10 s) → Out |
 | bagarre au sol | Grapples.cat | `mount`, `MountIdle/Give` : `MountOpps` choisit le coup selon la clique (`FacePunch`, `KneeDrop`, `Headbutt`, `Dismount`…) |
+| prise debout | Ambient.cat | `LockerStuff/StuffGrap`, `GrappleSuccess/Pull_In_heavy/Give` (empoignade `GRAP_INIT`), puis `Hold_Idle` (`GRAP_IDLE`) |
 
-La prise debout (`GRAP_IDLE_GV` / `_RCV`) n'est jouée par aucune piste
-Animation de Grapples.cat : elle garde sa table. `BULLY_TRACE=1` affiche les
+Le vol d'arme (`GrappleOpps/Scripted/WeaponSteal`) est écarté : il suppose une
+arme sur la cible, et ses animations (C_Player) se placent par `TargetSync`. `BULLY_TRACE=1` affiche les
 derniers nœuds traversés par chaque piéton.
 
 La visite (`outils/visite.cpp`) applique 40, 44 et 48 aux étapes de ses
