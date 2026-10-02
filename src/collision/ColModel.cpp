@@ -152,14 +152,18 @@ bool
 CColLoader::LoadCollisionFile(const uint8 *buf, uint32 size, uint8 colSlot)
 {
 	while(size > 8){
-		ColHeader h; memcpy(&h, buf, sizeof(h));
+		// L'en-tête fait 36 octets ; en fin de tampon il en reste parfois moins
+		// (bourrage de secteur) : on ne copie que ce qui existe.
+		ColHeader h; memset(&h, 0, sizeof(h)); memcpy(&h, buf, size < sizeof(h) ? size : sizeof(h));
 		if(h.ident == COL_IDENT_PATH){
+			if(h.size > size - 8) return false;
 			buf += 8 + h.size; size -= 8 + h.size;
 			continue;
 		}
 		if(h.ident != COL_IDENT_COLL && h.ident != COL_IDENT_COL2 && h.ident != COL_IDENT_COL3)
 			return size - 8 < 2048;
 		uint32 hdr = h.ident == COL_IDENT_COLL ? 32 : 36;
+		if(h.size < hdr - 8 || h.size > size - 8) return false;    // un modèle qui déborde du tampon
 		uint16 version = 0, flags = 1;
 		if(h.ident == COL_IDENT_COLL){
 			memcpy(h.name, buf + 8, 20); memcpy(&h.modelId, buf + 28, 4);
