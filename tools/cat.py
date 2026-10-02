@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Lecteur des arbres d'actions compressés (Act/Act.img, *.cat). Voir docs/cat.md.
 
-  tools/cat.py <nom.cat> [--donnees]     l'arbre, noms résolus
+  tools/cat.py <nom.cat> [--pistes]      l'arbre, noms résolus ; --pistes : les pistes de chaque nœud
   tools/cat.py --stats                   tous les fichiers : comptes vérifiés contre l'en-tête
 
 Chargeur du jeu : FUN_005fb3f0 (« CompressedActionTree::load() »), analyse
@@ -58,6 +58,9 @@ def dictionnaire():
                     mots |= set(m.decode() for m in re.findall(rb"[A-Za-z_][A-Za-z0-9_]{2,60}", a.lire(n)))
         except OSError:
             pass
+    # Les animations : « GROUPE\NOM » dans les .HXD et hxds.dat d'Anim (MAINPED.HXD…).
+    for f in glob.glob(os.path.join(JEU, "Anim", "*.HXD")) + glob.glob(os.path.join(JEU, "Anim", "hxds.dat")):
+        mots |= set(m.decode("latin-1") for m in re.findall(rb"[A-Za-z0-9_]{2,40}\\[A-Za-z0-9_ ]{1,60}", open(f, "rb").read()))
     return {hs(m): m for m in mots}
 
 
@@ -94,6 +97,36 @@ class Cat:
         v = struct.unpack_from("<I", self.b, self.h[1] + off)[0]
         return self.nom_hache(v & 0x7fffffff)
 
+    def champs(self, at, prof=0):
+        """Les attributs d'une piste, héritage compris : position -> (octets, décalage dans les données)."""
+        base = struct.unpack_from("<H", self.b, at)[0]
+        res = self.champs(at + base, prof + 1) if base and prof < 32 else {}
+        q = at + 2
+        while True:
+            w = struct.unpack_from("<H", self.b, q)[0]; q += 2
+            t = 1 << ((w >> 1) & 3)
+            res[w >> 3] = (self.b[q:q + t], q - self.h[1]); q += t
+            if not w & 1:
+                return res
+
+    def valeur(self, v, dec):
+        cite = getattr(self, "cites", {})
+        if dec in cite:
+            return repr(cite[dec])
+        if len(v) == 4:
+            x = struct.unpack("<I", v)[0]; f = struct.unpack("<f", v)[0]
+            if x > 0xffff and (x & 0x7fffffff) in self.noms:
+                return self.noms[x & 0x7fffffff]
+            if 1e-3 < abs(f) < 1e5:
+                return "%.3g" % f
+            return str(x) if x < 0x10000 else "%#x" % x
+        return v.hex()
+
+    def piste(self, off):
+        ch = self.champs(self.h[1] + off)
+        t = struct.unpack("<I", ch[0][0])[0] & 0x7fffffff if 0 in ch else 0
+        return self.nom_hache(t) + " " + ", ".join("%d=%s" % (k, self.valeur(v, d)) for k, (v, d) in sorted(ch.items()) if k)
+
     def noeud(self, p, genre, prof, sortie):
         nom, p = self.nom(p)
         conds, p = self.pointeurs(p)
@@ -103,9 +136,12 @@ class Cat:
         txt = "  " * prof + "%s %s" % (genre, nom)
         if conds:
             txt += "  si " + " ".join(self.condition(c) for c in conds)
-        if pistes:
+        if pistes and not getattr(self, "voir_pistes", False):
             txt += "  [%d piste(s)]" % len(pistes)
         sortie.append(txt)
+        if getattr(self, "voir_pistes", False):
+            for t in pistes:
+                sortie.append("  " * prof + "   · " + self.piste(t))
         return self.enfants(p, prof + 1, sortie)
 
     def enfants(self, p, prof, sortie):
@@ -155,6 +191,10 @@ def main():
         print("%d / %d fichiers décodés et vérifiés ; noms de nœuds résolus : %d / %d" % (ok, len(act.noms), resolus, total))
         return
     c = Cat(act.lire(sys.argv[1]), noms)
+    c.voir_pistes = "--pistes" in sys.argv
+    if c.voir_pistes:
+        c.renvois, _ = c.table(0x20)
+        c.cites = {d: c.chaine(v) for v, ds in c.renvois for d in ds}
     sortie, fin = c.arbre()
     print("en-tête", c.h, "fin de l'arbre %#x" % fin, c.cnt)
     print("\n".join(sortie))

@@ -98,3 +98,42 @@ CActionTreeFile::TypeCondition(int32 decalage) const
 	uint32 at = finEntete + (uint32)decalage;
 	return at + 4 <= n ? Mot(at) & 0x7fffffff : 0;
 }
+
+bool
+CActionTreeFile::Attributs(uint32 at, CActionTrack &t, int prof) const
+{
+	if(prof > 32 || at + 4 > n) return false;
+	uint16 base; memcpy(&base, b + at, 2);
+	if(base && !Attributs(at + base, t, prof + 1)) return false;   // le modèle d'abord, plus loin dans le fichier
+	uint32 q = at + 2;
+	for(;;){
+		if(q + 2 > n) return false;
+		uint16 w; memcpy(&w, b + q, 2); q += 2;
+		uint8 taille = (uint8)(1 << ((w >> 1) & 3));
+		if(q + taille > n) return false;
+		CActionAttribut a; a.position = w >> 3; a.taille = taille; memset(a.valeur, 0, 8); memcpy(a.valeur, b + q, taille); a.decalage = q - finEntete;
+		bool remplace = false;
+		for(CActionAttribut &x : t.attributs) if(x.position == a.position){ x = a; remplace = true; }
+		if(!remplace) t.attributs.push_back(a);
+		q += taille;
+		if(!(w & 1)) break;
+	}
+	return true;
+}
+
+bool
+CActionTreeFile::Piste(int32 decalage, CActionTrack &t) const
+{
+	t = CActionTrack();
+	if(!Attributs(finEntete + (uint32)decalage, t, 0)) return false;
+	t.type = t.Mot(0) & 0x7fffffff;
+	return t.type != 0;
+}
+
+std::string
+CActionTreeFile::ChaineCitee(uint32 decalage) const
+{
+	for(const CActionRenvoi &r : renvois)
+		for(uint32 d : r.decalages) if(d == decalage) return Chaine(r.valeur);
+	return std::string();
+}

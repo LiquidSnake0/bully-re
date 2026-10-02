@@ -58,8 +58,39 @@ Puis l'arbre, octet par octet, à partir du caractère `b` de la racine :
 Une condition, dans les données, commence par le hachage du nom de sa
 classe, que le moteur cherche dans un registre de fabriques
 (`FUN_0061a4f0`) : `Not`, `Or`, `ConditionGroup`, `HavePOIOfType`,
-`IsSocializing`, `pedType`, `RangeToTarget`, `WeaponModelRequest`… Les pistes
-ne commencent pas par un tel hachage ; leur contenu n'est pas encore lu.
+`IsSocializing`, `pedType`, `RangeToTarget`, `WeaponModelRequest`…
+
+## Les pistes
+
+Le nœud ne garde que des pointeurs ; la piste est créée à la demande
+(`FUN_005f6100`, emplacement 17 de la table virtuelle) et remplie par
+`FUN_005fa7e0` :
+
+- un mot de base de 16 bits ; s'il n'est pas nul, la piste hérite de celle
+  placée **base octets plus loin** dans le fichier (`ADD ECX, ESI` dans
+  l'assembleur : le modèle est copié d'abord, puis écrasé) ;
+- des attributs, chacun un mot w de 16 bits suivi de sa valeur : taille
+  `1 << ((w >> 1) & 3)` octets (1, 2, 4 ou 8), position `w >> 3` dans
+  l'objet, un autre attribut suit tant que `w & 1`.
+
+La valeur en position 0 est le type : le hachage du nom de classe de la
+piste, cherché dans le registre de fabriques (`FUN_0061a4b0`). Relevé :
+**51 001 pistes, toutes typées** (par héritage pour 36 464), 398 types, tous
+nommés : `Animation` (8 166), `Opportunity` (6 647), `Execute`, `SoundFX`,
+`Sequence`, `SetPedFlags`, `Spawn`, `DialogLine`, `Target`, `JointDriver`,
+`LocomotionAnimationNew`… Les chaînes (chemins de nœuds : `./SitDown`,
+`../../../../AIActionOpps/SpectatorOpps`) se retrouvent par la table de
+renvois : l'attribut placé au décalage cité.
+
+Une piste `Animation` porte en position 24 **`HashString("GROUPE\NOM")`**
+de l'animation (`C_PLAYER\PUNCH_SLOP_1` = 0x6158a6b0 : le groupe est le
+fichier `.agr`), en 28 un masque d'os (`UpperBody_All`, `UBO_Arms_Hd_Sp`…),
+puis des réglages (fondus, vitesse, boucle). Les noms « GROUPE\NOM » sont
+écrits en clair dans `Anim/MAINPED.HXD` et les autres `.HXD` (2 889 dans
+MAINPED, chacun suivi de son hachage). Ce qui reste : passer du nom à
+l'indice de l'animation dans le `.agr`, qui ne porte aucun nom ; le lien est
+dans les `.HXD` (arbres de mouvements : drapeaux, durées, masques), pas
+encore décodés.
 
 Relevé : les 479 fichiers se lisent en entier, l'arbre finit exactement à
 l'en-tête +0xc et les quatre comptes concordent partout (7 552 banques,
@@ -74,10 +105,16 @@ La racine `POIPoint` (si le piéton n'a ni objectif, ni vélo, ni arme…)
 contient `Scenario` (`ScenarioSeek`, `ScenarioDialog`, `getGift`…), `Hangout`,
 `sitting` (si `HavePOIOfType`, `Not IsSocializing` ; feuilles `SitDown`,
 `ClearPOI`) et `spectator` : c'est là que le jeu choisit ce que fait un
-piéton arrivé à un point d'intérêt (docs/trigger.md). Les animations
-jouées sont dans les pistes, encore à décoder.
+piéton arrivé à un point d'intérêt (docs/trigger.md). Avec `--pistes` :
+le nœud jouable sous `sitting` enchaîne la séquence `./SitDown`, `SitDown`
+joue `AIActionOpps/SitOpps` avec des opportunités de réaction
+(`Reactions/HitReact`, `Social_System`) ; `spectator` joue
+`AIActionOpps/SpectatorOpps` et peut basculer vers `./StopSpectacleEarly` ou
+`FleeObjective`.
 
 Code : `src/core/ActionTree` (CActionTreeFile, ActionHash) ; test :
-`tests/test_actiontree` ; lecture : `tools/cat.py <nom.cat>` (arbre aux noms
-résolus) et `tools/cat.py --stats`. Script Ghidra :
-`bully-test/scripts/ExportArbre.java` (une fonction et ses appelées).
+`tests/test_actiontree` (les 479 fichiers, les 51 001 pistes) ; lecture :
+`tools/cat.py <nom.cat> [--pistes]` (arbre aux noms résolus) et
+`tools/cat.py --stats`. Scripts Ghidra :
+`bully-test/scripts/ExportArbre.java` (une fonction et ses appelées),
+`ExportAsm.java` (les instructions d'une fonction).
