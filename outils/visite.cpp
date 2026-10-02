@@ -573,6 +573,9 @@ main(int argc, char **argv)
 		outil::Anime *tenu = nil; const CMxdModele *points = nil; uint32 pointTenu = 0;
 		float Hasard(float a, float b){ hasard = hasard * 1103515245u + 12345u; return a + (b - a) * ((hasard >> 8) & 0xffff) / 65535.0f; }
 	};
+	// Le fondu par défaut du jeu : le second flottant de chaque animation des .HXD
+	// (CHxdAnim::fondu, 0,3 s presque partout), pris quand l'arbre d'actions en
+	// demande un négatif (FUN_006b6570, docs/hxd.md).
 	const float FONDU = 0.3f;
 	std::vector<PietonAnime> animes;
 	Morceau *mPietons = nil;

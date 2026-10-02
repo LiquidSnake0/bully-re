@@ -19,7 +19,13 @@
 
 struct CHxdAnim {
 	std::string nom;                   // « GROUPE\NOM »
-	float duree = 0, f1 = 0;           // duree : proche de celle du .agr sans lui être égale ; f1 : 0,3 le plus souvent
+	// En mémoire, un enregistrement de 0x40 octets (FUN_006b2d90) : durée à +0xc,
+	// fondu à +0x10, hachage +0x14, drapeaux +0x18, taille +0x1c, groupe +0x20.
+	// duree : le temps de départ d'une lecture à vitesse négative (FUN_006b6570),
+	// pas la durée de jeu, qui reste celle du .agr (docs/hxd.md).
+	// fondu : le fondu par défaut (s), pris quand l'appelant en demande un négatif ;
+	// 0,3 presque partout.
+	float duree = 0, fondu = 0;
 	uint32 hachage = 0;                // HashString(nom), ce que citent les pistes Animation (docs/cat.md)
 	uint32 drapeaux = 0;
 	uint32 taille = 0;                 // taille des données dans le .agr, plus 4
@@ -41,6 +47,7 @@ public:
 	uint32 lus = 0;                    // octets consommés
 
 	bool Load(const uint8 *buf, uint32 n);
+	// Par hachage, comme FUN_006b1c00 (qui accepte aussi un nom, haché à la volée).
 	const CHxdAnim *Chercher(uint32 hachage) const {
 		for(const CHxdAnim &a : anims) if(a.hachage == hachage) return &a;
 		return nil;

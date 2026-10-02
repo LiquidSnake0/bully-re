@@ -34,7 +34,7 @@ CHxdFile::Load(const uint8 *buf, uint32 n)
 	k = r.U32();
 	for(uint32 i = 0; i < k && r.ok; i++){
 		CHxdAnim a;
-		a.duree = r.F32(); a.f1 = r.F32(); a.nom = r.Nom(0x40);
+		a.duree = r.F32(); a.fondu = r.F32(); a.nom = r.Nom(0x40);
 		a.hachage = r.U32(); a.drapeaux = r.U32(); a.taille = r.U32(); a.groupe = r.U32();
 		a.nEvenements = r.U16();
 		for(int32 e = 0; e < a.nEvenements && r.ok; e++){
