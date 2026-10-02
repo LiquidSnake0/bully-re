@@ -23,6 +23,13 @@ posséder le jeu (Steam ou disque).
   `Condition*`, `*Track`, `*Objective`) qui pilote les personnages et les
   activités.
 
+## Avancement
+
+**1,9 % du code de `bully.exe` recréé** (276 fonctions sur 20 819), 4,2 % compris
+(code, documentation, noms). Le détail par sous-système est dans
+[docs/avancement.md](docs/avancement.md), régénéré à chaque commit par
+`tools/avancement.py`.
+
 ## Ce qui est recréé et vérifié sur les vrais fichiers
 
 Chaque chargeur de données a un test hôte (`tests/construire_tests.sh`, puis

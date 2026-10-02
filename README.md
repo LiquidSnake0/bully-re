@@ -97,6 +97,10 @@ outside the repository.
 
 ## Status
 
+**1.9 % of `bully.exe`'s code recreated** (276 of 20,819 functions), 4.2 %
+understood (code, docs, names). Breakdown in [docs/avancement.md](docs/avancement.md),
+regenerated on every commit by `tools/avancement.py`.
+
 Early. Everything that loads from disk is done and tested. The first visible
 step is there: `outils/nif2obj` exports any model with its textures to OBJ,
 following the game's own chain (model → texture dictionary → NIF node tree →
