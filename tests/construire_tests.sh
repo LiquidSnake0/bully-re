@@ -41,8 +41,9 @@ else
 fi
 g++ $FLAGS tests/test_trigger.cpp src/core/TriggerFile.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_trigger
 g++ $FLAGS tests/test_actiontree.cpp src/core/ActionTree.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_actiontree
+g++ $FLAGS tests/test_hxd.cpp src/anim/Hxd.cpp src/core/ActionTree.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_hxd
 g++ $FLAGS tests/test_horloge.cpp src/core/TriggerFile.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_horloge
 g++ $FLAGS tests/test_timecycle.cpp src/render/TimeCycle.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_timecycle
 # test_world ne lit aucun fichier du jeu : il vérifie l'arithmétique de la grille et les listes.
 g++ $FLAGS tests/test_world.cpp src/core/World.cpp src/core/Lists.cpp src/entities/Physical.cpp src/entities/Entity.cpp tests/hote/Entite.cpp -o build/tests/test_world
-echo "tests prêts : test_surface, test_pedstats, test_carcols, test_handling, test_objectdata, test_cdstream, test_ide, test_col, test_ipl, test_nif, test_nft, test_texture, test_transform, test_placement, test_camera, test_marche, test_skin, test_agr, test_trigger, test_actiontree, test_horloge, test_timecycle, test_world ; outils : build/outils/nif2obj, build/outils/rendu, build/outils/scene, build/outils/carte, build/outils/visite"
+echo "tests prêts : test_surface, test_pedstats, test_carcols, test_handling, test_objectdata, test_cdstream, test_ide, test_col, test_ipl, test_nif, test_nft, test_texture, test_transform, test_placement, test_camera, test_marche, test_skin, test_agr, test_trigger, test_actiontree, test_hxd, test_horloge, test_timecycle, test_world ; outils : build/outils/nif2obj, build/outils/rendu, build/outils/scene, build/outils/carte, build/outils/visite"

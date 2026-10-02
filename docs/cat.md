@@ -87,10 +87,8 @@ de l'animation (`C_PLAYER\PUNCH_SLOP_1` = 0x6158a6b0 : le groupe est le
 fichier `.agr`), en 28 un masque d'os (`UpperBody_All`, `UBO_Arms_Hd_Sp`…),
 puis des réglages (fondus, vitesse, boucle). Les noms « GROUPE\NOM » sont
 écrits en clair dans `Anim/MAINPED.HXD` et les autres `.HXD` (2 889 dans
-MAINPED, chacun suivi de son hachage). Ce qui reste : passer du nom à
-l'indice de l'animation dans le `.agr`, qui ne porte aucun nom ; le lien est
-dans les `.HXD` (arbres de mouvements : drapeaux, durées, masques), pas
-encore décodés.
+MAINPED, chacun suivi de son hachage). Le format des `.HXD` est dans docs/hxd.md ;
+le passage du nom à l'indice de l'animation dans le `.agr` y reste ouvert.
 
 Relevé : les 479 fichiers se lisent en entier, l'arbre finit exactement à
 l'en-tête +0xc et les quatre comptes concordent partout (7 552 banques,
