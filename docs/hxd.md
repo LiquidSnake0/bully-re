@@ -63,13 +63,22 @@ NPC_Love.agr, `RAT_PED\RAT_SCURRY` la n° 0 de RAT_PED.agr.
 
 Le premier flottant d'un enregistrement n'est pas toujours la durée du
 `.agr` : sur les 3 365 animations de MAINPED dont le `.agr` se lit, 2 868 ont
-la même durée à 2 % près, les autres de 0,05 à 2,9 fois. C'est la **durée de
-jeu** : `NPC_GENERIC\SMK_WALL_LIGHT` dure 3,0 s dans POI_Smoking.agr et 10 s
-ici, et les instants de ses pistes `PropAttachEx` (2,5, 3,33, 7,67 s) ne
-tombent sur les gestes (les mains qui se rejoignent, la cigarette à la
-bouche, la main droite à la bouche) qu'en temps HXD : l'animation s'étire
-sur la durée du HXD (docs/mxd.md). Les poses d'une seule image (0,033 s dans
-le `.agr`) sont tenues la durée du HXD (`F_GIRLS\FM_SLEEP_RIGHTB` : 1 s).
+la même durée à 2 % près, les autres de 0,05 à 2,9 fois. Ce n'est **pas** la
+durée de jeu en général :
+
+- 172 hachages ont plusieurs enregistrements (copies dans des groupes de
+  mission), aux durées parfois différentes pour le même `.agr` :
+  `C_PLAYER\GEN_GIVE` 4,0 s dans C_Player, 1,57 dans 2_S05_CooksCrush ;
+- le champ 16 des pistes `Animation` (une coupure), quand il vaut une des
+  deux durées, vaut celle du `.agr` (`C_PLAYER\IDLE` coupée à 2,00 : `.agr`
+  2,00, HXD 1,80 ; `WEAPON\PICKUP_SLINGSHOT` à 2,98 : 3,00 contre 4,33),
+  jamais celle du HXD ; `PLAYER_TALKING1` est coupée à 4,0 s, ce qui n'a de
+  sens que sur ses 5,43 s de `.agr` (3,33 dans le HXD).
+
+Exception : `NPC_GENERIC\SMK_WALL_LIGHT` et `SMK_STND_LIGHT` durent 3,0 s
+dans POI_Smoking.agr et 10 s ici, et les instants de leurs pistes
+`PropAttachEx` (2,5, 3,33, 7,67 s) ne tombent sur les gestes qu'en temps HXD
+(docs/mxd.md) : la visite les étire, et elles seules.
 
 Code : `src/anim/Hxd` (CHxdFile, `Indice` : hachage → groupe et indice) ; test : `tests/test_hxd` ; lecture :
 `tools/hxd.py <fichier.HXD>`.

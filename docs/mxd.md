@@ -50,12 +50,13 @@ docs/cat.md). L'objet est un modèle rigide de World.img (`Cigarette.nif` :
 9,5 cm le long de son axe z, centré) placé à
 `place du piéton ∘ monde(os) ∘ (rotation, position du point)`.
 
-Les instants de ces pistes sont en temps HXD : `SMK_WALL_LIGHT` dure 3 s
-dans son `.agr` et 10 s dans MAINPED.HXD, et c'est sur 10 s que la main
-gauche rejoint la droite (2,5), que la cigarette arrive à la bouche (3,33,
-la main gauche à 12 cm de la bouche) et que la main droite la reprend (7,67,
-à 5 cm). La visite joue donc chaque étape d'un programme sur sa durée du HXD
-(vitesse = durée `.agr` / durée HXD).
+Pour les deux allumages (`SMK_WALL_LIGHT`, `SMK_STND_LIGHT`), les instants
+de ces pistes sont en temps HXD : l'animation dure 3 s dans son `.agr` et
+10 s dans MAINPED.HXD, et c'est sur 10 s que la main gauche rejoint la droite
+(2,5), que la cigarette arrive à la bouche (3,33, la main gauche à 12 cm de
+la bouche) et que la main droite la reprend (7,67, à 5 cm). La visite étire
+donc ces deux étapes (vitesse 0,3). Ce n'est pas une règle générale
+(docs/hxd.md) : ailleurs, l'animation garde la durée de son `.agr`.
 
 Code : `src/anim/Mxd` (CMxdFile, `Point(hachage)`) ; test :
 `tests/test_mxd` (les 358 + 237 entrées lues à l'octet près, les 3 590

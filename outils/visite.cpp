@@ -560,9 +560,10 @@ main(int argc, char **argv)
 		// Chaque étape se joue entre fois[0] et fois[1] fois ; la suivante entre en
 		// fondu FONDU secondes avant la fin de la dernière, pour que l'animation
 		// sortante ne reparte pas en boucle pendant le fondu.
-		// Une étape se joue sur sa durée du HXD : SMK_WALL_LIGHT dure 3 s dans
-		// son .agr et 10 s dans MAINPED.HXD, l'échelle de ses pistes PropAttachEx
-		// (vitesse = durée .agr / durée HXD, docs/mxd.md).
+		// `vitesse` : 1 en général ; les deux SMK_*_LIGHT se jouent sur leur durée
+		// du HXD (10 s, 3 dans le .agr), seule échelle où leurs pistes PropAttachEx
+		// tombent sur les gestes (docs/mxd.md). Ce n'est pas la règle générale :
+		// les coupures des pistes Animation suivent la durée du .agr (docs/hxd.md).
 		// `accroches` : les instants (s, temps HXD) où l'objet tenu change de
 		// point d'attache (le hachage du point, 0 : lâché).
 		struct Accroche { float t; uint32 point; };
@@ -925,7 +926,7 @@ main(int argc, char **argv)
 					if(ga && !prog.empty()){
 						for(auto &e : prog) if(e[0] < (int)ga->size() && (*ga)[e[0]].decodee){
 							const AgrAnim &x = (*ga)[e[0]];
-							pa.programme.push_back({ &x, {e[1], e[2]}, x.duree / DureeDeJeu(groupe, e[0], x), {} });
+							pa.programme.push_back({ &x, {e[1], e[2]}, 1, {} });
 						}
 						// La cigarette (PropAttachEx / PropDetachEx, temps HXD) : prise par la main
 						// gauche, portée à la bouche, passée à la main droite pendant LIGHT ;
@@ -933,6 +934,7 @@ main(int argc, char **argv)
 						// StandingSmoke (LIGHT) et 3_01.cat (STUB).
 						const uint32 G = CMxdFile::Hachage("LeftCig"), B = CMxdFile::Hachage("MouthCig"), D = CMxdFile::Hachage("RightCig");
 						bool fume = groupe == "POI_Smoking" && pa.programme.size() == prog.size();
+						if(fume) pa.programme[0].vitesse = pa.programme[0].a->duree / DureeDeJeu(groupe, prog[0][0], *pa.programme[0].a);
 						if(fume && pt.type == "Wall"){ pa.programme[0].accroches = { {2.5f, G}, {3.33f, B}, {7.67f, D} }; pa.programme[4].accroches = { {1.6f, 0} }; }
 						else if(fume){ pa.programme[0].accroches = { {2.67f, G}, {3.2f, B}, {7.67f, D} }; pa.programme[2].accroches = { {0, 0} }; }
 						pa.points = fume ? mxd.Chercher(choix->model) : nil;
