@@ -130,22 +130,28 @@ animations a le même cap.) La première lecture, « 0 vers +y », reposait sur
 une aboyeuse du carnaval jugée à l'œil : elle était fausse. Les actions de
 trajet suivent une autre règle (voir plus haut).
 
-**L'animation selon le type** : l'arbre d'actions `Act/AI_POI.cat` se lit
-(docs/cat.md) : `sitting`, `Hangout`, `spectator`, `Scenario`… mais les
-animations sont dans ses pistes, pas encore décodées. Les correspondances
-viennent des noms de blocs et de la galerie :
+**L'animation selon le type** : les groupes et les numéros viennent
+maintenant du jeu. Les noms sont ceux des `.HXD` (docs/hxd.md), et les
+arbres d'actions disent qui s'en sert (`tools/cat.py --pistes`, docs/cat.md) :
 
-| Type (blocs) | Groupe .agr | Animations |
-|---|---|---|
-| Sitting_Spot (« Sitting ») | Sitting_Boys | 2-6, assis sur un banc (bassin 0,60 m) |
-| Wall (« Smoking », « Smokers ») | POI_Smoking | 0, 2-4, fume adossé (bassin reculé de 18 cm) |
-| F_ClassSmokers | POI_Smoking | 5-8, fume debout |
-| Spectator | NPC_Spectator | 0-2 |
-| Hang_Out | Hang_Talking | les boucles (0-7, 9, 10) |
-| Couple (« Kissing ») | NPC_Love | 5 et 6, deux piétons face à face |
-| Brawl (« Brawls ») | Grap | une prise à deux, en alternance : 7 + 6 (l'un empoigne l'autre debout), 25 + 24 (à califourchon sur l'autre au sol), 45 + 24 (coups portés à califourchon) |
-| Harassment | NPC_AggroTaunt | 1 pour l'agresseur, la victime (autre clique, ni autorité ni citadin) à l'attente, à 1 m |
-| le reste | IDLE_* | l'attente de la clique |
+| Type (blocs) | Groupe .agr | Animations (nom dans le jeu) | Arbre qui les joue |
+|---|---|---|---|
+| Sitting_Spot (« Sitting ») | Sitting_Boys | 2-6 : SIT_LAUGH / SIT_SMOKE / SIT_TALK_NPC1-3 `_BENCH` | Ambient/Sitting_Down/SitHigh |
+| Wall (« Smoking ») | POI_Smoking | 3, 4 : SMK_WALL_SMKA / SMKB (2 SMK_WALL_LIGHT et 0 SMK_WALL_STUB en entrée et sortie) | Ambient/scripted/Wall_Smoke |
+| F_ClassSmokers | POI_Smoking | 7 : SMK_STND_SMKB | missions 3_01, 3_05 |
+| Spectator | NPC_Spectator | 0-2 : GEN_IMPRESSED03 / 01 / 02 | Ambient/Spectator |
+| Hang_Out | Hang_Talking | 0-9 : TALK, LISTEN, AMB_TALKING, AMB_WEIGHTSHIFT (10 : REAC_GOIN_DWN, une réaction) | |
+| Couple (« Kissing ») | NPC_Love | 5 KISS_LOOP_B pour le garçon, 6 KISS_LOOP_G pour la fille | |
+| Brawl | Grap | 7 + 6 GRAP_IDLE_GV / _RCV, 25 + 24 GRAP_MOUNT_IDLE_GV / _RCV, 45 + 24 GRAP_MOUNT_HIT_F | |
+| Harassment | NPC_AggroTaunt | 1 REAC_BRING_IT (0 SLIT_THROAT, 2 COMEON, 3 DONTMESS, 5 IM_HERE) | |
+| le reste | IDLE_* | l'attente de la clique | |
+
+Les déductions faites à l'œil avant de lire les arbres tenaient. Deux
+corrections : pour fumer, j'avais mélangé dans la boucle l'allumage et le
+mégot écrasé (LIGHT, STUB) ; pour le couple, B et G désignent le garçon et la
+fille, l'animation se choisit selon le genre du piéton. `Gfight` est bien le
+combat de filles (GFIGHT_CYC_GV / _RVC, n° 1 + 2) ; il n'est pas encore
+utilisé.
 
 Autres poses relevées : Sitting_Boys 1 et 7-9 assis par terre jambes
 tendues, 0 la transition debout → assis ; POI_Gen 0-1 assis bas, 8-14 en

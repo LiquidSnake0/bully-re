@@ -774,12 +774,16 @@ main(int argc, char **argv)
 				// galerie (--galerie), à l'œil. Toutes ces animations ont le bassin
 				// debout à 0,86 m : il compte en absolu (Anime::bassinRef).
 				std::string groupe; std::vector<int> choixAnims; bool couple = false;
-				if(pt.type == "Sitting_Spot"){ groupe = "Sitting_Boys"; choixAnims = {2, 3, 4, 5, 6}; }          // assis sur un banc
-				else if(pt.nom == "F_ClassSmokers"){ groupe = "POI_Smoking"; choixAnims = {5, 6, 7, 8}; }      // fume debout
-				else if(pt.type == "Wall"){ groupe = "POI_Smoking"; choixAnims = {0, 2, 3, 4}; }              // fume adossé au mur
-				else if(pt.type == "Spectator"){ groupe = "NPC_Spectator"; choixAnims = {0, 1, 2}; }
-				else if(pt.type == "Hang_Out"){ groupe = "Hang_Talking"; choixAnims = {0, 1, 2, 3, 4, 5, 6, 7, 9, 10}; }
-				else if(pt.type == "Couple"){ groupe = "NPC_Love"; choixAnims = {5, 6}; couple = true; }       // l'un en face de l'autre
+				// Les noms viennent des .HXD et les usages des arbres d'actions (docs/hxd.md,
+				// docs/cat.md : tools/cat.py --pistes) : Ambient/Sitting_Down/SitHigh,
+				// Ambient/scripted/Wall_Smoke, Ambient/Spectator… Seules les boucles servent ici
+				// (pas l'entrée ni la sortie : SMK_WALL_LIGHT, SMK_WALL_STUB…).
+				if(pt.type == "Sitting_Spot"){ groupe = "Sitting_Boys"; choixAnims = {2, 3, 4, 5, 6}; }          // SIT_LAUGH / SIT_SMOKE / SIT_TALK_NPC1-3 _BENCH
+				else if(pt.nom == "F_ClassSmokers"){ groupe = "POI_Smoking"; choixAnims = {7}; }              // SMK_STND_SMKB, fume debout
+				else if(pt.type == "Wall"){ groupe = "POI_Smoking"; choixAnims = {3, 4}; }                    // SMK_WALL_SMKA / SMKB, fume adossé
+				else if(pt.type == "Spectator"){ groupe = "NPC_Spectator"; choixAnims = {0, 1, 2}; }          // GEN_IMPRESSED03 / 01 / 02
+				else if(pt.type == "Hang_Out"){ groupe = "Hang_Talking"; choixAnims = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}; }   // TALK, LISTEN, AMB_TALKING, AMB_WEIGHTSHIFT
+				else if(pt.type == "Couple"){ groupe = "NPC_Love"; choixAnims = {5, 6}; couple = true; }       // KISS_LOOP_B (garçon) / KISS_LOOP_G (fille)
 				// Deux piétons. Une bagarre : une prise du groupe Grap, jouée à deux depuis la
 				// même origine et la même orientation (les décalages de bassin des deux
 				// animations placent l'un par rapport à l'autre) ; identifiées à l'image
@@ -789,10 +793,11 @@ main(int argc, char **argv)
 				// (NPC_AggroTaunt), la victime, d'une autre clique, reste à l'attente (-1).
 				bool duo = false, harcelement = false, prise = false; float ecartDuo = 0;
 				if(pt.type == "Brawl"){
+					// GRAP_IDLE_GV + _RCV, GRAP_MOUNT_IDLE_GV + _RCV, GRAP_MOUNT_HIT_F + MOUNT_IDLE_RCV.
 					static const int paires[3][2] = { {7, 6}, {25, 24}, {45, 24} };
 					groupe = "Grap"; choixAnims = { paires[k % 3][0], paires[k % 3][1] }; duo = prise = true;
 				}
-				else if(pt.type == "Harassment"){ groupe = "NPC_AggroTaunt"; choixAnims = {1, -1}; duo = harcelement = true; ecartDuo = 1.0f; }
+				else if(pt.type == "Harassment"){ groupe = "NPC_AggroTaunt"; choixAnims = {1, -1}; duo = harcelement = true; ecartDuo = 1.0f; }   // REAC_BRING_IT
 				const std::vector<AgrAnim> *ga = nil;
 				if(!groupe.empty()){
 					if(!groupes.count(groupe)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, groupe + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); } groupes[groupe] = v; }
@@ -843,6 +848,7 @@ main(int argc, char **argv)
 					const AgrAnim *att = nil; int n = -1;
 					if(ga){
 						n = couple || duo ? choixAnims[pl] : choixAnims[k % choixAnims.size()];
+						if(couple) n = choix->female ? 6 : 5;     // _G pour la fille, _B pour le garçon
 						if(n >= 0 && n < (int)ga->size() && (*ga)[n].decodee){ att = &(*ga)[n]; an->bassinRef = 0.86f; }
 					}
 					if(!att){ att = Attente(*choix); n = -1; }
