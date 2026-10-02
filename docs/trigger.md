@@ -142,7 +142,7 @@ viennent des noms de blocs et de la galerie :
 | Spectator | NPC_Spectator | 0-2 |
 | Hang_Out | Hang_Talking | les boucles (0-7, 9, 10) |
 | Couple (« Kissing ») | NPC_Love | 5 et 6, deux piétons face à face |
-| Brawl (« Brawls ») | NPC_AggroTaunt | 0 et 3, deux piétons de la clique face à face à 1,2 m (ils se provoquent) |
+| Brawl (« Brawls ») | Grap | une prise à deux, en alternance : 7 + 6 (l'un empoigne l'autre debout), 25 + 24 (à califourchon sur l'autre au sol), 45 + 24 (coups portés à califourchon) |
 | Harassment | NPC_AggroTaunt | 1 pour l'agresseur, la victime (autre clique, ni autorité ni citadin) à l'attente, à 1 m |
 | le reste | IDLE_* | l'attente de la clique |
 
@@ -164,16 +164,20 @@ mur ; un couple enlacé face à face ; un fumeur dos au mur, mais à un mètre d
 lui plutôt qu'appuyé. `--galerie groupe[:réf][@a-b]` aligne les animations
 d'un groupe devant la caméra, une par piéton, pour les reconnaître ;
 `outils/sonde_poi.cpp` (non construit) mesure durée, boucle, bassin et cap.
-Bagarre et harcèlement ne montrent que le face-à-face : les coups eux-mêmes
-viennent sans doute de `Grap` (59 animations d'empoignade, bassins décalés
-par paires) ou de `Gfight`, calé sur un bassin debout à 1,06-1,11 m comme les
-F_Girls (un combat de filles, probablement) ; ni l'un ni l'autre n'est encore
-identifié. Vérifié à l'image en centre-ville : les dropouts de « Brawls »
-(542, −60) face à face, et l'agresseur de « StudentHarassment » (537, −47,5)
-devant un nerd.
+**Les prises (`Grap`, 59 animations)** se jouent à deux : les deux piétons
+sont posés à la même origine, avec la même orientation, et ce sont les
+décalages de bassin des deux animations qui les placent l'un par rapport à
+l'autre (le tenu du n° 6 est 0,96 m devant, tourné à −116°). Les paires se
+reconnaissent à leur durée commune ; identifiées à l'image avec
+`visite --paire Grap:a,b` : 7 + 6, 25 + 24, 45 + 24 (et sans doute 43, 44, 46
++ 24, d'autres coups à califourchon). `Gfight` est calé sur un bassin debout
+à 1,06-1,11 m comme les F_Girls : probablement le combat de filles, non
+utilisé. Vérifié en centre-ville : les dropouts de « Brawls » (542, −60) au
+sol l'un sur l'autre ; l'agresseur de « StudentHarassment » (537, −47,5) face
+à un nerd.
 
-Restent : Back_Alley et School_Grounds (à l'attente), les coups des
-bagarres, et le décodage des arbres d'actions.
+Restent : Back_Alley et School_Grounds (à l'attente), les autres paires de
+Grap (transitions, projections), et le décodage des arbres d'actions.
 
 ## La section `pois` des .ipb
 

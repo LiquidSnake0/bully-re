@@ -3,7 +3,7 @@
 //                                          [--image sortie.ppm] [--banc n] [--promenade n]
 //                                          [--monde] [--rayon m] [--survol n] [--pietons n] [--bras]
 //                                          [--fige] [--attente] [--temps s] [--anim groupe:n] [--sans-objets]
-//                                          [--vue x y z lacet tangage] [--patrouilles n] [--poi n] [--galerie groupe[:réf][@a-b]] [--modele m]
+//                                          [--vue x y z lacet tangage] [--patrouilles n] [--poi n] [--galerie groupe[:réf][@a-b]] [--paire groupe:a,b[:réf]] [--modele m]
 //                                          [--population auto|jour|classe|nuit|couvrefeu] [--heure HH:MM]
 //                                          [--saison automne|hiver|ete|printemps] [--meteo n] [--sans-ciel]
 //
@@ -317,7 +317,7 @@ int
 main(int argc, char **argv)
 {
 	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--marche] [--image sortie.ppm] [--banc n] [--promenade n] [--monde] [--rayon m]\n"); return 2; }
-	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0, patrouilles = 0, nPoi = 0, nGalerie = 0, moment = -1; CHorloge heureJeu; std::string saison = "automne"; int meteo = 0; bool sansCiel = false; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee, galerie, modeleGalerie; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
+	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0, patrouilles = 0, nPoi = 0, nGalerie = 0, moment = -1; CHorloge heureJeu; std::string saison = "automne"; int meteo = 0; bool sansCiel = false; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee, galerie, modeleGalerie, paire; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
 	for(int i = 2; i < argc; i++){
 		if(strcmp(argv[i], "--image") == 0 && i + 1 < argc) image = argv[++i];
 		else if(strcmp(argv[i], "--banc") == 0 && i + 1 < argc) banc = atoi(argv[++i]);
@@ -331,6 +331,7 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--poi") == 0 && i + 1 < argc) nPoi = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--galerie") == 0 && i + 1 < argc){ galerie = argv[++i]; nGalerie = 1; }
 		else if(strcmp(argv[i], "--modele") == 0 && i + 1 < argc) modeleGalerie = argv[++i];
+		else if(strcmp(argv[i], "--paire") == 0 && i + 1 < argc){ paire = argv[++i]; nGalerie = 1; }
 		else if(strcmp(argv[i], "--saison") == 0 && i + 1 < argc) saison = argv[++i];
 		else if(strcmp(argv[i], "--meteo") == 0 && i + 1 < argc) meteo = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--sans-ciel") == 0) sansCiel = true;
@@ -633,7 +634,34 @@ main(int argc, char **argv)
 		// droite. Les .agr ne nomment pas leurs animations : c'est l'œil qui dit
 		// laquelle est assise, adossée, etc. « --galerie groupe[:réf][@a-b] », la
 		// référence du bassin debout valant 0,86 m par défaut.
-		if(nGalerie > 0){
+		// Une paire : deux animations jouées ensemble (une prise : celui qui tient,
+		// celui qui est tenu). Les deux piétons sont posés à la même origine, avec
+		// la même orientation, à 5 m devant la caméra et tournés de côté ; ce sont
+		// les décalages de bassin des animations qui les placent l'un par rapport à
+		// l'autre. « --paire groupe:a,b[:réf] ».
+		if(!paire.empty()){
+			std::string g = paire.substr(0, paire.find(':')); int pa1 = 0, pa2 = 0; float ref = 0.86f;
+			sscanf(paire.c_str() + g.size() + 1, "%d,%d:%f", &pa1, &pa2, &ref);
+			if(!groupes.count(g)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); } groupes[g] = v; }
+			const std::vector<AgrAnim> &ga = groupes[g];
+			float x = cam.pos.x + 5 * cosf(cam.yaw), y = cam.pos.y + 5 * sinf(cam.yaw), z;
+			if(!sol.Sol(x, y, cam.pos.z + 2.0f, 50.0f, &z)) z = cam.pos.z - 1.6f;
+			float cap = cam.yaw + PI / 2, lacetP = -(cap - PI / 2);
+			float q[4] = { 0, 0, sinf(lacetP / 2), cosf(lacetP / 2) };
+			int qui = 0;
+			for(int n : { pa1, pa2 }){
+				if(n < 0 || n >= (int)ga.size() || !ga[n].decodee) continue;
+				const CPedIdeEntry *choix = nil;
+				for(const CPedIdeEntry *e : liste) if(strcasecmp(e->type, qui ? "NERD" : "GREASER") == 0 && e->unique >= 0 && !e->female){ choix = e; break; }
+				outil::Anime *an = new outil::Anime;
+				if(!choix || !m->s->AjouterModele(a, choix->model, NifFromPlacement(CVector(x, y, z), CVector(1, 1, 1), q), false, an)){ delete an; continue; }
+				an->bassinRef = ref;
+				PietonAnime pa; pa.an = an; pa.anim = &ga[n]; pa.att = &ga[n]; pa.enAttente = true; pa.cap = cap; pa.corps.pos = CVector(x, y, z);
+				animes.push_back(pa); poses++; qui++;
+				printf("  paire %s n° %d : %.2f s, %s\n", g.c_str(), n, ga[n].duree, choix->model);
+			}
+		}
+		if(nGalerie > 0 && paire.empty()){
 			// « groupe[:réf][@a-b] » : la plage a-b restreint aux animations a à b.
 			size_t arob = galerie.find('@'); int de = 0, a2 = 1 << 30;
 			if(arob != std::string::npos){ sscanf(galerie.c_str() + arob + 1, "%d-%d", &de, &a2); galerie = galerie.substr(0, arob); }
@@ -752,12 +780,18 @@ main(int argc, char **argv)
 				else if(pt.type == "Spectator"){ groupe = "NPC_Spectator"; choixAnims = {0, 1, 2}; }
 				else if(pt.type == "Hang_Out"){ groupe = "Hang_Talking"; choixAnims = {0, 1, 2, 3, 4, 5, 6, 7, 9, 10}; }
 				else if(pt.type == "Couple"){ groupe = "NPC_Love"; choixAnims = {5, 6}; couple = true; }       // l'un en face de l'autre
-				// Deux piétons face à face à `ecartDuo` mètres : une bagarre qui se prépare
-				// (les deux se provoquent, NPC_AggroTaunt) ou un harcèlement (l'agresseur
-				// provoque, la victime, d'une autre clique, reste à l'attente : -1). Les
-				// coups eux-mêmes (Grap, Gfight) ne sont pas encore identifiés.
-				bool duo = false, harcelement = false; float ecartDuo = 0;
-				if(pt.type == "Brawl"){ groupe = "NPC_AggroTaunt"; choixAnims = {0, 3}; duo = true; ecartDuo = 1.2f; }
+				// Deux piétons. Une bagarre : une prise du groupe Grap, jouée à deux depuis la
+				// même origine et la même orientation (les décalages de bassin des deux
+				// animations placent l'un par rapport à l'autre) ; identifiées à l'image
+				// avec --paire : 7 + 6 l'un empoigne l'autre debout, 25 + 24 à califourchon
+				// sur l'autre au sol, 45 + 24 les coups portés à califourchon. Un
+				// harcèlement : face à face à `ecartDuo` mètres, l'agresseur provoque
+				// (NPC_AggroTaunt), la victime, d'une autre clique, reste à l'attente (-1).
+				bool duo = false, harcelement = false, prise = false; float ecartDuo = 0;
+				if(pt.type == "Brawl"){
+					static const int paires[3][2] = { {7, 6}, {25, 24}, {45, 24} };
+					groupe = "Grap"; choixAnims = { paires[k % 3][0], paires[k % 3][1] }; duo = prise = true;
+				}
 				else if(pt.type == "Harassment"){ groupe = "NPC_AggroTaunt"; choixAnims = {1, -1}; duo = harcelement = true; ecartDuo = 1.0f; }
 				const std::vector<AgrAnim> *ga = nil;
 				if(!groupe.empty()){
@@ -774,9 +808,9 @@ main(int argc, char **argv)
 				// le point le permet.
 				int places = couple || duo ? 2 : 1; bool premierFemme = false; std::string cliqueAgresseur;
 				for(int pl = 0; pl < places; pl++){
-					float cap = capPoint + (pl ? PI : 0), lacetP = -(cap - PI / 2);
+					float cap = capPoint + (pl && !prise ? PI : 0), lacetP = -(cap - PI / 2);
 					float px = pt.pos.x, py = pt.pos.y;
-					if(duo){ float dd = (pl ? 0.5f : -0.5f) * ecartDuo; px += dd * cosf(capPoint); py += dd * sinf(capPoint); }
+					if(duo && !prise){ float dd = (pl ? 0.5f : -0.5f) * ecartDuo; px += dd * cosf(capPoint); py += dd * sinf(capPoint); }
 					float z = pt.pos.z; sol.Sol(px, py, pt.pos.z + 2.0f, 10.0f, &z);
 					float qr[4] = { 0, 0, sinf(lacetP / 2), cosf(lacetP / 2) };
 					// Le premier candidat qui convient et dont le modèle est dans le monde.
