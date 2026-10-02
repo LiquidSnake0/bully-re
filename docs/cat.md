@@ -91,6 +91,25 @@ MAINPED, chacun suivi de son hachage). Le format des `.HXD` et le passage du nom
 l'animation du `.agr` sont dans docs/hxd.md ; `tools/cat.py --pistes`
 affiche « [RAT_PED.agr n° 0] » à côté de chaque animation.
 
+Les autres champs d'une piste `Animation`, lus dans `AnimationTrack`
+(table virtuelle : lancement `FUN_00612360`, mise à jour `FUN_0060ae00`,
+arrêt `FUN_0060af80`) ; la position d'un attribut est son décalage dans
+l'objet :
+
+| Position | Sens |
+|---|---|
+| 24 | HashString de l'animation |
+| 28 | masque d'os (`FUN_00607340`) |
+| 32 | mode : 2 = boucle ; sinon la piste finit avec l'animation (1 : appelle aussi `FUN_006c0c60` à la fin) |
+| 36 | couche du lecteur (0 à 6) |
+| 40 | instant de départ (s) |
+| 44 | instant de fin (s) ; −1 ou au-delà : la durée du HXD |
+| 48 | vitesse ; multipliée par la stat 0x14 du piéton / 100 |
+| 52 | fondu (s) ; 0 : sans fondu ; −1 : celui du HXD |
+| 56 | passé à `FUN_006bd320` à l'arrêt |
+| 60 | octet : pose un drapeau du piéton (+0xe4) le temps de la piste |
+| 61 | octet : la vitesse suit le déplacement réel (synchro de la marche) |
+
 Les objets tenus : une piste `PropAttachEx` porte en 12 l'instant (en
 secondes de la durée **du HXD**, pas du `.agr`), en 24 le modèle
 (`cigarette`), en 28 le **HashString du point d'attache** de

@@ -61,44 +61,34 @@ d'un `.agr` (celle que lit `AgrLireGroupe`) est donc le k-ième
 enregistrement de son groupe : `NPC_LOVE\KISS_HARD_B` est la n° 8 de
 NPC_Love.agr, `RAT_PED\RAT_SCURRY` la n° 0 de RAT_PED.agr.
 
-Le premier flottant d'un enregistrement n'est pas toujours la durée du
-`.agr` : sur les 3 365 animations de MAINPED dont le `.agr` se lit, 2 868 ont
-la même durée à 2 % près, les autres de 0,05 à 2,9 fois. Ce n'est **pas** la
-durée de jeu en général :
-
-- 172 hachages ont plusieurs enregistrements (copies dans des groupes de
-  mission), aux durées parfois différentes pour le même `.agr` :
-  `C_PLAYER\GEN_GIVE` 4,0 s dans C_Player, 1,57 dans 2_S05_CooksCrush ;
-- le champ 16 des pistes `Animation` (une coupure), quand il vaut une des
-  deux durées, vaut celle du `.agr` (`C_PLAYER\IDLE` coupée à 2,00 : `.agr`
-  2,00, HXD 1,80 ; `WEAPON\PICKUP_SLINGSHOT` à 2,98 : 3,00 contre 4,33),
-  jamais celle du HXD ; `PLAYER_TALKING1` est coupée à 4,0 s, ce qui n'a de
-  sens que sur ses 5,43 s de `.agr` (3,33 dans le HXD).
-
-Ce que le moteur fait des deux flottants (lu dans l'exe) :
+**La durée de l'enregistrement HXD est la durée de jeu.** Sur les 3 365
+animations de MAINPED dont le `.agr` se lit, 2 868 ont la même durée que
+l'en-tête de leur `.agr` à 2 % près ; les autres en diffèrent de 0,05 à 2,9
+fois, et c'est celle du HXD qui compte. Lu dans l'exe :
 
 - en mémoire, chaque animation occupe 0x40 octets (`FUN_006b2d90`) : durée
-  à +0xc, second flottant à +0x10, hachage +0x14, drapeaux +0x18, taille
-  +0x1c, groupe +0x20, événements +0x24 / +0x28, indice +0x32 ;
-  `FUN_006b1c00` y cherche une animation par hachage (ou par nom, haché à la
-  volée) et rend son adresse et son indice ;
-- les animations se lancent par `FUN_006c0be0` → `FUN_006bcad0` →
-  `FUN_006b6570(dictionnaire, indice, drapeaux, …, vitesse, fondu)` ;
-- **le second flottant est le fondu par défaut** : si l'appelant passe un
-  fondu négatif, `FUN_006b6570` prend `+0x10` (0,3 s pour 2 855 des 3 365
-  animations de MAINPED ; puis 0,1, 0,167, 0,067, 0, 0,667) ;
-- **la durée ne sert qu'au départ d'une lecture à l'envers** : si la vitesse
-  demandée est négative, le temps de départ vaut `+0xc` ; sinon il vaut 0.
-  Rien dans cette chaîne ne s'en sert pour régler la vitesse.
+  à +0xc, fondu à +0x10, hachage +0x14, drapeaux +0x18, taille +0x1c, groupe
+  +0x20, événements +0x24 / +0x28, indice +0x32 ; `FUN_006b1c00` y cherche
+  une animation par hachage (ou par nom, haché à la volée) ;
+- le lancement : `FUN_006c0be0` → `FUN_006bcad0` → `FUN_006b6570` ; un fondu
+  négatif prend `+0x10` (0,3 s pour 2 855 des 3 365 animations ; puis 0,1,
+  0,167, 0,067, 0, 0,667) ; une vitesse négative part de `+0xc` ;
+- **l'évaluation d'un os (`FUN_006be250`) borne le temps à `+0xc` puis le
+  divise par `+0xc`** : la position entre 0 et 1 qui en sort donne la clé. Les
+  instants des clés du `.agr` sont stockés normalisés, la durée de l'en-tête
+  du `.agr` ne sert pas à les lire ;
+- la piste `Animation` se termine quand son temps dépasse `+0xc` (ou son
+  champ 44, s'il est plus court ; docs/cat.md).
 
-Les pistes `Animation` des arbres d'actions portent en 44 la valeur −1 le plus
-souvent et en 48 la valeur 1 : très probablement le fondu (−1 = celui du HXD)
-et la vitesse. Hypothèse, pas encore suivie dans le code.
+`HxdEtirer` (`src/anim/AgrHxd`) applique la règle au chargement d'un groupe :
+chaque animation est étirée sur la durée de son enregistrement.
+`NPC_GENERIC\SMK_WALL_LIGHT` passe de 3 à 10 s, et les instants de ses pistes
+`PropAttachEx` (2,5, 3,33, 7,67 s) tombent alors sur les gestes (docs/mxd.md).
 
-Exception : `NPC_GENERIC\SMK_WALL_LIGHT` et `SMK_STND_LIGHT` durent 3,0 s
-dans POI_Smoking.agr et 10 s ici, et les instants de leurs pistes
-`PropAttachEx` (2,5, 3,33, 7,67 s) ne tombent sur les gestes qu'en temps HXD
-(docs/mxd.md) : la visite les étire, et elles seules.
+Pièges rencontrés en route : 172 hachages ont plusieurs enregistrements (copies
+dans des groupes de mission, `C_PLAYER\GEN_GIVE` : 4,0 s dans C_Player, 1,57
+dans 2_S05_CooksCrush, même `.agr`) ; chaque copie vaut pour son groupe. Le
+champ 16 des pistes `Animation` n'est pas une fin d'animation.
 
 Code : `src/anim/Hxd` (CHxdFile, `Indice` : hachage → groupe et indice) ; test : `tests/test_hxd` ; lecture :
 `tools/hxd.py <fichier.HXD>`.

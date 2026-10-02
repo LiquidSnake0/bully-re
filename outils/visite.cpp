@@ -58,6 +58,7 @@
 #include "scene.h"
 #include "attache.h"
 #include "../src/anim/Hxd.h"
+#include "../src/anim/AgrHxd.h"
 #include "monde.h"
 #include "../src/anim/Agr.h"
 #include "../src/core/TriggerFile.h"
@@ -463,19 +464,10 @@ main(int argc, char **argv)
 		n = CFileMgr::LoadFile("Anim\\MAINPED.HXD", b.data(), (int32)b.size(), "rb");
 		if(!(n > 0 && mainped.Load(b.data(), (uint32)n))) printf("  MAINPED.HXD illisible : durées des .agr\n");
 	}
-	// La durée de jeu de l'animation k du groupe : celle du HXD, sinon celle du .agr.
-	auto DureeDeJeu = [&](const std::string &groupe, int k, const AgrAnim &x) -> float {
-		for(size_t g = 0; g < mainped.groupes.size(); g++){
-			if(strcasecmp(mainped.groupes[g].nom.c_str(), groupe.c_str()) != 0) continue;
-			int i = 0;
-			for(const CHxdAnim &h : mainped.anims) if(h.groupe == g){ if(i == k) return h.duree > 0 ? h.duree : x.duree; i++; }
-		}
-		return x.duree;
-	};
 	auto Attente = [&](const CPedIdeEntry &e) -> const AgrAnim* {
 		if(!imposee.empty()){
 			size_t c = imposee.find(':'); std::string g = imposee.substr(0, c); int n = c == std::string::npos ? 0 : atoi(imposee.c_str() + c + 1);
-			if(!groupes.count(g)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); } groupes[g] = v; }
+			if(!groupes.count(g)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); HxdEtirer(v, mainped, g.c_str()); } groupes[g] = v; }
 			return n >= 0 && n < (int)groupes[g].size() && groupes[g][n].decodee ? &groupes[g][n] : nil;
 		}
 		std::string t = e.type, g;
@@ -486,7 +478,7 @@ main(int argc, char **argv)
 		else g = e.female ? "IDLE_GSF_A" : "IDLE_GSM_A";
 		if(!groupes.count(g)){
 			std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb);
-			if(b){ AgrLireGroupe(b, nb, v); free(b); }
+			if(b){ AgrLireGroupe(b, nb, v); free(b); HxdEtirer(v, mainped, g.c_str()); }
 			groupes[g] = v;
 		}
 		for(const AgrAnim &an : groupes[g]) if(an.decodee) return &an;
@@ -497,7 +489,7 @@ main(int argc, char **argv)
 	// proche de 1 m/s. SGEN_S n°2 : 0,94 m en 1 s.
 	auto Imposee = [&](void) -> const AgrAnim* {
 		size_t c = imposee.find(':'); std::string g = imposee.substr(0, c); int n = c == std::string::npos ? 0 : atoi(imposee.c_str() + c + 1);
-		if(!groupes.count(g)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); } groupes[g] = v; }
+		if(!groupes.count(g)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); HxdEtirer(v, mainped, g.c_str()); } groupes[g] = v; }
 		return n >= 0 && n < (int)groupes[g].size() && groupes[g][n].decodee ? &groupes[g][n] : nil;
 	};
 	// Le pas de marche d'un piéton : dans ses groupes d'animations de l'IDE
@@ -514,7 +506,7 @@ main(int argc, char **argv)
 			if(g.compare(0, 2, "F_") != 0) continue;
 			if(!groupes.count(g)){
 				std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb);
-				if(b){ AgrLireGroupe(b, nb, v); free(b); }
+				if(b){ AgrLireGroupe(b, nb, v); free(b); HxdEtirer(v, mainped, g.c_str()); }
 				groupes[g] = v;
 			}
 			const AgrAnim *meilleur = nil; float ecart = 1e9f;
@@ -560,10 +552,9 @@ main(int argc, char **argv)
 		// Chaque étape se joue entre fois[0] et fois[1] fois ; la suivante entre en
 		// fondu FONDU secondes avant la fin de la dernière, pour que l'animation
 		// sortante ne reparte pas en boucle pendant le fondu.
-		// `vitesse` : 1 en général ; les deux SMK_*_LIGHT se jouent sur leur durée
-		// du HXD (10 s, 3 dans le .agr), seule échelle où leurs pistes PropAttachEx
-		// tombent sur les gestes (docs/mxd.md). Ce n'est pas la règle générale :
-		// les coupures des pistes Animation suivent la durée du .agr (docs/hxd.md).
+		// `vitesse` : la vitesse de lecture de l'étape (1 partout aujourd'hui ; le
+		// champ 48 des pistes Animation, docs/cat.md). Les durées sont déjà
+		// celles du HXD : HxdEtirer au chargement de chaque groupe.
 		// `accroches` : les instants (s, temps HXD) où l'objet tenu change de
 		// point d'attache (le hachage du point, 0 : lâché).
 		struct Accroche { float t; uint32 point; };
@@ -683,7 +674,7 @@ main(int argc, char **argv)
 		if(!paire.empty()){
 			std::string g = paire.substr(0, paire.find(':')); int pa1 = 0, pa2 = 0; float ref = 0.86f;
 			sscanf(paire.c_str() + g.size() + 1, "%d,%d:%f", &pa1, &pa2, &ref);
-			if(!groupes.count(g)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); } groupes[g] = v; }
+			if(!groupes.count(g)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); HxdEtirer(v, mainped, g.c_str()); } groupes[g] = v; }
 			const std::vector<AgrAnim> &ga = groupes[g];
 			float x = cam.pos.x + 5 * cosf(cam.yaw), y = cam.pos.y + 5 * sinf(cam.yaw), z;
 			if(!sol.Sol(x, y, cam.pos.z + 2.0f, 50.0f, &z)) z = cam.pos.z - 1.6f;
@@ -708,7 +699,7 @@ main(int argc, char **argv)
 			if(arob != std::string::npos){ sscanf(galerie.c_str() + arob + 1, "%d-%d", &de, &a2); galerie = galerie.substr(0, arob); }
 			size_t c = galerie.find(':'); std::string g = galerie.substr(0, c);
 			float ref = c == std::string::npos ? 0.86f : (float)atof(galerie.c_str() + c + 1);
-			if(!groupes.count(g)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); } groupes[g] = v; }
+			if(!groupes.count(g)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); HxdEtirer(v, mainped, g.c_str()); } groupes[g] = v; }
 			const std::vector<AgrAnim> &ga = groupes[g];
 			const CPedIdeEntry *choix = nil;
 			for(const CPedIdeEntry *e : liste) if(modeleGalerie.empty() ? (strcasecmp(e->type, "STUDENT") == 0 && !e->female && e->unique >= 0) : strcasecmp(e->model, modeleGalerie.c_str()) == 0){ choix = e; break; }
@@ -841,7 +832,7 @@ main(int argc, char **argv)
 				else if(pt.type == "Harassment"){ groupe = "NPC_AggroTaunt"; choixAnims = {1, -1}; duo = harcelement = true; ecartDuo = 1.0f; }   // REAC_BRING_IT
 				const std::vector<AgrAnim> *ga = nil;
 				if(!groupe.empty()){
-					if(!groupes.count(groupe)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, groupe + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); } groupes[groupe] = v; }
+					if(!groupes.count(groupe)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, groupe + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); HxdEtirer(v, mainped, groupe.c_str()); } groupes[groupe] = v; }
 					ga = &groupes[groupe];
 				}
 				// Le lacet en degrés : le piéton regarde vers lacet + 180° (0 = +x). Établi
@@ -893,7 +884,7 @@ main(int argc, char **argv)
 					// squelette dont le bassin debout est à 1,10 m (début des IN, fin des OUT).
 					if(pl == 0 && prise && choix->female){
 						groupe = "Gfight"; filles = true; refBassin = 1.10f; choixAnims = {1, 2};
-						if(!groupes.count(groupe)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, groupe + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); } groupes[groupe] = v; }
+						if(!groupes.count(groupe)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, groupe + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); HxdEtirer(v, mainped, groupe.c_str()); } groupes[groupe] = v; }
 						ga = &groupes[groupe];
 					}
 					const AgrAnim *att = nil; int n = -1;
@@ -937,7 +928,6 @@ main(int argc, char **argv)
 						// StandingSmoke (LIGHT) et 3_01.cat (STUB).
 						const uint32 G = CMxdFile::Hachage("LeftCig"), B = CMxdFile::Hachage("MouthCig"), D = CMxdFile::Hachage("RightCig");
 						bool fume = groupe == "POI_Smoking" && pa.programme.size() == prog.size();
-						if(fume) pa.programme[0].vitesse = pa.programme[0].a->duree / DureeDeJeu(groupe, prog[0][0], *pa.programme[0].a);
 						if(fume && pt.type == "Wall"){ pa.programme[0].accroches = { {2.5f, G}, {3.33f, B}, {7.67f, D} }; pa.programme[4].accroches = { {1.6f, 0} }; }
 						else if(fume){ pa.programme[0].accroches = { {2.67f, G}, {3.2f, B}, {7.67f, D} }; pa.programme[2].accroches = { {0, 0} }; }
 						pa.points = fume ? mxd.Chercher(choix->model) : nil;

@@ -21,8 +21,8 @@ struct CHxdAnim {
 	std::string nom;                   // « GROUPE\NOM »
 	// En mémoire, un enregistrement de 0x40 octets (FUN_006b2d90) : durée à +0xc,
 	// fondu à +0x10, hachage +0x14, drapeaux +0x18, taille +0x1c, groupe +0x20.
-	// duree : le temps de départ d'une lecture à vitesse négative (FUN_006b6570),
-	// pas la durée de jeu, qui reste celle du .agr (docs/hxd.md).
+	// duree : la durée de jeu ; FUN_006be250 divise le temps par elle pour
+	// lire les clés du .agr, stockées normalisées (HxdEtirer, docs/hxd.md).
 	// fondu : le fondu par défaut (s), pris quand l'appelant en demande un négatif ;
 	// 0,3 presque partout.
 	float duree = 0, fondu = 0;

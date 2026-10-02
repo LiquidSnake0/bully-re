@@ -2,6 +2,7 @@
 //   BULLY_DATA=<racine du jeu> build/tests/test_hxd
 #include "../src/core/FileMgr.h"
 #include "../src/anim/Hxd.h"
+#include "../src/anim/AgrHxd.h"
 #include "../src/core/ActionTree.h"
 #include "../src/core/CdStream.h"
 #include <cstdio>
@@ -29,7 +30,7 @@ main(void)
 	static const char *const fichiers[] = { "ANIBBALL", "ANIFOOTY", "BANANA", "BATON", "BBGUN", "BIKE", "BOLTCUTT", "BROCKETL", "COPBIKE",
 	                                        "MAINPED", "MOT_CTRL", "RAT_PED", "SCOOTER", "SIAMESE", "SK8BOARD", "SLINGSH", "SPRAYCAN", "SPUDG", "UMBRELLA", "WBALLOON" };
 	int lus = 0, exacts = 0, anims = 0, hachagesJustes = 0;
-	int groupes = 0, groupesSuivis = 0, rattachees = 0;
+	int groupes = 0, groupesSuivis = 0, rattachees = 0; bool etirementVu = false;
 	CHxdFile mainped;
 	int32 monde = CdStream::AddImage("Stream\\World.img");
 	for(const char *f : fichiers){
@@ -69,6 +70,20 @@ main(void)
 				}
 				for(uint32 r = q; r < na && bon; r++) if(agr[r]) bon = false;    // le reste : du bourrage
 				if(bon && k){ groupesSuivis++; rattachees += k; }
+				// Les animations se jouent sur la durée du HXD (FUN_006be250) : après
+				// HxdEtirer, chaque animation décodée a celle de son enregistrement.
+				if(strcmp(f, "MAINPED") == 0 && h.groupes[g].nom == "POI_Smoking"){
+					std::vector<AgrAnim> v;
+					if(AgrLireGroupe(agr, na, v) && v.size() > 2){
+						float avant = v[2].duree;
+						int32 n = HxdEtirer(v, h, "POI_Smoking");
+						printf("POI_Smoking : SMK_WALL_LIGHT %.2f s dans le .agr, %.2f s après HxdEtirer (%d étirées)\n", avant, v[2].duree, n);
+						VERIF(fabsf(avant - 3.0f) < 0.01f && fabsf(v[2].duree - 10.0f) < 0.01f && n >= 4);
+						float tmax = 0; for(int32 o = 0; o < AGR_OS; o++) if(!v[2].pistes[o].empty()) tmax = fmaxf(tmax, v[2].pistes[o].back().t);
+						VERIF(fabsf(tmax - 10.0f) < 0.05f);
+						etirementVu = true;
+					}
+				}
 				free(agr);
 			}
 		}else printf("  illisible : %s\n", chemin);
@@ -109,6 +124,7 @@ main(void)
 	}
 	printf("hxds.dat : %d entrées, %d lues exactement, %d animations\n", entrees, entreesExactes, animsProps);
 	VERIF(entrees == 130 && entreesExactes == 130 && animsProps == 402);
+	VERIF(etirementVu);
 	printf("test_hxd : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs != 0;
 }
