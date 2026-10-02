@@ -140,7 +140,31 @@ programmes écrits à la main. C'est une approximation, avec ces règles :
   sans quitter le sien. Dans un nœud animé, un `Execute` fait jouer au
   partenaire le `PlayOnTarget` de la feuille visée (`./TargetOrientation`) ;
 - `TargetSync` (placement relatif des deux piétons) n'est pas géré : les paires
-  partagent leur origine, les décalages de bassin des animations font le reste.
+  partagent leur origine, les décalages de bassin des animations font le reste
+  (voir ci-dessous).
+
+### TargetSync
+
+Champs relevés : 12 et 16 (fenêtre), 28 distance (m), 36 angle (rad) ; prise
+GRAP_INIT et couple `Hold` : 28 = 0,9, 36 = π ; vol d'arme `Steal_Easy` :
+28 = 0,7, 36 = π. Les méthodes virtuelles de `SyncBaseTrack` sont vides (le
+travail est fait ailleurs dans le moteur, non suivi). Ce que disent les
+animations, à t = 0 :
+
+| Animation | Flèche (ARROW) | Bassin |
+|---|---|---|
+| Grap n° 23 `GRAP_INIT_GV` | (−0,03 ; 0,22) | 0,22 devant |
+| Grap n° 22 `GRAP_INIT_RCV` | (0,05 ; 1,18) | 1,17 devant |
+| C_Player n° 366 `GRB_STEAL_ATT` | aucune | à l'origine |
+| C_Player n° 365 `GRB_STEAL_VIC` | (0 ; 0) | à l'origine |
+
+Les paires Grap portent leur écart dans la flèche (0,96 m, presque les 0,9 de
+TargetSync) : poser les deux piétons à la même origine revient au même que
+poser chacun sur sa flèche et la cible à 0,9 m, face au meneur. Le vol d'arme
+n'a pas d'écart : seul TargetSync sépare les deux piétons. Modèle probable du
+moteur : chaque piéton suit sa flèche, TargetSync place la cible à la
+distance 28, tournée de 36, par rapport au meneur.
+
 
 Pilotés par un arbre :
 
