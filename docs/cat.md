@@ -197,14 +197,21 @@ du groupe de l'animation jouée ; le bassin de référence suit aussi le groupe
 
 | spectateur | Ambient.cat | banc de `SpectatorAnims`, départ `SpecLike` : une réaction `GEN_IMPRESSED` tirée au hasard, puis `SpectatorWait/SpectatorLikeWait` (pose tenue, `HoldState`) qui relance `SpecLike` au bout de 1,5 s |
 | groupe qui discute | Talking.cat | `Talking` : une branche par gabarit (`CharacterSize`, faux ici), clique et sexe ; attente `Load` puis geste de parole tiré au hasard (`S_NERD`, `SGIRLS`, `S_GEN`, `S_FAT`, `CHAT`…) |
+| harcèlement | Ambient.cat | `BookHarass/GrappleAttempt/GrappleSuccess` : le caïd tient les livres hors de portée (`BOOKTEASE_GIV`), la victime (`Harrassed`, `BOOKTEASE_RCV`) tente de les attraper ; fin `*_END`. Les animations ont le bassin à l'origine et pas de flèche : les deux piétons sont posés face à face à 0,9 m (la TargetSync de la piste) |
 | prise debout | Ambient.cat | `LockerStuff/StuffGrap`, `GrappleSuccess/Pull_In_heavy/Give` (empoignade `GRAP_INIT`), puis `Hold_Idle` (`GRAP_IDLE`) |
 
 Tout piéton dont l'arbre accroche un objet reçoit la cigarette (qui n'apparaît
 qu'aux instants de l'arbre). Côté AI_POI, le nœud `Spectator` ne joue rien : il lance (`Play`)
 `AIActionOpps/SpectatorOpps`, un arbre assemblé ailleurs ; les réactions
 elles-mêmes sont dans Ambient.cat. Côté AI_POI, `Hangout` réserve une durée (piste `Hangout`, 26,7 à 33,3 s) et
-lance `AIActionOpps/TalkingOpps` ; les gestes sont dans Talking.cat. Reste sur
-une table : le harcèlement (`AggroTaunt`, joué par des arbres de mission).
+lance `AIActionOpps/TalkingOpps` ; les gestes sont dans Talking.cat. Le banc
+`HarassMoves` d'Ambient.cat, lui, contient les coups (pousser, coups de pied),
+suivis d'une réaction gérée par le combat : pas une scène qui tourne.
+
+Un suiveur ne prend pas d'occasion : il attend l'ordre de son partenaire (sinon
+la victime abandonnait seule). Chaque piéton piloté par un arbre a sa propre
+graine de hasard, où sa position se mêle (sinon deux groupes de même rang
+faisaient les mêmes gestes au même instant).
 
 Le vol d'arme (`GrappleOpps/Scripted/WeaponSteal`) est écarté : il suppose une
 arme sur la cible, et ses animations (C_Player) se placent par `TargetSync`. `BULLY_TRACE=1` affiche les

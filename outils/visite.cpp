@@ -919,7 +919,9 @@ main(int argc, char **argv)
 					int ip = (int)fabsf(floorf(pt.pos.x) * 7 + floorf(pt.pos.y) * 13) % 3;
 					groupe = "Grap"; choixAnims = { paires[ip][0], paires[ip][1] }; duo = prise = true;
 				}
-				else if(pt.type == "Harassment"){ groupe = "NPC_AggroTaunt"; choixAnims = {1, -1}; duo = harcelement = true; ecartDuo = 1.0f; }   // REAC_BRING_IT
+				// Écart de la TargetSync de BookHarass (0,9 m, face à face) : les animations
+				// POI_Booktease ont le bassin à l'origine, sans flèche (docs/cat.md).
+				else if(pt.type == "Harassment"){ groupe = "NPC_AggroTaunt"; choixAnims = {1, -1}; duo = harcelement = true; ecartDuo = 0.9f; }   // REAC_BRING_IT
 				const std::vector<AgrAnim> *ga = nil;
 				if(!groupe.empty()){
 					if(!groupes.count(groupe)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, groupe + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); HxdEtirer(v, mainped, groupe.c_str()); } groupes[groupe] = v; }
@@ -1057,6 +1059,9 @@ main(int argc, char **argv)
 						// hasard, puis attente en gardant la pose, et ainsi de suite).
 						// Les groupes qui discutent : Talking.cat (par gabarit et clique : une attente,
 						// puis un geste de parole tiré au hasard, S_NERD / SGIRLS / S_GEN…).
+						// Le harcèlement : Ambient.cat, BookHarass (le caïd tient les livres de sa
+						// victime hors de portée, BOOKTEASE_GIV / RCV, puis la lâche).
+						else if(harcelement){ fichier = "Ambient.cat"; racine = "BookHarass"; depuis = "./GrappleAttempt/GrappleSuccess"; passif = pl == 1; }
 						else if(pt.type == "Hang_Out"){ fichier = "Talking.cat"; racine = "Talking"; depuis = "."; }
 						else if(pt.type == "Spectator"){ fichier = "Ambient.cat"; racine = "SpectatorAnims"; depuis = "./SpecLike"; }
 						// Les bagarres (Grapples.cat) : le combat de filles (Init / Loop / Out) et les
@@ -1070,6 +1075,14 @@ main(int argc, char **argv)
 						int32 r = ar ? ar->Chercher(racine.c_str()) : -1;
 						if(ar && r >= 0 && (couple || filles || pt.type == "Spectator")) r = ar->noeuds[r].parent;   // spectateurs : le banc qui contient SpectatorAnims et SpectatorWait   // le banc qui contient Hold / Held, ou GirlFight_Init / Loop / Out
 						int32 d = r >= 0 ? (couple ? ar->Chercher(racine.c_str()) : pt.type == "Spectator" ? ar->Resoudre(ar->Chercher(racine.c_str()), depuis) : ar->Resoudre(r, depuis)) : -1;
+						// BookHarass : la racine est GrappleSuccess, le départ la boucle du caïd
+						// (premier enfant de HOLD_IDLE).
+						if(harcelement && d >= 0){
+							r = d; int32 h = ar->Resoudre(r, "./HOLD_IDLE");
+							std::vector<int32> e = h >= 0 ? ar->Enfants(h) : std::vector<int32>();
+							d = e.empty() ? -1 : e[0];
+							an->bassinRef = 0.86f;
+						}
 						if(d >= 0){
 							// Le vol d'arme (Ambient.cat, GrappleOpps/Scripted/WeaponSteal) suppose une
 							// arme sur la cible, et ses animations (C_Player) se placent par TargetSync,
@@ -1094,6 +1107,9 @@ main(int argc, char **argv)
 								}
 								pa.placeArbre = an->place;
 							}
+							// Une graine propre à chaque piéton (la position s'y mêle) : sinon deux
+							// points de même rang dans leur bloc tirent les mêmes gestes en même temps.
+							pa.hasard = 9176u + (uint32)k * 7919u + (uint32)(fabsf(px) * 131.0f) * 2654435761u + (uint32)(fabsf(py) * 17.0f) + (uint32)pl * 97u;
 							pa.parArbre = true; pa.der.arbre = ar; pa.der.racine = r; pa.der.redepart = passif ? -1 : d; pa.der.suiveur = passif; pa.der.femme = choix->female != 0; pa.departArbre = passif ? -1 : d;
 							// Un arbre qui accroche des objets (la cigarette) : le modèle tenu, s'il
 							// n'est pas déjà là ; l'arbre décide quand il apparaît.
@@ -1113,7 +1129,7 @@ main(int argc, char **argv)
 					pa.cap = cap; pa.corps.pos = CVector(px, py, z); pa.depart = pa.corps.pos;
 					animes.push_back(pa); poses++; dejaPoses.insert(choix->model);
 					// Les deux membres d'un couple se répondent (PlayOnTarget).
-					if((couple || prise) && pl == 1 && animes.size() >= 2){ animes.back().partenaire = (int32)animes.size() - 2; animes[animes.size() - 2].partenaire = (int32)animes.size() - 1; }
+					if((couple || prise || harcelement) && pl == 1 && animes.size() >= 2){ animes.back().partenaire = (int32)animes.size() - 2; animes[animes.size() - 2].partenaire = (int32)animes.size() - 1; }
 					printf("  point d'intérêt « %s » %s%s%s (à %.0f m, lacet %.0f°) : %s %s, %s", q.nom.c_str(), pt.type.c_str(), pt.nom.empty() ? "" : " ", pt.nom.c_str(),
 					       pr.first, pt.lacetTangageRoulis[0], choix->model, choix->type, n >= 0 ? groupe.c_str() : "attente");
 					if(n >= 0) printf(" n° %d", n);

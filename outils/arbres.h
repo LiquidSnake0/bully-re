@@ -270,7 +270,9 @@ struct Deroulement {
 		t += dt;
 		for(Evenement &e : props) if(!e.fait && t >= e.t){ e.fait = true; if(s.accrocher) s.accrocher(e.point); }
 		// Les occasions, une fois ouvertes.
+		// Un suiveur ne prend pas d'occasion : il attend l'ordre de son partenaire.
 		for(const Occasion &o : occasions){
+			if(suiveur) break;
 			if(t < o.t || (o.tmax >= 0 && t > o.tmax)) continue;
 			if(!o.sure && s.hasard() >= CHANCE * dt) continue;
 			int32 j = arbre->Resoudre(noeud, o.chemin);
