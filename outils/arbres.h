@@ -329,6 +329,13 @@ private:
 			std::vector<int32> ok;
 			for(int32 e : arbre->Enfants(haut))
 				if((haut == noeud || e != ici) && !arbre->passif[e] && arbre->Conditions(e, s.hasard(), femme)) ok.push_back(e);
+			// Une fille prend la variante IsFemale quand il y en a une (Sit_GirlIdle
+			// plutôt que la branche générique Sit_Start).
+			if(femme && ok.size() > 1){
+				std::vector<int32> f;
+				for(int32 e : ok) for(int32 c : arbre->noeuds[e].n->conditions) if(arbre->f.TypeCondition(c) == ActionHash("IsFemale")){ f.push_back(e); break; }
+				if(!f.empty()) ok = f;
+			}
 			if(!ok.empty()){ Entrer(ok[(size_t)(s.hasard() * ok.size()) % ok.size()], s, profondeur + 1); return; }
 			if(haut == racine) break;
 			ici = haut; haut = arbre->noeuds[haut].parent;

@@ -184,6 +184,17 @@ Pilotés par un arbre :
 | bagarre de filles | Grapples.cat | banc de `GirlFight_Init` : Init → Loop (5 à 10 s) → Out |
 | bagarre au sol | Grapples.cat | `mount`, `MountIdle/Give` : `MountOpps` choisit le coup selon la clique (`FacePunch`, `KneeDrop`, `Headbutt`, `Dismount`…) |
 | place assise | Ambient.cat | `Sitting_Down/SitHigh` : s'asseoir (`Sit_Start`), attendre, fumer ou discuter assis, se relever ; variante des filles (`IsFemale`) |
+
+Place assise : le même arbre mêle deux conventions d'animation. Celles de
+Sitting_Boys (gestes assis, fumer) ont le bassin à l'origine, orienté comme
+debout : l'origine est le siège. Celles de C_Player et F_Girls (`SIT_DOWN`,
+`SIT_IDLE_NPC_BENCH`, `SIT_LOOP_G`…) partent debout devant le banc, face à
+lui, et finissent assises le bassin à (−0,08 ; 0,53) ou (0 ; 0,59) de
+l'origine, tourné de 180°. La visite garde les deux placements et prend celui
+du groupe de l'animation jouée ; le bassin de référence suit aussi le groupe
+(1,10 m pour F_Girls et Gfight, 0,86 m sinon). Une fille prend la variante
+`IsFemale` quand elle existe.
+
 | spectateur | Ambient.cat | banc de `SpectatorAnims`, départ `SpecLike` : une réaction `GEN_IMPRESSED` tirée au hasard, puis `SpectatorWait/SpectatorLikeWait` (pose tenue, `HoldState`) qui relance `SpecLike` au bout de 1,5 s |
 | groupe qui discute | Talking.cat | `Talking` : une branche par gabarit (`CharacterSize`, faux ici), clique et sexe ; attente `Load` puis geste de parole tiré au hasard (`S_NERD`, `SGIRLS`, `S_GEN`, `S_FAT`, `CHAT`…) |
 | prise debout | Ambient.cat | `LockerStuff/StuffGrap`, `GrappleSuccess/Pull_In_heavy/Give` (empoignade `GRAP_INIT`), puis `Hold_Idle` (`GRAP_IDLE`) |

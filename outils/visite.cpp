@@ -644,6 +644,10 @@ main(int argc, char **argv)
 		// partenaire (indice dans `animes`, PlayOnTarget).
 		bool parArbre = false; outil::Deroulement der; int32 departArbre = -1, partenaire = -1; bool arbreParti = false;
 		float fonduTotal = 0.3f;
+		// Assis piloté par un arbre : deux conventions d'animation dans le même arbre
+		// (Sitting_Boys : origine sur le siège ; C_Player / F_Girls : origine devant
+		// le banc, tournée de 180°) ; le placement suit le groupe de l'animation jouée.
+		bool deuxPlaces = false; NifTransform placeTable, placeArbre;
 		float Hasard(float a, float b){ hasard = hasard * 1103515245u + 12345u; return a + (b - a) * ((hasard >> 8) & 0xffff) / 65535.0f; }
 	};
 	// Le fondu par défaut du jeu : le second flottant de chaque animation des .HXD
@@ -1071,6 +1075,25 @@ main(int argc, char **argv)
 							// arme sur la cible, et ses animations (C_Player) se placent par TargetSync,
 							// non géré : on ne le visite pas.
 							if(ar->interdits.empty()) ar->interdits.push_back(ActionHash("WeaponSteal"));
+							// Assis : les animations de l'arbre (C_Player SIT_*_NPC_BENCH, F_Girls
+							// SIT_*_G) partent debout devant le banc, face à lui, et finissent assises,
+							// le bassin à (-0,08 ; 0,53) ou (0 ; 0,59) de l'origine, tourné de 180° ;
+							// celles de la table (Sitting_Boys) ont le bassin à l'origine. On tourne
+							// le piéton et on avance l'origine du décalage de son attente assise.
+							if(pt.type == "Sitting_Spot"){
+								pa.deuxPlaces = true; pa.placeTable = an->place;
+								const CHxdAnim *h = mainped.Chercher(ActionHash(choix->female ? "NPC_GENERIC\\SIT_LOOP_G" : "NPC_GENERIC\\SIT_IDLE_NPC_BENCH"));
+								int32 g = -1, kk = h ? mainped.Indice(h->hachage, &g) : -1;
+								std::vector<AgrAnim> *v = kk >= 0 ? Groupe(mainped.groupes[g].nom) : nil;
+								CVector b0;
+								if(v && kk < (int32)v->size() && AgrPositionOs((*v)[kk], 1, 0, &b0)){
+									NifTransform &pl2 = an->place;
+									CVector dd = NifRotate(pl2.r, CVector(b0.x, b0.y, 0));
+									pl2.t = CVector(pl2.t.x + dd.x, pl2.t.y + dd.y, pl2.t.z);
+									for(int ii = 0; ii < 3; ii++){ pl2.r[ii][0] = -pl2.r[ii][0]; pl2.r[ii][1] = -pl2.r[ii][1]; }
+								}
+								pa.placeArbre = an->place;
+							}
 							pa.parArbre = true; pa.der.arbre = ar; pa.der.racine = r; pa.der.redepart = passif ? -1 : d; pa.der.suiveur = passif; pa.der.femme = choix->female != 0; pa.departArbre = passif ? -1 : d;
 							// Un arbre qui accroche des objets (la cigarette) : le modèle tenu, s'il
 							// n'est pas déjà là ; l'arbre décide quand il apparaît.
@@ -1173,6 +1196,10 @@ main(int argc, char **argv)
 			if(fd > 0 && p.anim){ p.avant = p.anim; p.horlogeAvant = p.horloge + p.decalage; p.vitesseAvant = p.der.vitesse; p.fondu = fd; p.fonduTotal = fd; }
 			else p.fondu = 0;
 			p.anim = &(*v)[k]; (void)mode; (void)depart; (void)fin; (void)vitesse;
+			// Le bassin debout de référence suit le groupe (1,10 m pour les filles, docs/trigger.md).
+			const std::string &gn = mainped.groupes[g].nom;
+			if(p.an->bassinRef > 0) p.an->bassinRef = (gn == "F_Girls" || gn == "Gfight") ? 1.10f : 0.86f;
+			if(p.deuxPlaces) p.an->place = gn == "Sitting_Boys" ? p.placeTable : p.placeArbre;
 			return p.anim->duree;
 		};
 		so.accrocher = [&, i](uint32 point){ animes[i].pointTenu = point; };
