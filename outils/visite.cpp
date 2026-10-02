@@ -505,6 +505,14 @@ main(int argc, char **argv)
 		}
 		printf("  réglages des pistes Animation : %zu animations\n", reglages.size());
 	};
+	// Les fonctions d'événement des points Specific_Event et la scène d'Ambient.cat
+	// qu'elles lancent (Scripts/EventFunc.lur : « PedSetActionNode(…,
+	// "/Global/Ambient/Scripted/<scène>") ») ; seulement les scènes à un piéton.
+	// Les autres fonctions (F_Biker, F_Criminal…) n'ont pas de nœud : code du moteur.
+	static const std::map<std::string, std::string> kScenes = {
+		{"F_Crying", "Crying"}, {"F_DrunkenBeggar", "Drunk"}, {"F_Cheerleading", "Cheering"}, {"F_Workout", "Workout"},
+		{"F_WallHangout", "Wall_Lean"}, {"F_Sweep", "SweepFloors"}, {"F_RandomStudent", "Dribble"}, {"F_Puker", "SpecialPuke"},
+		{"F_GuardDog", "GuardDog"}, {"F_TrashStuff", "CanDump"} };
 	// Les arbres d'actions par nom de fichier (Act.img), chargés une fois.
 	static std::map<std::string, std::unique_ptr<outil::Arbre>> arbres;
 	auto ArbreDe = [&](const std::string &fichier) -> outil::Arbre* {
@@ -897,7 +905,7 @@ main(int argc, char **argv)
 				// Ambient/scripted/Wall_Smoke, Ambient/Spectator… Seules les boucles servent ici
 				// (pas l'entrée ni la sortie : SMK_WALL_LIGHT, SMK_WALL_STUB…).
 				if(pt.type == "Sitting_Spot"){ groupe = "Sitting_Boys"; choixAnims = {2, 3, 4, 5, 6}; }          // SIT_LAUGH / SIT_SMOKE / SIT_TALK_NPC1-3 _BENCH
-				else if(pt.nom == "F_ClassSmokers"){ groupe = "POI_Smoking"; choixAnims = {7}; }              // SMK_STND_SMKB, fume debout
+				else if(pt.nom == "F_ClassSmokers"){ groupe = "POI_Smoking"; choixAnims = {7}; }              // repli sans arbre ; l'arbre (EventFunc.lur) : Wall_Smoke
 				else if(pt.type == "Wall"){ groupe = "POI_Smoking"; choixAnims = {3, 4}; }                    // SMK_WALL_SMKA / SMKB, fume adossé
 				else if(pt.type == "Spectator"){ groupe = "NPC_Spectator"; choixAnims = {0, 1, 2}; }          // GEN_IMPRESSED03 / 01 / 02
 				else if(pt.type == "Hang_Out"){ groupe = "Hang_Talking"; choixAnims = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}; }   // TALK, LISTEN, AMB_TALKING, AMB_WEIGHTSHIFT
@@ -1050,7 +1058,8 @@ main(int argc, char **argv)
 					{
 						std::string fichier, racine, depuis; bool passif = false;
 						if(groupe == "POI_Smoking" && pt.type == "Wall"){ fichier = "Ambient.cat"; racine = "Wall_Smoke"; depuis = "./Wall_Start"; }
-						else if(groupe == "POI_Smoking"){ fichier = "5_02.cat"; racine = "StandingSmoke"; depuis = "./Light"; }
+						// F_ClassSmokers : EventFunc.lur la lance sur /Global/Ambient/Scripted/Wall_Smoke.
+						else if(groupe == "POI_Smoking"){ fichier = "Ambient.cat"; racine = "Wall_Smoke"; depuis = "./Wall_Start"; }
 						else if(couple){ fichier = "NPC_Ambient.cat"; racine = "Hold"; depuis = "."; passif = choix->female && pl == 1; }
 						// La place assise : Ambient.cat, Sitting_Down/SitHigh (s'asseoir, attendre,
 						// fumer ou discuter assis, se relever ; variante des filles si IsFemale).
@@ -1066,10 +1075,8 @@ main(int argc, char **argv)
 						// (Crying : attente, puis REAC_CRY de temps en temps). Les autres
 						// (F_Biker, F_Criminal, Beggar…) sont des fonctions de script : attente.
 						else if(pt.type == "Specific_Event" && groupe.empty()){
-							std::string nm = pt.nom.compare(0, 2, "F_") == 0 ? pt.nom.substr(2) : pt.nom;
-							outil::Arbre *amb = ArbreDe("Ambient.cat");
-							int32 sc = amb && nm != "Specific" ? amb->Chercher(nm.c_str()) : -1;
-							if(sc >= 0 && amb->noeuds[sc].n->genre == 'b'){ fichier = "Ambient.cat"; racine = nm; depuis = "."; an->bassinRef = 0.86f; }
+							auto sc = kScenes.find(pt.nom);
+							if(sc != kScenes.end()){ fichier = "Ambient.cat"; racine = sc->second; depuis = "."; an->bassinRef = 0.86f; }
 						}
 						else if(pt.type == "Hang_Out"){ fichier = "Talking.cat"; racine = "Talking"; depuis = "."; }
 						else if(pt.type == "Spectator"){ fichier = "Ambient.cat"; racine = "SpectatorAnims"; depuis = "./SpecLike"; }

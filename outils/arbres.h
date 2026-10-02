@@ -50,6 +50,8 @@ public:
 		static const uint32 kCible = ActionHash("PlayOnTarget"), kAttEx = ActionHash("PropAttachEx"), kAtt = ActionHash("PropAttach"),
 		                    kDet = ActionHash("PropDetach"), kDetEx = ActionHash("PropDetachEx");
 		passif.assign(noeuds.size(), false); accroche.assign(noeuds.size(), false); lache.assign(noeuds.size(), false);
+		anime.assign(noeuds.size(), false);
+		static const uint32 kAnimation = ActionHash("Animation");
 		for(size_t i = 0; i < noeuds.size(); i++){
 			for(const CActionTrack &t : Pistes((int32)i)){
 				for(const CActionAttribut &a : t.attributs){
@@ -65,11 +67,13 @@ public:
 				if(t.type == kCible){ int32 j = Resoudre((int32)i, Chaine(t, 32)); if(j >= 0) passif[j] = true; }
 				if(t.type == kAttEx || t.type == kAtt) accroche[i] = true;
 				if(t.type == kDet || t.type == kDetEx) lache[i] = true;
+				if(t.type == kAnimation) for(int32 k = (int32)i; k >= 0 && !anime[k]; k = noeuds[k].parent) anime[k] = true;
 			}
 		}
 		return true;
 	}
 	std::vector<bool> passif, accroche, lache;
+	std::vector<bool> anime;             // le sous-arbre joue au moins une animation
 	// Des nœuds qu'on ne visite pas, par nom (le vol d'arme : nos piétons n'en ont pas).
 	std::vector<uint32> interdits;
 	bool Interdit(int32 i) const {
@@ -131,7 +135,9 @@ public:
 			if(t == kOu){ ou = true; continue; }
 			bool v = true;
 			for(uint32 x : kFausses) if(t == x) v = false;
-			if(t == kAleatoire || t == kAleatoire2) v = hasard < 0.5f;
+			// WeightedRandom / Random : le tirage se fait parmi les sœurs (Descendre choisit
+			// au hasard parmi celles qui passent), pas condition par condition.
+			if(t == kAleatoire || t == kAleatoire2) v = true;
 			if(t == kFemme) v = femme;
 			if(inverser) v = !v;
 			inverser = false;
@@ -268,6 +274,8 @@ struct Deroulement {
 	void Avancer(float dt, const ArbreSorties &s){
 		if(!arbre || noeud < 0) return;
 		t += dt;
+		// Rien à jouer ni à attendre (une chaîne finie sur un nœud vide) : on reprend.
+		if(!animEnCours && occasions.empty() && suite.empty() && !suiveur && t > 0.5f){ Entrer(redepart >= 0 ? redepart : racine, s); return; }
 		for(Evenement &e : props) if(!e.fait && t >= e.t){ e.fait = true; if(s.accrocher) s.accrocher(e.point); }
 		// Les occasions, une fois ouvertes.
 		// Un suiveur ne prend pas d'occasion : il attend l'ordre de son partenaire.
@@ -333,6 +341,11 @@ private:
 				if((haut == noeud || e != ici) && !arbre->passif[e] && arbre->Conditions(e, s.hasard(), femme)) ok.push_back(e);
 			// Une fille prend la variante IsFemale quand il y en a une (Sit_GirlIdle
 			// plutôt que la branche générique Sit_Start).
+			// Une branche qui ne joue rien (nettoyage, ReleaseGroup) seulement à défaut.
+			if(ok.size() > 1){
+				std::vector<int32> a; for(int32 e : ok) if(arbre->anime[e]) a.push_back(e);
+				if(!a.empty()) ok = a;
+			}
 			if(femme && ok.size() > 1){
 				std::vector<int32> f;
 				for(int32 e : ok) for(int32 c : arbre->noeuds[e].n->conditions) if(arbre->f.TypeCondition(c) == ActionHash("IsFemale")){ f.push_back(e); break; }

@@ -132,7 +132,10 @@ programmes écrits à la main. C'est une approximation, avec ces règles :
   lui-même (reprise) ; `OpportunityRandomLatch` : à coup
   sûr, à un instant tiré entre ses champs 76 et 80 ;
 - `Execute` dans un nœud sans animation : un saut ;
-- conditions : `WeightedRandom` et `Random` tirent au sort ; `IsFemale` suit le
+- une branche qui ne joue aucune animation (nettoyage, `ReleaseGroup`) n'est
+  choisie qu'à défaut ; un piéton resté sur un nœud vide reprend au départ ;
+- conditions : `WeightedRandom` et `Random` passent ; le tirage se fait parmi
+  les sœurs qui passent (une variante est choisie, pas chacune à 50 %) ; `IsFemale` suit le
   piéton ; `ActionRequest`,
   `IsScriptedAmbient`, `false`, `IsPlayer`, `IsAuthority`, `PedModelID`,
   `Health`, `DamagePending`, `HitTime`, `PropTargetInteractive`,
@@ -179,7 +182,7 @@ Pilotés par un arbre :
 | Point | Arbre | Sous-arbre, départ |
 |---|---|---|
 | fumeur au mur | Ambient.cat | `Wall_Smoke`, `Wall_Start` |
-| fumeur debout | 5_02.cat | `StandingSmoke`, `light` |
+| fumeur de classe (`F_ClassSmokers`) | Ambient.cat | `Wall_Smoke`, comme le dit `EventFunc.lur` (5_02.cat `StandingSmoke` est un arbre de mission) |
 | couple | NPC_Ambient.cat | banc de `Hold` ; le garçon part de `Hold`, la fille suit |
 | bagarre de filles | Grapples.cat | banc de `GirlFight_Init` : Init → Loop (5 à 10 s) → Out |
 | bagarre au sol | Grapples.cat | `mount`, `MountIdle/Give` : `MountOpps` choisit le coup selon la clique (`FacePunch`, `KneeDrop`, `Headbutt`, `Dismount`…) |
@@ -198,7 +201,7 @@ du groupe de l'animation jouée ; le bassin de référence suit aussi le groupe
 | spectateur | Ambient.cat | banc de `SpectatorAnims`, départ `SpecLike` : une réaction `GEN_IMPRESSED` tirée au hasard, puis `SpectatorWait/SpectatorLikeWait` (pose tenue, `HoldState`) qui relance `SpecLike` au bout de 1,5 s |
 | groupe qui discute | Talking.cat | `Talking` : une branche par gabarit (`CharacterSize`, faux ici), clique et sexe ; attente `Load` puis geste de parole tiré au hasard (`S_NERD`, `SGIRLS`, `S_GEN`, `S_FAT`, `CHAT`…) |
 | harcèlement | Ambient.cat | `BookHarass/GrappleAttempt/GrappleSuccess` : le caïd tient les livres hors de portée (`BOOKTEASE_GIV`), la victime (`Harrassed`, `BOOKTEASE_RCV`) tente de les attraper ; fin `*_END`. Les animations ont le bassin à l'origine et pas de flèche : les deux piétons sont posés face à face à 0,9 m (la TargetSync de la piste) |
-| événement particulier | Ambient.cat | la scène scriptée dont le nom est celui du point sans `F_` : `Crying` (attente, puis `REAC_CRY` de temps en temps) ; F_Biker, F_Criminal, Beggar… sont des fonctions de script sans scène de ce nom : attente |
+| événement particulier | Ambient.cat | la scène que lance sa fonction d'événement dans `Scripts/EventFunc.lur` (`/Global/Ambient/Scripted/…`) : `F_Crying` → `Crying`, `F_DrunkenBeggar` → `Drunk`, `F_Cheerleading` → `Cheering`, `F_Workout` → `Workout`, `F_WallHangout` → `Wall_Lean`, `F_Sweep` → `SweepFloors`… (scènes à un piéton) ; `F_ClassSmokers` → `Wall_Smoke` ; F_Biker, F_Criminal… n'ont pas de nœud (code du moteur) : attente |
 | prise debout | Ambient.cat | `LockerStuff/StuffGrap`, `GrappleSuccess/Pull_In_heavy/Give` (empoignade `GRAP_INIT`), puis `Hold_Idle` (`GRAP_IDLE`) |
 
 Tout piéton dont l'arbre accroche un objet reçoit la cigarette (qui n'apparaît
