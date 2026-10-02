@@ -1049,6 +1049,9 @@ main(int argc, char **argv)
 						// La place assise : Ambient.cat, Sitting_Down/SitHigh (s'asseoir, attendre,
 						// fumer ou discuter assis, se relever ; variante des filles si IsFemale).
 						else if(pt.type == "Sitting_Spot"){ fichier = "Ambient.cat"; racine = "SitHigh"; depuis = "."; }
+						// Les spectateurs : Ambient.cat, Spectator (réactions GEN_IMPRESSED tirées au
+						// hasard, puis attente en gardant la pose, et ainsi de suite).
+						else if(pt.type == "Spectator"){ fichier = "Ambient.cat"; racine = "SpectatorAnims"; depuis = "./SpecLike"; }
 						// Les bagarres (Grapples.cat) : le combat de filles (Init / Loop / Out) et les
 						// montées des garçons.
 						else if(filles){ fichier = "Grapples.cat"; racine = "GirlFight_Init"; depuis = "./GirlFight_Init/Give"; passif = pl == 1; }
@@ -1058,8 +1061,8 @@ main(int argc, char **argv)
 						else if(prise){ fichier = "Ambient.cat"; racine = "StuffGrap"; depuis = "./GrappleSuccess/Pull_In_heavy/Give"; passif = pl == 1; }
 						outil::Arbre *ar = fichier.empty() ? nil : ArbreDe(fichier);
 						int32 r = ar ? ar->Chercher(racine.c_str()) : -1;
-						if(ar && r >= 0 && (couple || filles)) r = ar->noeuds[r].parent;   // le banc qui contient Hold / Held, ou GirlFight_Init / Loop / Out
-						int32 d = r >= 0 ? (couple ? ar->Chercher(racine.c_str()) : ar->Resoudre(r, depuis)) : -1;
+						if(ar && r >= 0 && (couple || filles || pt.type == "Spectator")) r = ar->noeuds[r].parent;   // spectateurs : le banc qui contient SpectatorAnims et SpectatorWait   // le banc qui contient Hold / Held, ou GirlFight_Init / Loop / Out
+						int32 d = r >= 0 ? (couple ? ar->Chercher(racine.c_str()) : pt.type == "Spectator" ? ar->Resoudre(ar->Chercher(racine.c_str()), depuis) : ar->Resoudre(r, depuis)) : -1;
 						if(d >= 0){
 							// Le vol d'arme (Ambient.cat, GrappleOpps/Scripted/WeaponSteal) suppose une
 							// arme sur la cible, et ses animations (C_Player) se placent par TargetSync,
@@ -1068,7 +1071,10 @@ main(int argc, char **argv)
 							pa.parArbre = true; pa.der.arbre = ar; pa.der.racine = r; pa.der.redepart = passif ? -1 : d; pa.der.suiveur = passif; pa.der.femme = choix->female != 0; pa.departArbre = passif ? -1 : d;
 							// Un arbre qui accroche des objets (la cigarette) : le modèle tenu, s'il
 							// n'est pas déjà là ; l'arbre décide quand il apparaît.
-							bool prend = false; for(bool x : ar->accroche) prend = prend || x;
+							bool prend = false;
+							for(size_t x = 0; x < ar->noeuds.size(); x++) if(ar->accroche[x]){
+								for(int32 k = (int32)x; k >= 0; k = ar->noeuds[k].parent) if(k == r){ prend = true; break; }
+							}
 							if(prend && !pa.tenu){
 								pa.points = mxd.Chercher(choix->model);
 								if(pa.points){ pa.tenu = new outil::Anime; if(!m->s->AjouterModele(a, "Cigarette", NifIdentity(), false, pa.tenu)){ delete pa.tenu; pa.tenu = nil; } }

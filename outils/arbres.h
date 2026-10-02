@@ -185,6 +185,7 @@ struct Deroulement {
 	std::string suite;                   // la piste « sequence »
 	static constexpr float CHANCE = 0.08f;
 	int32 transitions = 0;
+	std::shared_ptr<Deroulement> etatAvant;   // l'état au début de la chaîne d'entrées en cours
 	std::vector<int32> trace;            // les derniers nœuds traversés (diagnostic)
 
 	void Entrer(int32 i, const ArbreSorties &s, int profondeur = 0){
@@ -196,16 +197,18 @@ struct Deroulement {
 		if(i == racine && redepart >= 0 && profondeur < 16) i = redepart;
 		// Un suiveur qu'on envoie vers un nœud sans animation en applique les
 		// effets mais garde son animation et son nœud.
-		Deroulement avant = *this;
+		// L'état d'avant la chaîne d'entrées (pas celui du banc qu'on traverse).
+		if(profondeur == 0){ etatAvant.reset(new Deroulement(*this)); etatAvant->etatAvant.reset(); }
+		const Deroulement &avant = etatAvant ? *etatAvant : *this;
 		noeud = i; t = 0; animEnCours = false; duree = -1; fin = -1; vitesse = 1; depart = 0; mode = 0; finPiste = -1;
 		props.clear(); occasions.clear(); suite.clear(); transitions++;
 		trace.push_back(i); if(trace.size() > 24) trace.erase(trace.begin());
 		static const uint32 kAnim = ActionHash("Animation"), kSeq = ActionHash("sequence"), kOcc = ActionHash("Opportunity"),
 			kCible = ActionHash("PlayOnTarget"), kAtt = ActionHash("PropAttach"), kAttEx = ActionHash("PropAttachEx"),
 			kDet = ActionHash("PropDetach"), kDetEx = ActionHash("PropDetachEx"),
-			kExec = ActionHash("Execute"), kLatch = ActionHash("OpportunityRandomLatch");
+			kExec = ActionHash("Execute"), kLatch = ActionHash("OpportunityRandomLatch"), kTenir = ActionHash("HoldState");
 		std::vector<CActionTrack> pistes = arbre->Pistes(i);
-		std::vector<std::string> sauts;
+		std::vector<std::string> sauts; bool tenir = false;
 		for(const CActionTrack &p : pistes){
 			float t12 = Flottant(p, 12, 0);
 			if(p.type == kAnim && !animEnCours){
@@ -224,6 +227,7 @@ struct Deroulement {
 			else if(p.type == kLatch){ std::string c = arbre->Chaine(p, 32); float a = Flottant(p, 76, 0), b = Flottant(p, 80, a);
 				if(!c.empty()) occasions.push_back({t12 + a + (b - a) * s.hasard(), -1, c, true}); }
 			else if(p.type == kExec){ std::string c = arbre->Chaine(p, 32); if(!c.empty()) sauts.push_back(c); }
+			else if(p.type == kTenir) tenir = true;
 			else if(p.type == kCible){ std::string c = arbre->Chaine(p, 32); int32 j = arbre->Resoudre(i, c); if(j >= 0 && s.partenaire) s.partenaire(j); }
 			// PropAttachEx : le point en 28 ; PropAttach : en 24 ; Detach : 0.
 			else if(p.type == kAttEx) props.push_back({t12, p.Mot(28), false});
@@ -241,9 +245,17 @@ struct Deroulement {
 			for(const CActionTrack &p : arbre->Pistes(j))
 				if(p.type == kCible){ int32 k = arbre->Resoudre(j, arbre->Chaine(p, 32)); if(k >= 0 && s.partenaire) s.partenaire(k); }
 		}
+		// HoldState : le nœud garde l'animation (et la pose) d'avant ; ses occasions
+		// et sa « sequence » tournent.
+		if(!animEnCours && tenir && avant.animEnCours){
+			animEnCours = true; duree = avant.duree; fin = avant.fin; vitesse = avant.vitesse; mode = 1;
+			depart = avant.TempsAnim(); finPiste = -1;
+			return;
+		}
 		if(!animEnCours && suiveur && avant.animEnCours){
 			int32 tr = transitions; std::vector<int32> tc = trace;
-			*this = avant; transitions = tr; trace = tc;
+			std::shared_ptr<Deroulement> garde = etatAvant;
+			*this = *garde; transitions = tr; trace = tc; etatAvant = garde;
 			return;
 		}
 		// Sans animation, un Execute vers un nœud du sous-arbre est un saut.

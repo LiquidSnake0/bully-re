@@ -138,6 +138,9 @@ programmes écrits à la main. C'est une approximation, avec ces règles :
   `Health`, `DamagePending`, `HitTime`, `PropTargetInteractive`,
   `TargetRelativeOrientation`, `OBJECTIVE` sont fausses ; `Not` inverse la suivante ;
   `OR` : une au moins ; les autres passent ;
+- `HoldState` : le nœud garde l'animation et la pose d'avant (l'état au début
+  de la chaîne d'entrées, pas celui d'un banc traversé) ; ses occasions et sa
+  `sequence` tournent ;
 - `PlayOnTarget` envoie le partenaire ; le nœud visé est passif : on n'y entre
   que sur ordre, on n'en sort que par sa `sequence`. Le rôle passe avec l'ordre :
   qui l'envoie mène, qui le reçoit suit ; un suiveur fige sa pose à la fin de
@@ -181,11 +184,13 @@ Pilotés par un arbre :
 | bagarre de filles | Grapples.cat | banc de `GirlFight_Init` : Init → Loop (5 à 10 s) → Out |
 | bagarre au sol | Grapples.cat | `mount`, `MountIdle/Give` : `MountOpps` choisit le coup selon la clique (`FacePunch`, `KneeDrop`, `Headbutt`, `Dismount`…) |
 | place assise | Ambient.cat | `Sitting_Down/SitHigh` : s'asseoir (`Sit_Start`), attendre, fumer ou discuter assis, se relever ; variante des filles (`IsFemale`) |
+| spectateur | Ambient.cat | banc de `SpectatorAnims`, départ `SpecLike` : une réaction `GEN_IMPRESSED` tirée au hasard, puis `SpectatorWait/SpectatorLikeWait` (pose tenue, `HoldState`) qui relance `SpecLike` au bout de 1,5 s |
 | prise debout | Ambient.cat | `LockerStuff/StuffGrap`, `GrappleSuccess/Pull_In_heavy/Give` (empoignade `GRAP_INIT`), puis `Hold_Idle` (`GRAP_IDLE`) |
 
 Tout piéton dont l'arbre accroche un objet reçoit la cigarette (qui n'apparaît
-qu'aux instants de l'arbre). Restent sur des tables : les spectateurs (leur
-vrai déroulement passe par AI_POI, `SpectatorOpps`), les groupes qui discutent
+qu'aux instants de l'arbre). Côté AI_POI, le nœud `Spectator` ne joue rien : il lance (`Play`)
+`AIActionOpps/SpectatorOpps`, un arbre assemblé ailleurs ; les réactions
+elles-mêmes sont dans Ambient.cat. Restent sur des tables : les groupes qui discutent
 et le harcèlement (animations `Hang_Talking` / `AggroTaunt` jouées par des
 arbres de mission et le système de dialogue, pas par un arbre unique).
 
