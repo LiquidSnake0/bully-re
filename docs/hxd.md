@@ -37,18 +37,32 @@ le hachage stocké est bien `HashString(nom)` : ce que citent les pistes
 `Animation` des arbres d'actions (docs/cat.md). MAINPED.HXD : 46 masques,
 36 os, 3 365 animations, 425 groupes.
 
-## Du nom à l'animation du `.agr` (ouvert)
+## Du nom à l'animation du `.agr`
 
-La taille `e` d'une animation vaut celle de ses données dans le `.agr`, plus
-4 : `NPC_LOVE\KISS_HARD_B` (4,433 s, 5 048) est la n° 8 de NPC_Love.agr
-(4,433 s, 5 044 octets), et les 14 noms NPC_LOVE de MAINPED tombent, dans
-l'ordre, sur les n° 8 à 21. En prenant les animations d'un groupe dans
-l'ordre de MAINPED et en avançant de `e − 4`, 47 groupes sur 82 se
-retrouvent en entier ; pour les autres (C_PLAYER, F_JOCKS…) la suite casse,
-et un appariement par taille et durée sur tous les HXD ne fait pas mieux.
-Le jeu rattache l'animation à son enregistrement quand le groupe est chargé
-(l'enregistrement reçoit en +0 un pointeur vers les données, que
-`FUN_006b2ca0` décode) : c'est ce code-là qu'il faut lire pour conclure.
+Quand le streaming a chargé un `.agr` (identifiants 0x58ac et suivants :
+`FUN_0052d910` donne à chaque HXD un bloc d'identifiants, un par groupe de
+sa table, MAINPED en premier), `FUN_00531b60` retrouve le HXD et l'indice
+du groupe (`FUN_0052da00`) et appelle `FUN_006bf3a0`, qui aiguille vers
+`FUN_006bf0e0` (ou `FUN_006bee40` au-delà de 50 000 octets) :
 
-Code : `src/anim/Hxd` (CHxdFile) ; test : `tests/test_hxd` ; lecture :
+- il parcourt **tous les enregistrements d'animation du HXD, dans l'ordre** ;
+- il garde ceux dont le champ placé après la taille (+0x20 dans l'objet)
+  **vaut l'indice du groupe** ;
+- il lit le `.agr` d'un trait, une animation par enregistrement gardé
+  (`FUN_006be480`, qui reconnaît l'en-tête 0x100), et range le résultat à
+  la suite dans un bloc de la taille du groupe.
+
+C'est ce champ, pas le préfixe du nom, qui désigne le groupe : les
+enregistrements d'un même groupe ne sont pas consécutifs dans le HXD. Vérifié
+sur les 423 groupes dont le `.agr` existe : en avançant de `taille − 4`
+octets par enregistrement, chaque pas tombe sur un en-tête et le dernier sur
+la fin du fichier ; 3 913 animations rattachées, toutes. L'animation n° k
+d'un `.agr` (celle que lit `AgrLireGroupe`) est donc le k-ième
+enregistrement de son groupe : `NPC_LOVE\KISS_HARD_B` est la n° 8 de
+NPC_Love.agr, `RAT_PED\RAT_SCURRY` la n° 0 de RAT_PED.agr.
+
+Le premier flottant d'un enregistrement n'est pas la durée du fichier
+(proche, souvent égale, différente sur un tiers des groupes).
+
+Code : `src/anim/Hxd` (CHxdFile, `Indice` : hachage → groupe et indice) ; test : `tests/test_hxd` ; lecture :
 `tools/hxd.py <fichier.HXD>`.

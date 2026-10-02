@@ -41,7 +41,7 @@ else
 fi
 g++ $FLAGS tests/test_trigger.cpp src/core/TriggerFile.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_trigger
 g++ $FLAGS tests/test_actiontree.cpp src/core/ActionTree.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_actiontree
-g++ $FLAGS tests/test_hxd.cpp src/anim/Hxd.cpp src/core/ActionTree.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_hxd
+g++ $FLAGS tests/test_hxd.cpp src/anim/Hxd.cpp src/core/ActionTree.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_hxd
 g++ $FLAGS tests/test_horloge.cpp src/core/TriggerFile.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_horloge
 g++ $FLAGS tests/test_timecycle.cpp src/render/TimeCycle.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_timecycle
 # test_world ne lit aucun fichier du jeu : il vérifie l'arithmétique de la grille et les listes.

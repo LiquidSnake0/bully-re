@@ -19,11 +19,11 @@
 
 struct CHxdAnim {
 	std::string nom;                   // « GROUPE\NOM »
-	float duree = 0, f1 = 0;           // f1 : 0,3 le plus souvent (un fondu ?)
+	float duree = 0, f1 = 0;           // duree : proche de celle du .agr sans lui être égale ; f1 : 0,3 le plus souvent
 	uint32 hachage = 0;                // HashString(nom), ce que citent les pistes Animation (docs/cat.md)
 	uint32 drapeaux = 0;
 	uint32 taille = 0;                 // taille des données dans le .agr, plus 4
-	uint32 f5 = 0;
+	uint32 groupe = 0;                 // l'indice du groupe dans la table de ce HXD (FUN_006bf0e0)
 	int32 nEvenements = 0;
 	uint16 w[4] = {0, 0, 0, 0};
 	float v[3] = {0, 0, 0};
@@ -44,5 +44,19 @@ public:
 	const CHxdAnim *Chercher(uint32 hachage) const {
 		for(const CHxdAnim &a : anims) if(a.hachage == hachage) return &a;
 		return nil;
+	}
+	// Le rattachement (FUN_006bf0e0, au chargement du groupe) : les animations
+	// du groupe g sont, dans l'ordre des enregistrements du HXD, celles dont le
+	// champ groupe vaut g ; le .agr se lit d'un trait, chacune occupant
+	// taille − 4 octets. Rend l'indice de l'animation dans son .agr, et son
+	// groupe, ou -1.
+	int32 Indice(uint32 hachage, int32 *groupeTrouve = nil) const {
+		for(size_t i = 0; i < anims.size(); i++) if(anims[i].hachage == hachage){
+			int32 k = 0;
+			for(size_t j = 0; j < i; j++) k += anims[j].groupe == anims[i].groupe;
+			if(groupeTrouve) *groupeTrouve = (int32)anims[i].groupe;
+			return k;
+		}
+		return -1;
 	}
 };

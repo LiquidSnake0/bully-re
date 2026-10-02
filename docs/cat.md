@@ -87,8 +87,9 @@ de l'animation (`C_PLAYER\PUNCH_SLOP_1` = 0x6158a6b0 : le groupe est le
 fichier `.agr`), en 28 un masque d'os (`UpperBody_All`, `UBO_Arms_Hd_Sp`…),
 puis des réglages (fondus, vitesse, boucle). Les noms « GROUPE\NOM » sont
 écrits en clair dans `Anim/MAINPED.HXD` et les autres `.HXD` (2 889 dans
-MAINPED, chacun suivi de son hachage). Le format des `.HXD` est dans docs/hxd.md ;
-le passage du nom à l'indice de l'animation dans le `.agr` y reste ouvert.
+MAINPED, chacun suivi de son hachage). Le format des `.HXD` et le passage du nom à
+l'animation du `.agr` sont dans docs/hxd.md ; `tools/cat.py --pistes`
+affiche « [RAT_PED.agr n° 0] » à côté de chaque animation.
 
 Relevé : les 479 fichiers se lisent en entier, l'arbre finit exactement à
 l'en-tête +0xc et les quatre comptes concordent partout (7 552 banques,

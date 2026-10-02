@@ -38,6 +38,20 @@ class Archive:
         return None
 
 
+def rattachements():
+    """HashString("GROUPE\\NOM") -> (groupe, indice dans le .agr), d'après les .HXD (docs/hxd.md)."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from hxd import lire
+    r = {}
+    for f in glob.glob(os.path.join(JEU, "Anim", "*.HXD")):
+        d = lire(open(f, "rb").read())
+        compte = {}
+        for a in d["anims"]:
+            g = a["f"]; k = compte.get(g, 0); compte[g] = k + 1
+            r[a["c"]] = (d["t3"][g][0], k)
+    return r
+
+
 def dictionnaire():
     """Hachage -> nom, à partir de toutes les chaînes plausibles."""
     mots = set()
@@ -116,7 +130,8 @@ class Cat:
         if len(v) == 4:
             x = struct.unpack("<I", v)[0]; f = struct.unpack("<f", v)[0]
             if x > 0xffff and (x & 0x7fffffff) in self.noms:
-                return self.noms[x & 0x7fffffff]
+                ra = getattr(self, "ratt", {}).get(x & 0x7fffffff)
+                return self.noms[x & 0x7fffffff] + (" [%s.agr n° %d]" % ra if ra else "")
             if 1e-3 < abs(f) < 1e5:
                 return "%.3g" % f
             return str(x) if x < 0x10000 else "%#x" % x
@@ -193,6 +208,7 @@ def main():
     c = Cat(act.lire(sys.argv[1]), noms)
     c.voir_pistes = "--pistes" in sys.argv
     if c.voir_pistes:
+        c.ratt = rattachements()
         c.renvois, _ = c.table(0x20)
         c.cites = {d: c.chaine(v) for v, ds in c.renvois for d in ds}
     sortie, fin = c.arbre()
