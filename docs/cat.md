@@ -185,14 +185,15 @@ Pilotés par un arbre :
 | bagarre au sol | Grapples.cat | `mount`, `MountIdle/Give` : `MountOpps` choisit le coup selon la clique (`FacePunch`, `KneeDrop`, `Headbutt`, `Dismount`…) |
 | place assise | Ambient.cat | `Sitting_Down/SitHigh` : s'asseoir (`Sit_Start`), attendre, fumer ou discuter assis, se relever ; variante des filles (`IsFemale`) |
 | spectateur | Ambient.cat | banc de `SpectatorAnims`, départ `SpecLike` : une réaction `GEN_IMPRESSED` tirée au hasard, puis `SpectatorWait/SpectatorLikeWait` (pose tenue, `HoldState`) qui relance `SpecLike` au bout de 1,5 s |
+| groupe qui discute | Talking.cat | `Talking` : une branche par gabarit (`CharacterSize`, faux ici), clique et sexe ; attente `Load` puis geste de parole tiré au hasard (`S_NERD`, `SGIRLS`, `S_GEN`, `S_FAT`, `CHAT`…) |
 | prise debout | Ambient.cat | `LockerStuff/StuffGrap`, `GrappleSuccess/Pull_In_heavy/Give` (empoignade `GRAP_INIT`), puis `Hold_Idle` (`GRAP_IDLE`) |
 
 Tout piéton dont l'arbre accroche un objet reçoit la cigarette (qui n'apparaît
 qu'aux instants de l'arbre). Côté AI_POI, le nœud `Spectator` ne joue rien : il lance (`Play`)
 `AIActionOpps/SpectatorOpps`, un arbre assemblé ailleurs ; les réactions
-elles-mêmes sont dans Ambient.cat. Restent sur des tables : les groupes qui discutent
-et le harcèlement (animations `Hang_Talking` / `AggroTaunt` jouées par des
-arbres de mission et le système de dialogue, pas par un arbre unique).
+elles-mêmes sont dans Ambient.cat. Côté AI_POI, `Hangout` réserve une durée (piste `Hangout`, 26,7 à 33,3 s) et
+lance `AIActionOpps/TalkingOpps` ; les gestes sont dans Talking.cat. Reste sur
+une table : le harcèlement (`AggroTaunt`, joué par des arbres de mission).
 
 Le vol d'arme (`GrappleOpps/Scripted/WeaponSteal`) est écarté : il suppose une
 arme sur la cible, et ses animations (C_Player) se placent par `TargetSync`. `BULLY_TRACE=1` affiche les

@@ -123,7 +123,7 @@ public:
 		static const uint32 kFausses[] = { ActionHash("ActionRequest"), ActionHash("IsScriptedAmbient"), ActionHash("false"),
 			ActionHash("IsPlayer"), ActionHash("IsAuthority"), ActionHash("PedModelID"), ActionHash("Health"),
 			ActionHash("DamagePending"), ActionHash("HitTime"), ActionHash("PropTargetInteractive"), ActionHash("TargetRelativeOrientation"),
-			ActionHash("OBJECTIVE") };
+			ActionHash("OBJECTIVE"), ActionHash("CharacterSize") };
 		bool inverser = false, ou = false, une = false, toutes = true;
 		for(int32 c : noeuds[i].n->conditions){
 			uint32 t = f.TypeCondition(c);

@@ -1051,6 +1051,9 @@ main(int argc, char **argv)
 						else if(pt.type == "Sitting_Spot"){ fichier = "Ambient.cat"; racine = "SitHigh"; depuis = "."; }
 						// Les spectateurs : Ambient.cat, Spectator (réactions GEN_IMPRESSED tirées au
 						// hasard, puis attente en gardant la pose, et ainsi de suite).
+						// Les groupes qui discutent : Talking.cat (par gabarit et clique : une attente,
+						// puis un geste de parole tiré au hasard, S_NERD / SGIRLS / S_GEN…).
+						else if(pt.type == "Hang_Out"){ fichier = "Talking.cat"; racine = "Talking"; depuis = "."; }
 						else if(pt.type == "Spectator"){ fichier = "Ambient.cat"; racine = "SpectatorAnims"; depuis = "./SpecLike"; }
 						// Les bagarres (Grapples.cat) : le combat de filles (Init / Loop / Out) et les
 						// montées des garçons.
