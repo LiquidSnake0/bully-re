@@ -1062,6 +1062,15 @@ main(int argc, char **argv)
 						// Le harcèlement : Ambient.cat, BookHarass (le caïd tient les livres de sa
 						// victime hors de portée, BOOKTEASE_GIV / RCV, puis la lâche).
 						else if(harcelement){ fichier = "Ambient.cat"; racine = "BookHarass"; depuis = "./GrappleAttempt/GrappleSuccess"; passif = pl == 1; }
+						// Un événement particulier dont le nom (sans « F_ ») est une scène d'Ambient.cat
+						// (Crying : attente, puis REAC_CRY de temps en temps). Les autres
+						// (F_Biker, F_Criminal, Beggar…) sont des fonctions de script : attente.
+						else if(pt.type == "Specific_Event" && groupe.empty()){
+							std::string nm = pt.nom.compare(0, 2, "F_") == 0 ? pt.nom.substr(2) : pt.nom;
+							outil::Arbre *amb = ArbreDe("Ambient.cat");
+							int32 sc = amb && nm != "Specific" ? amb->Chercher(nm.c_str()) : -1;
+							if(sc >= 0 && amb->noeuds[sc].n->genre == 'b'){ fichier = "Ambient.cat"; racine = nm; depuis = "."; an->bassinRef = 0.86f; }
+						}
 						else if(pt.type == "Hang_Out"){ fichier = "Talking.cat"; racine = "Talking"; depuis = "."; }
 						else if(pt.type == "Spectator"){ fichier = "Ambient.cat"; racine = "SpectatorAnims"; depuis = "./SpecLike"; }
 						// Les bagarres (Grapples.cat) : le combat de filles (Init / Loop / Out) et les

@@ -198,6 +198,7 @@ du groupe de l'animation jouée ; le bassin de référence suit aussi le groupe
 | spectateur | Ambient.cat | banc de `SpectatorAnims`, départ `SpecLike` : une réaction `GEN_IMPRESSED` tirée au hasard, puis `SpectatorWait/SpectatorLikeWait` (pose tenue, `HoldState`) qui relance `SpecLike` au bout de 1,5 s |
 | groupe qui discute | Talking.cat | `Talking` : une branche par gabarit (`CharacterSize`, faux ici), clique et sexe ; attente `Load` puis geste de parole tiré au hasard (`S_NERD`, `SGIRLS`, `S_GEN`, `S_FAT`, `CHAT`…) |
 | harcèlement | Ambient.cat | `BookHarass/GrappleAttempt/GrappleSuccess` : le caïd tient les livres hors de portée (`BOOKTEASE_GIV`), la victime (`Harrassed`, `BOOKTEASE_RCV`) tente de les attraper ; fin `*_END`. Les animations ont le bassin à l'origine et pas de flèche : les deux piétons sont posés face à face à 0,9 m (la TargetSync de la piste) |
+| événement particulier | Ambient.cat | la scène scriptée dont le nom est celui du point sans `F_` : `Crying` (attente, puis `REAC_CRY` de temps en temps) ; F_Biker, F_Criminal, Beggar… sont des fonctions de script sans scène de ce nom : attente |
 | prise debout | Ambient.cat | `LockerStuff/StuffGrap`, `GrappleSuccess/Pull_In_heavy/Give` (empoignade `GRAP_INIT`), puis `Hold_Idle` (`GRAP_IDLE`) |
 
 Tout piéton dont l'arbre accroche un objet reçoit la cigarette (qui n'apparaît
