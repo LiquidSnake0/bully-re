@@ -56,6 +56,8 @@
 // la regarder.
 #include "commun.h"
 #include "scene.h"
+#include "attache.h"
+#include "../src/anim/Hxd.h"
 #include "monde.h"
 #include "../src/anim/Agr.h"
 #include "../src/core/TriggerFile.h"
@@ -452,6 +454,24 @@ main(int argc, char **argv)
 	// L'attente de chaque catégorie de piéton (le groupe .agr, sa première
 	// animation décodée), chargée une fois.
 	std::map<std::string, std::vector<AgrAnim>> groupes;
+	// Les points d'attache des piétons et les durées de jeu des animations.
+	static CMxdFile mxd; static CHxdFile mainped;
+	{
+		std::vector<uint8> b(4 << 20);
+		int32 n = CFileMgr::LoadFile("Models\\Peds\\MXDs.MGR", b.data(), (int32)b.size(), "rb");
+		if(!(n > 0 && mxd.Load(b.data(), (uint32)n))) printf("  MXDs.MGR illisible : pas d'objets tenus\n");
+		n = CFileMgr::LoadFile("Anim\\MAINPED.HXD", b.data(), (int32)b.size(), "rb");
+		if(!(n > 0 && mainped.Load(b.data(), (uint32)n))) printf("  MAINPED.HXD illisible : durées des .agr\n");
+	}
+	// La durée de jeu de l'animation k du groupe : celle du HXD, sinon celle du .agr.
+	auto DureeDeJeu = [&](const std::string &groupe, int k, const AgrAnim &x) -> float {
+		for(size_t g = 0; g < mainped.groupes.size(); g++){
+			if(strcasecmp(mainped.groupes[g].nom.c_str(), groupe.c_str()) != 0) continue;
+			int i = 0;
+			for(const CHxdAnim &h : mainped.anims) if(h.groupe == g){ if(i == k) return h.duree > 0 ? h.duree : x.duree; i++; }
+		}
+		return x.duree;
+	};
 	auto Attente = [&](const CPedIdeEntry &e) -> const AgrAnim* {
 		if(!imposee.empty()){
 			size_t c = imposee.find(':'); std::string g = imposee.substr(0, c); int n = c == std::string::npos ? 0 : atoi(imposee.c_str() + c + 1);
@@ -540,8 +560,16 @@ main(int argc, char **argv)
 		// Chaque étape se joue entre fois[0] et fois[1] fois ; la suivante entre en
 		// fondu FONDU secondes avant la fin de la dernière, pour que l'animation
 		// sortante ne reparte pas en boucle pendant le fondu.
-		struct Etape { const AgrAnim *a; int fois[2]; };
-		std::vector<Etape> programme; size_t etape = 0; int reste = 0;
+		// Une étape se joue sur sa durée du HXD : SMK_WALL_LIGHT dure 3 s dans
+		// son .agr et 10 s dans MAINPED.HXD, l'échelle de ses pistes PropAttachEx
+		// (vitesse = durée .agr / durée HXD, docs/mxd.md).
+		// `accroches` : les instants (s, temps HXD) où l'objet tenu change de
+		// point d'attache (le hachage du point, 0 : lâché).
+		struct Accroche { float t; uint32 point; };
+		struct Etape { const AgrAnim *a; int fois[2]; float vitesse; std::vector<Accroche> accroches; };
+		std::vector<Etape> programme; size_t etape = 0; int reste = 0; float vitesseAvant = 1;
+		// L'objet tenu (la cigarette) : un modèle rigide accroché à un point de MXDs.MGR.
+		outil::Anime *tenu = nil; const CMxdModele *points = nil; uint32 pointTenu = 0;
 		float Hasard(float a, float b){ hasard = hasard * 1103515245u + 12345u; return a + (b - a) * ((hasard >> 8) & 0xffff) / 65535.0f; }
 	};
 	const float FONDU = 0.3f;
@@ -895,7 +923,24 @@ main(int argc, char **argv)
 					else if(couple) prog = choix->female ? std::vector<std::array<int, 3>>{ {2, 1, 1}, {6, 2, 4}, {4, 1, 1} }        // KISS_START_G, LOOP_G, END_G
 					                                     : std::vector<std::array<int, 3>>{ {7, 1, 1}, {5, 2, 4}, {3, 1, 1} };       // KISS_START_B, LOOP_B, END_B
 					if(ga && !prog.empty()){
-						for(auto &e : prog) if(e[0] < (int)ga->size() && (*ga)[e[0]].decodee) pa.programme.push_back({ &(*ga)[e[0]], {e[1], e[2]} });
+						for(auto &e : prog) if(e[0] < (int)ga->size() && (*ga)[e[0]].decodee){
+							const AgrAnim &x = (*ga)[e[0]];
+							pa.programme.push_back({ &x, {e[1], e[2]}, x.duree / DureeDeJeu(groupe, e[0], x), {} });
+						}
+						// La cigarette (PropAttachEx / PropDetachEx, temps HXD) : prise par la main
+						// gauche, portée à la bouche, passée à la main droite pendant LIGHT ;
+						// lâchée dans STUB. Mur : Ambient.cat, Wall_Smoke ; debout : 5_02.cat,
+						// StandingSmoke (LIGHT) et 3_01.cat (STUB).
+						const uint32 G = CMxdFile::Hachage("LeftCig"), B = CMxdFile::Hachage("MouthCig"), D = CMxdFile::Hachage("RightCig");
+						bool fume = groupe == "POI_Smoking" && pa.programme.size() == prog.size();
+						if(fume && pt.type == "Wall"){ pa.programme[0].accroches = { {2.5f, G}, {3.33f, B}, {7.67f, D} }; pa.programme[4].accroches = { {1.6f, 0} }; }
+						else if(fume){ pa.programme[0].accroches = { {2.67f, G}, {3.2f, B}, {7.67f, D} }; pa.programme[2].accroches = { {0, 0} }; }
+						pa.points = fume ? mxd.Chercher(choix->model) : nil;
+						if(pa.points){
+							pa.tenu = new outil::Anime;
+							if(m->s->AjouterModele(a, "Cigarette", NifIdentity(), false, pa.tenu)) pa.pointTenu = D;   // dans la boucle : déjà à la main droite
+							else{ delete pa.tenu; pa.tenu = nil; }
+						}
 						if(pa.programme.size() == prog.size()){
 							// On entre dans la boucle (étape 1), à un instant propre à chaque point ;
 							// les deux membres d'un couple ont le même hasard : ils restent synchrones.
@@ -910,7 +955,7 @@ main(int argc, char **argv)
 					printf("  point d'intérêt « %s » %s%s%s (à %.0f m, lacet %.0f°) : %s %s, %s", q.nom.c_str(), pt.type.c_str(), pt.nom.empty() ? "" : " ", pt.nom.c_str(),
 					       pr.first, pt.lacetTangageRoulis[0], choix->model, choix->type, n >= 0 ? groupe.c_str() : "attente");
 					if(n >= 0) printf(" n° %d", n);
-					printf("\n");
+					printf(" en (%.1f, %.1f, %.1f)\n", px, py, z);
 				}
 				k++;
 			}
@@ -997,19 +1042,26 @@ main(int argc, char **argv)
 				if(p.momentPop >= 0 || p.poi){
 					bool absent = !Present(p);
 					if(p.an->bloc >= 0) mPietons->s->blocs[p.an->bloc].cache = absent;
+					if(p.tenu && p.tenu->bloc >= 0 && absent) mPietons->s->blocs[p.tenu->bloc].cache = true;
 					if(absent) continue;
 				}
-				p.horloge += dt;
-				if(p.fondu > 0){ p.horlogeAvant += dt; p.fondu -= dt; }
+				float vitesse = p.programme.empty() ? 1 : p.programme[p.etape].vitesse;
+				float avantJeu = p.horloge / vitesse;
+				p.horloge += dt * vitesse;
+				if(p.fondu > 0){ p.horlogeAvant += dt * (p.programme.empty() ? 1 : p.vitesseAvant); p.fondu -= dt; }
 				if(!p.programme.empty()){
+					// Les accroches franchies depuis l'image précédente (temps HXD de l'étape).
+					for(const PietonAnime::Accroche &ac : p.programme[p.etape].accroches)
+						if(ac.t > avantJeu && ac.t <= p.horloge / vitesse) p.pointTenu = ac.point;
 					float d = p.anim->duree;
 					if(p.reste > 1 && p.horloge >= d){ p.horloge -= d; p.reste--; }
 					else if(p.reste <= 1 && p.horloge >= d - FONDU){
 						p.etape = (p.etape + 1) % p.programme.size();
 						const PietonAnime::Etape &e = p.programme[p.etape];
 						p.reste = e.fois[0] + (int)p.Hasard(0, (float)(e.fois[1] - e.fois[0]) + 0.999f);
-						p.avant = p.anim; p.horlogeAvant = p.horloge;
+						p.avant = p.anim; p.horlogeAvant = p.horloge; p.vitesseAvant = vitesse;
 						p.anim = e.a; p.horloge = 0; p.decalage = 0; p.fondu = FONDU;
+						for(const PietonAnime::Accroche &ac : e.accroches) if(ac.t <= 0) p.pointTenu = ac.point;
 					}
 					continue;
 				}
@@ -1094,6 +1146,11 @@ main(int argc, char **argv)
 			}
 			if(p.fondu > 0 && p.avant) mPietons->s->Reposer(*p.an, *p.avant, p.horlogeAvant, p.anim, p.horloge + p.decalage, 1 - p.fondu / FONDU);
 			else mPietons->s->Reposer(*p.an, *p.anim, p.horloge + p.decalage);
+			if(p.tenu && p.tenu->bloc >= 0){
+				const CMxdPoint *pt = p.pointTenu ? p.points->Point(p.pointTenu) : nil;
+				bool tenu = pt && outil::Accrocher(*mPietons->s, *p.an, *pt, *p.tenu);
+				mPietons->s->blocs[p.tenu->bloc].cache = !tenu;
+			}
 		}
 		mPietons->Preparer();
 	};
@@ -1108,8 +1165,9 @@ main(int argc, char **argv)
 			printf("      %s depuis %.1f s (prochain changement à %.1f s)%s, en (%.2f, %.2f, %.2f) cap %.0f°\n", p.enAttente ? "à l'arrêt" : "en marche", p.tEtat, p.dureeEtat, p.fondu > 0 ? ", en fondu" : "",
 			       p.corps.pos.x, p.corps.pos.y, p.corps.pos.z, p.cap * 180 / PI);
 		for(const PietonAnime &p : animes) if(!p.programme.empty())
-			printf("    programme « %s » : étape %zu/%zu, encore %d fois, %.2f s sur %.2f%s\n", p.poi ? p.poi->type.c_str() : "?", p.etape + 1, p.programme.size(),
-			       p.reste, p.horloge, p.anim->duree, p.fondu > 0 ? ", en fondu" : "");
+			printf("    programme « %s » : étape %zu/%zu, encore %d fois, %.2f s sur %.2f (temps HXD %.2f)%s%s%s\n", p.poi ? p.poi->type.c_str() : "?", p.etape + 1, p.programme.size(),
+			       p.reste, p.horloge, p.anim->duree, p.horloge / p.programme[p.etape].vitesse, p.fondu > 0 ? ", en fondu" : "",
+			       p.tenu ? ", cigarette : " : "", !p.tenu ? "" : p.pointTenu && p.points->Point(p.pointTenu) ? p.points->Point(p.pointTenu)->nom.c_str() : "aucune");
 		for(const PietonAnime &p : animes) if(p.trajet)
 			printf("    patrouille « %s » : vers le point %d sur %zu, %s, en (%.2f, %.2f, %.2f), à %.1f m de son départ\n", p.trajet->nom.c_str(), p.cible, p.trajet->points.size(),
 			       p.enAttente ? "à l'arrêt" : "en marche", p.corps.pos.x, p.corps.pos.y, p.corps.pos.z, hypotf(p.corps.pos.x - p.depart.x, p.corps.pos.y - p.depart.y));

@@ -61,8 +61,15 @@ d'un `.agr` (celle que lit `AgrLireGroupe`) est donc le k-ième
 enregistrement de son groupe : `NPC_LOVE\KISS_HARD_B` est la n° 8 de
 NPC_Love.agr, `RAT_PED\RAT_SCURRY` la n° 0 de RAT_PED.agr.
 
-Le premier flottant d'un enregistrement n'est pas la durée du fichier
-(proche, souvent égale, différente sur un tiers des groupes).
+Le premier flottant d'un enregistrement n'est pas toujours la durée du
+`.agr` : sur les 3 365 animations de MAINPED dont le `.agr` se lit, 2 868 ont
+la même durée à 2 % près, les autres de 0,05 à 2,9 fois. C'est la **durée de
+jeu** : `NPC_GENERIC\SMK_WALL_LIGHT` dure 3,0 s dans POI_Smoking.agr et 10 s
+ici, et les instants de ses pistes `PropAttachEx` (2,5, 3,33, 7,67 s) ne
+tombent sur les gestes (les mains qui se rejoignent, la cigarette à la
+bouche, la main droite à la bouche) qu'en temps HXD : l'animation s'étire
+sur la durée du HXD (docs/mxd.md). Les poses d'une seule image (0,033 s dans
+le `.agr`) sont tenues la durée du HXD (`F_GIRLS\FM_SLEEP_RIGHTB` : 1 s).
 
 Code : `src/anim/Hxd` (CHxdFile, `Indice` : hachage → groupe et indice) ; test : `tests/test_hxd` ; lecture :
 `tools/hxd.py <fichier.HXD>`.

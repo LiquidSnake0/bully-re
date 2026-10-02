@@ -53,6 +53,9 @@ struct Anime {
 	// piste du bassin compte en absolu, mise à l'échelle du modèle (repos de son
 	// Root / référence) : un piéton s'assoit vraiment.
 	float bassinRef = 0;
+	// Les transformations des nœuds dans le repère du modèle, après le dernier
+	// Reposer : de quoi y accrocher un objet tenu (outils/attache.h).
+	std::vector<NifTransform> mondes;
 	~Anime(){ nif.Free(); free(buf); }
 };
 
@@ -270,11 +273,23 @@ struct Scene {
 			if(!b2) d2 = d1;
 			if(b1 || b2) decalage[an.noeuds[1]] = CVector(d1.x + w * (d2.x - d1.x), d1.y + w * (d2.y - d1.y), d1.z + w * (d2.z - d1.z));
 		}
-		std::vector<NifTransform> mondes(f.numBlocks);
+		std::vector<NifTransform> &mondes = an.mondes;
+		mondes.resize(f.numBlocks);
 		NifWorldTransforms(f, mondes.data(), pose.data(), true, decalage.data());
 		int32 ecrire = an.ptDebut;
 		Ctx c{this, nil, nil, an.place, mondes.data(), &ecrire};
 		NifWalkShapes(f, Forme, &c);
+		Englober(an);
+	}
+	// Remet un modèle rigide à sa place `an.place` (un objet tenu qui suit une main).
+	void Replacer(Anime &an){
+		int32 ecrire = an.ptDebut;
+		Ctx c{this, nil, nil, an.place, nil, &ecrire};
+		NifWalkShapes(an.nif, Forme, &c);
+		Englober(an);
+	}
+	// Recalcule la sphère englobante du bloc d'un modèle déplacé.
+	void Englober(Anime &an){
 		if(an.bloc >= 0){
 			Bloc &b = blocs[an.bloc];
 			CVector mn = pts[b.ptDebut], mx = mn;

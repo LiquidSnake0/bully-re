@@ -91,6 +91,17 @@ MAINPED, chacun suivi de son hachage). Le format des `.HXD` et le passage du nom
 l'animation du `.agr` sont dans docs/hxd.md ; `tools/cat.py --pistes`
 affiche « [RAT_PED.agr n° 0] » à côté de chaque animation.
 
+Les objets tenus : une piste `PropAttachEx` porte en 12 l'instant (en
+secondes de la durée **du HXD**, pas du `.agr`), en 24 le modèle
+(`cigarette`), en 28 le **HashString du point d'attache** de
+`Models/Peds/MXDs.MGR` (`LeftCig` = 0x47c19c6a, `MouthCig`,
+`RightCig` = 0x2654fed) et en 32 l'emplacement (`LeftHand`, `Mouth`,
+`RightHand`) ; `PropDetachEx` porte en 24 le point à libérer. Pour
+`Wall_Smoke` (Ambient.cat) : main gauche à 2,5 s, bouche à 3,33, main droite
+à 7,67 pendant `SMK_WALL_LIGHT`, lâchée à 1,6 s de `SMK_WALL_STUB` ; pour
+`StandingSmoke` (5_02.cat) : 2,67, 3,2 et 7,67 avec des `PropAttach`. Les
+points et l'échelle de temps : docs/mxd.md.
+
 Relevé : les 479 fichiers se lisent en entier, l'arbre finit exactement à
 l'en-tête +0xc et les quatre comptes concordent partout (7 552 banques,
 4 546 nœuds jouables, 259 références, 13 435 feuilles). En hachant les
