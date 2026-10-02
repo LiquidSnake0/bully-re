@@ -57,6 +57,7 @@
 #include "commun.h"
 #include "scene.h"
 #include "attache.h"
+#include "arbres.h"
 #include "../src/anim/Hxd.h"
 #include "../src/anim/AgrHxd.h"
 #include "monde.h"
@@ -504,6 +505,29 @@ main(int argc, char **argv)
 		}
 		printf("  réglages des pistes Animation : %zu animations\n", reglages.size());
 	};
+	// Les arbres d'actions par nom de fichier (Act.img), chargés une fois.
+	static std::map<std::string, std::unique_ptr<outil::Arbre>> arbres;
+	auto ArbreDe = [&](const std::string &fichier) -> outil::Arbre* {
+		auto it = arbres.find(fichier);
+		if(it != arbres.end()) return it->second.get();
+		static int32 act = -2; if(act == -2) act = CdStream::AddImage("Act\\Act.img");
+		std::unique_ptr<outil::Arbre> x;
+		uint32 n; uint8 *b = act >= 0 ? outil::LireEntree(act, "Act\\Act.img", fichier.c_str(), &n) : nil;
+		if(b){ x.reset(new outil::Arbre); x->nom = fichier; if(!x->Charger(b, n)) x.reset(); }
+		outil::Arbre *r = x.get(); arbres[fichier] = std::move(x);
+		return r;
+	};
+	// Un groupe d'animations par nom (World.img, sinon Anim\), étiré sur le HXD.
+	auto Groupe = [&](const std::string &g) -> std::vector<AgrAnim>* {
+		if(!groupes.count(g)){
+			std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, g + ".agr", &nb);
+			if(!b){ std::vector<uint8> t(8 << 20); int32 k = CFileMgr::LoadFile(("Anim\\" + g + ".agr").c_str(), t.data(), (int32)t.size(), "rb");
+			        if(k > 0){ b = (uint8*)malloc(k); memcpy(b, t.data(), k); nb = (uint32)k; } }
+			if(b){ AgrLireGroupe(b, nb, v); free(b); HxdEtirer(v, mainped, g.c_str()); }
+			groupes[g] = v;
+		}
+		return &groupes[g];
+	};
 	// L'enregistrement HXD de l'animation k du groupe (son hachage, docs/hxd.md).
 	auto Enregistrement = [&](const std::string &groupe, int k) -> const CHxdAnim* {
 		for(size_t g = 0; g < mainped.groupes.size(); g++){
@@ -615,6 +639,11 @@ main(int argc, char **argv)
 		std::vector<Etape> programme; size_t etape = 0; int reste = 0; float vitesseAvant = 1;
 		// L'objet tenu (la cigarette) : un modèle rigide accroché à un point de MXDs.MGR.
 		outil::Anime *tenu = nil; const CMxdModele *points = nil; uint32 pointTenu = 0;
+		// Un piéton piloté par un arbre d'actions (outils/arbres.h) : son déroulement,
+		// le nœud où il commence (-1 : passif, il attend son partenaire), le
+		// partenaire (indice dans `animes`, PlayOnTarget).
+		bool parArbre = false; outil::Deroulement der; int32 departArbre = -1, partenaire = -1; bool arbreParti = false;
+		float fonduTotal = 0.3f;
 		float Hasard(float a, float b){ hasard = hasard * 1103515245u + 12345u; return a + (b - a) * ((hasard >> 8) & 0xffff) / 65535.0f; }
 	};
 	// Le fondu par défaut du jeu : le second flottant de chaque animation des .HXD
@@ -1006,8 +1035,28 @@ main(int argc, char **argv)
 							pa.horloge = pa.programme[1].depart + pa.Hasard(0, (pa.programme[1].Fin() - pa.programme[1].depart) * 0.9f);
 						}else pa.programme.clear();
 					}
+					// L'arbre d'actions qui pilote ce type de point, s'il est connu : il
+					// remplace le programme écrit à la main (outils/arbres.h).
+					{
+						std::string fichier, racine, depuis; bool passif = false;
+						if(groupe == "POI_Smoking" && pt.type == "Wall"){ fichier = "Ambient.cat"; racine = "Wall_Smoke"; depuis = "./Wall_Start"; }
+						else if(groupe == "POI_Smoking"){ fichier = "5_02.cat"; racine = "StandingSmoke"; depuis = "./Light"; }
+						else if(couple){ fichier = "NPC_Ambient.cat"; racine = "Hold"; depuis = "."; passif = choix->female && pl == 1; }
+						outil::Arbre *ar = fichier.empty() ? nil : ArbreDe(fichier);
+						int32 r = ar ? ar->Chercher(racine.c_str()) : -1;
+						if(ar && r >= 0 && couple) r = ar->noeuds[r].parent;           // le banc qui contient Hold, Held, Hold_Idle
+						int32 d = r >= 0 ? (couple ? ar->Chercher(racine.c_str()) : ar->Resoudre(r, depuis)) : -1;
+						if(d >= 0){
+							pa.parArbre = true; pa.der.arbre = ar; pa.der.racine = r; pa.departArbre = passif ? -1 : d;
+							if(pa.points) pa.pointTenu = 0;                                   // l'arbre allume lui-même
+							static std::set<std::string> vus;
+							if(vus.insert(fichier + "/" + racine).second) printf("    arbre %s, %s : départ %s\n", fichier.c_str(), ar->Nom(r).c_str(), ar->Nom(d).c_str());
+						}
+					}
 					pa.cap = cap; pa.corps.pos = CVector(px, py, z); pa.depart = pa.corps.pos;
 					animes.push_back(pa); poses++; dejaPoses.insert(choix->model);
+					// Les deux membres d'un couple se répondent (PlayOnTarget).
+					if(couple && pl == 1 && animes.size() >= 2){ animes.back().partenaire = (int32)animes.size() - 2; animes[animes.size() - 2].partenaire = (int32)animes.size() - 1; }
 					printf("  point d'intérêt « %s » %s%s%s (à %.0f m, lacet %.0f°) : %s %s, %s", q.nom.c_str(), pt.type.c_str(), pt.nom.empty() ? "" : " ", pt.nom.c_str(),
 					       pr.first, pt.lacetTangageRoulis[0], choix->model, choix->type, n >= 0 ? groupe.c_str() : "attente");
 					if(n >= 0) printf(" n° %d", n);
@@ -1076,6 +1125,30 @@ main(int argc, char **argv)
 	// Avance le monde des piétons jusqu'à l'instant t (pas de 1/60 s au plus :
 	// la marche suit le sol et les murs pas à pas), puis les pose.
 	float tPietons = 0;
+	// Ce que l'arbre d'actions demande au piéton i (outils/arbres.h).
+	std::function<outil::ArbreSorties(size_t)> Sorties = [&](size_t i) -> outil::ArbreSorties {
+		outil::ArbreSorties so;
+		so.jouer = [&, i](uint32 h, int32 mode, float depart, float fin, float vitesse, float fondu) -> float {
+			int32 g = -1, k = mainped.Indice(h, &g);
+			if(k < 0 || g < 0 || g >= (int32)mainped.groupes.size()) return -1;
+			std::vector<AgrAnim> *v = Groupe(mainped.groupes[g].nom);
+			if(k >= (int32)v->size() || !(*v)[k].decodee) return -1;
+			PietonAnime &p = animes[i];
+			const CHxdAnim *rec = mainped.Chercher(h);
+			float fd = fondu == 0 ? 0 : fondu < 0 ? (rec ? rec->fondu : FONDU) : fondu;
+			if(fd > 0 && p.anim){ p.avant = p.anim; p.horlogeAvant = p.horloge + p.decalage; p.vitesseAvant = p.der.vitesse; p.fondu = fd; p.fonduTotal = fd; }
+			else p.fondu = 0;
+			p.anim = &(*v)[k]; (void)mode; (void)depart; (void)fin; (void)vitesse;
+			return p.anim->duree;
+		};
+		so.accrocher = [&, i](uint32 point){ animes[i].pointTenu = point; };
+		so.partenaire = [&, i](int32 noeud){
+			int32 j = animes[i].partenaire;
+			if(j >= 0 && j < (int32)animes.size() && animes[j].der.arbre == animes[i].der.arbre){ animes[j].arbreParti = true; animes[j].der.Entrer(noeud, Sorties((size_t)j)); }
+		};
+		so.hasard = [&, i]() -> float { return animes[i].Hasard(0, 1); };
+		return so;
+	};
 	auto Animer = [&](float t){
 		if(!mPietons || animes.empty()){
 			// Sans piétons, l'horloge avance quand même.
@@ -1101,6 +1174,14 @@ main(int argc, char **argv)
 					if(p.tenu && p.tenu->bloc >= 0 && absent) mPietons->s->blocs[p.tenu->bloc].cache = true;
 					if(absent) continue;
 				}
+				if(p.parArbre){
+					size_t moi = (size_t)(&p - &animes[0]);
+					if(p.fondu > 0){ p.horlogeAvant += dt * p.vitesseAvant; p.fondu -= dt; }
+					if(!p.arbreParti){ p.arbreParti = true; if(p.departArbre >= 0) p.der.Entrer(p.departArbre, Sorties(moi)); }
+					p.der.Avancer(dt, Sorties(moi));
+					p.horloge = p.der.TempsAnim(); p.decalage = 0;
+					continue;
+				}
 				float vitesse = p.programme.empty() ? 1 : p.programme[p.etape].vitesse;
 				const float depart = p.programme.empty() ? 0 : p.programme[p.etape].depart;
 				float avantJeu = (p.horloge - depart) / vitesse;
@@ -1117,7 +1198,7 @@ main(int argc, char **argv)
 						const PietonAnime::Etape &e = p.programme[p.etape];
 						p.reste = e.fois[0] + (int)p.Hasard(0, (float)(e.fois[1] - e.fois[0]) + 0.999f);
 						p.avant = p.anim; p.horlogeAvant = p.horloge; p.vitesseAvant = vitesse;
-						p.anim = e.a; p.horloge = e.depart; p.decalage = 0; p.fondu = FONDU;
+						p.anim = e.a; p.horloge = e.depart; p.decalage = 0; p.fondu = FONDU; p.fonduTotal = FONDU;
 						for(const PietonAnime::Accroche &ac : e.accroches) if(ac.t <= 0) p.pointTenu = ac.point;
 					}
 					continue;
@@ -1126,7 +1207,7 @@ main(int argc, char **argv)
 					if(versAttente == p.enAttente || (versAttente && !p.att)) return;
 					p.avant = p.anim; p.horlogeAvant = p.horloge + p.decalage;
 					p.enAttente = versAttente; p.anim = versAttente ? p.att : p.pas;
-					p.horloge = 0; p.decalage = 0; p.fondu = FONDU; p.tEtat = 0;
+					p.horloge = 0; p.decalage = 0; p.fondu = FONDU; p.fonduTotal = FONDU; p.tEtat = 0;
 				};
 				if(p.trajet){
 					const std::vector<CTriggerPathPoint> &pts = p.trajet->points;
@@ -1170,13 +1251,13 @@ main(int argc, char **argv)
 						p.avant = p.anim; p.horlogeAvant = p.horloge + p.decalage;
 						p.enAttente = !p.enAttente;
 						p.anim = p.enAttente ? p.att : p.pas;
-						p.horloge = 0; p.decalage = 0; p.fondu = FONDU; p.tEtat = 0;
+						p.horloge = 0; p.decalage = 0; p.fondu = FONDU; p.fonduTotal = FONDU; p.tEtat = 0;
 						p.dureeEtat = p.enAttente ? p.Hasard(2, 4) : p.Hasard(5, 10);
 					}
 				}
 				if(!p.marche) continue;
 				// La part de marche : 1 en marchant, 0 à l'arrêt, suivant le fondu entre les deux.
-				float f = p.fondu > 0 ? p.fondu / FONDU : 0;
+				float f = p.fondu > 0 ? p.fondu / p.fonduTotal : 0;
 				float part = p.enAttente ? f : 1 - f;
 				if(part <= 0){ p.bloque = 0; continue; }
 				CVector avant = p.corps.pos;
@@ -1201,7 +1282,7 @@ main(int argc, char **argv)
 				float q[4] = { 0, 0, sinf(lacetP / 2), cosf(lacetP / 2) };
 				p.an->place = NifFromPlacement(p.corps.pos, CVector(1, 1, 1), q);
 			}
-			if(p.fondu > 0 && p.avant) mPietons->s->Reposer(*p.an, *p.avant, p.horlogeAvant, p.anim, p.horloge + p.decalage, 1 - p.fondu / FONDU);
+			if(p.fondu > 0 && p.avant) mPietons->s->Reposer(*p.an, *p.avant, p.horlogeAvant, p.anim, p.horloge + p.decalage, 1 - p.fondu / p.fonduTotal);
 			else mPietons->s->Reposer(*p.an, *p.anim, p.horloge + p.decalage);
 			if(p.tenu && p.tenu->bloc >= 0){
 				const CMxdPoint *pt = p.pointTenu ? p.points->Point(p.pointTenu) : nil;
@@ -1221,7 +1302,11 @@ main(int argc, char **argv)
 			       p.corps.auSol ? "au sol" : "en l'air"),
 			printf("      %s depuis %.1f s (prochain changement à %.1f s)%s, en (%.2f, %.2f, %.2f) cap %.0f°\n", p.enAttente ? "à l'arrêt" : "en marche", p.tEtat, p.dureeEtat, p.fondu > 0 ? ", en fondu" : "",
 			       p.corps.pos.x, p.corps.pos.y, p.corps.pos.z, p.cap * 180 / PI);
-		for(const PietonAnime &p : animes) if(!p.programme.empty())
+		for(const PietonAnime &p : animes) if(p.parArbre && p.der.arbre)
+			printf("    arbre « %s » : nœud %s, %.2f s (animation %.2f sur %.2f), %d transitions%s%s\n", p.poi ? p.poi->type.c_str() : "?", p.der.arbre->Nom(p.der.noeud).c_str(), p.der.t,
+			       p.horloge, p.anim ? p.anim->duree : 0.0f, p.der.transitions, p.tenu ? ", cigarette : " : "",
+			       !p.tenu ? "" : p.pointTenu && p.points->Point(p.pointTenu) ? p.points->Point(p.pointTenu)->nom.c_str() : "aucune");
+		for(const PietonAnime &p : animes) if(!p.programme.empty() && !p.parArbre)
 			printf("    programme « %s » : étape %zu/%zu, encore %d fois, %.2f s sur %.2f (temps du nœud %.2f)%s%s%s\n", p.poi ? p.poi->type.c_str() : "?", p.etape + 1, p.programme.size(),
 			       p.reste, p.horloge, p.programme[p.etape].Fin(), (p.horloge - p.programme[p.etape].depart) / p.programme[p.etape].vitesse, p.fondu > 0 ? ", en fondu" : "",
 			       p.tenu ? ", cigarette : " : "", !p.tenu ? "" : p.pointTenu && p.points->Point(p.pointTenu) ? p.points->Point(p.pointTenu)->nom.c_str() : "aucune");

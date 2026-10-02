@@ -98,6 +98,8 @@ l'objet :
 
 | Position | Sens |
 |---|---|
+| 12 | (toutes les pistes) instant d'entrée en jeu dans le nœud (s) |
+| 16 | (toutes les pistes) durée de vie dans le nœud (s) ; −1 : sans limite. Une boucle à 16 = 2,27 finit le nœud à 2,27 s |
 | 24 | HashString de l'animation |
 | 28 | masque d'os (`FUN_00607340`) |
 | 32 | mode : 2 = boucle ; sinon la piste finit avec l'animation (1 : appelle aussi `FUN_006c0c60` à la fin) |
@@ -109,6 +111,22 @@ l'objet :
 | 56 | passé à `FUN_006bd320` à l'arrêt |
 | 60 | octet : pose un drapeau du piéton (+0xe4) le temps de la piste |
 | 61 | octet : la vitesse suit le déplacement réel (synchro de la marche) |
+
+## Un exécuteur simplifié
+
+`outils/arbres.h` déroule un arbre pour un piéton de la visite, au lieu des
+programmes écrits à la main. C'est une approximation : les chemins
+(`.`, `..`, noms hachés), la piste Animation (champs 16 à 52), `sequence` à la
+fin d'une animation, `Opportunity` prise au hasard une fois ouverte, conditions
+`WeightedRandom` (tirage), `ActionRequest` / `IsScriptedAmbient` (fausses),
+`Not`, `PlayOnTarget` (le partenaire ; le nœud visé est passif : on n'y entre
+que sur ordre, on n'en sort que par sa `sequence`), mode 1 qui fige la
+dernière pose, et un nœud qui lâche l'objet ressort au-dessus de celui qui
+l'avait pris. Pilotés par un arbre : fumeurs au mur (Ambient.cat,
+`Wall_Smoke`, départ `Wall_Start`), fumeurs debout (5_02.cat,
+`StandingSmoke`, départ `light`), couples (NPC_Ambient.cat, banc de `Hold` ;
+le garçon part de `Hold`, la fille suit par `PlayOnTarget`). Les bagarres
+gardent leurs tables.
 
 La visite (`outils/visite.cpp`) applique 40, 44 et 48 aux étapes de ses
 programmes : au premier point d'intérêt, elle lit les pistes `Animation` des
