@@ -146,6 +146,24 @@ arbres d'actions disent qui s'en sert (`tools/cat.py --pistes`, docs/cat.md) :
 | Harassment | NPC_AggroTaunt | 1 REAC_BRING_IT (0 SLIT_THROAT, 2 COMEON, 3 DONTMESS, 5 IM_HERE) | |
 | le reste | IDLE_* | l'attente de la clique | |
 
+**Entrée, boucle, sortie** : comme les arbres du jeu, la visite enchaîne les
+étapes d'un programme, chacune jouée un nombre de fois tiré au hasard, la
+suivante entrant en fondu 0,3 s avant la fin de la précédente (l'animation
+sortante ne repart donc jamais en boucle) :
+
+- fumer contre un mur : SMK_WALL_LIGHT, SMKA (1-2), SMKB (1-2), SMKA (1-2),
+  SMK_WALL_STUB, et on rallume ;
+- fumer debout : SMK_STND_LIGHT, SMK_STND_SMKB (3-6), SMK_STND_STUB ;
+- le couple : KISS_START, KISS_LOOP (2-4), KISS_END, versions _B et _G de
+  mêmes durées ; les deux ont le même hasard et restent synchrones.
+
+Chaque piéton entre dans la boucle à un instant qui lui est propre. Vérifié
+en suivant les étapes sur 45 s et à l'image : le couple de (535, −152)
+s'enlace puis se sépare (KISS_END) d'un même geste. Pas d'attente entre deux
+cycles : l'attente de la clique a le bassin relatif, et la mêler aux
+animations au bassin absolu ferait sauter les filles, dont le squelette est
+plus haut.
+
 Les déductions faites à l'œil avant de lire les arbres tenaient. Deux
 corrections : pour fumer, j'avais mélangé dans la boucle l'allumage et le
 mégot écrasé (LIGHT, STUB) ; pour le couple, B et G désignent le garçon et la

@@ -64,6 +64,7 @@
 #include "../src/render/Camera.h"
 #include <algorithm>
 #include <set>
+#include <array>
 #include <chrono>
 #include <cmath>
 #ifndef VISITE_SANS_SDL
@@ -533,6 +534,13 @@ main(int argc, char **argv)
 		// Un piéton de point d'intérêt reste à son point, à l'attente, tant
 		// qu'une des périodes du point est en cours.
 		const CTriggerPoiPoint *poi = nil;
+		// Un programme : des étapes jouées l'une après l'autre, en boucle (entrée →
+		// boucle → sortie : SMK_WALL_LIGHT, SMK_WALL_SMKA / SMKB n fois, SMK_WALL_STUB).
+		// Chaque étape se joue entre fois[0] et fois[1] fois ; la suivante entre en
+		// fondu FONDU secondes avant la fin de la dernière, pour que l'animation
+		// sortante ne reparte pas en boucle pendant le fondu.
+		struct Etape { const AgrAnim *a; int fois[2]; };
+		std::vector<Etape> programme; size_t etape = 0; int reste = 0;
 		float Hasard(float a, float b){ hasard = hasard * 1103515245u + 12345u; return a + (b - a) * ((hasard >> 8) & 0xffff) / 65535.0f; }
 	};
 	const float FONDU = 0.3f;
@@ -866,6 +874,24 @@ main(int argc, char **argv)
 					}
 					if(!att){ delete an; printf("  point d'intérêt « %s » : pas d'attente pour %s\n", q.nom.c_str(), choix->model); break; }
 					PietonAnime pa; pa.an = an; pa.anim = att; pa.att = att; pa.enAttente = true; pa.decalage = k * 0.37f; pa.poi = &pt;
+					// Les programmes du jeu (noms .HXD, arbres Ambient/scripted/Wall_Smoke…) :
+					// les numéros d'étapes dans le groupe, et combien de fois chacune.
+					std::vector<std::array<int, 3>> prog;
+					if(groupe == "POI_Smoking" && pt.type == "Wall") prog = { {2, 1, 1}, {3, 1, 2}, {4, 1, 2}, {3, 1, 2}, {0, 1, 1} };   // LIGHT, SMKA, SMKB, SMKA, STUB
+					else if(groupe == "POI_Smoking") prog = { {6, 1, 1}, {7, 3, 6}, {5, 1, 1} };                                       // STND_LIGHT, STND_SMKB, STND_STUB
+					else if(couple) prog = choix->female ? std::vector<std::array<int, 3>>{ {2, 1, 1}, {6, 2, 4}, {4, 1, 1} }        // KISS_START_G, LOOP_G, END_G
+					                                     : std::vector<std::array<int, 3>>{ {7, 1, 1}, {5, 2, 4}, {3, 1, 1} };       // KISS_START_B, LOOP_B, END_B
+					if(ga && !prog.empty()){
+						for(auto &e : prog) if(e[0] < (int)ga->size() && (*ga)[e[0]].decodee) pa.programme.push_back({ &(*ga)[e[0]], {e[1], e[2]} });
+						if(pa.programme.size() == prog.size()){
+							// On entre dans la boucle (étape 1), à un instant propre à chaque point ;
+							// les deux membres d'un couple ont le même hasard : ils restent synchrones.
+							pa.hasard = 9176u + (uint32)k * 7919u;
+							pa.etape = 1; pa.anim = pa.programme[1].a; pa.decalage = 0;
+							pa.reste = pa.programme[1].fois[1];
+							pa.horloge = pa.Hasard(0, pa.anim->duree * 0.9f);
+						}else pa.programme.clear();
+					}
 					pa.cap = cap; pa.corps.pos = CVector(px, py, z); pa.depart = pa.corps.pos;
 					animes.push_back(pa); poses++; dejaPoses.insert(choix->model);
 					printf("  point d'intérêt « %s » %s%s%s (à %.0f m, lacet %.0f°) : %s %s, %s", q.nom.c_str(), pt.type.c_str(), pt.nom.empty() ? "" : " ", pt.nom.c_str(),
@@ -962,6 +988,18 @@ main(int argc, char **argv)
 				}
 				p.horloge += dt;
 				if(p.fondu > 0){ p.horlogeAvant += dt; p.fondu -= dt; }
+				if(!p.programme.empty()){
+					float d = p.anim->duree;
+					if(p.reste > 1 && p.horloge >= d){ p.horloge -= d; p.reste--; }
+					else if(p.reste <= 1 && p.horloge >= d - FONDU){
+						p.etape = (p.etape + 1) % p.programme.size();
+						const PietonAnime::Etape &e = p.programme[p.etape];
+						p.reste = e.fois[0] + (int)p.Hasard(0, (float)(e.fois[1] - e.fois[0]) + 0.999f);
+						p.avant = p.anim; p.horlogeAvant = p.horloge;
+						p.anim = e.a; p.horloge = 0; p.decalage = 0; p.fondu = FONDU;
+					}
+					continue;
+				}
 				auto Basculer = [&](bool versAttente){
 					if(versAttente == p.enAttente || (versAttente && !p.att)) return;
 					p.avant = p.anim; p.horlogeAvant = p.horloge + p.decalage;
@@ -1056,6 +1094,9 @@ main(int argc, char **argv)
 			       p.corps.auSol ? "au sol" : "en l'air"),
 			printf("      %s depuis %.1f s (prochain changement à %.1f s)%s, en (%.2f, %.2f, %.2f) cap %.0f°\n", p.enAttente ? "à l'arrêt" : "en marche", p.tEtat, p.dureeEtat, p.fondu > 0 ? ", en fondu" : "",
 			       p.corps.pos.x, p.corps.pos.y, p.corps.pos.z, p.cap * 180 / PI);
+		for(const PietonAnime &p : animes) if(!p.programme.empty())
+			printf("    programme « %s » : étape %zu/%zu, encore %d fois, %.2f s sur %.2f%s\n", p.poi ? p.poi->type.c_str() : "?", p.etape + 1, p.programme.size(),
+			       p.reste, p.horloge, p.anim->duree, p.fondu > 0 ? ", en fondu" : "");
 		for(const PietonAnime &p : animes) if(p.trajet)
 			printf("    patrouille « %s » : vers le point %d sur %zu, %s, en (%.2f, %.2f, %.2f), à %.1f m de son départ\n", p.trajet->nom.c_str(), p.cible, p.trajet->points.size(),
 			       p.enAttente ? "à l'arrêt" : "en marche", p.corps.pos.x, p.corps.pos.y, p.corps.pos.z, hypotf(p.corps.pos.x - p.depart.x, p.corps.pos.y - p.depart.y));
