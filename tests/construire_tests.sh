@@ -33,7 +33,7 @@ g++ $FLAGS tests/test_camera.cpp src/render/Camera.cpp src/render/SoftRaster.cpp
 g++ $FLAGS -O2 outils/carte.cpp src/anim/Agr.cpp src/core/IplFile.cpp src/core/IdeBinary.cpp src/core/CdStream.cpp src/gamebryo/NifTransform.cpp src/gamebryo/NifSkin.cpp src/gamebryo/TextureDecode.cpp src/gamebryo/NifFile.cpp src/collision/Marche.cpp src/collision/ColModel.cpp src/render/SoftRaster.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/outils/carte
 # Visite temps réel : SDL2 pour la fenêtre seulement ; sans SDL2, la visite se compile quand même et ne
 # garde que --image et --banc.
-VISITE="outils/visite.cpp src/render/TimeCycle.cpp src/core/TriggerFile.cpp src/anim/Agr.cpp src/anim/Mxd.cpp src/anim/Hxd.cpp src/anim/AgrHxd.cpp src/collision/Marche.cpp src/collision/ColModel.cpp src/render/Camera.cpp src/render/SoftRaster.cpp src/gamebryo/NifTransform.cpp src/gamebryo/NifSkin.cpp src/gamebryo/TextureDecode.cpp src/gamebryo/NifFile.cpp src/core/IplFile.cpp src/core/IdeBinary.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp"
+VISITE="outils/visite.cpp src/render/TimeCycle.cpp src/core/TriggerFile.cpp src/anim/Agr.cpp src/anim/Mxd.cpp src/anim/Hxd.cpp src/anim/AgrHxd.cpp src/core/ActionTree.cpp src/collision/Marche.cpp src/collision/ColModel.cpp src/render/Camera.cpp src/render/SoftRaster.cpp src/gamebryo/NifTransform.cpp src/gamebryo/NifSkin.cpp src/gamebryo/TextureDecode.cpp src/gamebryo/NifFile.cpp src/core/IplFile.cpp src/core/IdeBinary.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp"
 if command -v sdl2-config >/dev/null 2>&1; then
 	g++ $FLAGS -O2 $VISITE $(sdl2-config --cflags --libs) -o build/outils/visite
 else

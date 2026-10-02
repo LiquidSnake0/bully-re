@@ -110,6 +110,13 @@ l'objet :
 | 60 | octet : pose un drapeau du piéton (+0xe4) le temps de la piste |
 | 61 | octet : la vitesse suit le déplacement réel (synchro de la marche) |
 
+La visite (`outils/visite.cpp`) applique 40, 44 et 48 aux étapes de ses
+programmes : au premier point d'intérêt, elle lit les pistes `Animation` des
+479 arbres d'`Act.img` et garde, pour chaque animation, le réglage le plus
+fréquent. Relevé sur 2 660 animations : `NPC_LOVE` boucle des baisers à 1,6,
+fins à 2 ; `SMK_STND_SMKB` à 0,6 ; les cigarettes au mur à 1. La stat 0x14 du
+piéton qui multiplie la vitesse n'est pas lue (100 supposé).
+
 Les objets tenus : une piste `PropAttachEx` porte en 12 l'instant (en
 secondes de la durée **du HXD**, pas du `.agr`), en 24 le modèle
 (`cigarette`), en 28 le **HashString du point d'attache** de
