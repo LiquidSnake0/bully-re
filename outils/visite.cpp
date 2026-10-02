@@ -3,7 +3,7 @@
 //                                          [--image sortie.ppm] [--banc n] [--promenade n]
 //                                          [--monde] [--rayon m] [--survol n] [--pietons n] [--bras]
 //                                          [--fige] [--attente] [--temps s] [--anim groupe:n] [--sans-objets]
-//                                          [--vue x y z lacet tangage] [--patrouilles n] [--poi n] [--galerie groupe[:réf][@a-b]] [--paire groupe:a,b[:réf]] [--modele m]
+//                                          [--vue x y z lacet tangage] [--patrouilles n] [--poi n] [--poi-filles] [--galerie groupe[:réf][@a-b]] [--paire groupe:a,b[:réf]] [--modele m]
 //                                          [--population auto|jour|classe|nuit|couvrefeu] [--heure HH:MM]
 //                                          [--saison automne|hiver|ete|printemps] [--meteo n] [--sans-ciel]
 //
@@ -318,7 +318,7 @@ int
 main(int argc, char **argv)
 {
 	if(argc < 2){ fprintf(stderr, "usage : visite <fichier.ipb> [--pos x y z lacet tangage] [--marche] [--image sortie.ppm] [--banc n] [--promenade n] [--monde] [--rayon m]\n"); return 2; }
-	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0, patrouilles = 0, nPoi = 0, nGalerie = 0, moment = -1; CHorloge heureJeu; std::string saison = "automne"; int meteo = 0; bool sansCiel = false; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee, galerie, modeleGalerie, paire; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
+	std::string ipb = argv[1], image; int banc = 0, promenade = 0, survol = 0, pietons = 0, patrouilles = 0, nPoi = 0, nGalerie = 0, poiFilles = 0, moment = -1; CHorloge heureJeu; std::string saison = "automne"; int meteo = 0; bool sansCiel = false; bool bras = false, fige = false, attente = false, objets = true, vue = false; float vueV[5] = {0}; float temps = 0; std::string imposee, galerie, modeleGalerie, paire; bool pos = false, marche = false, monde = Exterieur(ipb); float px = 0, py = 0, pz = 0, lacet = 0, tangage = 0, rayon = 60;
 	for(int i = 2; i < argc; i++){
 		if(strcmp(argv[i], "--image") == 0 && i + 1 < argc) image = argv[++i];
 		else if(strcmp(argv[i], "--banc") == 0 && i + 1 < argc) banc = atoi(argv[++i]);
@@ -330,6 +330,7 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--fige") == 0) fige = true;
 		else if(strcmp(argv[i], "--patrouilles") == 0 && i + 1 < argc) patrouilles = atoi(argv[++i]);
 		else if(strcmp(argv[i], "--poi") == 0 && i + 1 < argc) nPoi = atoi(argv[++i]);
+		else if(strcmp(argv[i], "--poi-filles") == 0) poiFilles = 1;     // essais : des filles d'abord sur les points
 		else if(strcmp(argv[i], "--galerie") == 0 && i + 1 < argc){ galerie = argv[++i]; nGalerie = 1; }
 		else if(strcmp(argv[i], "--modele") == 0 && i + 1 < argc) modeleGalerie = argv[++i];
 		else if(strcmp(argv[i], "--paire") == 0 && i + 1 < argc){ paire = argv[++i]; nGalerie = 1; }
@@ -799,7 +800,7 @@ main(int argc, char **argv)
 				// sur l'autre au sol, 45 + 24 les coups portés à califourchon. Un
 				// harcèlement : face à face à `ecartDuo` mètres, l'agresseur provoque
 				// (NPC_AggroTaunt), la victime, d'une autre clique, reste à l'attente (-1).
-				bool duo = false, harcelement = false, prise = false; float ecartDuo = 0;
+				bool duo = false, harcelement = false, prise = false, filles = false; float ecartDuo = 0, refBassin = 0.86f;
 				if(pt.type == "Brawl"){
 					// GRAP_IDLE_GV + _RCV, GRAP_MOUNT_IDLE_GV + _RCV, GRAP_MOUNT_HIT_F + MOUNT_IDLE_RCV.
 					static const int paires[3][2] = { {7, 6}, {25, 24}, {45, 24} };
@@ -839,6 +840,8 @@ main(int argc, char **argv)
 						if(pt.genre == "Male" && e.female) continue;
 						if(pt.genre == "Female" && !e.female) continue;
 						if(couple && pl == 1 && pt.genre == "Both" && passe < 2 && (bool)e.female == premierFemme) continue;
+						if(filles && pl == 1 && !e.female) continue;                     // un combat de filles : deux filles
+						if(poiFilles && passe < 2 && pl == 0 && !e.female && pt.genre != "Male") continue;
 						if(harcelement && pl == 1){
 							// La victime : un élève d'une autre clique que l'agresseur.
 							if(strcasecmp(e.type, cliqueAgresseur.c_str()) == 0 || strcasecmp(e.type, "PREFECT") == 0 || strcasecmp(e.type, "COP") == 0 ||
@@ -853,11 +856,19 @@ main(int argc, char **argv)
 					}
 					if(!choix){ printf("  point d'intérêt « %s » : aucun piéton %s %s\n", q.nom.c_str(), clique.c_str(), pt.genre.c_str()); break; }
 					if(pl == 0){ premierFemme = choix->female != 0; cliqueAgresseur = choix->type; }
+					// Une bagarre dont la première est une fille : le combat de filles du jeu,
+					// Gfight (GFIGHT_CYC_GV + _RVC, même origine comme les prises de Grap), sur un
+					// squelette dont le bassin debout est à 1,10 m (début des IN, fin des OUT).
+					if(pl == 0 && prise && choix->female){
+						groupe = "Gfight"; filles = true; refBassin = 1.10f; choixAnims = {1, 2};
+						if(!groupes.count(groupe)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, groupe + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); } groupes[groupe] = v; }
+						ga = &groupes[groupe];
+					}
 					const AgrAnim *att = nil; int n = -1;
 					if(ga){
 						n = couple || duo ? choixAnims[pl] : choixAnims[k % choixAnims.size()];
 						if(couple) n = choix->female ? 6 : 5;     // _G pour la fille, _B pour le garçon
-						if(n >= 0 && n < (int)ga->size() && (*ga)[n].decodee){ att = &(*ga)[n]; an->bassinRef = 0.86f; }
+						if(n >= 0 && n < (int)ga->size() && (*ga)[n].decodee){ att = &(*ga)[n]; an->bassinRef = refBassin; }
 					}
 					if(!att){ att = Attente(*choix); n = -1; }
 					// Un couple : les animations avancent déjà le bassin vers l'autre (0,30 et
@@ -879,6 +890,8 @@ main(int argc, char **argv)
 					std::vector<std::array<int, 3>> prog;
 					if(groupe == "POI_Smoking" && pt.type == "Wall") prog = { {2, 1, 1}, {3, 1, 2}, {4, 1, 2}, {3, 1, 2}, {0, 1, 1} };   // LIGHT, SMKA, SMKB, SMKA, STUB
 					else if(groupe == "POI_Smoking") prog = { {6, 1, 1}, {7, 3, 6}, {5, 1, 1} };                                       // STND_LIGHT, STND_SMKB, STND_STUB
+					else if(filles) prog = pl == 0 ? std::vector<std::array<int, 3>>{ {3, 1, 1}, {1, 3, 6}, {5, 1, 1} }        // GFIGHT_IN_GV, CYC_GV, OUT_GV
+					                               : std::vector<std::array<int, 3>>{ {4, 1, 1}, {2, 3, 6}, {0, 1, 1} };       // GFIGHT_IN_RCV, CYC_RVC, OUT_RVC
 					else if(couple) prog = choix->female ? std::vector<std::array<int, 3>>{ {2, 1, 1}, {6, 2, 4}, {4, 1, 1} }        // KISS_START_G, LOOP_G, END_G
 					                                     : std::vector<std::array<int, 3>>{ {7, 1, 1}, {5, 2, 4}, {3, 1, 1} };       // KISS_START_B, LOOP_B, END_B
 					if(ga && !prog.empty()){

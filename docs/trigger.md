@@ -142,7 +142,7 @@ arbres d'actions disent qui s'en sert (`tools/cat.py --pistes`, docs/cat.md) :
 | Spectator | NPC_Spectator | 0-2 : GEN_IMPRESSED03 / 01 / 02 | Ambient/Spectator |
 | Hang_Out | Hang_Talking | 0-9 : TALK, LISTEN, AMB_TALKING, AMB_WEIGHTSHIFT (10 : REAC_GOIN_DWN, une réaction) | |
 | Couple (« Kissing ») | NPC_Love | 5 KISS_LOOP_B pour le garçon, 6 KISS_LOOP_G pour la fille | |
-| Brawl | Grap | 7 + 6 GRAP_IDLE_GV / _RCV, 25 + 24 GRAP_MOUNT_IDLE_GV / _RCV, 45 + 24 GRAP_MOUNT_HIT_F | |
+| Brawl | Grap ; Gfight entre filles | 7 + 6 GRAP_IDLE_GV / _RCV, 25 + 24 GRAP_MOUNT_IDLE_GV / _RCV, 45 + 24 GRAP_MOUNT_HIT_F ; GFIGHT_CYC_GV + _RVC | |
 | Harassment | NPC_AggroTaunt | 1 REAC_BRING_IT (0 SLIT_THROAT, 2 COMEON, 3 DONTMESS, 5 IM_HERE) | |
 | le reste | IDLE_* | l'attente de la clique | |
 
@@ -167,9 +167,13 @@ plus haut.
 Les déductions faites à l'œil avant de lire les arbres tenaient. Deux
 corrections : pour fumer, j'avais mélangé dans la boucle l'allumage et le
 mégot écrasé (LIGHT, STUB) ; pour le couple, B et G désignent le garçon et la
-fille, l'animation se choisit selon le genre du piéton. `Gfight` est bien le
-combat de filles (GFIGHT_CYC_GV / _RVC, n° 1 + 2) ; il n'est pas encore
-utilisé.
+fille, l'animation se choisit selon le genre du piéton. `Gfight` est le combat de
+filles (GFIGHT_CYC_GV / _RVC, n° 1 + 2) : une bagarre dont la première tirée
+est une fille le joue, avec une seconde fille, depuis la même origine comme
+les prises de `Grap`, et un bassin debout de référence à 1,10 m (début des
+GFIGHT_IN, fin des GFIGHT_OUT, comme les F_Girls) ; programme GFIGHT_IN_GV /
+_RCV, CYC (3-6), OUT_GV / _RVC. Vérifié à l'image (`--poi-filles`, qui fait
+passer les filles d'abord) : deux dropouts face à face, empoignées, au sol.
 
 Autres poses relevées : Sitting_Boys 1 et 7-9 assis par terre jambes
 tendues, 0 la transition debout → assis ; POI_Gen 0-1 assis bas, 8-14 en
