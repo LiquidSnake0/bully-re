@@ -91,6 +91,16 @@ def main():
         lignes.append("| `src/%s` | %d | %s |" % (d, len(s), e(o(s))))
     lignes += ["", "Relevé du %s." % datetime.date.today().strftime("%d.%m.%Y"), ""]
     open("docs/avancement.md", "w").write("\n".join(lignes))
+    # Les chiffres repris en tête des deux README.
+    for fichier, motif, texte in (
+        ("README.fr.md", r"\*\*[0-9,]+ % du code de `bully.exe` recréé\*\* \([0-9]+ fonctions sur [0-9 \u202f]+\), [0-9,]+ % compris",
+         "**%s %% du code de `bully.exe` recréé** (%d fonctions sur %s), %s %% compris" % (v(pc(o(rec), total_o)), len(rec), e(total_n), v(pc(o(comp), total_o)))),
+        ("README.md", r"\*\*[0-9.]+ % of `bully.exe`'s code recreated\*\* \([0-9]+ of [0-9,]+ functions\), [0-9.]+ %",
+         "**%.1f %% of `bully.exe`'s code recreated** (%d of {:,} functions), %.1f %%".format(total_n) % (pc(o(rec), total_o), len(rec), pc(o(comp), total_o)))):
+        t = open(fichier).read()
+        n = re.sub(motif, lambda m: texte, t)
+        if n != t:
+            open(fichier, "w").write(n)
     print("docs/avancement.md : %d recréées (%s %% du code), %d comprises" % (len(rec), v(pc(o(rec), total_o)), len(comp)))
 
 
