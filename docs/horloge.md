@@ -34,8 +34,7 @@ l'horloge en avait tiré des classes 9 h – 11 h 30 / 13 h – 15 h 30 et une n
 `PER_ANOON`, `PER_EVEN`, `PER_CURFEW`, `PER_TIRED`) reliées aux fonctions de
 STimeCycle.lur ; le moteur garde une période ainsi (0x6a8a50) : nom à +0x18,
 heure de début +0x24, minute +0x28, heure de fin +0x2c, minute +0x30. Format
-`.cat` non décodé (chaînes à 0x6e16, références de 10 octets, attributs
-balisés sur 2 octets).
+`.cat` : docs/cat.md.
 
 Code : `src/core/Horloge.h` (CHorloge : Avancer, Heure, Minute, Moment ;
 ChargerPeriodes lit timeCycl.dat) ; test : `tests/test_horloge`. Dans la

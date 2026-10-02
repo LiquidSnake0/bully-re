@@ -130,8 +130,9 @@ animations a le même cap.) La première lecture, « 0 vers +y », reposait sur
 une aboyeuse du carnaval jugée à l'œil : elle était fausse. Les actions de
 trajet suivent une autre règle (voir plus haut).
 
-**L'animation selon le type** : les arbres d'actions (`Act/AI_POI.cat`, même
-format binaire que Globals.cat) ne sont pas décodés. Les correspondances
+**L'animation selon le type** : l'arbre d'actions `Act/AI_POI.cat` se lit
+(docs/cat.md) : `sitting`, `Hangout`, `spectator`, `Scenario`… mais les
+animations sont dans ses pistes, pas encore décodées. Les correspondances
 viennent des noms de blocs et de la galerie :
 
 | Type (blocs) | Groupe .agr | Animations |
