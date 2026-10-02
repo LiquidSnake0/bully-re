@@ -14,7 +14,7 @@
 //    un nœud jouable qui offre des occasions se rejoue (état d'attente), un
 //    autre revient au nœud jouable ancêtre le plus proche, à défaut au départ ;
 //  - une Opportunity, son instant passé (champ 12), est prise au hasard
-//    (CHANCE par seconde) si les conditions du nœud visé passent ;
+//    (CHANCE par seconde, 8 %) si les conditions du nœud visé passent ;
 //  - conditions : WeightedRandom tire au sort, ActionRequest et
 //    IsScriptedAmbient sont fausses (elles attendent un script ou le joueur),
 //    « Not » inverse la suivante, les autres passent ;
@@ -114,14 +114,16 @@ public:
 		return a ? f.ChaineCitee(a->decalage) : std::string();
 	}
 	// Les conditions du nœud, selon les règles ci-dessus.
-	bool Conditions(int32 i, float hasard) const {
+	bool Conditions(int32 i, float hasard, bool femme = false) const {
 		if(Interdit(i)) return false;
-		static const uint32 kNot = ActionHash("Not"), kOu = ActionHash("OR"), kAleatoire = ActionHash("WeightedRandom");
+		static const uint32 kNot = ActionHash("Not"), kOu = ActionHash("OR"), kAleatoire = ActionHash("WeightedRandom"),
+		                    kAleatoire2 = ActionHash("Random"), kFemme = ActionHash("IsFemale");
 		// Fausses ici : elles attendent un script, le joueur, un modèle précis ou
 		// un coup reçu.
 		static const uint32 kFausses[] = { ActionHash("ActionRequest"), ActionHash("IsScriptedAmbient"), ActionHash("false"),
 			ActionHash("IsPlayer"), ActionHash("IsAuthority"), ActionHash("PedModelID"), ActionHash("Health"),
-			ActionHash("DamagePending"), ActionHash("HitTime"), ActionHash("PropTargetInteractive"), ActionHash("TargetRelativeOrientation") };
+			ActionHash("DamagePending"), ActionHash("HitTime"), ActionHash("PropTargetInteractive"), ActionHash("TargetRelativeOrientation"),
+			ActionHash("OBJECTIVE") };
 		bool inverser = false, ou = false, une = false, toutes = true;
 		for(int32 c : noeuds[i].n->conditions){
 			uint32 t = f.TypeCondition(c);
@@ -129,7 +131,8 @@ public:
 			if(t == kOu){ ou = true; continue; }
 			bool v = true;
 			for(uint32 x : kFausses) if(t == x) v = false;
-			if(t == kAleatoire) v = hasard < 0.5f;
+			if(t == kAleatoire || t == kAleatoire2) v = hasard < 0.5f;
+			if(t == kFemme) v = femme;
 			if(inverser) v = !v;
 			inverser = false;
 			une = une || v; toutes = toutes && v;
@@ -170,6 +173,7 @@ struct Deroulement {
 	int32 racine = -1, noeud = -1;      // racine : le sous-arbre dont on ne sort pas
 	int32 redepart = -1;                 // le nœud où l'on reprend quand on revient à la racine
 	bool suiveur = false;                // ne bouge que sur ordre du partenaire : à la fin, il fige sa pose
+	bool femme = false;                  // pour la condition IsFemale
 	float t = 0;                         // temps du nœud (s)
 	float duree = -1, fin = -1, vitesse = 1, depart = 0; int32 mode = 0;
 	float finPiste = -1;                 // champ 16 de la piste Animation : sa durée de vie dans le nœud (s), même en boucle
@@ -179,7 +183,7 @@ struct Deroulement {
 	struct Occasion { float t, tmax; std::string chemin; bool sure; };
 	std::vector<Occasion> occasions;
 	std::string suite;                   // la piste « sequence »
-	static constexpr float CHANCE = 0.15f;
+	static constexpr float CHANCE = 0.08f;
 	int32 transitions = 0;
 	std::vector<int32> trace;            // les derniers nœuds traversés (diagnostic)
 
@@ -210,7 +214,12 @@ struct Deroulement {
 				duree = s.jouer ? s.jouer(p.Mot(24) & 0x7fffffff, mode, depart, fin, vitesse, Flottant(p, 52, -1)) : -1;
 				animEnCours = duree > 0;
 			}else if(p.type == kSeq) suite = arbre->Chaine(p, 32);
-			else if(p.type == kOcc){ std::string c = arbre->Chaine(p, 32); if(!c.empty()) occasions.push_back({t12, Flottant(p, 16, -1), c, false}); }
+			// Opportunity : ouverte de max(12, 44) à 16 (44 : l'instant au plus tôt, 3,33 =
+			// la fin de l'animation pour la reprise « ./ » de Sit_Smoke_Idle).
+			else if(p.type == kOcc){ std::string c = arbre->Chaine(p, 32); float t44 = Flottant(p, 44, 0);
+				// Le champ 8 à 1 (rare sur une Opportunity) : prise dès qu'elle s'ouvre.
+				bool sure = p.Champ(8) && p.Champ(8)->valeur[0] == 1;
+				if(!c.empty()) occasions.push_back({t44 > t12 ? t44 : t12, Flottant(p, 16, -1), c, sure}); }
 			// OpportunityRandomLatch : prise à coup sûr à un instant tiré entre 76 et 80.
 			else if(p.type == kLatch){ std::string c = arbre->Chaine(p, 32); float a = Flottant(p, 76, 0), b = Flottant(p, 80, a);
 				if(!c.empty()) occasions.push_back({t12 + a + (b - a) * s.hasard(), -1, c, true}); }
@@ -228,7 +237,7 @@ struct Deroulement {
 			int32 j = arbre->Resoudre(i, c);
 			if(j < 0 || j == i || !Dans(j)) continue;
 			if(arbre->noeuds[j].n->genre == 'b')
-				for(int32 e : arbre->Enfants(j)) if(arbre->Conditions(e, s.hasard())){ j = e; break; }
+				for(int32 e : arbre->Enfants(j)) if(arbre->Conditions(e, s.hasard(), femme)){ j = e; break; }
 			for(const CActionTrack &p : arbre->Pistes(j))
 				if(p.type == kCible){ int32 k = arbre->Resoudre(j, arbre->Chaine(p, 32)); if(k >= 0 && s.partenaire) s.partenaire(k); }
 		}
@@ -253,7 +262,7 @@ struct Deroulement {
 			if(t < o.t || (o.tmax >= 0 && t > o.tmax)) continue;
 			if(!o.sure && s.hasard() >= CHANCE * dt) continue;
 			int32 j = arbre->Resoudre(noeud, o.chemin);
-			if(j >= 0 && j != noeud && Dans(j) && !arbre->passif[j] && arbre->Conditions(j, s.hasard())){ Entrer(j, s); return; }
+			if(j >= 0 && Dans(j) && !arbre->passif[j] && arbre->Conditions(j, s.hasard(), femme)){ Entrer(j, s); return; }
 		}
 		// La fin de l'animation : une boucle (mode 2) ne finit pas ; le mode 1 fige
 		// la dernière pose (AnimationTrack, FUN_006c0c60) et attend le partenaire ;
@@ -307,7 +316,7 @@ private:
 			// Au premier tour, les enfants du nœud qu'on quitte ; ensuite, les frères.
 			std::vector<int32> ok;
 			for(int32 e : arbre->Enfants(haut))
-				if((haut == noeud || e != ici) && !arbre->passif[e] && arbre->Conditions(e, s.hasard())) ok.push_back(e);
+				if((haut == noeud || e != ici) && !arbre->passif[e] && arbre->Conditions(e, s.hasard(), femme)) ok.push_back(e);
 			if(!ok.empty()){ Entrer(ok[(size_t)(s.hasard() * ok.size()) % ok.size()], s, profondeur + 1); return; }
 			if(haut == racine) break;
 			ici = haut; haut = arbre->noeuds[haut].parent;

@@ -125,13 +125,18 @@ programmes écrits à la main. C'est une approximation, avec ces règles :
   le plus proche, à défaut au départ (un banc choisit un enfant une fois, il ne
   rejoue pas ses frères) ; un nœud qui lâche l'objet ressort au-dessus de celui
   qui l'avait pris ;
-- `Opportunity` : prise au hasard (15 % par seconde) dans sa fenêtre (12 à 16)
-  si les conditions du nœud visé passent ; `OpportunityRandomLatch` : à coup
+- `Opportunity` : ouverte de max(12, 44) à 16 (44 : l'instant au plus tôt ; la
+  reprise « ./ » de `Sit_Smoke_Idle` a 44 = 3,33, la fin de son animation),
+  prise au hasard (8 % par seconde) si les conditions du nœud visé passent ;
+  champ 8 (un octet) à 1 : prise dès qu'elle s'ouvre ; elle peut viser le nœud
+  lui-même (reprise) ; `OpportunityRandomLatch` : à coup
   sûr, à un instant tiré entre ses champs 76 et 80 ;
 - `Execute` dans un nœud sans animation : un saut ;
-- conditions : `WeightedRandom` tire au sort ; `ActionRequest`,
+- conditions : `WeightedRandom` et `Random` tirent au sort ; `IsFemale` suit le
+  piéton ; `ActionRequest`,
   `IsScriptedAmbient`, `false`, `IsPlayer`, `IsAuthority`, `PedModelID`,
-  `Health`, `DamagePending`, `HitTime` sont fausses ; `Not` inverse la suivante ;
+  `Health`, `DamagePending`, `HitTime`, `PropTargetInteractive`,
+  `TargetRelativeOrientation`, `OBJECTIVE` sont fausses ; `Not` inverse la suivante ;
   `OR` : une au moins ; les autres passent ;
 - `PlayOnTarget` envoie le partenaire ; le nœud visé est passif : on n'y entre
   que sur ordre, on n'en sort que par sa `sequence`. Le rôle passe avec l'ordre :
@@ -175,7 +180,14 @@ Pilotés par un arbre :
 | couple | NPC_Ambient.cat | banc de `Hold` ; le garçon part de `Hold`, la fille suit |
 | bagarre de filles | Grapples.cat | banc de `GirlFight_Init` : Init → Loop (5 à 10 s) → Out |
 | bagarre au sol | Grapples.cat | `mount`, `MountIdle/Give` : `MountOpps` choisit le coup selon la clique (`FacePunch`, `KneeDrop`, `Headbutt`, `Dismount`…) |
+| place assise | Ambient.cat | `Sitting_Down/SitHigh` : s'asseoir (`Sit_Start`), attendre, fumer ou discuter assis, se relever ; variante des filles (`IsFemale`) |
 | prise debout | Ambient.cat | `LockerStuff/StuffGrap`, `GrappleSuccess/Pull_In_heavy/Give` (empoignade `GRAP_INIT`), puis `Hold_Idle` (`GRAP_IDLE`) |
+
+Tout piéton dont l'arbre accroche un objet reçoit la cigarette (qui n'apparaît
+qu'aux instants de l'arbre). Restent sur des tables : les spectateurs (leur
+vrai déroulement passe par AI_POI, `SpectatorOpps`), les groupes qui discutent
+et le harcèlement (animations `Hang_Talking` / `AggroTaunt` jouées par des
+arbres de mission et le système de dialogue, pas par un arbre unique).
 
 Le vol d'arme (`GrappleOpps/Scripted/WeaponSteal`) est écarté : il suppose une
 arme sur la cible, et ses animations (C_Player) se placent par `TargetSync`. `BULLY_TRACE=1` affiche les

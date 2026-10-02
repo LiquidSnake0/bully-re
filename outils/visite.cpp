@@ -1046,6 +1046,9 @@ main(int argc, char **argv)
 						if(groupe == "POI_Smoking" && pt.type == "Wall"){ fichier = "Ambient.cat"; racine = "Wall_Smoke"; depuis = "./Wall_Start"; }
 						else if(groupe == "POI_Smoking"){ fichier = "5_02.cat"; racine = "StandingSmoke"; depuis = "./Light"; }
 						else if(couple){ fichier = "NPC_Ambient.cat"; racine = "Hold"; depuis = "."; passif = choix->female && pl == 1; }
+						// La place assise : Ambient.cat, Sitting_Down/SitHigh (s'asseoir, attendre,
+						// fumer ou discuter assis, se relever ; variante des filles si IsFemale).
+						else if(pt.type == "Sitting_Spot"){ fichier = "Ambient.cat"; racine = "SitHigh"; depuis = "."; }
 						// Les bagarres (Grapples.cat) : le combat de filles (Init / Loop / Out) et les
 						// montées des garçons.
 						else if(filles){ fichier = "Grapples.cat"; racine = "GirlFight_Init"; depuis = "./GirlFight_Init/Give"; passif = pl == 1; }
@@ -1062,7 +1065,14 @@ main(int argc, char **argv)
 							// arme sur la cible, et ses animations (C_Player) se placent par TargetSync,
 							// non géré : on ne le visite pas.
 							if(ar->interdits.empty()) ar->interdits.push_back(ActionHash("WeaponSteal"));
-							pa.parArbre = true; pa.der.arbre = ar; pa.der.racine = r; pa.der.redepart = passif ? -1 : d; pa.der.suiveur = passif; pa.departArbre = passif ? -1 : d;
+							pa.parArbre = true; pa.der.arbre = ar; pa.der.racine = r; pa.der.redepart = passif ? -1 : d; pa.der.suiveur = passif; pa.der.femme = choix->female != 0; pa.departArbre = passif ? -1 : d;
+							// Un arbre qui accroche des objets (la cigarette) : le modèle tenu, s'il
+							// n'est pas déjà là ; l'arbre décide quand il apparaît.
+							bool prend = false; for(bool x : ar->accroche) prend = prend || x;
+							if(prend && !pa.tenu){
+								pa.points = mxd.Chercher(choix->model);
+								if(pa.points){ pa.tenu = new outil::Anime; if(!m->s->AjouterModele(a, "Cigarette", NifIdentity(), false, pa.tenu)){ delete pa.tenu; pa.tenu = nil; } }
+							}
 							if(pa.points) pa.pointTenu = 0;                                   // l'arbre allume lui-même
 							static std::set<std::string> vus;
 							if(vus.insert(fichier + "/" + racine).second) printf("    arbre %s, %s : départ %s\n", fichier.c_str(), ar->Nom(r).c_str(), ar->Nom(d).c_str());
