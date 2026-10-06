@@ -93,6 +93,10 @@ non des pointeurs, et loge ses cinq listes dans 20 octets.
 - `tools/generer_squelettes.py` : produit `docs/classes.md` et `src/squelettes/`.
 - Analyse sous Ghidra en conteneur (`blacktop/ghidra`), projet local hors dépôt.
 
+## Ce qui vient après
+
+Voir [docs/suite.md](docs/suite.md) : le premier point ouvert est le prochain chantier.
+
 ## Journal
 
 Voir [docs/journal.md](docs/journal.md).
