@@ -937,6 +937,9 @@ main(int argc, char **argv)
 				// comme les prises de Grap (sonde_poi POI_Gen).
 				std::string sceneDuo;
 				if(pt.type == "Specific_Event" && pt.nom == "F_HeldAgainstWall"){ groupe = "POI_Gen"; choixAnims = {7, 4}; duo = prise = true; sceneDuo = "Wall_Hold"; }
+				// F_LockerStuff lance Ambient.cat, LockerStuff : la prise debout déjà jouée pour les
+				// bagarres (StuffGrap, GRAP_IDLE_GV + _RCV, Grap n° 7 et 6, même origine).
+				else if(pt.type == "Specific_Event" && pt.nom == "F_LockerStuff"){ groupe = "Grap"; choixAnims = {7, 6}; duo = prise = true; sceneDuo = "LockerStuff"; }
 				const std::vector<AgrAnim> *ga = nil;
 				if(!groupe.empty()){
 					if(!groupes.count(groupe)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, groupe + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); HxdEtirer(v, mainped, groupe.c_str()); } groupes[groupe] = v; }
@@ -1083,7 +1086,7 @@ main(int argc, char **argv)
 						else if(harcelement){ fichier = "Ambient.cat"; racine = "BookHarass"; depuis = "./GrappleAttempt/GrappleSuccess"; passif = pl == 1; }
 						// Une scène d'événement à deux bâtie comme BookHarass (GrappleAttempt /
 						// GrappleSuccess / Hold_Idle : la boucle du meneur lance celle de la victime).
-						else if(!sceneDuo.empty()){ fichier = "Ambient.cat"; racine = sceneDuo; depuis = "./GrappleAttempt/GrappleSuccess"; passif = pl == 1; }
+						else if(!sceneDuo.empty() && sceneDuo != "LockerStuff"){ fichier = "Ambient.cat"; racine = sceneDuo; depuis = "./GrappleAttempt/GrappleSuccess"; passif = pl == 1; }
 						// Un événement particulier dont le nom (sans « F_ ») est une scène d'Ambient.cat
 						// (Crying : attente, puis REAC_CRY de temps en temps). Les autres
 						// (F_Biker, F_Criminal, Beggar…) sont des fonctions de script : attente.
@@ -1106,7 +1109,7 @@ main(int argc, char **argv)
 						int32 d = r >= 0 ? (couple ? ar->Chercher(racine.c_str()) : pt.type == "Spectator" ? ar->Resoudre(ar->Chercher(racine.c_str()), depuis) : ar->Resoudre(r, depuis)) : -1;
 						// BookHarass : la racine est GrappleSuccess, le départ la boucle du caïd
 						// (premier enfant de HOLD_IDLE).
-						if((harcelement || !sceneDuo.empty()) && d >= 0){
+						if((harcelement || (!sceneDuo.empty() && sceneDuo != "LockerStuff")) && d >= 0){
 							r = d; int32 h = ar->Resoudre(r, "./HOLD_IDLE");
 							std::vector<int32> e = h >= 0 ? ar->Enfants(h) : std::vector<int32>();
 							d = e.empty() ? -1 : e[0];

@@ -10,8 +10,8 @@ chantier. Un point fini passe en bas, avec son commit.
    `F_HeldAgainstWall` → `Wall_Hold`, `F_LockerStuff` → `LockerStuff`,
    `F_Swirlie` → `Swirlie`, `F_TeacherHarassingKids` → `Tell_Off`,
    `F_CoupleCuddling` → `Cuddle`, `F_CoupleKissing` → `Kiss_Me_Baby`.
-   `Wall_Hold` est fait (voir « Fait »). Restent `LockerStuff`, `Swirlie`,
-   `Tell_Off`, `Cuddle` et `Kiss_Me_Baby` : même démarche, lire l'arbre
+   `Wall_Hold` et `LockerStuff` sont faits (voir « Fait »). Restent `Swirlie`,
+   `Tell_Off` et `Cuddle` (`F_CoupleKissing` n'a aucun point dans Trigger.img) : même démarche, lire l'arbre
    (`tools/cat.py Ambient.cat --pistes`), mesurer les bassins des deux
    animations (`build/outils/sonde_poi <groupe>`), poser la paire dans
    `outils/visite.cpp` (variable `sceneDuo`) et vérifier à l'image.
@@ -36,3 +36,4 @@ chantier. Un point fini passe en bas, avec son commit.
 - Scènes d'événements à un piéton : bf0ba10.
 - Scène à deux `Wall_Hold` (`F_HeldAgainstWall`) : voir le commit « Visite : plaqué au mur ».
 - Le format `.lip` (synchronisation labiale) : `src/anim/Lip`, `tests/test_lip`, `docs/lip.md` ; confirmé dans `bully.exe` par l'index et REA (chargeur `FUN_0068df50`, lecture `FUN_0068dd30`).
+- Scène à deux `LockerStuff` (`F_LockerStuff`) : la prise debout de StuffGrap, sans le casier ; commit « Visite : fourré au casier ».
