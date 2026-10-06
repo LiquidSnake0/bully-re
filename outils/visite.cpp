@@ -940,6 +940,12 @@ main(int argc, char **argv)
 				// F_LockerStuff lance Ambient.cat, LockerStuff : la prise debout déjà jouée pour les
 				// bagarres (StuffGrap, GRAP_IDLE_GV + _RCV, Grap n° 7 et 6, même origine).
 				else if(pt.type == "Specific_Event" && pt.nom == "F_LockerStuff"){ groupe = "Grap"; choixAnims = {7, 6}; duo = prise = true; sceneDuo = "LockerStuff"; }
+				// F_CoupleCuddling lance Ambient.cat, Cuddle : bras dessus, bras dessous
+				// (AMB_ARMLINK_1, NPC_Love n° 1, qui lance AMB_ARMLINK_2, n° 0 ; les deux sur
+				// place, bassin à l'origine). TargetSync x = −0,4 m, angle 0 : côte à côte,
+				// même sens, le second à la gauche du premier.
+				bool coteACote = false;
+				if(pt.type == "Specific_Event" && pt.nom == "F_CoupleCuddling"){ groupe = "NPC_Love"; choixAnims = {1, 0}; duo = coteACote = true; sceneDuo = "Cuddle"; }
 				const std::vector<AgrAnim> *ga = nil;
 				if(!groupe.empty()){
 					if(!groupes.count(groupe)){ std::vector<AgrAnim> v; uint32 nb; uint8 *b = outil::LireMonde(a, groupe + ".agr", &nb); if(b){ AgrLireGroupe(b, nb, v); free(b); HxdEtirer(v, mainped, groupe.c_str()); } groupes[groupe] = v; }
@@ -958,9 +964,11 @@ main(int argc, char **argv)
 					// Wall_Hold : le lacet du point est celui de la victime, dos au mur ; le meneur
 					// lui fait face, donc la paire est tournée d'un demi-tour (vérifié à l'image :
 					// sans ce demi-tour, le meneur a le dos au mur et soulève sa victime vers la cour).
-					float cap = capPoint + (pl && !prise ? PI : 0) + (sceneDuo == "Wall_Hold" ? PI : 0), lacetP = -(cap - PI / 2);
+					float cap = capPoint + (pl && !prise && !coteACote ? PI : 0) + (sceneDuo == "Wall_Hold" ? PI : 0), lacetP = -(cap - PI / 2);
 					float px = pt.pos.x, py = pt.pos.y;
-					if(duo && !prise){ float dd = (pl ? 0.5f : -0.5f) * ecartDuo; px += dd * cosf(capPoint); py += dd * sinf(capPoint); }
+					if(duo && !prise && !coteACote){ float dd = (pl ? 0.5f : -0.5f) * ecartDuo; px += dd * cosf(capPoint); py += dd * sinf(capPoint); }
+					// Côte à côte : le premier à 0,2 m à droite du point, le second à 0,2 m à gauche.
+					if(coteACote){ float dd = pl ? -0.2f : 0.2f; px += dd * cosf(capPoint - PI / 2); py += dd * sinf(capPoint - PI / 2); }
 					float z = pt.pos.z; sol.Sol(px, py, pt.pos.z + 2.0f, 10.0f, &z);
 					float qr[4] = { 0, 0, sinf(lacetP / 2), cosf(lacetP / 2) };
 					// Le premier candidat qui convient et dont le modèle est dans le monde.
@@ -975,7 +983,7 @@ main(int argc, char **argv)
 						if(passe == 0 && dejaPoses.count(e.model)) continue;
 						if(pt.genre == "Male" && e.female) continue;
 						if(pt.genre == "Female" && !e.female) continue;
-						if(couple && pl == 1 && pt.genre == "Both" && passe < 2 && (bool)e.female == premierFemme) continue;
+						if((couple || coteACote) && pl == 1 && pt.genre == "Both" && passe < 2 && (bool)e.female == premierFemme) continue;
 						if(filles && pl == 1 && !e.female) continue;                     // un combat de filles : deux filles
 						if(poiFilles && passe < 2 && pl == 0 && !e.female && pt.genre != "Male") continue;
 						if(harcelement && pl == 1){
@@ -1086,6 +1094,7 @@ main(int argc, char **argv)
 						else if(harcelement){ fichier = "Ambient.cat"; racine = "BookHarass"; depuis = "./GrappleAttempt/GrappleSuccess"; passif = pl == 1; }
 						// Une scène d'événement à deux bâtie comme BookHarass (GrappleAttempt /
 						// GrappleSuccess / Hold_Idle : la boucle du meneur lance celle de la victime).
+						else if(sceneDuo == "Cuddle"){ fichier = "Ambient.cat"; racine = "Cuddle"; depuis = "./GrappleAttempt"; passif = pl == 1; }
 						else if(!sceneDuo.empty() && sceneDuo != "LockerStuff"){ fichier = "Ambient.cat"; racine = sceneDuo; depuis = "./GrappleAttempt/GrappleSuccess"; passif = pl == 1; }
 						// Un événement particulier dont le nom (sans « F_ ») est une scène d'Ambient.cat
 						// (Crying : attente, puis REAC_CRY de temps en temps). Les autres
@@ -1109,7 +1118,15 @@ main(int argc, char **argv)
 						int32 d = r >= 0 ? (couple ? ar->Chercher(racine.c_str()) : pt.type == "Spectator" ? ar->Resoudre(ar->Chercher(racine.c_str()), depuis) : ar->Resoudre(r, depuis)) : -1;
 						// BookHarass : la racine est GrappleSuccess, le départ la boucle du caïd
 						// (premier enfant de HOLD_IDLE).
-						if((harcelement || (!sceneDuo.empty() && sceneDuo != "LockerStuff")) && d >= 0){
+						// Cuddle : le banc sous GrappleAttempt, le départ GIVE (son premier enfant).
+						if(sceneDuo == "Cuddle" && d >= 0){
+							std::vector<int32> b1 = ar->Enfants(d);
+							r = b1.empty() ? -1 : b1[0];
+							std::vector<int32> b2 = r >= 0 ? ar->Enfants(r) : std::vector<int32>();
+							d = b2.empty() ? -1 : b2[0];
+							an->bassinRef = 0.86f;
+						}
+						if((harcelement || (!sceneDuo.empty() && sceneDuo != "LockerStuff" && sceneDuo != "Cuddle")) && d >= 0){
 							r = d; int32 h = ar->Resoudre(r, "./HOLD_IDLE");
 							std::vector<int32> e = h >= 0 ? ar->Enfants(h) : std::vector<int32>();
 							d = e.empty() ? -1 : e[0];
@@ -1142,7 +1159,7 @@ main(int argc, char **argv)
 							// Une graine propre à chaque piéton (la position s'y mêle) : sinon deux
 							// points de même rang dans leur bloc tirent les mêmes gestes en même temps.
 							pa.hasard = 9176u + (uint32)k * 7919u + (uint32)(fabsf(px) * 131.0f) * 2654435761u + (uint32)(fabsf(py) * 17.0f) + (uint32)pl * 97u;
-							pa.parArbre = true; pa.der.arbre = ar; pa.der.racine = r; pa.der.redepart = passif ? -1 : d; pa.der.suiveur = passif; pa.der.femme = choix->female != 0; pa.departArbre = passif ? -1 : d;
+							pa.parArbre = true; pa.der.arbre = ar; pa.der.racine = r; pa.der.redepart = passif ? -1 : d; pa.der.suiveur = passif; pa.der.femme = choix->female != 0; pa.der.scripte = pt.type == "Specific_Event"; pa.departArbre = passif ? -1 : d;
 							// Un arbre qui accroche des objets (la cigarette) : le modèle tenu, s'il
 							// n'est pas déjà là ; l'arbre décide quand il apparaît.
 							bool prend = false;
@@ -1161,7 +1178,7 @@ main(int argc, char **argv)
 					pa.cap = cap; pa.corps.pos = CVector(px, py, z); pa.depart = pa.corps.pos;
 					animes.push_back(pa); poses++; dejaPoses.insert(choix->model);
 					// Les deux membres d'un couple se répondent (PlayOnTarget).
-					if((couple || prise || harcelement) && pl == 1 && animes.size() >= 2){ animes.back().partenaire = (int32)animes.size() - 2; animes[animes.size() - 2].partenaire = (int32)animes.size() - 1; }
+					if((couple || prise || harcelement || coteACote) && pl == 1 && animes.size() >= 2){ animes.back().partenaire = (int32)animes.size() - 2; animes[animes.size() - 2].partenaire = (int32)animes.size() - 1; }
 					printf("  point d'intérêt « %s » %s%s%s (à %.0f m, lacet %.0f°) : %s %s, %s", q.nom.c_str(), pt.type.c_str(), pt.nom.empty() ? "" : " ", pt.nom.c_str(),
 					       pr.first, pt.lacetTangageRoulis[0], choix->model, choix->type, n >= 0 ? groupe.c_str() : "attente");
 					if(n >= 0) printf(" n° %d", n);

@@ -15,8 +15,9 @@
 //    autre revient au nœud jouable ancêtre le plus proche, à défaut au départ ;
 //  - une Opportunity, son instant passé (champ 12), est prise au hasard
 //    (CHANCE par seconde, 8 %) si les conditions du nœud visé passent ;
-//  - conditions : WeightedRandom tire au sort, ActionRequest et
-//    IsScriptedAmbient sont fausses (elles attendent un script ou le joueur),
+//  - conditions : WeightedRandom tire au sort, ActionRequest est fausse (elle
+//    attend le joueur), IsScriptedAmbient est vraie pour une scène d'événement
+//    scripté (Specific_Event) et fausse sinon,
 //    « Not » inverse la suivante, les autres passent ;
 //  - PlayOnTarget envoie le partenaire sur le chemin donné ; les pistes Prop*
 //    accrochent ou lâchent l'objet tenu (docs/mxd.md).
@@ -118,13 +119,16 @@ public:
 		return a ? f.ChaineCitee(a->decalage) : std::string();
 	}
 	// Les conditions du nœud, selon les règles ci-dessus.
-	bool Conditions(int32 i, float hasard, bool femme = false) const {
+	bool Conditions(int32 i, float hasard, bool femme = false, bool scripte = false) const {
 		if(Interdit(i)) return false;
 		static const uint32 kNot = ActionHash("Not"), kOu = ActionHash("OR"), kAleatoire = ActionHash("WeightedRandom"),
 		                    kAleatoire2 = ActionHash("Random"), kFemme = ActionHash("IsFemale");
 		// Fausses ici : elles attendent un script, le joueur, un modèle précis ou
 		// un coup reçu.
-		static const uint32 kFausses[] = { ActionHash("ActionRequest"), ActionHash("IsScriptedAmbient"), ActionHash("false"),
+		// IsScriptedAmbient : vraie pour une scène lancée par un script (les événements
+		// Specific_Event, EventFunc.lur → PedSetActionNode), fausse sinon.
+		static const uint32 kScripte = ActionHash("IsScriptedAmbient");
+		static const uint32 kFausses[] = { ActionHash("ActionRequest"), ActionHash("false"),
 			ActionHash("IsPlayer"), ActionHash("IsAuthority"), ActionHash("PedModelID"), ActionHash("Health"),
 			ActionHash("DamagePending"), ActionHash("HitTime"), ActionHash("PropTargetInteractive"), ActionHash("TargetRelativeOrientation"),
 			ActionHash("OBJECTIVE"), ActionHash("CharacterSize") };
@@ -139,6 +143,7 @@ public:
 			// au hasard parmi celles qui passent), pas condition par condition.
 			if(t == kAleatoire || t == kAleatoire2) v = true;
 			if(t == kFemme) v = femme;
+			if(t == kScripte) v = scripte;
 			if(inverser) v = !v;
 			inverser = false;
 			une = une || v; toutes = toutes && v;
@@ -180,6 +185,7 @@ struct Deroulement {
 	int32 redepart = -1;                 // le nœud où l'on reprend quand on revient à la racine
 	bool suiveur = false;                // ne bouge que sur ordre du partenaire : à la fin, il fige sa pose
 	bool femme = false;                  // pour la condition IsFemale
+	bool scripte = false;                // pour la condition IsScriptedAmbient (événement scripté)
 	float t = 0;                         // temps du nœud (s)
 	float duree = -1, fin = -1, vitesse = 1, depart = 0; int32 mode = 0;
 	float finPiste = -1;                 // champ 16 de la piste Animation : sa durée de vie dans le nœud (s), même en boucle
@@ -247,7 +253,7 @@ struct Deroulement {
 			int32 j = arbre->Resoudre(i, c);
 			if(j < 0 || j == i || !Dans(j)) continue;
 			if(arbre->noeuds[j].n->genre == 'b')
-				for(int32 e : arbre->Enfants(j)) if(arbre->Conditions(e, s.hasard(), femme)){ j = e; break; }
+				for(int32 e : arbre->Enfants(j)) if(arbre->Conditions(e, s.hasard(), femme, scripte)){ j = e; break; }
 			for(const CActionTrack &p : arbre->Pistes(j))
 				if(p.type == kCible){ int32 k = arbre->Resoudre(j, arbre->Chaine(p, 32)); if(k >= 0 && s.partenaire) s.partenaire(k); }
 		}
@@ -284,7 +290,7 @@ struct Deroulement {
 			if(t < o.t || (o.tmax >= 0 && t > o.tmax)) continue;
 			if(!o.sure && s.hasard() >= CHANCE * dt) continue;
 			int32 j = arbre->Resoudre(noeud, o.chemin);
-			if(j >= 0 && Dans(j) && !arbre->passif[j] && arbre->Conditions(j, s.hasard(), femme)){ Entrer(j, s); return; }
+			if(j >= 0 && Dans(j) && !arbre->passif[j] && arbre->Conditions(j, s.hasard(), femme, scripte)){ Entrer(j, s); return; }
 		}
 		// La fin de l'animation : une boucle (mode 2) ne finit pas ; le mode 1 fige
 		// la dernière pose (AnimationTrack, FUN_006c0c60) et attend le partenaire ;
@@ -338,7 +344,7 @@ private:
 			// Au premier tour, les enfants du nœud qu'on quitte ; ensuite, les frères.
 			std::vector<int32> ok;
 			for(int32 e : arbre->Enfants(haut))
-				if((haut == noeud || e != ici) && !arbre->passif[e] && arbre->Conditions(e, s.hasard(), femme)) ok.push_back(e);
+				if((haut == noeud || e != ici) && !arbre->passif[e] && arbre->Conditions(e, s.hasard(), femme, scripte)) ok.push_back(e);
 			// Une fille prend la variante IsFemale quand il y en a une (Sit_GirlIdle
 			// plutôt que la branche générique Sit_Start).
 			// Une branche qui ne joue rien (nettoyage, ReleaseGroup) seulement à défaut.
