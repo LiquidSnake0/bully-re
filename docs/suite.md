@@ -38,7 +38,7 @@ chantier. Un point fini passe en bas, avec son commit.
    groupes), `docs/agr.md`.
 5. **Lua 5.0** : embarquer la VM et brancher l'API de `docs/api-lua.txt`
    (914 noms), pour que les scripts de mission tournent.
-6. **Outillage : REA** (github.com/morluto/rea, MCP) pour interroger Ghidra
+6. **Outillage : REA** (github.com/morluto/rea, MCP, installé le 06.10.2026 : rea-agents 4.0.1, Ghidra 12.1.4 et JDK 21 dans ~/opt) pour interroger Ghidra
    directement au lieu des exports headless. Prérequis : Ghidra 12.1.4 et
    JDK 21 en local (aujourd'hui Ghidra tourne en Docker). Garder l'index
    `export/index.sqlite` comme première source.
