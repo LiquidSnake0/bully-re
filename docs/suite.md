@@ -10,10 +10,11 @@ chantier. Un point fini passe en bas, avec son commit.
    `F_HeldAgainstWall` → `Wall_Hold`, `F_LockerStuff` → `LockerStuff`,
    `F_Swirlie` → `Swirlie`, `F_TeacherHarassingKids` → `Tell_Off`,
    `F_CoupleCuddling` → `Cuddle`, `F_CoupleKissing` → `Kiss_Me_Baby`.
-   La visite ne pose que les scènes à un piéton (`kScenes` dans
-   `outils/visite.cpp`). À faire : poser le second piéton comme pour les
-   couples et le harcèlement (rôles meneur / suiveur transmis par
-   `PlayOnTarget`, placement des paires de `docs/cat.md`).
+   `Wall_Hold` est fait (voir « Fait »). Restent `LockerStuff`, `Swirlie`,
+   `Tell_Off`, `Cuddle` et `Kiss_Me_Baby` : même démarche, lire l'arbre
+   (`tools/cat.py Ambient.cat --pistes`), mesurer les bassins des deux
+   animations (`build/outils/sonde_poi <groupe>`), poser la paire dans
+   `outils/visite.cpp` (variable `sceneDuo`) et vérifier à l'image.
 2. **TargetSync** (décision à prendre) : passer au modèle « chacun sur sa
    flèche + TargetSync » pour toutes les paires (prises, bagarres, couples)
    au lieu de l'origine commune et des reculs ajustés à la main. Gain : le
@@ -47,3 +48,4 @@ chantier. Un point fini passe en bas, avec son commit.
 - Transitions attente / marche, fondus os par os : c2064a9.
 - Trajets de `DAT/Trigger.img` et patrouilles : 23746ad, 4c129a1.
 - Scènes d'événements à un piéton : bf0ba10.
+- Scène à deux `Wall_Hold` (`F_HeldAgainstWall`) : voir le commit « Visite : plaqué au mur ».
