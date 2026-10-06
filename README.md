@@ -84,6 +84,7 @@ installation of the game to read from; they never write to it.
 
 ## Tools
 
+- lip sync `.lip` files, 493 files and 40,882 lines, 2 bits per frame read exactly as `bully.exe` does ([docs/lip.md](docs/lip.md));
 - `tools/ghidra/` — headless scripts: inventory, RTTI export, per-vtable
   decompilation, Lua binding extraction, string cross-references.
 - `tools/indexer.py` + `tools/chercher.py` — build a local SQLite index of your
@@ -97,7 +98,7 @@ outside the repository.
 
 ## Status
 
-**1.9 % of `bully.exe`'s code recreated** (278 of 20,819 functions), 4.3 %
+**1.9 % of `bully.exe`'s code recreated** (281 of 20,819 functions), 4.3 %
 understood (code, docs, names). Breakdown in [docs/avancement.md](docs/avancement.md),
 regenerated on every commit by `tools/avancement.py`.
 

@@ -25,7 +25,7 @@ posséder le jeu (Steam ou disque).
 
 ## Avancement
 
-**1,9 % du code de `bully.exe` recréé** (278 fonctions sur 20 819), 4,3 % compris
+**1,9 % du code de `bully.exe` recréé** (281 fonctions sur 20 819), 4,3 % compris
 (code, documentation, noms). Le détail par sous-système est dans
 [docs/avancement.md](docs/avancement.md), régénéré à chaque commit par
 `tools/avancement.py`.
@@ -69,6 +69,8 @@ du jeu :
   déformés par leur squelette et **animés** par les animations du jeu (le
   format des `.agr` est déchiffré, [docs/agr.md](docs/agr.md)) : ils
   **marchent** dans le décor, sur le sol et contre les murs ;
+- la synchronisation labiale `.lip`, 493 fichiers et 40 882 répliques,
+  2 bits par image lus comme dans `bully.exe` ([docs/lip.md](docs/lip.md)) ;
 - la numérotation du streaming ([docs/streaming.md](docs/streaming.md)) et
   les pools ([docs/pools.md](docs/pools.md)) ;
 - la grille du monde, ses listes et ses dix pools d'entités
