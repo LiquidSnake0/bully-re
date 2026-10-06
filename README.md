@@ -121,6 +121,10 @@ they **walk** around, on the floor and against the walls.
 
 See [docs/journal.md](docs/journal.md) for the running log (in French).
 
+## Next
+
+See [docs/suite.md](docs/suite.md) (in French): the first open item is the next piece of work.
+
 ## Legal
 
 This project contains no code, assets or data from Bully: Scholarship Edition.
