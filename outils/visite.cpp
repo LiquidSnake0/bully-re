@@ -940,6 +940,11 @@ main(int argc, char **argv)
 				// F_LockerStuff lance Ambient.cat, LockerStuff : la prise debout déjà jouée pour les
 				// bagarres (StuffGrap, GRAP_IDLE_GV + _RCV, Grap n° 7 et 6, même origine).
 				else if(pt.type == "Specific_Event" && pt.nom == "F_LockerStuff"){ groupe = "Grap"; choixAnims = {7, 6}; duo = prise = true; sceneDuo = "LockerStuff"; }
+				// F_TeacherHarassingKids lance Ambient.cat, Tell_Off : l'adulte (CHEW_LOOP_T,
+				// POI_Telloff n° 4) sermonne l'enfant (CHEW_LOOP_P, n° 3), deux boucles 1001
+				// de 5,83 s. Leurs flèches sont nulles : pas d'origine commune comme les prises,
+				// mais la TargetSync de Hold (0,9 m, angle π) : face à face à 0,9 m.
+				else if(pt.type == "Specific_Event" && pt.nom == "F_TeacherHarassingKids"){ groupe = "POI_Telloff"; choixAnims = {4, 3}; duo = true; ecartDuo = 0.9f; sceneDuo = "Tell_Off"; }
 				// F_CoupleCuddling lance Ambient.cat, Cuddle : bras dessus, bras dessous
 				// (AMB_ARMLINK_1, NPC_Love n° 1, qui lance AMB_ARMLINK_2, n° 0 ; les deux sur
 				// place, bassin à l'origine). TargetSync x = −0,4 m, angle 0 : côte à côte,
@@ -1128,6 +1133,9 @@ main(int argc, char **argv)
 						}
 						if((harcelement || (!sceneDuo.empty() && sceneDuo != "LockerStuff" && sceneDuo != "Cuddle")) && d >= 0){
 							r = d; int32 h = ar->Resoudre(r, "./HOLD_IDLE");
+							// Tell_Off : HOLD_IDLE est un cran plus bas, sous un banc anonyme
+							// (#0df0cd97) qui porte aussi Hold et Held.
+							if(h < 0) for(int32 c : ar->Enfants(r)){ h = ar->Resoudre(c, "./HOLD_IDLE"); if(h >= 0){ r = c; break; } }
 							std::vector<int32> e = h >= 0 ? ar->Enfants(h) : std::vector<int32>();
 							d = e.empty() ? -1 : e[0];
 							an->bassinRef = 0.86f;
@@ -1178,7 +1186,7 @@ main(int argc, char **argv)
 					pa.cap = cap; pa.corps.pos = CVector(px, py, z); pa.depart = pa.corps.pos;
 					animes.push_back(pa); poses++; dejaPoses.insert(choix->model);
 					// Les deux membres d'un couple se répondent (PlayOnTarget).
-					if((couple || prise || harcelement || coteACote) && pl == 1 && animes.size() >= 2){ animes.back().partenaire = (int32)animes.size() - 2; animes[animes.size() - 2].partenaire = (int32)animes.size() - 1; }
+					if((couple || prise || harcelement || coteACote || sceneDuo == "Tell_Off") && pl == 1 && animes.size() >= 2){ animes.back().partenaire = (int32)animes.size() - 2; animes[animes.size() - 2].partenaire = (int32)animes.size() - 1; }
 					printf("  point d'intérêt « %s » %s%s%s (à %.0f m, lacet %.0f°) : %s %s, %s", q.nom.c_str(), pt.type.c_str(), pt.nom.empty() ? "" : " ", pt.nom.c_str(),
 					       pr.first, pt.lacetTangageRoulis[0], choix->model, choix->type, n >= 0 ? groupe.c_str() : "attente");
 					if(n >= 0) printf(" n° %d", n);

@@ -10,11 +10,10 @@ chantier. Un point fini passe en bas, avec son commit.
    `F_HeldAgainstWall` → `Wall_Hold`, `F_LockerStuff` → `LockerStuff`,
    `F_Swirlie` → `Swirlie`, `F_TeacherHarassingKids` → `Tell_Off`,
    `F_CoupleCuddling` → `Cuddle`, `F_CoupleKissing` → `Kiss_Me_Baby`.
-   `Wall_Hold`, `LockerStuff` et `Cuddle` sont faits (voir « Fait » ;
-   `F_CoupleKissing` n'a aucun point dans Trigger.img). Bloqués : `Tell_Off`
-   (ses boucles `CHEW_LOOP_T` / `_P`, POI_Telloff n° 4 et 3, sont des `.agr`
-   de type 1001, point 3 ci-dessous) et `Swirlie` (l'arbre ne fait que viser
-   l'objet toilettes interactif, `PropTargetInteractive`) : même démarche, lire l'arbre
+   `Wall_Hold`, `LockerStuff`, `Cuddle` et `Tell_Off` sont faits (voir « Fait » ;
+   `F_CoupleKissing` n'a aucun point dans Trigger.img). Reste `Swirlie` (l'arbre
+   ne fait que viser l'objet toilettes interactif, `PropTargetInteractive`) :
+   même démarche, lire l'arbre
    (`tools/cat.py Ambient.cat --pistes`), mesurer les bassins des deux
    animations (`build/outils/sonde_poi <groupe>`), poser la paire dans
    `outils/visite.cpp` (variable `sceneDuo`) et vérifier à l'image.
@@ -27,7 +26,7 @@ chantier. Un point fini passe en bas, avec son commit.
    groupes), `docs/agr.md`.
 4. **Lua 5.0** : embarquer la VM et brancher l'API de `docs/api-lua.txt`
    (914 noms), pour que les scripts de mission tournent.
-5. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture) pour interroger Ghidra
+5. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
    directement au lieu des exports headless. Prérequis : Ghidra 12.1.4 et
    JDK 21 en local (aujourd'hui Ghidra tourne en Docker). Garder l'index
    `export/index.sqlite` comme première source.
@@ -40,4 +39,5 @@ chantier. Un point fini passe en bas, avec son commit.
 - Scène à deux `Wall_Hold` (`F_HeldAgainstWall`) : voir le commit « Visite : plaqué au mur ».
 - Le format `.lip` (synchronisation labiale) : `src/anim/Lip`, `tests/test_lip`, `docs/lip.md` ; confirmé dans `bully.exe` par l'index et REA (chargeur `FUN_0068df50`, lecture `FUN_0068dd30`).
 - Scène à deux `LockerStuff` (`F_LockerStuff`) : la prise debout de StuffGrap, sans le casier ; commit « Visite : fourré au casier ».
+- Scène à deux `Tell_Off` (`F_TeacherHarassingKids`) : les boucles 1001 se lisaient déjà ; le vrai blocage était HOLD_IDLE un cran plus bas et le placement (TargetSync 0,9 m, face à face) ; commit « Visite : le sermon ».
 - Scène à deux `Cuddle` (`F_CoupleCuddling`), placement côte à côte, et condition IsScriptedAmbient vraie pour les événements scriptés : commit « Visite : bras dessus, bras dessous ».
