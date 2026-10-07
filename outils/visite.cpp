@@ -940,6 +940,10 @@ main(int argc, char **argv)
 				// F_LockerStuff lance Ambient.cat, LockerStuff : la prise debout déjà jouée pour les
 				// bagarres (StuffGrap, GRAP_IDLE_GV + _RCV, Grap n° 7 et 6, même origine).
 				else if(pt.type == "Specific_Event" && pt.nom == "F_LockerStuff"){ groupe = "Grap"; choixAnims = {7, 6}; duo = prise = true; sceneDuo = "LockerStuff"; }
+				// F_Swirlie lance Ambient.cat, Swirlie : si la cible est l'objet toilettes
+				// (PropTargetInteractive), l'arbre exécute LockerStuff/PropStuffTarget/StuffGrap,
+				// la même empoignade. Même approximation que LockerStuff : sans l'objet.
+				else if(pt.type == "Specific_Event" && pt.nom == "F_Swirlie"){ groupe = "Grap"; choixAnims = {7, 6}; duo = prise = true; sceneDuo = "LockerStuff"; }
 				// F_TeacherHarassingKids lance Ambient.cat, Tell_Off : l'adulte (CHEW_LOOP_T,
 				// POI_Telloff n° 4) sermonne l'enfant (CHEW_LOOP_P, n° 3), deux boucles 1001
 				// de 5,83 s. Leurs flèches sont nulles : pas d'origine commune comme les prises,
