@@ -197,6 +197,23 @@ poser chacun sur sa flèche et la cible à 0,9 m, face au meneur. Le vol d'arme
 n'a pas d'écart : seul TargetSync sépare les deux piétons. Modèle du moteur, confirmé par `FUN_0060f350` : chaque piéton suit sa
 flèche, TargetSync pose la cible par rapport au meneur.
 
+**Ce que ça change pour la visite (mesuré le 07.10.2026, `sonde_poi` affiche
+désormais la flèche à t = 0 et son cap).** Les animations d'empoignade portent
+la cible sur la flèche de la victime, exactement là où TargetSync la pose :
+GRAP_IDLE_RCV (Grap n° 6) a sa flèche en (0,08 ; 0,96), cap 180° ;
+GRAP_INIT_RCV (n° 22) en (0,05 ; 1,18) ; LOCKER_HOLD_RCV (POI_Gen n° 4) en
+(0,06 ; 0,44) ; GFIGHT_CYC_GV (Gfight n° 1) en (0,06 ; 0,29), cap 180°. Les
+poser à la même origine revient donc au modèle du moteur, à quelques
+centimètres près : **rien à changer** pour les prises, les bagarres, Wall_Hold,
+LockerStuff et Swirlie. Seules les animations **sans position de flèche**
+dépendent de TargetSync : le sermon (`Tell_Off`, 0,9 m, π), le harcèlement
+(`BookHarass`, 0,9 m, π) et le bras dessus bras dessous (`Cuddle`, x = −0,4)
+l'appliquent. Le baiser (`NPC_Ambient.cat` `Hold`, 0,9 m, π) a été essayé
+avec la règle exacte : les têtes de deux élèves se rentrent dedans (les
+animations sont faites pour un squelette adulte) ; il garde son recul réglé
+à l'image (bassins à 35 cm). Reste hors visite : le vol d'arme
+(`Steal_Easy`, 0,7 m, π), qui suppose une arme sur la cible.
+
 
 Pilotés par un arbre :
 

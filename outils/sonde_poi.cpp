@@ -39,6 +39,11 @@ main(int argc, char **argv)
 			float cq[4], cm[3][3], capB = 0;
 			if(AgrRotation(x, 1, 0, cq)){ AgrMatrice(cq, cm); capB = atan2f(cm[1][0], cm[0][0]) * 180 / 3.14159265f; }
 			float capB2 = 0; if(AgrRotation(x, 1, 0, cq)){ AgrMatrice(cq, cm); capB2 = atan2f(cm[0][1], cm[0][0]) * 180 / 3.14159265f; }
+			// La flèche (ARROW) à t = 0 : où le moteur pose le piéton, et son cap.
+			CVector f0(0, 0, 0); float capF = 0;
+			bool aF = AgrPositionOs(x, AGR_OS - 1, 0, &f0);
+			if(AgrRotation(x, AGR_OS - 1, 0, cq)){ AgrMatrice(cq, cm); capF = atan2f(cm[1][0], cm[0][0]) * 180 / 3.14159265f; }
+			printf("  flèche à t0 %s(%.2f %.2f) cap %6.1f |", aF ? "" : "sans position ", f0.x, f0.y, capF);
 			printf("  cap bassin %6.1f / %6.1f |", capB, capB2);
 			printf("  %2zu type %d, %d os, %5.2f s, %s, flèche (%.2f %.2f), bassin %s z %.2f→%.2f [%.2f..%.2f] xy (%.2f %.2f)\n", k, x.type, x.numOs, x.duree,
 			       pire < 0.01f ? "boucle" : "ne boucle pas", d.x, d.y, aR ? "" : "(sans piste)", r0.z, r1.z, zmin, zmax, r0.x, r0.y);
