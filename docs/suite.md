@@ -21,7 +21,9 @@ chantier. Un point fini passe en bas, avec son commit.
    flèche + TargetSync » pour toutes les paires (prises, bagarres, couples)
    au lieu de l'origine commune et des reculs ajustés à la main. Gain : le
    vol d'arme et les prises sans flèche se placent juste. Risque : régression
-   du placement actuel, qui tient à l'image. Voir `docs/cat.md`, TargetSync.
+   du placement actuel, qui tient à l'image. **La logique du moteur est
+   maintenant connue** (`FUN_0060f350`, docs/cat.md, TargetSync : cible posée
+   dans le repère du meneur, décalage x y z + angle) : Tell_Off l'applique déjà.
 3. **Les autres encodages des `.agr`** (objets animés : un sur cinq des
    groupes), `docs/agr.md`.
 4. **Lua 5.0** : embarquer la VM et brancher l'API de `docs/api-lua.txt`

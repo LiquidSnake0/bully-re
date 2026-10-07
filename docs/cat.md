@@ -156,10 +156,32 @@ programmes écrits à la main. C'est une approximation, avec ces règles :
 
 ### TargetSync
 
-Champs relevés : 12 et 16 (fenêtre), 28 distance (m), 36 angle (rad) ; prise
-GRAP_INIT et couple `Hold` : 28 = 0,9, 36 = π ; vol d'arme `Steal_Easy` :
-28 = 0,7, 36 = π. Les méthodes virtuelles de `SyncBaseTrack` sont vides (le
-travail est fait ailleurs dans le moteur, non suivi). Ce que disent les
+Champs : 12 et 16 (fenêtre), puis **24, 28, 32 = décalage x, y, z (m) et
+36 = angle (rad)**. Prise GRAP_INIT et couple `Hold` : y = 0,9, angle π ;
+vol d'arme `Steal_Easy` : y = 0,7, angle π ; `Cuddle` : x = −0,4, angle 0.
+
+**Ce que fait le moteur (établi le 07.10.2026).** `SyncBaseTrack` a des
+méthodes vides, mais `TargetSyncTrack` (vtable 0x9352ac) a sa propre méthode
+d'exécution, `FUN_0060f350` (troisième entrée), lue dans l'index puis
+confirmée à l'assembleur par REA :
+
+1. le piéton qui joue la piste (le meneur) lit sa cible, `ped + 0x155c` ;
+   sans cible, rien ;
+2. il construit la matrice M = rotation de l'angle autour de z
+   (`FUN_00412b90`), translation (x, y, z) ;
+3. matrice de la cible = matrice du meneur × M (`GetMatrix` 0x46dbd0 sur le
+   meneur, produit 0x413780, `SetMatrix` 0x46dd40 sur la cible) : la cible
+   est posée **dans le repère du meneur**, au décalage (x, y, z), tournée
+   de l'angle ;
+4. cap de la cible (`+0x1700`) = cap du meneur + angle, ramené dans
+   l'intervalle (0x432d90, 0x473370).
+
+Le repère du meneur est celui de l'entité (sa position au sol, qui suit la
+flèche), pas le bassin animé. Un piéton regarde vers +y : y = 0,9 et angle π,
+c'est « la cible à 0,9 m devant, face au meneur » ; x = −0,4 et angle 0,
+« à 0,4 m sur le côté, même sens ».
+
+Ce que disent les
 animations, à t = 0 :
 
 | Animation | Flèche (ARROW) | Bassin |
@@ -172,9 +194,8 @@ animations, à t = 0 :
 Les paires Grap portent leur écart dans la flèche (0,96 m, presque les 0,9 de
 TargetSync) : poser les deux piétons à la même origine revient au même que
 poser chacun sur sa flèche et la cible à 0,9 m, face au meneur. Le vol d'arme
-n'a pas d'écart : seul TargetSync sépare les deux piétons. Modèle probable du
-moteur : chaque piéton suit sa flèche, TargetSync place la cible à la
-distance 28, tournée de 36, par rapport au meneur.
+n'a pas d'écart : seul TargetSync sépare les deux piétons. Modèle du moteur, confirmé par `FUN_0060f350` : chaque piéton suit sa
+flèche, TargetSync pose la cible par rapport au meneur.
 
 
 Pilotés par un arbre :
