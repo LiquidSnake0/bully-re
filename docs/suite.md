@@ -14,6 +14,20 @@ chantier. Un point fini passe en bas, avec son commit.
    JDK 21 en local (aujourd'hui Ghidra tourne en Docker). Garder l'index
    `export/index.sqlite` comme première source.
 
+4. **Outillage : d'autres serveurs MCP à essayer** (repérés le 07.10.2026) :
+   - **Ghidra avec projet persistant**, pour ne plus refaire les 6 min 30 d'analyse
+     à chaque ouverture comme REA : [pyghidra-mcp](https://github.com/clearbluejar/pyghidra-mcp),
+     [ghidra-headless-mcp](https://github.com/mrphrazer/ghidra-headless-mcp),
+     [bethington/ghidra-mcp](https://github.com/bethington/ghidra-mcp) (200+ outils),
+     [GhidraMCP](https://github.com/LaurieWired/GhidraMCP) (passe par l'interface).
+     Test : rouvrir le projet de `~/Documents/bully-test` en quelques secondes,
+     comparer avec REA sur `FUN_0060f350`.
+   - **Le jeu en marche** : [x64dbg-mcp-server](https://github.com/duty1g/x64dbg-mcp-server)
+     sur la tour Windows, point d'arrêt dans `FUN_0060f350` pour lire les vraies
+     valeurs de TargetSync pendant une scène.
+   - Écartés : IDA Pro et Binary Ninja (payants) ; agent-reach (scraping avec les
+     cookies du compte, rien à voir avec la rétro-ingénierie).
+
 ## Fait
 
 - Transitions attente / marche, fondus os par os : c2064a9.
