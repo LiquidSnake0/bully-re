@@ -48,4 +48,12 @@ g++ $FLAGS tests/test_horloge.cpp src/core/TriggerFile.cpp tests/hote/FileMgr.cp
 g++ $FLAGS tests/test_timecycle.cpp src/render/TimeCycle.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_timecycle
 # test_world ne lit aucun fichier du jeu : il vérifie l'arithmétique de la grille et les listes.
 g++ $FLAGS tests/test_world.cpp src/core/World.cpp src/core/Lists.cpp src/entities/Physical.cpp src/entities/Entity.cpp tests/hote/Entite.cpp -o build/tests/test_world
-echo "tests prêts : test_surface, test_pedstats, test_carcols, test_handling, test_objectdata, test_cdstream, test_ide, test_col, test_ipl, test_nif, test_nft, test_texture, test_transform, test_placement, test_camera, test_marche, test_skin, test_agr, test_trigger, test_actiontree, test_hxd, test_mxd, test_lip, test_horloge, test_timecycle, test_world ; outils : build/outils/nif2obj, build/outils/rendu, build/outils/scene, build/outils/carte, build/outils/visite"
+# Lua 5.0.2 du jeu (tiers/lua-5.0.2, deux retouches marquées « bully-re ») : nombres en float,
+# size_t et instructions de 4 octets comme les .lur compilés en 32 bits. Voir docs/lua.md.
+LUA=tiers/lua-5.0.2
+LUA_FLAGS="-O2 -w -DLUA_NUMBER=float -DLUA_NUMBER_SCAN=\"%f\" -DLUA_NUMBER_FMT=\"%.10g\" -DLUA_UNDUMP_SIZE_T32 -I$LUA/include -I$LUA/src"
+mkdir -p build/lua
+for c in $LUA/src/*.c $LUA/src/lib/*.c; do gcc $LUA_FLAGS -c "$c" -o "build/lua/$(basename "${c%.c}").o"; done
+ar rcs build/lua/liblua502.a build/lua/*.o
+g++ $FLAGS -O2 -I$LUA/include -DLUA_NUMBER=float outils/sonde_lua.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp build/lua/liblua502.a -lm -o build/outils/sonde_lua
+echo "tests prêts : test_surface, test_pedstats, test_carcols, test_handling, test_objectdata, test_cdstream, test_ide, test_col, test_ipl, test_nif, test_nft, test_texture, test_transform, test_placement, test_camera, test_marche, test_skin, test_agr, test_trigger, test_actiontree, test_hxd, test_mxd, test_lip, test_horloge, test_timecycle, test_world ; outils : build/outils/nif2obj, build/outils/rendu, build/outils/scene, build/outils/carte, build/outils/visite, build/outils/sonde_lua"
