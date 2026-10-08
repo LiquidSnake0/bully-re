@@ -12,5 +12,5 @@ Le `.nft` a quitté cette liste le 24.09.2026 : c'est un NIF de textures, voir [
 | `.hxd` | dossier `Anim/` | Animations hors streaming (ANIBBALL.HXD…), format à lire. |
 
 Bully utilise Lua **5.0.2** (chaîne « Lua 5.0.2 » dans bully.exe), compilé avec des nombres
-en float. La VM est embarquée dans `tiers/lua-5.0.2` et l'API complète (1 504 fonctions) est
+en float. La VM est embarquée dans `tiers/lua-5.0.2` et l'API complète (1 508 fonctions) est
 dans `docs/api-lua-tables.tsv` : voir [lua.md](lua.md).

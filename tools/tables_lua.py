@@ -3,65 +3,64 @@
 
   tools/tables_lua.py <bully.exe> > docs/api-lua-tables.tsv
 
-Le moteur range ses liaisons dans des tables { const char *nom, lua_CFunction f }
-finies par { 0, 0 } (le luaL_reg de Lua 5.0). On parcourt .rdata et .data mot par
-mot : une table est une suite d'au moins trois paires (pointeur vers un nom ASCII,
-pointeur dans .text). Les cinq tables de .rdata sont les bibliothèques standard de
-Lua (base, coroutine, debug, math, table) ; les 55 de .data sont l'API du moteur.
-Sortie : nom, fonction C, table (section:adresse), triée par nom.
+CreateLuaState (0x5db260, lu avec REA le 08.10.2026) ouvre l'état Lua, les cinq
+bibliothèques standard (base, table, math, debug, coroutine dans base), puis
+enregistre l'API du moteur table par table :
+    push <table> ; mov ecx, esi ; call 0x5dafe0
+Chaque table est un luaL_reg de Lua 5.0 : paires { const char *nom, lua_CFunction f }
+finies par { 0, 0 }. On relit ces appels dans le code, puis chaque table.
+Sortie : nom, fonction C, table, triée par nom ; une ligne de commentaire par table
+(dans l'ordre d'enregistrement) sur la sortie d'erreur.
 """
 import struct, sys
+
+CREATE_LUA_STATE = (0x5db260, 0x5db6cf)
+ENREGISTRER_TABLE = 0x5dafe0
 
 b = open(sys.argv[1], 'rb').read()
 pe = struct.unpack_from('<I', b, 0x3c)[0]
 nsec = struct.unpack_from('<H', b, pe + 6)[0]
 optsz = struct.unpack_from('<H', b, pe + 20)[0]
 base = struct.unpack_from('<I', b, pe + 24 + 28)[0]
-secs = []                                   # (nom, adresse virtuelle, taille virtuelle, décalage fichier, taille fichier)
+secs = []                                   # (nom, adresse virtuelle, décalage fichier, taille fichier)
 for i in range(nsec):
     o = pe + 24 + optsz + i * 40
-    nom = b[o:o + 8].split(b'\0')[0].decode()
     vsz, va, rsz, raw = struct.unpack_from('<IIII', b, o + 8)
-    secs.append((nom, base + va, vsz, raw, rsz))
-text = next(s for s in secs if s[0] == '.text')
+    secs.append((b[o:o + 8].split(b'\0')[0].decode(), base + va, raw, rsz))
 
-def section(v):
-    for s in secs:
-        if s[1] <= v < s[1] + s[4]:
-            return s
+def fichier(v):
+    for nom, va, raw, rsz in secs:
+        if va <= v < va + rsz:
+            return raw + v - va
+    raise ValueError('adresse hors du fichier : 0x%x' % v)
 
-def nom_ascii(v):
-    s = section(v)
-    if s is None or s[0] == '.text':
-        return None
-    o = s[3] + v - s[1]
-    t = b[o:o + 64].split(b'\0')[0]
-    if not 2 <= len(t) <= 60 or not all(c < 128 and (chr(c).isalnum() or c == 95) for c in t):
-        return None
-    return t.decode()
+def chaine(v):
+    o = fichier(v)
+    return b[o:b.index(b'\0', o)].decode('latin-1')
+
+debut, fin = CREATE_LUA_STATE
+code = b[fichier(debut):fichier(fin)]
+tables = []
+for i in range(len(code) - 12):
+    # 68 imm32 (push) ; 8b ce (mov ecx, esi) ; e8 rel32 (call)
+    if code[i] == 0x68 and code[i + 5:i + 7] == b'\x8b\xce' and code[i + 7] == 0xe8:
+        cible = debut + i + 12 + struct.unpack_from('<i', code, i + 8)[0]
+        if cible == ENREGISTRER_TABLE:
+            tables.append(struct.unpack_from('<I', code, i + 1)[0])
 
 noms = {}
-for s in secs:
-    if s[0] not in ('.rdata', '.data'):
-        continue
-    d = b[s[3]:s[3] + s[4]]
-    i = 0
-    while i + 8 <= len(d):
-        suite, j = [], i
-        while j + 8 <= len(d):
-            p, f = struct.unpack_from('<II', d, j)
-            n = nom_ascii(p)
-            if n is None or not text[1] <= f < text[1] + text[2]:
-                break
-            suite.append((n, f))
-            j += 8
-        if len(suite) >= 3 and struct.unpack_from('<II', d, j) == (0, 0):
-            for n, f in suite:
-                noms.setdefault(n, (f, '%s:%08x' % (s[0], s[1] + i)))
-            i = j
-        else:
-            i += 4
+for t in tables:
+    k, n = t, 0
+    while True:
+        p, f = struct.unpack_from('<II', b, fichier(k))
+        if p == 0 and f == 0:
+            break
+        noms.setdefault(chaine(p), (f, t))
+        k += 8
+        n += 1
+    print('# table 0x%08x : %d fonctions (première : %s)' % (t, n, chaine(struct.unpack_from('<I', b, fichier(t))[0])), file=sys.stderr)
+print('# %d tables, %d fonctions' % (len(tables), len(noms)), file=sys.stderr)
 
 print('nom\tfonction_c\ttable')
 for n in sorted(noms, key=str.lower):
-    print('%s\t%08x\t%s' % (n, noms[n][0], noms[n][1]))
+    print('%s\t%08x\t%08x' % (n, noms[n][0], noms[n][1]))

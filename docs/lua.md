@@ -26,18 +26,51 @@ l'extracteur d'API `tools/tables_lua.py`, la liste `docs/api-lua-tables.tsv`.
 
 ## Les bibliothèques ouvertes
 
-Le binaire range ses liaisons dans des tables `{ nom, fonction C }` finies par
-`{ 0, 0 }` (le `luaL_reg` de Lua 5.0). `tools/tables_lua.py` les parcourt toutes :
+`CreateLuaState` (0x5db260, lue avec REA) monte l'état Lua du jeu, dans cet ordre :
 
-- 5 tables dans `.rdata` : les bibliothèques standard **base** (avec coroutine),
-  **table**, **math** et **debug**. Ni `string`, ni `io`, ni `os` : un script de
-  Bully ne peut ni manipuler de chaînes avec `string.*` ni toucher aux fichiers.
-- 55 tables dans `.data` : l'**API du moteur, 1 504 fonctions** (`docs/api-lua-tables.tsv`).
+1. `lua_open` ; `__onerror`, `_ALERT` et le gestionnaire de panique pointent tous
+   sur 0x824d30 (la fonction qui sert aussi de `print`).
+2. Cinq bibliothèques standard : **base** (avec coroutine), **table**, **math**,
+   **debug** et une cinquième (0x7423c0). Ni `string`, ni `io`, ni `os` : un script
+   de Bully ne touche ni aux chaînes avec `string.*` ni aux fichiers.
+3. Seuil du ramasse-miettes à 1 000 000 000 : il ne passe presque jamais.
+4. **58 tables de l'API du moteur, 1 508 fonctions** (`docs/api-lua-tables.tsv`),
+   chacune passée à 0x5dafe0. Ce sont des `luaL_reg` de Lua 5.0 : paires
+   `{ nom, fonction C }` finies par `{ 0, 0 }`. `tools/tables_lua.py` relit les 58
+   appels dans le code de `CreateLuaState`, puis chaque table.
+5. Cinq énumérations posées par 0x5db040 avec leur fonction de lecture :
+   `PATH` (0x5db220), `TRIGGER` (0x5db0f0), `POINTLIST` (0x5db130),
+   `MODELENUM` (0x5db1d0) et la chaîne de 0x901d18 (0x5db170).
+6. **`util.lua`** chargé et exécuté (0x5d8ae0), puis un passage complet du
+   ramasse-miettes (seuil 0) avant de remettre le seuil haut.
 
 L'ancienne liste de 914 noms (`docs/api-lua.txt`) venait d'une source extérieure :
 253 de ses noms (`CameraActive`, `CameraFadeTrack`…) n'ont pas de table, ce ne sont
 pas des fonctions Lua ; et il lui manquait `ImportScript`, `GetTimer`,
-`GetMissionCurrentAttemptCount`, `EffectRegisterInArea` et 839 autres (843 noms nouveaux ; les 661 restants sont communs).
+`GetMissionCurrentAttemptCount`, `EffectRegisterInArea` et 843 autres (847 noms nouveaux ; 661 sont communs aux deux listes).
+
+## Le démarrage
+
+`FUN_005dc190` (seul appelant de `CreateLuaState`, lu avec REA) :
+
+1. ferme l'ancien état s'il existe (0x5db830) ;
+2. lit `Scripts\Scripts.DIR` (l'annuaire de `Scripts.img`) ;
+3. `CreateLuaState` (ci-dessus), qui finit par exécuter `util.lua` dans `_G` ;
+4. `FUN_005dbf90("main.lua", 0)` : crée l'objet script de `main` ;
+5. `FUN_005d9d20("gamemain")` : lance la fonction `gamemain` de `main.lur` en thread.
+
+Le moteur tient une **pile d'objets script** (0x2b0c octets chacun, tableau en
++0x6b64, nombre en +0x6b84, script courant en +0x6b88). `FUN_005dbf90(fichier, lancer)`
+réutilise l'objet du fichier s'il existe (0x5dbb60), sinon le crée (0x5d8950),
+l'empile, exécute son premier niveau (0x5d9c50) et, si `lancer` vaut 1, démarre sa
+fonction `main` : c'est ainsi qu'une mission démarre. `main.lua` est chargé avec 0,
+puis c'est `gamemain` qui est lancé.
+
+Un thread (`FUN_005d8e40`) est un appel protégé, `__onerror` en gestionnaire, à la
+fonction Lua `ThreadNameSpace(fichier, fonction)` de `util.lua`. Elle renvoie une
+coroutine, rangée dans un emplacement de 0x44 octets de l'objet script (indice en
++0x1148). Le moteur reprend ensuite ces coroutines image par image : c'est la
+boucle à recréer pour que `Wait` fonctionne.
 
 ## ImportScript et util.lua
 
@@ -56,13 +89,14 @@ function NS_ON() ImportScript = nil end
 
 `CreateNameSpace(fichier)` donne à un script son propre environnement
 (`setfenv`), dont les noms absents renvoient à `_G` (`setmetatable(env, {__index = _G})`),
-puis le lance dans une coroutine. Une mission voit donc les globales de `main`
-(`gPlayer`, posé par `main` avec `PlayerGetPedIndex()`) sans pouvoir les écraser.
+avec son propre `ImportScript` qui exécute la bibliothèque dans cet environnement ;
+`GlobalImportScript` garde la version de `util`, qui exécute dans `_G`.
+`gPlayer` est posé dans `SInitGl` (0) puis dans `main` (`PlayerGetPedIndex()`).
 
 ## Ce que donne la sonde
 
 `build/outils/sonde_lua` exécute le premier niveau de chaque script avec les
-1 504 fonctions du moteur en bouchons. Avec `SONDE_AVANT=util.lur` :
+1 508 fonctions du moteur en bouchons. Avec `SONDE_AVANT=util.lur` :
 **515 chargés, 509 exécutés jusqu'au bout**. Les 6 échecs sont des comparaisons
 ou des calculs sur la valeur renvoyée par un bouchon (nil).
 
@@ -74,7 +108,8 @@ ou des calculs sur la valeur renvoyée par un bouchon (nil).
 
 ## Reste à établir
 
-- L'ordre de démarrage côté moteur : qui charge `util.lua`, puis `main`, et comment
-  une mission est lancée (chaînes `util.lua`, `main`, `gamemain` près de 0x92cbe0).
-- Les tables que le moteur pose lui-même : `MODELENUM`, `POINTLIST`, `PATH`, `TRIGGER`.
-- Brancher les 1 504 fonctions, en commençant par celles des scripts d'ambiance.
+- La boucle qui reprend les coroutines à chaque image, et ce que fait `Wait`.
+- Qui voit quoi : les globales de `main` vivent dans l'espace de noms de `main` ;
+  vérifier comment une mission voit `gPlayer` (`GlobalImportScript` exécute dans `_G`).
+- Ce que renvoient les cinq énumérations (`MODELENUM.x` → numéro de modèle ?).
+- Brancher les 1 508 fonctions, en commençant par celles des scripts d'ambiance.

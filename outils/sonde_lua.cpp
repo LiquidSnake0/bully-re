@@ -25,7 +25,7 @@ extern "C" {
 
 static const char *kImg = "Scripts\\Scripts.img";
 static int32 image = -1;
-static std::set<std::string> api;                       // docs/api-lua-tables.tsv, tables de .data (le moteur)
+static std::set<std::string> api;                       // docs/api-lua-tables.tsv : les 58 tables de CreateLuaState
 static std::map<std::string, int> touchesTous;          // nom -> scripts qui le touchent au premier niveau
 static std::map<std::string, int> importsTous;          // bibliothèque -> scripts qui l'importent
 static std::vector<std::string> touchesScript;          // noms du moteur touchés par le script en cours
@@ -141,8 +141,9 @@ ChargerApi(const char *chemin)
 	while(fgets(ligne, sizeof(ligne), f)){
 		ligne[strcspn(ligne, "\r\n")] = 0;
 		char *tab1 = strchr(ligne, '\t');
-		char *tab2 = tab1 ? strchr(tab1 + 1, '\t') : nil;
-		if(tab2 && strncmp(tab2 + 1, ".data:", 6) == 0){ *tab1 = 0; api.insert(ligne); }
+		if(tab1 == nil || strcmp(ligne, "nom\tfonction_c\ttable") == 0) continue;
+		*tab1 = 0;
+		api.insert(ligne);
 	}
 	fclose(f);
 	return true;
