@@ -13,6 +13,14 @@ chantier. Un point fini passe en bas, avec son commit.
    directement au lieu des exports headless. Prérequis : Ghidra 12.1.4 et
    JDK 21 en local (aujourd'hui Ghidra tourne en Docker). Garder l'index
    `export/index.sqlite` comme première source.
+   - **État au 08.10.2026** : l'amont est passé à rea-agents 6.0.0 ; la branche se rebase
+     toujours sans conflit dessus. La PR [morluto/rea#974](https://github.com/morluto/rea/pull/974)
+     est ouverte ; un autre utilisateur confirme la même coupure à 330 s sur un PE de 64 Mo.
+   - **Pourquoi chaque ouverture refait l'analyse** : le lanceur passe toujours `-deleteProject`
+     à `analyzeHeadless` (`src/ghidra/GhidraLauncher.ts`), le projet Ghidra analysé est donc
+     effacé à la fermeture. Piste proposée sur la PR le 08.10 : garder ce projet, repéré par
+     l'empreinte du binaire, la version de Ghidra et les options d'analyse. Si morluto est
+     d'accord, ouvrir une issue puis une PR séparée ; c'est l'autre voie que le point 4.
 
 4. **Outillage : d'autres serveurs MCP à essayer** (repérés le 07.10.2026) :
    - **Ghidra avec projet persistant**, pour ne plus refaire les 6 min 30 d'analyse
