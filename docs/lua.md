@@ -72,6 +72,56 @@ coroutine, rangée dans un emplacement de 0x44 octets de l'objet script (indice 
 +0x1148). Le moteur reprend ensuite ces coroutines image par image : c'est la
 boucle à recréer pour que `Wait` fonctionne.
 
+## La boucle des threads
+
+Lue avec REA le 09.10.2026.
+
+- **`Wait(ms)`** (0x5bfa70) lit le délai, prend le thread courant du script courant
+  (gestionnaire en 0xd02850, script courant 0x5db7e0, thread courant 0x5d8a30), écrit
+  l'heure de réveil `CTimer` (0xc1a9b4) + délai à l'offset +0x1c du thread, sauf si elle
+  vaut -1, puis rend la main avec `lua_yield` (0x73fda0).
+- **`CreateThread("F_Nom")`** (0x5bf2f0) appelle `ThreadNameSpace(fichier, "F_Nom")` dans
+  le script courant (0x5d9d20), marque l'octet +0x14 du nouveau thread, et renvoie son numéro.
+- **`LuaScript_Update`** (0x5da960, nom tiré de son marqueur de profilage) tourne à chaque
+  image pour chaque script. Pour chaque thread à partir du 1 (le 0 est le premier niveau) :
+  un thread nouveau ou en cours passe en « arrêt demandé » si son heure de réveil est
+  négative ; s'il est réveillé (heure passée) ou en arrêt demandé, le moteur pose la globale
+  **`Alive`** (fausse en cas d'arrêt demandé), note le thread courant (+0x114c) et appelle
+  `lua_resume` (0x73ffc0). Une coroutine finie (pile vide) ou en erreur est retirée
+  (0x5d9d30, qui appelle `KillNameSpace` pour le thread 0) ; en arrêt demandé, seule une
+  fonction nommée `MissionCleanup` a le droit de continuer.
+- L'emplacement d'un thread fait 0x44 octets à partir de +0x48 de l'objet script :
+  coroutine +0x00, référence +0x04, état +0x10 (0 nouveau, 1 en cours, 2 arrêt demandé,
+  3 tué, 4 fini), drapeau +0x14, compteur +0x18, réveil +0x1c, nom de la fonction +0x24.
+  Nombre de threads en +0x1148.
+- L'objet script naît vide (0x5d8950 : état, compteurs, nom du fichier avec `\` changé en
+  `/`) ; 0x5d9c50 appelle **`CreateNameSpace(fichier)`** de util.lua dans un appel protégé
+  (0x5d8d40), qui exécute le premier niveau et renvoie la coroutine du thread 0.
+
+### Recréée : `build/outils/lancer_lua`
+
+`outils/lancer_lua.cpp` refait ce chemin hors du moteur : util.lua dans `_G`, l'objet
+script de `main.lua`, le thread `gamemain`, puis une boucle à 33 ms par image avec la
+logique de `LuaScript_Update`. `Wait`, `CreateThread`, `TerminateThread`, `GetTimer` et
+l'horloge (`ClockGet`, `ClockSet`, `ClockSetTickRate`, sur `CHorloge`) sont réels ; le reste
+de l'API est en bouchons qui journalisent l'appel. Les bouchons répondent comme dans une
+nouvelle partie, **de façon provisoire**, d'après le nom : `Is…`, `Has…`, `Should…` →
+`false` ; `Get…`, `…Count` → `0` ; et `HasStoryModeBeenSelected` → `true` (le joueur a
+choisi « Histoire » au menu).
+
+Résultat sur 2 minutes de jeu, **sans erreur** :
+
+1. Premier niveau de `main.lua` : les imports (`SInitGl`, `Events`, `Scenarios`…).
+2. `gamemain` : 45 scripts de zones enregistrés (`AreaRegisterAreaScript`), exclusions de
+   collision, 7 points de sauvegarde, 26 fichiers `.DAT` (`DATLoad`), tenues, horloge réglée
+   (`ClockSet`, `ClockSetTickRate`), météo, création du joueur (`PlayerCreateXYZ`), puis
+   attente du mode Histoire.
+3. Ensuite les effets (136), les lueurs de fenêtres (271), les générateurs de voitures (35),
+   les points de réapparition, la population, et **quatre threads** : `F_CheckPOI`,
+   `F_AlarmThread`, `T_PhotographyStimulus`, `F_DanceCowDance`.
+4. Tous tournent ensuite image par image (`AreaGetVisible`, `MissionActive`,
+   `WeaponEquipped`, `ClockGet`…). Aucune mission ne démarre : rien ne la déclenche encore.
+
 ## ImportScript et util.lua
 
 `ImportScript` du moteur (0x5be5f0) cherche le fichier dans `Scripts.img` par son
@@ -108,7 +158,8 @@ ou des calculs sur la valeur renvoyée par un bouchon (nil).
 
 ## Reste à établir
 
-- La boucle qui reprend les coroutines à chaque image, et ce que fait `Wait`.
+- Ce qui lance la première mission, et les 1 508 fonctions à brancher pour de vrai, en
+  commençant par celles que `gamemain` appelle (liste ci-dessus).
 - Qui voit quoi : les globales de `main` vivent dans l'espace de noms de `main` ;
   vérifier comment une mission voit `gPlayer` (`GlobalImportScript` exécute dans `_G`).
 - Ce que renvoient les cinq énumérations (`MODELENUM.x` → numéro de modèle ?).

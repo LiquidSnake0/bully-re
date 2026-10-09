@@ -5,11 +5,12 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Ouvert
 
-1. **Lua** (`docs/lua.md`) : la VM 5.0.2 est embarquée et les 515 scripts se
-   chargent. Suite : l'ordre de démarrage côté moteur (qui lance `util`, `main`,
-   les missions), les tables posées par le moteur (`MODELENUM`, `POINTLIST`,
-   `PATH`, `TRIGGER`), puis brancher les 1 508 fonctions de
-   `docs/api-lua-tables.tsv`, en commençant par les scripts d'ambiance.
+1. **Lua** (`docs/lua.md`) : la VM 5.0.2 est embarquée, les 515 scripts se
+   chargent, et `build/outils/lancer_lua` fait tourner `main.lua` et `gamemain` avec
+   leurs threads, image par image, sans erreur. Suite : ce qui lance la première
+   mission, les tables posées par le moteur (`MODELENUM`, `POINTLIST`, `PATH`,
+   `TRIGGER`), puis brancher pour de vrai les fonctions que `gamemain` appelle
+   (zones, `DATLoad`, effets, joueur) en remplaçant les bouchons.
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
    directement au lieu des exports headless. Prérequis : Ghidra 12.1.4 et
