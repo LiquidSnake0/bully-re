@@ -5,11 +5,16 @@
 // globale Alive, lua_resume, retrait des threads finis ou en erreur.
 // Wait, CreateThread, TerminateThread et GetTimer sont réels ; le reste de l'API est en
 // bouchons qui renvoient nil et journalisent l'appel.
-//   BULLY_DATA=<racine du jeu> build/outils/lancer_lua [secondes] [script.lua [fonction]]
+// Les missions (docs/missions.md) : la table est lue dans la banque d'arbres d'actions
+// (Missions.cat et ses sous-arbres) ; ForceStartMission suit la machine à états du moteur
+// (FUN_006ad3e0) : script de la mission (FUN_005dbf90), MissionSetup jusqu'au bout
+// (FUN_006acba0), main (FUN_006abf20), puis MissionCleanup (FUN_006abed0).
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM]
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
 #include "../src/core/Horloge.h"
+#include "../src/core/ActionTree.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -43,8 +48,26 @@ struct Script {
 	std::string fichier;                 // +0x04
 	std::vector<Thread> threads;         // [0] = premier niveau, puis CreateThread
 	int courant = -1;                    // +0x114c
+	bool fin = false;                    // +0x1150 : le script se termine (MissionCleanup)
 };
-static Script script;
+// Les objets script vivants : [0] = main.lua, puis la mission en cours.
+static std::vector<Script> scripts;
+static int scriptCourant = -1;          // l'objet script dont un thread tourne en ce moment
+
+// Une mission de la banque : le nœud (nom en clair ou haché) et son script (champ 28 de MissionData).
+struct Mission { std::string nom; uint32 hachage; std::string script; };
+static std::vector<Mission> missions;
+
+// La mission en cours et sa machine à états, réduite de FUN_006ad3e0 :
+// 1 MissionSetup tourne, 2 main tourne, 3 MissionCleanup tourne.
+enum EtatMission { AUCUNE = 0, PREPARATION = 1, DEROULEMENT = 2, NETTOYAGE = 3 };
+static struct {
+	int etat = AUCUNE;
+	int script = -1;
+	std::string nom;
+	bool reussie = false;
+} mission;
+
 static int prochainId = 1;
 static std::map<std::string, int> appels;
 static int journalRestant = 400;
@@ -66,8 +89,10 @@ Lire(const CDirectoryEntry *d, uint32 *octets)
 static const char *
 NomThreadCourant()
 {
-	if(script.courant < 0 || script.courant >= (int)script.threads.size()) return "(premier niveau)";
-	return script.threads[script.courant].fonction.c_str();
+	if(scriptCourant < 0) return "(premier niveau)";
+	const Script &sc = scripts[scriptCourant];
+	if(sc.courant < 0 || sc.courant >= (int)sc.threads.size()) return "(premier niveau)";
+	return sc.threads[sc.courant].fonction.c_str();
 }
 
 static void
@@ -193,8 +218,8 @@ static int
 Wait(lua_State *L)
 {
 	int ms = (int)luaL_optnumber(L, 1, 0);
-	if(script.courant >= 0){
-		Thread &t = script.threads[script.courant];
+	if(scriptCourant >= 0 && scripts[scriptCourant].courant >= 0){
+		Thread &t = scripts[scriptCourant].threads[scripts[scriptCourant].courant];
 		if(t.reveil != -1) t.reveil = maintenant + ms;
 	}
 	return lua_yield(L, 0);
@@ -272,16 +297,42 @@ AppelUtil(lua_State *L, const char *fonctionUtil, const char *fichier, const cha
 	return co;
 }
 
+// ThreadNameSpace (0x5d8e40) : un thread de plus dans l'objet script n° s.
 static int
-NouveauThread(lua_State *L, const char *fonction)
+NouveauThread(lua_State *L, int s, const char *fonction)
 {
 	Thread t;
-	t.co = AppelUtil(L, "ThreadNameSpace", script.fichier.c_str(), fonction, &t.ref);
+	t.co = AppelUtil(L, "ThreadNameSpace", scripts[s].fichier.c_str(), fonction, &t.ref);
 	if(t.co == nil) return 0;
 	t.fonction = fonction;
 	t.id = prochainId++;
-	script.threads.push_back(t);
+	scripts[s].threads.push_back(t);
 	return t.id;
+}
+
+// FUN_005dbf90(fichier, 0) : l'objet script ; CreateNameSpace exécute son premier niveau.
+static int
+NouveauScript(lua_State *L, const char *fichier)
+{
+	Script sc;
+	sc.fichier = fichier;
+	Thread premier;
+	premier.co = AppelUtil(L, "CreateNameSpace", fichier, nil, &premier.ref);
+	premier.fonction = "(premier niveau)";
+	if(premier.co == nil) return -1;
+	sc.threads.push_back(premier);
+	scripts.push_back(sc);
+	return (int)scripts.size() - 1;
+}
+
+// FUN_005d8db0 : un thread de cette fonction existe dans le script et n'est pas fini (état != 4).
+static bool
+ThreadEnCours(int s, const char *fonction)
+{
+	if(s < 0) return false;
+	for(size_t i = 1; i < scripts[s].threads.size(); i++)
+		if(scripts[s].threads[i].fonction == fonction && scripts[s].threads[i].etat < TUE) return true;
+	return false;
 }
 
 // CreateThread("F_Nom") (0x5bf2f0) : un thread de plus dans le script courant ; renvoie son numéro.
@@ -290,7 +341,7 @@ CreateThread(lua_State *L)
 {
 	const char *f = luaL_checkstring(L, 1);
 	Journal("CreateThread", L, 1);
-	int id = NouveauThread(L, f);
+	int id = scriptCourant >= 0 ? NouveauThread(L, scriptCourant, f) : 0;
 	lua_pushnumber(L, id);
 	return 1;
 }
@@ -300,17 +351,18 @@ TerminateThread(lua_State *L)
 {
 	Journal("TerminateThread", L, 1);
 	int id = (int)luaL_optnumber(L, 1, 0);
-	for(Thread &t : script.threads)
-		if(t.id == id && t.etat < ARRET_DEMANDE) t.etat = ARRET_DEMANDE;
+	for(Script &sc : scripts)
+		for(Thread &t : sc.threads)
+			if(t.id == id && t.etat < ARRET_DEMANDE) t.etat = ARRET_DEMANDE;
 	return 0;
 }
 
 // LuaScript_Update (0x5da960), réduit à ce qui compte sans le reste du moteur.
 static void
-MettreAJour(lua_State *L)
+MettreAJourScript(lua_State *L, int s)
 {
-	for(size_t i = 1; i < script.threads.size(); i++){
-		Thread &t = script.threads[i];
+	for(size_t i = 1; i < scripts[s].threads.size(); i++){
+		Thread &t = scripts[s].threads[i];
 		if(t.etat >= TUE) continue;
 		if(t.reveil < 0 && t.etat < ARRET_DEMANDE) t.etat = ARRET_DEMANDE;
 		if(!((uint32)t.reveil < maintenant || t.etat == ARRET_DEMANDE)) continue;
@@ -318,11 +370,13 @@ MettreAJour(lua_State *L)
 		lua_pushstring(L, "Alive");
 		lua_pushboolean(L, t.etat != ARRET_DEMANDE);
 		lua_rawset(L, LUA_GLOBALSINDEX);
-		script.courant = (int)i;
+		scriptCourant = s;
+		scripts[s].courant = (int)i;
 		lua_State *co = t.co;
 		int r = lua_resume(co, 0);
-		script.courant = -1;
-		Thread &u = script.threads[i];      // CreateThread a pu agrandir le tableau pendant la reprise
+		scripts[s].courant = -1;
+		scriptCourant = -1;
+		Thread &u = scripts[s].threads[i];      // CreateThread a pu agrandir le tableau pendant la reprise
 		lua_Debug ar;
 		if(r != 0){
 			printf("%6.2f s  %-22s ERREUR %s\n", maintenant / 1000.0, u.fonction.c_str(),
@@ -339,12 +393,187 @@ MettreAJour(lua_State *L)
 	}
 }
 
+// La machine à états de la mission en cours (FUN_006ad3e0, cas 2, 9 et 10).
+static void
+AvancerMission(lua_State *L)
+{
+	switch(mission.etat){
+	case PREPARATION:
+		// FUN_006abf20 : MissionSetup fini, le thread main démarre.
+		if(!ThreadEnCours(mission.script, "MissionSetup")){
+			printf("%6.2f s  mission %s : MissionSetup fini, main démarre\n", maintenant / 1000.0, mission.nom.c_str());
+			NouveauThread(L, mission.script, "main");
+			mission.etat = DEROULEMENT;
+		}
+		break;
+	case DEROULEMENT:
+		// FUN_006abed0 : main fini (ou arrêté par MissionSucceed / MissionFail), MissionCleanup.
+		if(!ThreadEnCours(mission.script, "main")){
+			printf("%6.2f s  mission %s : main fini, MissionCleanup\n", maintenant / 1000.0, mission.nom.c_str());
+			scripts[mission.script].fin = true;
+			NouveauThread(L, mission.script, "MissionCleanup");
+			mission.etat = NETTOYAGE;
+		}
+		break;
+	case NETTOYAGE:
+		if(!ThreadEnCours(mission.script, "MissionCleanup")){
+			printf("%6.2f s  mission %s terminée (%s)\n", maintenant / 1000.0, mission.nom.c_str(),
+			       mission.reussie ? "réussie" : "échouée ou arrêtée");
+			for(Thread &t : scripts[mission.script].threads)
+				if(t.etat < TUE){ t.etat = TUE; luaL_unref(L, LUA_REGISTRYINDEX, t.ref); t.ref = LUA_NOREF; }
+			mission.etat = AUCUNE;
+			mission.script = -1;
+		}
+		break;
+	}
+}
+
+// LuaScript_Update (0x5da960), réduit à ce qui compte sans le reste du moteur.
+static void
+MettreAJour(lua_State *L)
+{
+	for(size_t s = 0; s < scripts.size(); s++) MettreAJourScript(L, (int)s);
+	AvancerMission(L);
+}
+
+// RequestModel(id) (0x5c61e0), WeaponRequestModel (0x5c6340), VehicleRequestModel (0x5d5c60) :
+// demandent le modèle et renvoient vrai quand il est chargé (état de diffusion 1). PedRequestModel
+// (0x5c6320) ne renvoie rien et reste en bouchon. Les scripts bouclent dessus (« while not RequestModel(id) do Wait(0) end »).
+// Sans diffusion dans cet outil, un modèle est chargé dès qu'on le demande : provisoire.
+static int
+RequestModel(lua_State *L)
+{
+	appels["RequestModel"]++;
+	lua_pushboolean(L, 1);
+	return 1;
+}
+
+// --- Les missions ---
+
+static const Mission *
+TrouverMission(const char *nom)
+{
+	uint32 h = ActionHash(nom) & 0x7fffffff;
+	for(const Mission &m : missions){
+		if(!m.nom.empty() && strcasecmp(m.nom.c_str(), nom) == 0) return &m;
+		if(m.hachage == h) return &m;
+	}
+	return nil;
+}
+
+static void
+RelirePistes(const CActionTreeFile &f, const CActionNode &n)
+{
+	static const uint32 kMissionData = ActionHash("MissionData") & 0x7fffffff;
+	for(int32 d : n.pistes){
+		CActionTrack t;
+		if(!f.Piste(d, t) || t.type != kMissionData) continue;
+		const CActionAttribut *a = t.Champ(28);
+		Mission m{n.nom, n.hachage & 0x7fffffff, a ? f.ChaineCitee(a->decalage) : std::string()};
+		if(!m.script.empty()) missions.push_back(m);
+	}
+	for(const CActionNode &e : n.enfants) RelirePistes(f, e);
+}
+
+// FUN_006ac5d0 : la banque des missions, Missions.cat et les sous-arbres qu'elle cite.
+static void
+ChargerMissions(void)
+{
+	int32 act = CdStream::AddImage("Act\\Act.img");
+	if(act < 0){ printf("Act\\Act.img introuvable : pas de table des missions\n"); return; }
+	static const char *banques[] = { "Missions", "chap1", "chap2", "chap3", "chap4", "chap5", "classes",
+	                                  "Minigames", "Punish", "Tutorials", "Debug" };
+	for(const char *b : banques){
+		std::string nom = std::string(b) + ".cat";
+		const CDirectoryEntry *d = CdStream::ms_images[act].Find(nom.c_str());
+		if(d == nil) continue;
+		uint32 octets = d->size * CDSTREAM_SECTOR_SIZE;
+		uint8 *buf = (uint8*)malloc(octets);
+		int32 fd = CFileMgr::OpenFile("Act\\Act.img", "rb", 1);
+		CFileMgr::Seek(fd, d->offset * CDSTREAM_SECTOR_SIZE, 0);
+		bool ok = CFileMgr::ReadExact(fd, buf, octets);
+		CFileMgr::CloseFile(fd);
+		CActionTreeFile f;
+		if(ok && f.Load(buf, octets)) RelirePistes(f, f.racine);
+		free(buf);
+	}
+	printf("%zu missions dans la banque\n", missions.size());
+}
+
+// ForceStartMission(nom) : FUN_006acba0, le script de la mission puis MissionSetup.
+static int
+ForceStartMission(lua_State *L)
+{
+	const char *nom = luaL_checkstring(L, 1);
+	Journal("ForceStartMission", L, 1);
+	if(mission.etat != AUCUNE){ printf("        %s refusée : %s est en cours\n", nom, mission.nom.c_str()); return 0; }
+	const Mission *m = TrouverMission(nom);
+	if(m == nil){ printf("        %s absente de la banque\n", nom); return 0; }
+	int s = NouveauScript(L, m->script.c_str());
+	if(s < 0){ printf("        %s : CreateNameSpace(%s) a échoué\n", nom, m->script.c_str()); return 0; }
+	mission.nom = nom;
+	mission.script = s;
+	mission.reussie = false;
+	mission.etat = PREPARATION;
+	printf("%6.2f s  mission %s : %s chargé, MissionSetup démarre\n", maintenant / 1000.0, nom, m->script.c_str());
+	NouveauThread(L, s, "MissionSetup");
+	return 0;
+}
+
+// MissionSucceed / MissionFail : la mission s'arrête ; main est arrêté, MissionCleanup suivra.
+static void
+ArreterMain(void)
+{
+	if(mission.script < 0) return;
+	for(Thread &t : scripts[mission.script].threads)
+		if(t.fonction == "main" && t.etat < ARRET_DEMANDE) t.etat = ARRET_DEMANDE;
+}
+
+static int
+MissionSucceed(lua_State *L){ Journal("MissionSucceed", L, 1); mission.reussie = true; ArreterMain(); return 0; }
+
+static int
+MissionFail(lua_State *L){ Journal("MissionFail", L, 1); mission.reussie = false; ArreterMain(); return 0; }
+
+static int
+MissionActive(lua_State *L)
+{
+	appels["MissionActive"]++;
+	lua_pushboolean(L, mission.etat != AUCUNE);
+	return 1;
+}
+
+static int
+MissionActiveSpecific(lua_State *L)
+{
+	appels["MissionActiveSpecific"]++;
+	const char *nom = luaL_checkstring(L, 1);
+	lua_pushboolean(L, mission.etat != AUCUNE && strcasecmp(mission.nom.c_str(), nom) == 0);
+	return 1;
+}
+
+static int
+MissionGetCurrentName(lua_State *L)
+{
+	appels["MissionGetCurrentName"]++;
+	if(mission.etat == AUCUNE) lua_pushnil(L);
+	else lua_pushstring(L, mission.nom.c_str());
+	return 1;
+}
+
 int
 main(int argc, char **argv)
 {
-	double secondes = argc > 1 ? atof(argv[1]) : 10.0;
-	const char *fichier = argc > 2 ? argv[2] : "main.lua";
-	const char *fonction = argc > 3 ? argv[3] : "gamemain";
+	const char *aLancer = nil;           // --mission NOM : ForceStartMission(NOM) après une seconde
+	std::vector<const char*> pos;
+	for(int i = 1; i < argc; i++){
+		if(strcmp(argv[i], "--mission") == 0 && i + 1 < argc) aLancer = argv[++i];
+		else pos.push_back(argv[i]);
+	}
+	if(getenv("LANCER_JOURNAL")) journalRestant = atoi(getenv("LANCER_JOURNAL"));   // lignes de journal (400)
+	double secondes = pos.size() > 0 ? atof(pos[0]) : 10.0;
+	const char *fichier = pos.size() > 1 ? pos[1] : "main.lua";
+	const char *fonction = pos.size() > 2 ? pos[2] : "gamemain";
 	image = CdStream::AddImage(kImg);
 	if(image < 0){ printf("%s introuvable (BULLY_DATA ?)\n", kImg); return 1; }
 
@@ -362,6 +591,16 @@ main(int argc, char **argv)
 	lua_register(L, "CreateThread", CreateThread);
 	lua_register(L, "TerminateThread", TerminateThread);
 	lua_register(L, "__onerror", SurErreur);
+	lua_register(L, "RequestModel", RequestModel);
+	lua_register(L, "WeaponRequestModel", RequestModel);
+	lua_register(L, "VehicleRequestModel", RequestModel);
+	lua_register(L, "ForceStartMission", ForceStartMission);
+	lua_register(L, "MissionSucceed", MissionSucceed);
+	lua_register(L, "MissionFail", MissionFail);
+	lua_register(L, "MissionActive", MissionActive);
+	lua_register(L, "MissionActiveSpecific", MissionActiveSpecific);
+	lua_register(L, "MissionGetCurrentName", MissionGetCurrentName);
+	ChargerMissions();
 	lua_newtable(L);
 	lua_pushstring(L, "__index");
 	lua_pushcfunction(L, IndexGlobal);
@@ -375,30 +614,32 @@ main(int argc, char **argv)
 		return 1;
 	}
 
-	// FUN_005dbf90(fichier, 0) : l'objet script ; CreateNameSpace exécute son premier niveau.
-	script.fichier = fichier;
-	Thread premier;
-	premier.co = AppelUtil(L, "CreateNameSpace", fichier, nil, &premier.ref);
-	premier.fonction = "(premier niveau)";
-	if(premier.co == nil){ printf("CreateNameSpace(%s) a échoué\n", fichier); return 1; }
-	script.threads.push_back(premier);
+	if(NouveauScript(L, fichier) < 0){ printf("CreateNameSpace(%s) a échoué\n", fichier); return 1; }
 	printf("%s chargé dans son espace de noms ; lancement de %s\n", fichier, fonction);
-	if(NouveauThread(L, fonction) == 0){ printf("ThreadNameSpace(%s, %s) a échoué\n", fichier, fonction); return 1; }
+	if(NouveauThread(L, 0, fonction) == 0){ printf("ThreadNameSpace(%s, %s) a échoué\n", fichier, fonction); return 1; }
 
 	// La boucle de jeu : une image toutes les 33 ms.
 	int images = 0;
 	for(maintenant = 0; maintenant < (uint32)(secondes * 1000); maintenant += 33, images++){
 		horloge.Avancer(0.033f);
+		if(aLancer && maintenant >= 1000){
+			lua_pushcfunction(L, ForceStartMission);
+			lua_pushstring(L, aLancer);
+			lua_call(L, 1, 0);
+			aLancer = nil;
+		}
 		MettreAJour(L);
 	}
 
+	size_t crees = 0;
 	int vivants = 0;
-	for(size_t i = 1; i < script.threads.size(); i++) vivants += script.threads[i].etat < TUE;
-	printf("\n%d images (%.1f s) : %zu threads créés, %d encore vivants\n", images, secondes,
-	       script.threads.size() - 1, vivants);
-	for(size_t i = 1; i < script.threads.size(); i++)
-		printf("  %-28s %s\n", script.threads[i].fonction.c_str(),
-		       script.threads[i].etat < TUE ? "vivant" : script.threads[i].etat == TUE ? "tué" : "fini");
+	for(const Script &sc : scripts)
+		for(size_t i = 1; i < sc.threads.size(); i++){ crees++; vivants += sc.threads[i].etat < TUE; }
+	printf("\n%d images (%.1f s) : %zu threads créés, %d encore vivants\n", images, secondes, crees, vivants);
+	for(const Script &sc : scripts)
+		for(size_t i = 1; i < sc.threads.size(); i++)
+			printf("  %-14s %-28s %s\n", sc.fichier.c_str(), sc.threads[i].fonction.c_str(),
+			       sc.threads[i].etat < TUE ? "vivant" : sc.threads[i].etat == TUE ? "tué" : "fini");
 	std::vector<std::pair<int, std::string>> tri;
 	for(auto &a : appels) tri.push_back({-a.second, a.first});
 	std::sort(tri.begin(), tri.end());

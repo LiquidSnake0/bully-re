@@ -9,9 +9,9 @@ chantier. Un point fini passe en bas, avec son commit.
    chargent, et `build/outils/lancer_lua` fait tourner `main.lua` et `gamemain` avec
    leurs threads, image par image, sans erreur. La liste des missions est un
    arbre d'actions (`docs/missions.md`, `tools/missions.py`) et la primitive de
-   lancement est `ForceStartMission(nom)`. Suite : brancher `ForceStartMission`
-   dans `lancer_lua` et lancer `1_01` (seule mission du chapitre 1 sans
-   condition), les tables posées par le moteur (`MODELENUM`, `POINTLIST`, `PATH`,
+   lancement est `ForceStartMission(nom)`. `ForceStartMission` est branché dans
+   `lancer_lua` (`--mission 1_01`) : `1_01` tourne jusqu'à la création des
+   personnages (`PedCreatePoint`, docs/missions.md). Suite : créer les piétons, les tables posées par le moteur (`MODELENUM`, `POINTLIST`, `PATH`,
    `TRIGGER`), puis brancher pour de vrai les fonctions que `gamemain` appelle
    (zones, `DATLoad`, effets, joueur) en remplaçant les bouchons.
 
@@ -43,6 +43,8 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- `ForceStartMission` dans `lancer_lua` : table des missions lue dans la banque, machine à états du moteur (`FUN_006ad3e0` : MissionSetup, main, MissionCleanup), `RequestModel` et variantes ; `1_01` va jusqu'à `PedCreatePoint` ; champ 36 de `MissionData` = afficher le titre.
 
 - La banque des missions : `Missions.cat` chargée par `CGame::Initialise` (`FUN_006ac5d0`), forme d'une mission, champs de `MissionData` (24 titre, 28 script, 32 clé de titre, 40 type), `ForceStartMission` comme primitive, `1_01` seule mission du chapitre 1 sans condition ; hypothèse « champ 36 = lancer au début » réfutée (282 missions) ; `docs/missions.md`, `tools/missions.py`.
 

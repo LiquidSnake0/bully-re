@@ -52,7 +52,7 @@ La position est le décalage dans l'objet de la piste (docs/cat.md, « Les piste
 | 28 | script Lua de la mission | lisible, `chapN\nom.lua` |
 | 32 | clé du titre affiché (`1_01_TITLE`) | lisible, présente dans `Config/Text` |
 | 40 | **type** : 0 histoire et courses, 1 cours, 3 boulots et courses de quartier, 4 tutoriels, 5 mini-jeux | répartition sur 473 missions ; `FUN_006ac110` traite le type 4 à l'heure, `FUN_006aac70` le type 1 |
-| 36 | inconnu | **ce n'est pas « lancer au début de la partie »** : il vaut 1 pour 282 missions |
+| 36 | **afficher le titre au lancement** : pour les types 0, 1 et 3, si l'octet vaut 1 et que la clé du champ 32 n'est pas vide, `FUN_00688050` affiche le titre | `FUN_006ad3e0`, cas 1 et 2 ; d'où les 282 missions à 1 (ce n'est pas « lancer au début de la partie ») |
 | 37, 74 | entrent dans le compte +0x754 | `FUN_006ac5d0` |
 
 `tools/missions.py --types` : 132 missions d'histoire, 64 cours, 100 boulots et
@@ -73,10 +73,43 @@ courses, 107 tutoriels, 70 mini-jeux.
 - `SMissPass.F_LaunchingMission` prépare l'état du monde selon la mission lancée
   (`MissionGetIndex`, `1_01`, `1_02A`…) : à lire quand on branchera le lancement.
 
+## Le déroulement d'une mission (bully.exe)
+
+La machine à états du gestionnaire est `FUN_006ad3e0`, appelée à chaque image :
+
+1. `FUN_006acba0` : l'objet script de la mission est créé à partir du champ 28
+   (`FUN_005dbf90`, le CreateNameSpace des scripts), le thread `MissionSetup` est
+   lancé (`FUN_005d9d20`) et tourne jusqu'à cinq images de suite, tant que
+   `FUN_005d8db0("MissionSetup")` répond qu'il n'est pas fini (état du thread ≠ 4).
+2. Cas 2 : `MissionSetup` fini, `FUN_006abf20` lance le thread `main` sur le même
+   objet script.
+3. Cas 9 : `main` fini, `FUN_006abed0` lance `MissionCleanup` et pose le drapeau
+   de fin de l'objet script (+0x1150).
+4. Cas 10 : `MissionCleanup` fini, la mission est terminée.
+
+## Dans lancer_lua
+
+`build/outils/lancer_lua 60 --mission 1_01` charge la table (360 missions dont le
+script est lu ; `tools/missions.py` en trouve 473 : écart à expliquer, sans doute
+des champs 28 hérités d'une piste modèle), lance `main.lua` puis, à 1 s,
+`ForceStartMission("1_01")`, et suit la machine à états ci-dessus.
+`MissionSucceed` et `MissionFail` arrêtent `main` ; `MissionActive`,
+`MissionActiveSpecific`, `MissionGetCurrentName` répondent pour de vrai.
+`RequestModel`, `WeaponRequestModel` et `VehicleRequestModel` renvoient « chargé »
+(le moteur renvoie vrai quand l'état de diffusion vaut 1 ; l'outil n'a pas de
+diffusion).
+
+Résultat pour `1_01`, sans erreur jusqu'à la création des personnages :
+`MissionSetup` (chargement de l'arbre `Act/Conv/1_01.act`, joueur placé, transition
+de zone) fini en 0,2 s ; `main` coupe le contrôle du joueur, règle la météo, charge
+sept groupes d'animations et 17 modèles, règle les personnages uniques, la
+réputation des six factions, place le joueur, vide la zone, puis
+`PedCreatePoint(85, …)` renvoie `nil` et `table.insert` échoue : `MissionCleanup`
+s'exécute ensuite proprement.
+
 ## Suite
 
-1. Dans `lancer_lua`, brancher `ForceStartMission(nom)` pour de vrai : trouver la
-   mission dans la table, charger son script (champ 28), appeler `MissionSetup`,
-   lancer `main` comme un thread, `MissionCleanup` à la fin.
-2. Lancer `1_01` ainsi et relever les fonctions du moteur qu'elle appelle.
-3. Lire dans le moteur qui démarre `1_01` à la nouvelle partie, et le champ 36.
+1. `PedCreatePoint` et les fonctions de création de personnages : un vrai numéro
+   de piéton (le pool de piétons, docs/pools.md).
+2. Expliquer l'écart 360 / 473 dans la table des missions.
+3. Lire dans le moteur qui démarre `1_01` à la nouvelle partie.
