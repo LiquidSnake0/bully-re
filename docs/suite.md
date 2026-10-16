@@ -7,8 +7,11 @@ chantier. Un point fini passe en bas, avec son commit.
 
 1. **Lua** (`docs/lua.md`) : la VM 5.0.2 est embarquée, les 515 scripts se
    chargent, et `build/outils/lancer_lua` fait tourner `main.lua` et `gamemain` avec
-   leurs threads, image par image, sans erreur. Suite : ce qui lance la première
-   mission, les tables posées par le moteur (`MODELENUM`, `POINTLIST`, `PATH`,
+   leurs threads, image par image, sans erreur. La liste des missions est un
+   arbre d'actions (`docs/missions.md`, `tools/missions.py`) et la primitive de
+   lancement est `ForceStartMission(nom)`. Suite : brancher `ForceStartMission`
+   dans `lancer_lua` et lancer `1_01` (seule mission du chapitre 1 sans
+   condition), les tables posées par le moteur (`MODELENUM`, `POINTLIST`, `PATH`,
    `TRIGGER`), puis brancher pour de vrai les fonctions que `gamemain` appelle
    (zones, `DATLoad`, effets, joueur) en remplaçant les bouchons.
 
@@ -40,6 +43,8 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- La banque des missions : `Missions.cat` chargée par `CGame::Initialise` (`FUN_006ac5d0`), forme d'une mission, champs de `MissionData` (24 titre, 28 script, 32 clé de titre, 40 type), `ForceStartMission` comme primitive, `1_01` seule mission du chapitre 1 sans condition ; hypothèse « champ 36 = lancer au début » réfutée (282 missions) ; `docs/missions.md`, `tools/missions.py`.
 
 - Les six encodages des `.agr` (999 à 1004) : déjà décodés depuis le commit e0dc3ee
   (« Les six encodages d'animation »), l'ancien point 1 était resté par erreur.

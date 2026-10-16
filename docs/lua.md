@@ -158,8 +158,11 @@ ou des calculs sur la valeur renvoyée par un bouchon (nil).
 
 ## Reste à établir
 
-- Ce qui lance la première mission, et les 1 508 fonctions à brancher pour de vrai, en
-  commençant par celles que `gamemain` appelle (liste ci-dessus).
+- Ce qui lance la première mission : la liste et les conditions sont dans la banque
+  d'arbres d'actions, la primitive est `ForceStartMission` (voir docs/missions.md) ;
+  reste à brancher la primitive et à trouver qui démarre `1_01` à la nouvelle partie.
+- Les 1 508 fonctions à brancher pour de vrai, en commençant par celles que `gamemain`
+  appelle (liste ci-dessus).
 - Qui voit quoi : les globales de `main` vivent dans l'espace de noms de `main` ;
   vérifier comment une mission voit `gPlayer` (`GlobalImportScript` exécute dans `_G`).
 - Ce que renvoient les cinq énumérations (`MODELENUM.x` → numéro de modèle ?).
