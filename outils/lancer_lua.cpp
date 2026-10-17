@@ -16,6 +16,7 @@
 #include "../src/core/Horloge.h"
 #include "../src/core/ActionTree.h"
 #include "../src/core/MissionBank.h"
+#include "../src/core/DatPools.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -57,6 +58,11 @@ static int scriptCourant = -1;          // l'objet script dont un thread tourne 
 
 // La banque des missions (src/core/MissionBank.h) : Missions.cat et ses sous-arbres, comme FUN_006ac5d0.
 static CMissionBank banque;
+// Les données de mission chargées par DATLoad (src/core/DatPools.h) : listes de points, trajets,
+// déclencheurs, retrouvés par nom à travers POINTLIST, PATH et TRIGGER.
+static CDatPools donnees;
+static CVector positionJoueur(0, 0, 0);   // PlayerSetPosPoint / PlayerSetPosXYZ, en attendant un vrai joueur
+static float capJoueur = 0;
 
 // La mission en cours et sa machine à états, réduite de FUN_006ad3e0 :
 // 1 MissionSetup tourne, 2 main tourne, 3 MissionCleanup tourne.
@@ -448,6 +454,122 @@ RequestModel(lua_State *L)
 	return 1;
 }
 
+// --- Les données de mission : DATLoad et les tables POINTLIST, PATH, TRIGGER ---
+
+// DATLoad(fichier, emplacement) (0x5bf390) : « 1_01.DAT » de DAT\Trigger.img dans les pools, sous un
+// emplacement (le monde à 1, portes et tags à 5, la mission à 2 : lu dans les appels de main.lua et
+// de 1_01.lua, le code n'est pas dans l'export). DATInit() suit chaque chargement ; DATUnload("2")
+// libère l'emplacement, à la fin de la mission.
+static int
+DATLoad(lua_State *L)
+{
+	const char *fichier = luaL_checkstring(L, 1);
+	int emplacement = (int)luaL_optnumber(L, 2, 1);
+	Journal("DATLoad", L, 1);
+	if(!donnees.Charger(fichier, emplacement)) printf("        DATLoad : %s introuvable dans DAT\\Trigger.img\n", fichier);
+	return 0;
+}
+
+static int
+DATUnload(lua_State *L)
+{
+	Journal("DATUnload", L, 1);
+	donnees.Decharger((int)luaL_checknumber(L, 1));
+	return 0;
+}
+
+// DATInit (0x5bf410) : ce que le moteur fait du fichier chargé (marqueurs, objets) n'est pas lu ;
+// ici, rien à faire, les pools sont prêts dès DATLoad.
+static int
+DATInit(lua_State *L)
+{
+	Journal("DATInit", L, 1);
+	return 0;
+}
+
+// POINTLIST.nom, PATH.nom, TRIGGER.nom (0x5db130, 0x5db220, 0x5db0f0) : le handle, ou -1 s'il n'est
+// pas chargé. Le nom arrive avec son « _ » de tête, que la recherche ignore.
+static int
+IndexPointList(lua_State *L){ const char *n = luaL_checkstring(L, 2); appels["POINTLIST"]++; lua_pushnumber(L, donnees.ListePoints(n)); return 1; }
+static int
+IndexPath(lua_State *L){ const char *n = luaL_checkstring(L, 2); appels["PATH"]++; lua_pushnumber(L, donnees.Trajet(n)); return 1; }
+static int
+IndexTrigger(lua_State *L){ const char *n = luaL_checkstring(L, 2); appels["TRIGGER"]++; lua_pushnumber(L, donnees.Declencheur(n)); return 1; }
+
+static void
+PoserEnumeration(lua_State *L, const char *nom, lua_CFunction index)
+{
+	lua_newtable(L);
+	lua_newtable(L);
+	lua_pushstring(L, "__index");
+	lua_pushcfunction(L, index);
+	lua_settable(L, -3);
+	lua_setmetatable(L, -2);
+	lua_setglobal(L, nom);
+}
+
+// Le n-ième point d'une liste (1 par défaut), comme FUN_005bc790 : nil et un message si la liste
+// n'est pas chargée (le moteur renvoie alors six zéros).
+static const CTriggerPointPoint *
+PointArg(lua_State *L, const char *quoi, int argListe, int argN)
+{
+	int h = (int)luaL_checknumber(L, argListe);
+	int n = lua_isnumber(L, argN) ? (int)lua_tonumber(L, argN) : 1;
+	const CTriggerPointPoint *pt = donnees.Point(h, n);
+	if(pt == nil) printf("        %s : la liste %d n'est pas chargée\n", quoi, h);
+	return pt;
+}
+
+// GetPointFromPointList(liste, n) : x, y, z, lacet, 0, 0.
+static int
+GetPointFromPointList(lua_State *L)
+{
+	Journal("GetPointFromPointList", L, 1);
+	const CTriggerPointPoint *pt = PointArg(L, "GetPointFromPointList", 1, 2);
+	for(int i = 0; i < 6; i++) lua_pushnumber(L, pt == nil ? 0 : i == 0 ? pt->pos.x : i == 1 ? pt->pos.y : i == 2 ? pt->pos.z : i == 3 ? pt->lacetTangageRoulis[0] : 0);
+	return 6;
+}
+
+// GetPointList(liste) : six nombres par point de la chaîne.
+static int
+GetPointList(lua_State *L)
+{
+	Journal("GetPointList", L, 1);
+	const CTriggerPointList *l = donnees.Liste((int)luaL_checknumber(L, 1));
+	if(l == nil) return 0;
+	for(const CTriggerPointPoint &pt : l->points){
+		lua_pushnumber(L, pt.pos.x); lua_pushnumber(L, pt.pos.y); lua_pushnumber(L, pt.pos.z);
+		lua_pushnumber(L, pt.lacetTangageRoulis[0]); lua_pushnumber(L, 0); lua_pushnumber(L, 0);
+	}
+	return 6 * (int)l->points.size();
+}
+
+// PlayerSetPosPoint(liste[, n]) (0x5d2310) : le joueur au point, tourné selon son lacet.
+static int
+PlayerSetPosPoint(lua_State *L)
+{
+	Journal("PlayerSetPosPoint", L, 1);
+	const CTriggerPointPoint *pt = PointArg(L, "PlayerSetPosPoint", 1, 2);
+	if(pt){ positionJoueur = pt->pos; capJoueur = pt->lacetTangageRoulis[0]; }
+	return 0;
+}
+
+static int
+PlayerSetPosXYZ(lua_State *L)
+{
+	Journal("PlayerSetPosXYZ", L, 1);
+	positionJoueur = CVector((float)luaL_checknumber(L, 1), (float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3));
+	return 0;
+}
+
+static int
+PlayerGetPosXYZ(lua_State *L)
+{
+	appels["PlayerGetPosXYZ"]++;
+	lua_pushnumber(L, positionJoueur.x); lua_pushnumber(L, positionJoueur.y); lua_pushnumber(L, positionJoueur.z);
+	return 3;
+}
+
 // --- Les missions ---
 
 // FUN_006ac5d0 : la banque des missions, Missions.cat et les sous-arbres qu'elle cite.
@@ -561,6 +683,18 @@ main(int argc, char **argv)
 	lua_register(L, "MissionActive", MissionActive);
 	lua_register(L, "MissionActiveSpecific", MissionActiveSpecific);
 	lua_register(L, "MissionGetCurrentName", MissionGetCurrentName);
+	lua_register(L, "DATLoad", DATLoad);
+	lua_register(L, "DATUnload", DATUnload);
+	lua_register(L, "DATInit", DATInit);
+	lua_register(L, "GetPointFromPointList", GetPointFromPointList);
+	lua_register(L, "GetPointList", GetPointList);
+	lua_register(L, "PlayerSetPosPoint", PlayerSetPosPoint);
+	lua_register(L, "PlayerSetPosXYZ", PlayerSetPosXYZ);
+	lua_register(L, "PlayerGetPosXYZ", PlayerGetPosXYZ);
+	// Les énumérations posées par 0x5db040 : POINTLIST, PATH et TRIGGER cherchent dans les pools.
+	PoserEnumeration(L, "POINTLIST", IndexPointList);
+	PoserEnumeration(L, "PATH", IndexPath);
+	PoserEnumeration(L, "TRIGGER", IndexTrigger);
 	ChargerMissions();
 	lua_newtable(L);
 	lua_pushstring(L, "__index");

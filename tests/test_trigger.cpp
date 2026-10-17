@@ -22,6 +22,7 @@ main(void)
 	if(im < 0){ printf("test_trigger : ECHEC\n"); return 1; }
 	const CdImage &img = CdStream::ms_images[im];
 	int fichiers = 0, lus = 0, trajets = 0, points = 0, actions = 0, incoherences = 0, perim = 0, zones = 0, comptesFaux = 0, pois = 0, poiPoints = 0, poisFaux = 0;
+	int listes = 0, listesPoints = 0, listesFausses = 0; CTriggerFile premiere;
 	CTriggerFile carnaval;
 	CTriggerFile pop;
 	const CTriggerPath *ronde = nil; CTriggerFile garde;
@@ -38,6 +39,9 @@ main(void)
 			perim += (int)f.perimetres.size(); zones += (int)f.zones.size();
 			pois += (int)f.pois.size(); for(const CTriggerPoi &p : f.pois) poiPoints += (int)p.points.size();
 			if((int)f.pois.size() != f.nPois) poisFaux++;
+			listes += (int)f.pointLists.size(); for(const CTriggerPointList &pl : f.pointLists) listesPoints += (int)pl.points.size();
+			if((int)f.pointLists.size() != f.nPoints) listesFausses++;
+			if(strcasecmp(d.name, "1_01.dat") == 0) premiere = f;
 			if(strcasecmp(d.name, "PedPoi.dat") == 0) carnaval = f;
 			if((int)f.perimetres.size() != f.nPerimeters || (int)f.zones.size() != f.nTriggers){ comptesFaux++; printf("  comptes : %s (%zu/%d périmètres, %zu/%d déclencheurs)\n", d.name, f.perimetres.size(), f.nPerimeters, f.zones.size(), f.nTriggers); }
 			if(strcasecmp(d.name, "Population.dat") == 0) pop = f;
@@ -59,6 +63,17 @@ main(void)
 		VERIF(ronde->points[1].unid == 8 && ronde->points[1].actions.empty());
 		printf("  hallspatrol_1A : %zu points, premier en (%.2f, %.2f), action : s'orienter à %.0f° et attendre %.0f s\n", ronde->points.size(),
 		       ronde->points[0].pos.x, ronde->points[0].pos.y, ronde->points[0].actions[0].orientation[0], ronde->points[0].actions[0].attente);
+	}
+	// Les listes de points (blocs POINT) : le compte de chaque en-tête NPOINTS est juste.
+	printf("  %d listes de points, %d points, %d fichier(s) au compte NPOINTS faux\n", listes, listesPoints, listesFausses);
+	VERIF(listesFausses == 0 && listes > 0);
+	VERIF(premiere.pointLists.size() == 28 && premiere.nPoints == 28);
+	const CTriggerPointList *depart = nil;
+	for(const CTriggerPointList &pl : premiere.pointLists) if(pl.nom == "1_01_Player_Start") depart = &pl;
+	VERIF(depart != nil);
+	if(depart){
+		VERIF(depart->points.size() == 1 && fabsf(depart->points[0].pos.x - 298.359009f) < 1e-3f && fabsf(depart->points[0].pos.z - 6.068940f) < 1e-3f);
+		VERIF(fabsf(depart->points[0].lacetTangageRoulis[0] - 185) < 1e-3f);
 	}
 	printf("  %d périmètres, %d déclencheurs, %d fichier(s) aux comptes d'en-tête différents\n", perim, zones, comptesFaux);
 	VERIF(comptesFaux == 1);                      // tschool_trees.dat : en-tête « NTRIGGERS 1 », fichier vide ensuite

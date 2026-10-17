@@ -32,6 +32,20 @@ struct CTriggerPath {
 	std::vector<CTriggerPathPoint> points;
 };
 
+// Une liste de points (bloc POINT) : les endroits nommés d'une mission, où les scripts
+// posent le joueur, créent un piéton (PedCreatePoint) ou mettent un marqueur. Un bloc
+// porte un ou plusieurs points (NPOINTPOINTS), chacun avec sa position et son lacet.
+struct CTriggerPointPoint {
+	CVector pos;                         // POINTPOINT
+	float lacetTangageRoulis[3] = {0, 0, 0};   // POINTYAWPITCHROLL (degrés)
+};
+
+struct CTriggerPointList {
+	std::string nom;                     // POINTNAME
+	int32 zone = 0;                      // AREACODE
+	std::vector<CTriggerPointPoint> points;
+};
+
 // Un périmètre : un polygone horizontal, ses points relatifs à la position du
 // déclencheur qui le suit (et tournés de son lacet), plus une hauteur.
 struct CTriggerPerimeter {
@@ -98,6 +112,7 @@ struct CTriggerPoi {
 struct CTriggerFile {
 	int32 nPaths = 0, nPoints = 0, nPerimeters = 0, nTriggers = 0, nPois = 0;   // l'en-tête
 	std::vector<CTriggerPath> paths;
+	std::vector<CTriggerPointList> pointLists;   // les blocs POINT, dans l'ordre du fichier
 	std::vector<CTriggerPerimeter> perimetres;
 	std::vector<CTriggerZone> zones;     // les blocs TRIGGER, rattachés au périmètre qui les précède
 	std::vector<CTriggerPoi> pois;

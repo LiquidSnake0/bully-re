@@ -119,7 +119,9 @@ script est refusée avec son nom.
 `MissionActiveSpecific`, `MissionGetCurrentName` répondent pour de vrai.
 `RequestModel`, `WeaponRequestModel` et `VehicleRequestModel` renvoient « chargé »
 (le moteur renvoie vrai quand l'état de diffusion vaut 1 ; l'outil n'a pas de
-diffusion).
+diffusion). `DATLoad("1_01.DAT", 2)` et les tables `POINTLIST`, `PATH`, `TRIGGER`
+sont réels (docs/trigger.md) : `PedCreatePoint(85, 534, 2)` reçoit maintenant le
+handle de `_1_01_CHEERPOINTS` et non plus un bouchon.
 
 Résultat pour `1_01`, sans erreur jusqu'à la création des personnages :
 `MissionSetup` (chargement de l'arbre `Act/Conv/1_01.act`, joueur placé, transition

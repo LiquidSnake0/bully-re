@@ -49,6 +49,32 @@ jeu (`TINDUST_BAR_DOOR_CAM_PORT`, un point, un trajet de caméra). Ses points
 sont trois triplets (0x434370 : trois rappels distincts), dont seul le premier,
 une position, est non nul dans le seul exemple.
 
+## Les listes de points (POINT)
+
+Un bloc `POINT` est un endroit nommé d'une mission : là où le script pose le joueur
+(`PlayerSetPosPoint`), crée un personnage (`PedCreatePoint`), met un marqueur ou une
+caméra. `POINTNAME`, `AREACODE`, `NPOINTPOINTS`, puis chaque point : `POINTPOINT x, y, z`,
+`POINTYAWPITCHROLL` (degrés), et des champs de son et de ramassage (`POINTSFXID`,
+`POINTPICKUPNAME`, `STARTHOUR`…) qu'on ne lit pas encore. Relevé sur les 410 fichiers :
+**4 188 listes, 6 783 points**, tous les en-têtes `NPOINTS` justes. `1_01.dat` en a 28 :
+`1_01_Player_Start` (298.36, −72.23, 6.07, lacet 185), `1_01_CheerPoints` (plusieurs
+points), `1_01_Secretary`…
+
+**Dans le moteur**, `DATLoad("1_01.DAT", 2)` verse le fichier dans quatre pools :
+listes de points (0x20c7c54), points chaînés (0x20c7c88, premier à +4, suivant à +6),
+trajets (0x20c7c50) et déclencheurs (0x20c7c48), sous un emplacement (le monde à 1,
+portes et tags à 5, la mission à 2, d'après les appels des scripts) ; `DATInit()` suit,
+`DATUnload("2")` libère l'emplacement à la fin de la mission. Les scripts retrouvent une
+entrée par nom à travers trois tables posées par `CreateLuaState` : `POINTLIST._NOM`
+(0x5db130 → 0x6d6270), `PATH._NOM` (0x5db220 → 0x5ed1b0), `TRIGGER._NOM` (0x5db0f0 →
+0x6d78c0) ; le « _ » de tête est retiré, le nom haché (`HashString`), et la réponse est
+l'index dans le pool (listes et trajets à partir de 1, déclencheurs de 0), ou −1.
+`GetPointFromPointList(liste, n)` rend x, y, z, lacet, 0, 0 du n-ième point ;
+`GetPointList(liste)` les six nombres de chaque point. Code : `src/core/DatPools` ;
+test : `tests/test_datpools` ; dans `lancer_lua`, `DATLoad`, `DATUnload`, `DATInit`,
+`POINTLIST`, `PATH`, `TRIGGER`, `GetPointFromPointList`, `GetPointList`,
+`PlayerSetPosPoint` sont réels.
+
 ## Périmètres, déclencheurs et population (01.10.2026)
 
 Un bloc `PERIMETER` (placement, ISDOOR, HEIGHT, DEPTH, puis des

@@ -40,7 +40,9 @@ l'extracteur d'API `tools/tables_lua.py`, la liste `docs/api-lua-tables.tsv`.
    appels dans le code de `CreateLuaState`, puis chaque table.
 5. Cinq énumérations posées par 0x5db040 avec leur fonction de lecture :
    `PATH` (0x5db220), `TRIGGER` (0x5db0f0), `POINTLIST` (0x5db130),
-   `MODELENUM` (0x5db1d0) et la chaîne de 0x901d18 (0x5db170).
+   `MODELENUM` (0x5db1d0) et la chaîne de 0x901d18 (0x5db170). Les trois premières
+   cherchent un nom (sans son « _ » de tête) dans les pools remplis par `DATLoad` et
+   rendent un handle, ou −1 (docs/trigger.md, « Les listes de points »).
 6. **`util.lua`** chargé et exécuté (0x5d8ae0), puis un passage complet du
    ramasse-miettes (seuil 0) avant de remettre le seuil haut.
 
@@ -165,5 +167,5 @@ ou des calculs sur la valeur renvoyée par un bouchon (nil).
   appelle (liste ci-dessus).
 - Qui voit quoi : les globales de `main` vivent dans l'espace de noms de `main` ;
   vérifier comment une mission voit `gPlayer` (`GlobalImportScript` exécute dans `_G`).
-- Ce que renvoient les cinq énumérations (`MODELENUM.x` → numéro de modèle ?).
+- Ce que renvoient `MODELENUM.x` et la cinquième énumération (0x5db170) ; `POINTLIST`, `PATH` et `TRIGGER` sont lues.
 - Brancher les 1 508 fonctions, en commençant par celles des scripts d'ambiance.

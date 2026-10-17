@@ -158,6 +158,21 @@ CTriggerFile::Load(const uint8 *data, uint32 size)
 			if(l.mot != "END") return false;
 			pois.push_back(std::move(poi));
 		}
+		else if(l.mot == "POINT"){
+			corps = true;
+			if(!l.Suivante() || l.mot != "BEGIN") return false;
+			CTriggerPointList pl; CTriggerPointPoint *pt = nil; int32 attendus = -1;
+			while(l.Suivante() && l.mot != "END"){
+				if(l.mot == "POINTNAME") pl.nom = Guillemets(l.reste);
+				else if(l.mot == "AREACODE") pl.zone = atoi(l.reste.c_str());
+				else if(l.mot == "NPOINTPOINTS") attendus = atoi(l.reste.c_str());
+				else if(l.mot == "POINTPOINT"){ pl.points.emplace_back(); pt = &pl.points.back(); float v[3] = {0, 0, 0}; Nombres(l.reste, v, 3); pt->pos = CVector(v[0], v[1], v[2]); }
+				else if(pt && l.mot == "POINTYAWPITCHROLL") Nombres(l.reste, pt->lacetTangageRoulis, 3);
+			}
+			if(l.mot != "END") return false;
+			if(attendus >= 0 && (int32)pl.points.size() != attendus) incoherences++;
+			pointLists.push_back(std::move(pl));
+		}
 		else if(l.mot == "PATH"){
 			corps = true;
 			if(!l.Suivante() || l.mot != "BEGIN") return false;
