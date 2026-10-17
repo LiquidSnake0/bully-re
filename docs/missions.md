@@ -121,7 +121,8 @@ script est refusée avec son nom.
 (le moteur renvoie vrai quand l'état de diffusion vaut 1 ; l'outil n'a pas de
 diffusion). `DATLoad("1_01.DAT", 2)` et les tables `POINTLIST`, `PATH`, `TRIGGER`
 sont réels (docs/trigger.md) : `PedCreatePoint(85, 534, 2)` reçoit maintenant le
-handle de `_1_01_CHEERPOINTS` et non plus un bouchon.
+handle de `_1_01_CHEERPOINTS` et non plus un bouchon. Les globales qui ne sont pas des
+fonctions du moteur valent nil (voir plus bas, « Ce qui la bloquait »).
 
 Les piétons des scripts sont un pool de 24 (`src/peds/ScriptPedPool`, le joueur en 0
 comme `PlayerGetPedIndex` le dit, `tests/test_scriptpeds`) : `PedCreatePoint`,
@@ -158,13 +159,32 @@ moteur attend de la manette : `--entrer DECLENCHEUR@s` le pose dans un déclench
    l'école ; l'AREACODE du point dit 5, ce n'est donc pas la zone visible) → la
    secrétaire (59) est créée sur `_1_01_SECRETARYINOFFICE`, la population revient.
 3. Puis deux élèves (69 et 102) sur `_1_01_KIDRUN`, `PedMoveToPoint`, `PedAttack`, et
-   le joueur attendu dans `_1_01_CHECKOBJS1`… la suite se lit dans le listage.
+   le joueur attendu dans `_1_01_CHECKOBJS1` (les deux élèves redeviennent ambiants).
+4. Le joueur dans `_1_01_PRINCOFFICE` (le point 1 de `_1_01_ENDPOINT` est déjà dedans)
+   et `gMissionSuccess` pas encore posé → contrôle coupé, `/Global/1_01/WaveToSec`,
+   `SoundPlayScriptedSpeechEvent(M_1_01, 101)`, attente de `SoundSpeechPlaying`, puis
+   `gMissionSuccess = true`, `gMissionRunning = false` : la boucle de `main` s'arrête,
+   `L_StopMonitoringTriggers`, `L_CutsceneFade`, **`MissionSucceed(true, false, false)`**.
+
+**`1_01` se termine, réussie, à 9,1 s** : `main fini, MissionCleanup`, le nettoyage
+rend les modèles uniques, décharge les animations, rend le contrôle, et les cinq
+piétons laissés par la mission sont libérés.
+
+Ce qui la bloquait n'était pas une fonction du moteur mais une globale de script :
+`lancer_lua` répondait à toute globale inconnue par un bouchon (une table, donc
+vraie), et `if gMissionSuccess then` était vrai avant même que la mission ne pose la
+variable. Dans le jeu, `_G` ne contient que les 1 508 fonctions de `CreateLuaState`
+et ce que `util.lua` pose ; tout autre nom vaut nil. `src/core/LuaApi` lit
+`docs/api-lua-tables.tsv` et `IndexGlobal` ne bouchonne plus que ces noms-là
+(`tests/test_luaapi`). Sur cette partie, trois globales de script sont lues avant
+d'être posées, et valent nil comme il faut : `gMissionSuccess`, `misObj`, `F_StoreSweep`.
 
 ## Suite
 
-1. Continuer `1_01` avec `--entrer` / `--aller` / `--zone` jusqu'à `MissionSucceed`, en
-   rendant réelles les fonctions qui bloquent (`PedMoveToPoint`, `PedAttack` et la mort
-   d'un piéton, les cinématiques `PlayCutsceneWithLoad`).
+1. Ce que `1_01` ne joue pas encore pour de vrai : les déplacements (`PedMoveToPoint`),
+   la bagarre (`PedAttack`, la mort d'un piéton), les cinématiques
+   (`PlayCutsceneWithLoad`, `CameraFade`), qui sont des bouchons qui répondent neutre.
 2. Ce que lit `FUN_005d2310` à +0xc de l'entrée de liste (l'AREACODE ?), et la vraie
    zone d'un point.
-3. Lire dans le moteur qui démarre `1_01` à la nouvelle partie.
+3. Lire dans le moteur qui démarre `1_01` à la nouvelle partie
+   (`SystemAllowMissionManagerToForceRunMissions`, 0x5d5110, appelé par `gamemain`).

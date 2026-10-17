@@ -3,8 +3,11 @@
 // (CreateNameSpace, 0x5d8d40), le thread gamemain (ThreadNameSpace, 0x5d8e40), puis
 // LuaScript_Update (0x5da960) à chaque image : réveil des threads dont l'heure est passée,
 // globale Alive, lua_resume, retrait des threads finis ou en erreur.
-// Wait, CreateThread, TerminateThread et GetTimer sont réels ; le reste de l'API est en
-// bouchons qui renvoient nil et journalisent l'appel.
+// Wait, CreateThread, TerminateThread et GetTimer sont réels ; le reste des 1 508 fonctions du
+// moteur (docs/api-lua-tables.tsv, src/core/LuaApi.h) est en bouchons qui journalisent l'appel
+// et répondent neutre. Tout autre nom est une globale de script : nil tant qu'un script ne l'a
+// pas posée, exactement comme dans le jeu (un bouchon à la place rendait « if gMissionSuccess »
+// vrai, et 1_01 ne pouvait pas finir).
 // Les missions (docs/missions.md) : la table est lue dans la banque d'arbres d'actions
 // (Missions.cat et ses sous-arbres) ; ForceStartMission suit la machine à états du moteur
 // (FUN_006ad3e0) : script de la mission (FUN_005dbf90), MissionSetup jusqu'au bout
@@ -16,6 +19,7 @@
 #include "../src/core/Horloge.h"
 #include "../src/core/ActionTree.h"
 #include "../src/core/MissionBank.h"
+#include "../src/core/LuaApi.h"
 #include "../src/core/DatPools.h"
 #include "../src/peds/ScriptPedPool.h"
 #include <algorithm>
@@ -78,6 +82,8 @@ static struct {
 } mission;
 
 static int prochainId = 1;
+static CLuaApi api;                                   // la frontière moteur / scripts (LANCER_API, sinon docs/api-lua-tables.tsv)
+static std::map<std::string, int> inconnues;          // globales lues avant d'être posées : nil, comme dans le jeu
 static std::map<std::string, int> appels;
 static int journalRestant = 400;
 static std::vector<std::string> derniers;   // les derniers appels, affichés en cas d'erreur
@@ -190,13 +196,30 @@ PousserBouchon(lua_State *L, const char *nom)
 	lua_setmetatable(L, -2);
 }
 
+// Une globale absente : une fonction du moteur devient un bouchon ; tout le reste est nil, comme
+// dans le jeu, où seules les tables de CreateLuaState et util.lua précèdent les scripts.
 static int
 IndexGlobal(lua_State *L)
 {
 	const char *nom = lua_tostring(L, 2);
 	if(nom == nil){ lua_pushnil(L); return 1; }
-	PousserBouchon(L, nom);
+	if(api.Nombre() == 0 || api.EstFonction(nom)){ PousserBouchon(L, nom); return 1; }
+	inconnues[nom]++;
+	lua_pushnil(L);
 	return 1;
+}
+
+// docs/api-lua-tables.tsv : LANCER_API, sinon depuis la racine du dépôt, sinon à côté de cette source.
+static void
+ChargerApi(void)
+{
+	const char *env = getenv("LANCER_API");
+	if(env && api.Charger(env)) return;
+	if(api.Charger("docs/api-lua-tables.tsv")) return;
+	std::string ici = __FILE__;
+	size_t barre = ici.find_last_of("/\\");
+	if(barre != std::string::npos && api.Charger((ici.substr(0, barre) + "/../docs/api-lua-tables.tsv").c_str())) return;
+	printf("docs/api-lua-tables.tsv introuvable (LANCER_API ?) : toute globale inconnue sera un bouchon\n");
 }
 
 // --- Les fonctions du moteur recréées. ---
@@ -984,6 +1007,7 @@ main(int argc, char **argv)
 	PoserEnumeration(L, "PATH", IndexPath);
 	PoserEnumeration(L, "TRIGGER", IndexTrigger);
 	ChargerMissions();
+	ChargerApi();
 	lua_newtable(L);
 	lua_pushstring(L, "__index");
 	lua_pushcfunction(L, IndexGlobal);
@@ -1032,6 +1056,14 @@ main(int argc, char **argv)
 	printf("appels au moteur les plus fréquents :");
 	for(size_t i = 0; i < tri.size() && i < 25; i++) printf(" %s (%d)", tri[i].second.c_str(), -tri[i].first);
 	printf("\n");
+	if(!inconnues.empty()){
+		std::vector<std::pair<int, std::string>> tri2;
+		for(auto &a : inconnues) tri2.push_back({-a.second, a.first});
+		std::sort(tri2.begin(), tri2.end());
+		printf("globales de script lues avant d'être posées (nil) :");
+		for(size_t i = 0; i < tri2.size() && i < 12; i++) printf(" %s (%d)", tri2[i].second.c_str(), -tri2[i].first);
+		printf("\n");
+	}
 	lua_close(L);
 	return 0;
 }

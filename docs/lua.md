@@ -145,6 +145,18 @@ avec son propre `ImportScript` qui exécute la bibliothèque dans cet environnem
 `GlobalImportScript` garde la version de `util`, qui exécute dans `_G`.
 `gPlayer` est posé dans `SInitGl` (0) puis dans `main` (`PlayerGetPedIndex()`).
 
+## La frontière entre le moteur et les scripts
+
+`_G`, quand `util.lua` s'exécute, contient les cinq bibliothèques standard, les 1 508
+fonctions des 58 tables (`docs/api-lua-tables.tsv`) et les cinq énumérations ; tout
+autre nom vaut nil, et c'est aux scripts de le poser (`gPlayer`, `gMissionSuccess`,
+`shared`, `misObj`…). `src/core/LuaApi` charge cette liste (`CLuaApi::EstFonction`,
+`tests/test_luaapi`) et `lancer_lua` ne bouchonne que ces noms : un bouchon est une
+table, donc vrai, et `if gMissionSuccess then` lu sur un bouchon terminait `1_01`
+avant qu'elle n'ait commencé. Le lanceur compte les globales de script lues avant
+d'être posées et les affiche à la fin : sur `1_01`, `gMissionSuccess`, `misObj` et
+`F_StoreSweep`, une fois chacune, toutes légitimes.
+
 ## Ce que donne la sonde
 
 `build/outils/sonde_lua` exécute le premier niveau de chaque script avec les
@@ -167,5 +179,6 @@ ou des calculs sur la valeur renvoyée par un bouchon (nil).
   appelle (liste ci-dessus).
 - Qui voit quoi : les globales de `main` vivent dans l'espace de noms de `main` ;
   vérifier comment une mission voit `gPlayer` (`GlobalImportScript` exécute dans `_G`).
-- Ce que renvoient `MODELENUM.x` et la cinquième énumération (0x5db170) ; `POINTLIST`, `PATH` et `TRIGGER` sont lues.
+- Ce que renvoient `MODELENUM.x` et la cinquième énumération, `POI` (0x5db170, nom en
+  0x901d18) ; `POINTLIST`, `PATH` et `TRIGGER` sont lues.
 - Brancher les 1 508 fonctions, en commençant par celles des scripts d'ambiance.
