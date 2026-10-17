@@ -12,6 +12,8 @@
 // (Missions.cat et ses sous-arbres) ; ForceStartMission suit la machine à états du moteur
 // (FUN_006ad3e0) : script de la mission (FUN_005dbf90), MissionSetup jusqu'au bout
 // (FUN_006acba0), main (FUN_006abf20), puis MissionCleanup (FUN_006abed0).
+// Les piétons des scripts (src/peds/ScriptPedPool.h) marchent, courent, se battent et meurent
+// image par image : PedMoveToPoint, PedMoveToXYZ, PedStop, PedAttack, PedSetHealth, PedMakeAmbient.
 //   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
@@ -834,9 +836,73 @@ static int
 PedSetHealth(lua_State *L)
 {
 	Journal("PedSetHealth", L, 1);
-	CScriptPed *p = PedArg(L, 1);
-	if(p){ p->sante = (float)luaL_checknumber(L, 2); p->mort = p->sante <= 0; }
+	if(lua_isnumber(L, 1)) pietons.Sante((int)lua_tonumber(L, 1), (float)luaL_checknumber(L, 2));
 	return 0;
+}
+
+// --- Les gestes des piétons : marche, course, arrêt, bagarre (src/peds/ScriptPedPool.h). ---
+
+// PedMoveToPoint(ped, allure, liste, n) (0x5c7df0) : vers le n-ième point de la liste.
+static int
+PedMoveToPoint(lua_State *L)
+{
+	Journal("PedMoveToPoint", L, 1);
+	const CTriggerPointPoint *pt = PointArg(L, "PedMoveToPoint", 3, 4);
+	if(pt && lua_isnumber(L, 1)) pietons.Aller((int)lua_tonumber(L, 1), pt->pos, (int)luaL_optnumber(L, 2, ALLURE_MARCHE));
+	return 0;
+}
+
+// PedMoveToXYZ(ped, allure, x, y, z) (0x5c7c90).
+static int
+PedMoveToXYZ(lua_State *L)
+{
+	Journal("PedMoveToXYZ", L, 1);
+	CVector cible((float)luaL_checknumber(L, 3), (float)luaL_checknumber(L, 4), (float)luaL_checknumber(L, 5));
+	if(lua_isnumber(L, 1)) pietons.Aller((int)lua_tonumber(L, 1), cible, (int)luaL_optnumber(L, 2, ALLURE_MARCHE));
+	return 0;
+}
+
+// PedStop(ped) (0x5c7630).
+static int
+PedStop(lua_State *L)
+{
+	Journal("PedStop", L, 1);
+	if(lua_isnumber(L, 1)) pietons.Arreter((int)lua_tonumber(L, 1));
+	return 0;
+}
+
+// PedAttack(attaquant, cible, style) (0x5c9ca0) : le style (3 dans 1_01) n'est pas joué.
+static int
+PedAttack(lua_State *L)
+{
+	Journal("PedAttack", L, 1);
+	if(lua_isnumber(L, 1) && lua_isnumber(L, 2)) pietons.Attaquer((int)lua_tonumber(L, 1), (int)lua_tonumber(L, 2));
+	return 0;
+}
+
+// PedMakeAmbient(ped) (0x5ca850) : rendu à la population ; le script ne le ramasse plus.
+static int
+PedMakeAmbient(lua_State *L)
+{
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	const CScriptPed *p = pietons.Acceder(h);
+	if(p && p->script != -1) Journal("PedMakeAmbient", L, 1); else appels["PedMakeAmbient"]++;
+	pietons.RendreAmbiant(h);
+	return 0;
+}
+
+// Une image des piétons : les gestes avancent, et ce qui aboutit se journalise.
+static void
+AvancerPietons(void)
+{
+	pietons.Avancer(0.033f);
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
+		const CScriptPed *p = pietons.Acceder(i);
+		if(p == nil || journalRestant <= 0) continue;
+		if(p->arrive){ journalRestant--; printf("%6.2f s  piéton %d (modèle %d) arrivé en (%.1f, %.1f, %.1f)\n", maintenant / 1000.0, i, p->modele, p->pos.x, p->pos.y, p->pos.z); }
+		if(p->aFrappe){ journalRestant--; printf("%6.2f s  piéton %d frappe le piéton %d (%.0f pv)\n", maintenant / 1000.0, i, p->attaque, pietons.Acceder(p->attaque) ? pietons.Acceder(p->attaque)->sante : 0); }
+		if(p->vientDeMourir){ journalRestant--; printf("%6.2f s  piéton %d (modèle %d) est mort\n", maintenant / 1000.0, i, p->modele); }
+	}
 }
 
 static int
@@ -1002,6 +1068,11 @@ main(int argc, char **argv)
 	lua_register(L, "PedGetHealth", PedGetHealth);
 	lua_register(L, "PedSetHealth", PedSetHealth);
 	lua_register(L, "PlayerGetHealth", PlayerGetHealth);
+	lua_register(L, "PedMoveToPoint", PedMoveToPoint);
+	lua_register(L, "PedMoveToXYZ", PedMoveToXYZ);
+	lua_register(L, "PedStop", PedStop);
+	lua_register(L, "PedAttack", PedAttack);
+	lua_register(L, "PedMakeAmbient", PedMakeAmbient);
 	// Les énumérations posées par 0x5db040 : POINTLIST, PATH et TRIGGER cherchent dans les pools.
 	PoserEnumeration(L, "POINTLIST", IndexPointList);
 	PoserEnumeration(L, "PATH", IndexPath);
@@ -1039,6 +1110,7 @@ main(int argc, char **argv)
 		for(auto &e : allers) if(!e.second.empty() && maintenant >= e.first){ AllerAuPoint(e.second.c_str()); e.second.clear(); }
 		for(auto &e : zones) if(e.second >= 0 && maintenant >= e.first){ zoneCourante = e.second; printf("%6.2f s  le joueur passe dans la zone %d\n", maintenant / 1000.0, e.second); e.second = -1; }
 		MettreAJour(L);
+		AvancerPietons();
 	}
 
 	size_t crees = 0;

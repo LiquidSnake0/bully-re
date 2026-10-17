@@ -1,5 +1,6 @@
 // Le pool des piétons des scripts : 24 entrées, le joueur en 0, -1 quand c'est plein, les handles
-// libérés repris, et le ramassage par objet script. Aucun fichier du jeu.
+// libérés repris, le ramassage par objet script ; puis les gestes : marche, sprint, arrêt, bagarre
+// et mort. Aucun fichier du jeu.
 //   build/tests/test_scriptpeds
 #include "../src/peds/ScriptPedPool.h"
 #include <cstdio>
@@ -39,6 +40,53 @@ main(void)
 	VERIF(liberes == SCRIPT_PED_POOL_SIZE - 2);
 	VERIF(p.Valide(SCRIPT_PED_JOUEUR) && p.Valide(b) && !p.Valide(a) && p.Vivants() == 2);
 	VERIF(p.SupprimerDuScript(7) == 0);
+
+	// Les gestes : une marche de 7 m à 1,4 m/s arrive en 5 s, à une image près, et pas avant.
+	CScriptPedPool q;
+	int m = q.Creer(85, CVector(0, 0, 0), 0, 1);
+	VERIF(q.Aller(m, CVector(7, 0, 0), ALLURE_MARCHE) && q.Acceder(m)->enMarche);
+	int images = 0; bool arrive = false;
+	for(; images < 400 && !arrive; images++){ q.Avancer(0.033f); arrive = q.Acceder(m)->arrive; }
+	VERIF(arrive && images >= 150 && images <= 153);
+	VERIF(!q.Acceder(m)->enMarche && q.Acceder(m)->pos.x == 7 && q.Acceder(m)->pos.y == 0);
+	q.Avancer(0.033f);
+	VERIF(!q.Acceder(m)->arrive);      // l'arrivée ne se signale qu'une image
+	// Le sprint va trois fois et demie plus vite que la marche ; PedStop arrête net.
+	VERIF(ScriptPedVitesse(ALLURE_SPRINT) > 3 * ScriptPedVitesse(ALLURE_MARCHE));
+	VERIF(q.Aller(m, CVector(7, 70, 0), ALLURE_SPRINT));
+	q.Avancer(1.0f);
+	VERIF(q.Acceder(m)->pos.y > 4.9f && q.Acceder(m)->pos.y < 5.1f && q.Acceder(m)->cap > 89 && q.Acceder(m)->cap < 91);
+	VERIF(q.Arreter(m) && !q.Acceder(m)->enMarche);
+	float yArret = q.Acceder(m)->pos.y;
+	q.Avancer(1.0f);
+	VERIF(q.Acceder(m)->pos.y == yArret);
+	// La bagarre : l'attaquant rejoint sa cible, frappe toutes les 0,8 s, la cible meurt à 0 et il s'arrête.
+	int at = q.Creer(69, CVector(0, 0, 0), 0, 1), ci = q.Creer(102, CVector(10, 0, 0), 0, 1);
+	VERIF(!q.Attaquer(at, at) && !q.Attaquer(at, 23) && q.Attaquer(at, ci));
+	int coups = 0, mortA = -1;
+	for(int i = 0; i < 1000 && mortA < 0; i++){
+		q.Avancer(0.033f);
+		coups += q.Acceder(at)->aFrappe;
+		if(q.Acceder(ci)->vientDeMourir) mortA = i;
+	}
+	VERIF(mortA > 0 && q.Acceder(ci)->mort && q.Acceder(ci)->sante <= 0);
+	VERIF(coups == 10);                                   // 100 points de vie, 10 par coup
+	VERIF(q.Acceder(at)->attaque == -1);                   // plus de cible
+	float dx = q.Acceder(at)->pos.x - q.Acceder(ci)->pos.x;
+	VERIF(dx < 0 && dx > -1.3f);                          // arrêté à portée, pas sur la cible
+	// 10 m à 3,5 m/s = 2,9 s avant le premier coup, puis 9 × 0,8 s : la mort vers 10 s.
+	VERIF(mortA * 0.033f > 9.5f && mortA * 0.033f < 10.5f);
+	q.Avancer(0.033f);
+	VERIF(!q.Acceder(ci)->vientDeMourir && q.Acceder(ci)->mort);
+	// Un mort ne marche plus, n'attaque plus ; PedSetHealth à 0 tue et lâche le geste.
+	VERIF(!q.Aller(ci, CVector(), ALLURE_MARCHE) && !q.Attaquer(ci, at));
+	int c = q.Creer(99, CVector(0, 5, 0), 0, 1);
+	VERIF(q.Aller(c, CVector(0, 9, 0), ALLURE_MARCHE));
+	q.Sante(c, 0);
+	VERIF(q.Acceder(c)->mort && q.Acceder(c)->vientDeMourir && !q.Acceder(c)->enMarche);
+	// PedMakeAmbient : le piéton reste, mais n'est plus ramassé avec son script ; pas le joueur.
+	VERIF(!q.RendreAmbiant(SCRIPT_PED_JOUEUR) && q.RendreAmbiant(at) && q.Acceder(at)->script == -1);
+	VERIF(q.SupprimerDuScript(1) == 3 && q.Valide(at));   // m, ci et c libérés, a reste
 
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;

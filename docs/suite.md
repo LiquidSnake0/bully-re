@@ -14,9 +14,8 @@ chantier. Un point fini passe en bas, avec son commit.
    personnages (`PedCreatePoint`, docs/missions.md). `POINTLIST`, `PATH` et `TRIGGER` sont réelles depuis `DATLoad`. Les piétons sont un pool
    (`PedCreatePoint` & co réels) ; `1_01` attend le joueur dans `_1_01_BULLYTRIG`. `--entrer`,
    `--aller` et `--zone` jouent le joueur, et les globales de script valent nil comme dans
-   le jeu (`src/core/LuaApi`) : **`1_01` se termine réussie**. Suite : jouer pour de vrai
-   les déplacements et la bagarre (`PedMoveToPoint`, `PedAttack`, la mort d'un piéton),
-   `MODELENUM`, qui démarre `1_01` à la nouvelle partie, puis brancher les fonctions que
+   le jeu (`src/core/LuaApi`) : **`1_01` se termine réussie**. Les piétons marchent, courent et se battent
+   (`CScriptPedPool::Avancer`). Suite : les cinématiques et les attentes, `MODELENUM`, qui démarre `1_01` à la nouvelle partie, puis brancher les fonctions que
    `gamemain` appelle (zones, effets, joueur) en remplaçant les bouchons.
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
@@ -47,6 +46,8 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- Les gestes des piétons : `CScriptPedPool::Avancer` joue image par image la marche, la course et le sprint (`PedMoveToPoint`, `PedMoveToXYZ`, `PedStop`), la bagarre (`PedAttack` : poursuite, coups, mort) et `PedMakeAmbient` ; `lancer_lua` journalise arrivées, coups et morts ; `tests/test_scriptpeds` étendu.
 
 - La frontière moteur / scripts : `src/core/LuaApi` lit `docs/api-lua-tables.tsv`, `lancer_lua` ne bouchonne que les 1 508 fonctions du moteur, toute autre globale vaut nil comme dans le jeu ; c'est ce qui bloquait `1_01` (`if gMissionSuccess` vrai sur un bouchon) : **`1_01` se termine réussie à 9,1 s** avec `--entrer _1_01_BULLYTRIG@4 --aller _1_01_ENDPOINT@8 --zone 2@8.1` ; `tests/test_luaapi`.
 

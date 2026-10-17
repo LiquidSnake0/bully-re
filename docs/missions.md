@@ -131,6 +131,20 @@ comme `PlayerGetPedIndex` le dit, `tests/test_scriptpeds`) : `PedCreatePoint`,
 `PlayerGetHealth` répondent dessus ; un piéton qu'une mission laisse derrière elle est
 libéré à la fin de la mission (le moteur le note à l'objet script, `FUN_005d94d0`).
 
+Les piétons ont un geste à la fois, joué image par image (`CScriptPedPool::Avancer`) :
+`PedMoveToPoint(ped, allure, liste, n)` et `PedMoveToXYZ(ped, allure, x, y, z)` font
+marcher (allure 0 et 1), courir (2) ou sprinter (3 : les deux élèves de `_1_01_KIDRUN`)
+vers un point, à 1,4 / 2 / 3,5 / 5 m/s (ordres de grandeur, à mesurer sur le jeu) ;
+`PedStop` arrête ; `PedAttack(attaquant, cible, style)` lance une poursuite à la course
+puis un coup de 10 points de vie toutes les 0,8 s à 1,2 m, jusqu'à la mort de la
+cible (`PedIsDead`), le style n'étant pas joué ; `PedSetHealth(ped, 0)` tue ;
+`PedMakeAmbient` rend le piéton à la population (il n'est plus ramassé avec sa
+mission). Les arrivées, les coups et les morts passent au journal. Sur `1_01`, les
+trois premiers personnages, rendus ambiants, marchent vers `_1_01_CHEERPOINTS` et y
+arrivent entre 10 et 14 s ; l'élève qui sprinte vers le point 3 de `_1_01_KIDRUN`
+n'y est pas encore quand la mission se termine, et son poursuivant (3,5 m/s contre
+5) ne l'a pas rattrapé.
+
 Résultat pour `1_01` : `MissionSetup` (chargement de l'arbre `Act/Conv/1_01.act`,
 `DATLoad("1_01.DAT", 2)`, joueur placé, transition de zone) fini en 0,2 s ; `main`
 coupe le contrôle du joueur, règle la météo, charge sept groupes d'animations et 17
@@ -181,9 +195,9 @@ d'être posées, et valent nil comme il faut : `gMissionSuccess`, `misObj`, `F_S
 
 ## Suite
 
-1. Ce que `1_01` ne joue pas encore pour de vrai : les déplacements (`PedMoveToPoint`),
-   la bagarre (`PedAttack`, la mort d'un piéton), les cinématiques
-   (`PlayCutsceneWithLoad`, `CameraFade`), qui sont des bouchons qui répondent neutre.
+1. Ce que `1_01` ne joue pas encore pour de vrai : les cinématiques
+   (`PlayCutsceneWithLoad`, `CameraFade`), `PedSetActionNode`, `SoundPlayScriptedSpeechEvent`,
+   qui sont des bouchons qui répondent neutre ; et les vraies vitesses de marche.
 2. Ce que lit `FUN_005d2310` à +0xc de l'entrée de liste (l'AREACODE ?), et la vraie
    zone d'un point.
 3. Lire dans le moteur qui démarre `1_01` à la nouvelle partie
