@@ -141,8 +141,30 @@ leur pose `/Global/1_01/Talking`, rend le contrôle, pose le marqueur et l'objec
 (`PlayerIsInTrigger(483)` à chaque image). C'est le jeu qui attend le joueur, plus un
 bouchon qui échoue.
 
+**Jouer le joueur depuis l'outil.** `PlayerIsInTrigger`, `PedIsInTrigger` (la zone du
+déclencheur, `CTriggerZone::Contient`), `PlayerSetPosPointArea`, `PlayerIsInAreaXYZ`
+(un pavé de demi-côté « rayon », `FUN_005c2910`) et `AreaGetVisible` (`DAT_00bd1008`,
+la zone où est le joueur) sont réels. Trois options font faire au joueur ce que le
+moteur attend de la manette : `--entrer DECLENCHEUR@s` le pose dans un déclencheur,
+`--aller LISTE[,n]@s` (ou `x,y,z@s`) à un point, `--zone N@s` lui fait passer une porte.
+`1_01` lu avec `tools/lur.py` (fonction `CheckObjs`, ligne 684) :
+
+    build/outils/lancer_lua 40 --mission 1_01 --entrer _1_01_BULLYTRIG@4 --aller _1_01_ENDPOINT@8 --zone 2@8.1
+
+1. Objectif `1_01_StandGround` ; le joueur entre dans `_1_01_BULLYTRIG` → le premier
+   élève redevient ambiant, un bully (modèle 69) est créé sur `_1_01_FIGHTBULLIES` et
+   `PedAttack(5, 4, 3)` lance la bagarre (que l'outil ne joue pas).
+2. Le joueur au point 1 de `_1_01_ENDPOINT` **et** `AreaGetVisible() == 2` (le hall de
+   l'école ; l'AREACODE du point dit 5, ce n'est donc pas la zone visible) → la
+   secrétaire (59) est créée sur `_1_01_SECRETARYINOFFICE`, la population revient.
+3. Puis deux élèves (69 et 102) sur `_1_01_KIDRUN`, `PedMoveToPoint`, `PedAttack`, et
+   le joueur attendu dans `_1_01_CHECKOBJS1`… la suite se lit dans le listage.
+
 ## Suite
 
-1. `PlayerIsInTrigger` pour de vrai (la zone du déclencheur, `CTriggerZone::Contient`)
-   et une façon de faire entrer le joueur dans un déclencheur depuis l'outil.
-2. Lire dans le moteur qui démarre `1_01` à la nouvelle partie.
+1. Continuer `1_01` avec `--entrer` / `--aller` / `--zone` jusqu'à `MissionSucceed`, en
+   rendant réelles les fonctions qui bloquent (`PedMoveToPoint`, `PedAttack` et la mort
+   d'un piéton, les cinématiques `PlayCutsceneWithLoad`).
+2. Ce que lit `FUN_005d2310` à +0xc de l'entrée de liste (l'AREACODE ?), et la vraie
+   zone d'un point.
+3. Lire dans le moteur qui démarre `1_01` à la nouvelle partie.

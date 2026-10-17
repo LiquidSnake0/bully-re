@@ -12,8 +12,10 @@ chantier. Un point fini passe en bas, avec son commit.
    lancement est `ForceStartMission(nom)`. `ForceStartMission` est branché dans
    `lancer_lua` (`--mission 1_01`) : `1_01` tourne jusqu'à la création des
    personnages (`PedCreatePoint`, docs/missions.md). `POINTLIST`, `PATH` et `TRIGGER` sont réelles depuis `DATLoad`. Les piétons sont un pool
-   (`PedCreatePoint` & co réels) ; `1_01` attend le joueur dans `_1_01_BULLYTRIG`. Suite :
-   `PlayerIsInTrigger` réel et une entrée du joueur depuis l'outil, `MODELENUM`, puis brancher pour de vrai les fonctions que `gamemain` appelle
+   (`PedCreatePoint` & co réels) ; `1_01` attend le joueur dans `_1_01_BULLYTRIG`. `--entrer`,
+   `--aller` et `--zone` jouent le joueur : `1_01` passe la bagarre et arrive au bureau du
+   principal. Suite : les fonctions qui bloquent ensuite (`PedMoveToPoint`, `PedAttack`,
+   cinématiques), `MODELENUM`, puis brancher pour de vrai les fonctions que `gamemain` appelle
    (zones, `DATLoad`, effets, joueur) en remplaçant les bouchons.
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
@@ -45,11 +47,13 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
-- Les piétons des scripts : `src/peds/ScriptPedPool` (24 entrées, joueur en 0), `PedCreatePoint` / `PedCreateXYZ` / `PedDelete` / `PedIsValid` / positions / cap / santé réels dans `lancer_lua`, ramassage à la fin de la mission ; `1_01` crée ses trois premiers personnages et attend le joueur dans `_1_01_BULLYTRIG` ; `tests/test_scriptpeds`.
+- Le joueur joué par l'outil : `PlayerIsInTrigger`, `PedIsInTrigger`, `PlayerSetPosPointArea`, `PlayerIsInAreaXYZ`, `AreaGetVisible` réels ; options `--entrer`, `--aller`, `--zone` de `lancer_lua` ; `1_01` passe la bagarre et l'arrivée au bureau (`tools/lur.py` pour lire la condition d'un objectif).
 
-- Les données de mission : `DATLoad(fichier, emplacement)`, `DATUnload`, `DATInit`, les tables `POINTLIST` / `PATH` / `TRIGGER` et `GetPointFromPointList` lus dans le moteur et recréés (`src/core/DatPools`, blocs POINT dans `TriggerFile`, `tests/test_datpools`) ; `1_01` passe à `PedCreatePoint` de vrais handles.
+- (7dacc36) Les piétons des scripts : `src/peds/ScriptPedPool` (24 entrées, joueur en 0), `PedCreatePoint` / `PedCreateXYZ` / `PedDelete` / `PedIsValid` / positions / cap / santé réels dans `lancer_lua`, ramassage à la fin de la mission ; `1_01` crée ses trois premiers personnages et attend le joueur dans `_1_01_BULLYTRIG` ; `tests/test_scriptpeds`.
 
-- La banque des missions dans `src/core/MissionBank.cpp` (`CMissionBank`, suit les références de `Missions.cat`, `Doors.cat` compris) : 499 entrées, 360 avec un script ; l'écart 360 / 473 venait de `missions.py` (Doors ignoré, pistes perdues), corrigé ; `tests/test_missions`.
+- (549ad27) Les données de mission : `DATLoad(fichier, emplacement)`, `DATUnload`, `DATInit`, les tables `POINTLIST` / `PATH` / `TRIGGER` et `GetPointFromPointList` lus dans le moteur et recréés (`src/core/DatPools`, blocs POINT dans `TriggerFile`, `tests/test_datpools`) ; `1_01` passe à `PedCreatePoint` de vrais handles.
+
+- (ab7fba6) La banque des missions dans `src/core/MissionBank.cpp` (`CMissionBank`, suit les références de `Missions.cat`, `Doors.cat` compris) : 499 entrées, 360 avec un script ; l'écart 360 / 473 venait de `missions.py` (Doors ignoré, pistes perdues), corrigé ; `tests/test_missions`.
 
 - `ForceStartMission` dans `lancer_lua` : table des missions lue dans la banque, machine à états du moteur (`FUN_006ad3e0` : MissionSetup, main, MissionCleanup), `RequestModel` et variantes ; `1_01` va jusqu'à `PedCreatePoint` ; champ 36 de `MissionData` = afficher le titre.
 

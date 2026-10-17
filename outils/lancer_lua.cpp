@@ -9,7 +9,7 @@
 // (Missions.cat et ses sous-arbres) ; ForceStartMission suit la machine à états du moteur
 // (FUN_006ad3e0) : script de la mission (FUN_005dbf90), MissionSetup jusqu'au bout
 // (FUN_006acba0), main (FUN_006abf20), puis MissionCleanup (FUN_006abed0).
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM]
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -65,6 +65,7 @@ static CMissionBank banque;
 static CDatPools donnees;
 // Les piétons des scripts (src/peds/ScriptPedPool.h) : le joueur en 0, PedCreatePoint & co.
 static CScriptPedPool pietons;
+static int zoneCourante = 0;            // DAT_00bd1008 : le code de zone où est le joueur (AreaGetVisible)
 
 // La mission en cours et sa machine à états, réduite de FUN_006ad3e0 :
 // 1 MissionSetup tourne, 2 main tourne, 3 MissionCleanup tourne.
@@ -547,14 +548,36 @@ GetPointList(lua_State *L)
 	return 6 * (int)l->points.size();
 }
 
+// Le joueur posé à un point : position, cap, et une zone. FUN_005d2310 lit un octet (+0xc) de
+// l'entrée de la liste, ou garde DAT_00bd1008 s'il vaut -1 ; on suppose que c'est l'AREACODE du
+// bloc POINT. Attention : l'AREACODE n'est pas toujours la zone visible (1_01_EndPoint dit 5, et
+// le script y attend AreaGetVisible() == 2), d'où --zone pour jouer les portes.
+static void
+PoserJoueur(const CTriggerPointPoint *pt, int zone)
+{
+	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	j->pos = pt->pos; j->cap = pt->lacetTangageRoulis[0];
+	if(zone >= 0) zoneCourante = zone;
+}
+
 // PlayerSetPosPoint(liste[, n]) (0x5d2310) : le joueur au point, tourné selon son lacet.
 static int
 PlayerSetPosPoint(lua_State *L)
 {
 	Journal("PlayerSetPosPoint", L, 1);
 	const CTriggerPointPoint *pt = PointArg(L, "PlayerSetPosPoint", 1, 2);
-	if(pt){ CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR); j->pos = pt->pos; j->cap = pt->lacetTangageRoulis[0]; }
+	const CTriggerPointList *liste = donnees.Liste((int)luaL_checknumber(L, 1));
+	if(pt) PoserJoueur(pt, liste ? liste->zone : -1);
 	return 0;
+}
+
+// AreaGetVisible() (0x5b7300) : la zone courante, DAT_00bd1008.
+static int
+AreaGetVisible(lua_State *L)
+{
+	appels["AreaGetVisible"]++;
+	lua_pushnumber(L, zoneCourante);
+	return 1;
 }
 
 static int
@@ -572,6 +595,87 @@ PlayerGetPosXYZ(lua_State *L)
 	const CVector &p = pietons.Acceder(SCRIPT_PED_JOUEUR)->pos;
 	lua_pushnumber(L, p.x); lua_pushnumber(L, p.y); lua_pushnumber(L, p.z);
 	return 3;
+}
+
+// PlayerSetPosPointArea(zone, liste[, n]) (0x5d2410) : comme PlayerSetPosPoint, avec le code de zone devant.
+static int
+PlayerSetPosPointArea(lua_State *L)
+{
+	Journal("PlayerSetPosPointArea", L, 1);
+	const CTriggerPointPoint *pt = PointArg(L, "PlayerSetPosPointArea", 2, 3);
+	if(pt) PoserJoueur(pt, (int)luaL_checknumber(L, 1));
+	return 0;
+}
+
+// PlayerIsInTrigger(déclencheur) (0x5d2a30) et PedIsInTrigger(ped, déclencheur) (0x5c9930) : la
+// position du piéton est dans la zone du déclencheur (FUN_006d6e50).
+static int
+PlayerIsInTrigger(lua_State *L)
+{
+	appels["PlayerIsInTrigger"]++;
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	lua_pushboolean(L, h >= 0 && donnees.DansDeclencheur(h, pietons.Acceder(SCRIPT_PED_JOUEUR)->pos));
+	return 1;
+}
+
+static int
+PedIsInTrigger(lua_State *L)
+{
+	appels["PedIsInTrigger"]++;
+	const CScriptPed *p = lua_isnumber(L, 1) ? pietons.Acceder((int)lua_tonumber(L, 1)) : nil;
+	int h = lua_isnumber(L, 2) ? (int)lua_tonumber(L, 2) : -1;
+	lua_pushboolean(L, p != nil && h >= 0 && donnees.DansDeclencheur(h, p->pos));
+	return 1;
+}
+
+// PlayerIsInAreaXYZ(x, y, z, rayon[, drapeau, angle]) (0x5d13f0) : FUN_005c2910 teste un pavé de
+// demi-côté « rayon » sur les trois axes autour du point ; le joueur est dedans ou non.
+static int
+PlayerIsInAreaXYZ(lua_State *L)
+{
+	appels["PlayerIsInAreaXYZ"]++;
+	const CVector &p = pietons.Acceder(SCRIPT_PED_JOUEUR)->pos;
+	float r = (float)luaL_optnumber(L, 4, 1);
+	bool dedans = fabsf(p.x - (float)luaL_checknumber(L, 1)) < r && fabsf(p.y - (float)luaL_checknumber(L, 2)) < r && fabsf(p.z - (float)luaL_checknumber(L, 3)) < r;
+	lua_pushboolean(L, dedans);
+	return 1;
+}
+
+// --aller NOM[,n]@s ou --aller x,y,z@s : à s secondes, le joueur est posé au n-ième point de la
+// liste NOM (1 par défaut), ou aux coordonnées, comme s'il y avait marché.
+static void
+AllerAuPoint(const char *cible)
+{
+	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	float x, y, z;
+	if(sscanf(cible, "%f,%f,%f", &x, &y, &z) == 3){
+		j->pos = CVector(x, y, z);
+		printf("%6.2f s  le joueur va en (%.1f, %.1f, %.1f)\n", maintenant / 1000.0, x, y, z);
+		return;
+	}
+	std::string nom = cible; int n = 1;
+	size_t virgule = nom.find(',');
+	if(virgule != std::string::npos){ n = atoi(nom.c_str() + virgule + 1); nom.erase(virgule); }
+	int h = donnees.ListePoints(nom.c_str());
+	const CTriggerPointPoint *pt = donnees.Point(h, n);
+	if(pt == nil){ printf("%6.2f s  --aller : la liste %s n'est pas chargée\n", maintenant / 1000.0, nom.c_str()); return; }
+	// La zone ne change pas : c'est une porte qui la change (--zone), pas une marche.
+	PoserJoueur(pt, -1);
+	printf("%6.2f s  le joueur va au point %d de %s (%d) en (%.1f, %.1f, %.1f), toujours en zone %d\n", maintenant / 1000.0, n, nom.c_str(), h, pt->pos.x, pt->pos.y, pt->pos.z, zoneCourante);
+}
+
+// --entrer NOM@s : à s secondes, le joueur est posé dans le déclencheur NOM (à la position du
+// déclencheur), comme s'il y avait marché. C'est l'outil qui joue le joueur, pas le moteur.
+static void
+EntrerDansDeclencheur(const char *nom)
+{
+	int h = donnees.Declencheur(nom);
+	const CTriggerZone *z = donnees.ZoneParHandle(h);
+	if(z == nil){ printf("%6.2f s  --entrer : le déclencheur %s n'est pas chargé\n", maintenant / 1000.0, nom); return; }
+	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	j->pos = CVector(z->pos.x, z->pos.y, z->pos.z + 0.5f);
+	printf("%6.2f s  le joueur entre dans %s (%d) en (%.1f, %.1f, %.1f) : %s\n", maintenant / 1000.0, nom, h, j->pos.x, j->pos.y, j->pos.z,
+	       donnees.DansDeclencheur(h, j->pos) ? "dedans" : "la position du déclencheur est hors de sa propre zone");
 }
 
 // --- Les piétons : le pool des scripts, PedCreatePoint & co. ---
@@ -798,9 +902,24 @@ int
 main(int argc, char **argv)
 {
 	const char *aLancer = nil;           // --mission NOM : ForceStartMission(NOM) après une seconde
+	std::vector<std::pair<uint32, std::string>> entrees;   // --entrer NOM@s : le joueur entre dans NOM à s secondes
+	std::vector<std::pair<uint32, std::string>> allers;    // --aller NOM[,n]@s ou x,y,z@s : le joueur y est posé à s secondes
+	std::vector<std::pair<uint32, int>> zones;             // --zone N@s : le joueur passe dans la zone N (une porte) à s secondes
 	std::vector<const char*> pos;
 	for(int i = 1; i < argc; i++){
 		if(strcmp(argv[i], "--mission") == 0 && i + 1 < argc) aLancer = argv[++i];
+		else if(strcmp(argv[i], "--entrer") == 0 && i + 1 < argc){
+			std::string e = argv[++i]; size_t at = e.find('@');
+			entrees.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
+		}
+		else if(strcmp(argv[i], "--zone") == 0 && i + 1 < argc){
+			std::string e = argv[++i]; size_t at = e.find('@');
+			zones.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), atoi(e.c_str())});
+		}
+		else if(strcmp(argv[i], "--aller") == 0 && i + 1 < argc){
+			std::string e = argv[++i]; size_t at = e.find('@');
+			allers.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
+		}
 		else pos.push_back(argv[i]);
 	}
 	if(getenv("LANCER_JOURNAL")) journalRestant = atoi(getenv("LANCER_JOURNAL"));   // lignes de journal (400)
@@ -840,6 +959,11 @@ main(int argc, char **argv)
 	lua_register(L, "GetPointList", GetPointList);
 	lua_register(L, "PlayerSetPosPoint", PlayerSetPosPoint);
 	lua_register(L, "PlayerSetPosXYZ", PlayerSetPosXYZ);
+	lua_register(L, "PlayerSetPosPointArea", PlayerSetPosPointArea);
+	lua_register(L, "PlayerIsInTrigger", PlayerIsInTrigger);
+	lua_register(L, "PedIsInTrigger", PedIsInTrigger);
+	lua_register(L, "PlayerIsInAreaXYZ", PlayerIsInAreaXYZ);
+	lua_register(L, "AreaGetVisible", AreaGetVisible);
 	lua_register(L, "PlayerGetPosXYZ", PlayerGetPosXYZ);
 	lua_register(L, "PedCreatePoint", PedCreatePoint);
 	lua_register(L, "PedCreateXYZ", PedCreateXYZ);
@@ -887,6 +1011,9 @@ main(int argc, char **argv)
 			lua_call(L, 1, 0);
 			aLancer = nil;
 		}
+		for(auto &e : entrees) if(!e.second.empty() && maintenant >= e.first){ EntrerDansDeclencheur(e.second.c_str()); e.second.clear(); }
+		for(auto &e : allers) if(!e.second.empty() && maintenant >= e.first){ AllerAuPoint(e.second.c_str()); e.second.clear(); }
+		for(auto &e : zones) if(e.second >= 0 && maintenant >= e.first){ zoneCourante = e.second; printf("%6.2f s  le joueur passe dans la zone %d\n", maintenant / 1000.0, e.second); e.second = -1; }
 		MettreAJour(L);
 	}
 

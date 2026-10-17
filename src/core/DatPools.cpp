@@ -107,6 +107,13 @@ CDatPools::ZoneParHandle(int h) const
 	return &zones[h].donnee;
 }
 
+bool
+CDatPools::DansDeclencheur(int h, const CVector &pos) const
+{
+	const CTriggerZone *z = ZoneParHandle(h);
+	return z != nil && z->Contient(perimetres, pos.x, pos.y, pos.z);
+}
+
 const CTriggerPointPoint *
 CDatPools::Point(int h, int n) const
 {

@@ -32,6 +32,11 @@ main(void)
 	VERIF(p.Point(depart, 0) == pt && p.Point(depart, 50) == pt);   // un seul point : le n-ième est le dernier
 	VERIF(p.Point(-1, 1) == nil && p.Point(0, 1) == nil && p.Point(9999, 1) == nil);
 
+	// La zone d'une liste (AREACODE) : le départ dehors (0), le point final dans le bureau du principal (5).
+	VERIF(p.Liste(depart) != nil && p.Liste(depart)->zone == 0);
+	int fin = p.ListePoints("_1_01_ENDPOINT");
+	VERIF(fin >= 1 && p.Liste(fin) != nil && p.Liste(fin)->zone == 5);
+
 	// Une liste à plusieurs points : les points d'acclamation de la bagarre.
 	int cheer = p.ListePoints("_1_01_CHEERPOINTS");
 	VERIF(cheer >= 1 && cheer != depart);
@@ -49,6 +54,14 @@ main(void)
 	VERIF(zone >= 0);
 	VERIF(p.ZoneParHandle(zone) != nil);
 	VERIF(p.Declencheur("_PAS_UN_DECLENCHEUR") == -1);
+	// L'appartenance : la position du déclencheur (un peu au-dessus de sa base) est dans sa zone,
+	// 400 m plus loin non ; un handle libre ne contient rien.
+	const CTriggerZone *z = p.ZoneParHandle(zone);
+	if(z){
+		VERIF(p.DansDeclencheur(zone, CVector(z->pos.x, z->pos.y, z->pos.z + 0.5f)));
+		VERIF(!p.DansDeclencheur(zone, CVector(z->pos.x + 400, z->pos.y, z->pos.z + 0.5f)));
+	}
+	VERIF(!p.DansDeclencheur(-1, CVector()) && !p.DansDeclencheur(9999, CVector()));
 
 	// Le monde à l'emplacement 1 s'ajoute après ; décharger la mission (2) ne déplace pas ses handles.
 	VERIF(p.Charger("Global.DAT", 1));

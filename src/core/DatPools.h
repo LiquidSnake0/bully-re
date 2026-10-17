@@ -38,6 +38,8 @@ public:
 	const CTriggerZone *ZoneParHandle(int handle) const;
 	// Le n-ième point (à partir de 1) d'une liste, ou nil.
 	const CTriggerPointPoint *Point(int handle, int n) const;
+	// PlayerIsInTrigger / PedIsInTrigger (FUN_006d6e50) : la position est dans la zone du déclencheur.
+	bool DansDeclencheur(int handle, const CVector &pos) const;
 
 	int fichiersCharges = 0;
 private:
