@@ -16,6 +16,10 @@ struct CMissionData {
 	std::string cle;         // champ 32, la clé du titre affiché
 	bool afficherTitre = false;   // champ 36
 	int type = 0;            // champ 40 : 0 histoire, 1 cours, 3 boulots et courses, 4 tutoriels, 5 mini-jeux
+	bool lancerSeul = false; // champ 51 (+0x33) : FUN_006ad130 la lance dès qu'elle est activée (1_02, pas 1_01)
+	int conditions = 0;      // les conditions d'entrée du nœud (si MissionCond…) ; 0 = toujours activable
+	std::string corona;      // MissionButtonTrigger (champ 24) de l'enfant « Active » : le déclencheur où le joueur la lance
+	int coronaMode = 0;      // champ 28 de cette piste : 2 pour 1_01 (en entrant), 1 partout ailleurs (BUT_LAUNCH)
 	bool Jouable(void) const { return !script.empty() && script != "none.lua"; }
 };
 

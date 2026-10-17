@@ -16,7 +16,9 @@
 // MODELENUM (les noms de modèles des .idb, src/core/ModelEnum.h) et POI (pas encore lue, -1).
 // Les piétons des scripts (src/peds/ScriptPedPool.h) marchent, courent, se battent et meurent
 // image par image : PedMoveToPoint, PedMoveToXYZ, PedStop, PedAttack, PedSetHealth, PedMakeAmbient.
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]...
+// --nouvelle-partie : pas de --mission ; le gestionnaire de missions (FUN_006ad130, réduit) active les
+// missions sans condition et lance celle dont le joueur touche le corona, comme à la première partie.
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -34,6 +36,7 @@
 #include <cctype>
 #include <cmath>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 extern "C" {
@@ -84,9 +87,27 @@ enum EtatMission { AUCUNE = 0, PREPARATION = 1, DEROULEMENT = 2, NETTOYAGE = 3 }
 static struct {
 	int etat = AUCUNE;
 	int script = -1;
-	std::string nom;
+	int indice = -1;                     // dans banque.missions (+0x4bc)
+	std::string nom;                     // le nom demandé par le script, ou le titre quand le gestionnaire la lance
 	bool reussie = false;
 } mission;
+// Le gestionnaire de missions (objet 0x020c3ca0, FUN_006ad130 à chaque image), réduit : une mission
+// dont les conditions sont vraies est « activée » (son corona existe) ; activée, elle démarre seule
+// si son champ 51 le dit, ou, une fois le gestionnaire autorisé (+0x77d, posé par gamemain avec
+// SystemAllowMissionManagerToForceRunMissions), quand le joueur entre dans son corona (mode 2) ;
+// les coronas à bouton (mode 1) attendent BUT_LAUNCH, que l'outil ne joue pas. Les conditions ne
+// sont pas encore lues : seule une mission sans condition passe.
+static struct {
+	bool actif = false;                  // --nouvelle-partie
+	bool autorise = false;               // DAT_020c441d
+	std::vector<bool> activees;          // bit 1 de l'octet +4 de l'entrée de 6 octets (+0x688)
+	std::set<uint32> terminees;          // IsMissionCompleated, par hachage du nom
+	bool deplacerJoueur = true;          // SystemShouldMovePlayer : vrai une fois à la nouvelle partie
+} gestionnaire;
+
+// Le nom d'une mission pour le journal : en clair quand le fichier le donne, sinon son titre.
+static const char *
+NomMission(const CMissionData &m){ return m.nom.empty() ? m.titre.c_str() : m.nom.c_str(); }
 
 static int prochainId = 1;
 static CLuaApi api;                                   // la frontière moteur / scripts (LANCER_API, sinon docs/api-lua-tables.tsv)
@@ -458,6 +479,7 @@ AvancerMission(lua_State *L)
 		if(!ThreadEnCours(mission.script, "MissionCleanup")){
 			printf("%6.2f s  mission %s terminée (%s)\n", maintenant / 1000.0, mission.nom.c_str(),
 			       mission.reussie ? "réussie" : "échouée ou arrêtée");
+			if(mission.reussie && mission.indice >= 0) gestionnaire.terminees.insert(banque.missions[mission.indice].hachage);
 			{ int n = pietons.SupprimerDuScript(mission.script); if(n) printf("        %d piéton(s) laissé(s) par la mission, libéré(s)\n", n); }
 			for(Thread &t : scripts[mission.script].threads)
 				if(t.etat < TUE){ t.etat = TUE; luaL_unref(L, LUA_REGISTRYINDEX, t.ref); t.ref = LUA_NOREF; }
@@ -953,24 +975,33 @@ ChargerMissions(void)
 	printf("%zu missions dans la banque (%zu fichiers), %d avec un script\n", banque.missions.size(), banque.banques.size(), jouables);
 }
 
-// ForceStartMission(nom) : FUN_006acba0, le script de la mission puis MissionSetup.
+// FUN_006acba0 : le script de la mission puis MissionSetup ; par indice dans la banque.
+static bool
+LancerMission(lua_State *L, int indice, const char *nom)
+{
+	if(mission.etat != AUCUNE){ printf("        %s refusée : %s est en cours\n", nom, mission.nom.c_str()); return false; }
+	if(indice < 0){ printf("        %s absente de la banque\n", nom); return false; }
+	const CMissionData &m = banque.missions[indice];
+	if(!m.Jouable()){ printf("        %s n'a pas de script (%s) : rien à lancer\n", nom, m.script.empty() ? "champ 28 vide" : m.script.c_str()); return false; }
+	int s = NouveauScript(L, m.script.c_str());
+	if(s < 0){ printf("        %s : CreateNameSpace(%s) a échoué\n", nom, m.script.c_str()); return false; }
+	mission.nom = nom;
+	mission.indice = indice;
+	mission.script = s;
+	mission.reussie = false;
+	mission.etat = PREPARATION;
+	printf("%6.2f s  mission %s : %s chargé, MissionSetup démarre\n", maintenant / 1000.0, nom, m.script.c_str());
+	NouveauThread(L, s, "MissionSetup");
+	return true;
+}
+
+// ForceStartMission(nom) : FUN_006acba0 par nom.
 static int
 ForceStartMission(lua_State *L)
 {
 	const char *nom = luaL_checkstring(L, 1);
 	Journal("ForceStartMission", L, 1);
-	if(mission.etat != AUCUNE){ printf("        %s refusée : %s est en cours\n", nom, mission.nom.c_str()); return 0; }
-	const CMissionData *m = banque.Trouver(nom);
-	if(m == nil){ printf("        %s absente de la banque\n", nom); return 0; }
-	if(!m->Jouable()){ printf("        %s n'a pas de script (%s) : rien à lancer\n", nom, m->script.empty() ? "champ 28 vide" : m->script.c_str()); return 0; }
-	int s = NouveauScript(L, m->script.c_str());
-	if(s < 0){ printf("        %s : CreateNameSpace(%s) a échoué\n", nom, m->script.c_str()); return 0; }
-	mission.nom = nom;
-	mission.script = s;
-	mission.reussie = false;
-	mission.etat = PREPARATION;
-	printf("%6.2f s  mission %s : %s chargé, MissionSetup démarre\n", maintenant / 1000.0, nom, m->script.c_str());
-	NouveauThread(L, s, "MissionSetup");
+	LancerMission(L, banque.Index(nom), nom);
 	return 0;
 }
 
@@ -1015,6 +1046,116 @@ MissionGetCurrentName(lua_State *L)
 	return 1;
 }
 
+// IsMissionCompleated(nom) (0x5c0580) : réussie au moins une fois dans cette partie.
+static int
+IsMissionCompleated(lua_State *L)
+{
+	appels["IsMissionCompleated"]++;
+	lua_pushboolean(L, gestionnaire.terminees.count(ActionHash(luaL_checkstring(L, 1)) & 0x7fffffff) != 0);
+	return 1;
+}
+
+// SystemShouldMovePlayer() → (déplacer ?, mode) : à la nouvelle partie, vrai et 0 (gamemain pose alors
+// le joueur à la grille de l'école, PlayerSetPosXYZArea(272.68, -73.13, 6.97, 0)) jusqu'à
+// SystemResetShouldMovePlayer() ; le mode 1 serait une sauvegarde à reprendre.
+static int
+SystemShouldMovePlayer(lua_State *L)
+{
+	appels["SystemShouldMovePlayer"]++;
+	lua_pushboolean(L, gestionnaire.actif && gestionnaire.deplacerJoueur);
+	lua_pushnumber(L, 0);
+	return 2;
+}
+
+static int
+SystemResetShouldMovePlayer(lua_State *L)
+{
+	Journal("SystemResetShouldMovePlayer", L, 1);
+	gestionnaire.deplacerJoueur = false;
+	return 0;
+}
+
+// PlayerSetPosXYZArea(x, y, z, zone) : le joueur posé là, dans cette zone.
+static int
+PlayerSetPosXYZArea(lua_State *L)
+{
+	Journal("PlayerSetPosXYZArea", L, 1);
+	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	j->pos = CVector((float)luaL_checknumber(L, 1), (float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3));
+	zoneCourante = (int)luaL_optnumber(L, 4, zoneCourante);
+	return 0;
+}
+
+// MissionGetIndex(nom) (0x5bfe20) : l'indice dans le tableau +0x4b8, ou -1.
+static int
+MissionGetIndex(lua_State *L)
+{
+	appels["MissionGetIndex"]++;
+	lua_pushnumber(L, banque.Index(luaL_checkstring(L, 1)));
+	return 1;
+}
+
+// SystemAllowMissionManagerToForceRunMissions() (0x5d5110) : pose l'octet 0x020c441d, +0x77d du gestionnaire.
+static int
+SystemAllowMissionManagerToForceRunMissions(lua_State *L)
+{
+	Journal("SystemAllowMissionManagerToForceRunMissions", L, 1);
+	gestionnaire.autorise = true;
+	return 0;
+}
+
+// AreaTransitionXYZ(zone, x, y, z, …) : gamemain y pose le joueur à la nouvelle partie (0, 272.68, -73.13, 6.97).
+static int
+AreaTransitionXYZ(lua_State *L)
+{
+	Journal("AreaTransitionXYZ", L, 1);
+	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	zoneCourante = (int)luaL_optnumber(L, 1, 0);
+	j->pos = CVector((float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3), (float)luaL_checknumber(L, 4));
+	return 0;
+}
+
+// FUN_006ad130, réduit : à chaque image, ce que le gestionnaire fait des missions de la banque.
+static const float RAYON_CORONA = 2.0f;   // m
+
+static void
+AvancerGestionnaire(lua_State *L)
+{
+	static std::set<std::string> coronasAbsents;
+	if(!gestionnaire.actif) return;
+	if(gestionnaire.activees.size() != banque.missions.size()) gestionnaire.activees.assign(banque.missions.size(), false);
+	for(size_t i = 0; i < banque.missions.size(); i++){
+		const CMissionData &m = banque.missions[i];
+		if(!m.Jouable() || gestionnaire.terminees.count(m.hachage)) continue;
+		bool conditions = m.conditions == 0;        // les classes de conditions (MissionCond…) ne sont pas lues
+		if(!conditions) continue;
+		bool libre = mission.etat == AUCUNE;
+		if(!gestionnaire.activees[i]){
+			gestionnaire.activees[i] = true;
+			printf("%6.2f s  gestionnaire : %s activée (%s%s%s)\n", maintenant / 1000.0, NomMission(m),
+			       m.lancerSeul ? "se lance seule" : m.corona.empty() ? "sans corona" : "corona ", m.corona.c_str(),
+			       m.corona.empty() ? "" : m.coronaMode == 2 ? ", en entrant" : ", bouton");
+			if(m.lancerSeul && libre){ LancerMission(L, (int)i, NomMission(m)); continue; }
+		}
+		if(!libre || !gestionnaire.autorise || m.corona.empty() || m.coronaMode != 2) continue;
+		// Un corona qui se déclenche en entrant : une liste de points de MisTrig.dat, que gamemain charge
+		// (DATLoad("MisTrig.DAT", 1)) avant d'autoriser le gestionnaire ; 1_01_Corona est à 24,8 m de la
+		// grille. Le joueur est dedans à moins de RAYON_CORONA (le vrai rayon, champs 56 et 60 de la
+		// piste ?, reste à lire).
+		int h = donnees.ListePoints(m.corona.c_str());
+		const CTriggerPointPoint *pt = donnees.Point(h, 1);
+		if(pt == nil){
+			if(!coronasAbsents.count(m.corona)){ coronasAbsents.insert(m.corona); printf("%6.2f s  gestionnaire : le corona %s n'est dans aucun DAT chargé\n", maintenant / 1000.0, m.corona.c_str()); }
+			continue;
+		}
+		const CVector &j = pietons.Acceder(SCRIPT_PED_JOUEUR)->pos;
+		float dx = j.x - pt->pos.x, dy = j.y - pt->pos.y, dz = j.z - pt->pos.z;
+		if(dx * dx + dy * dy + dz * dz > RAYON_CORONA * RAYON_CORONA) continue;
+		printf("%6.2f s  gestionnaire : le joueur est dans le corona %s (%d), %s démarre\n", maintenant / 1000.0, m.corona.c_str(), h, NomMission(m));
+		LancerMission(L, (int)i, NomMission(m));
+	}
+}
+
 int
 main(int argc, char **argv)
 {
@@ -1025,6 +1166,7 @@ main(int argc, char **argv)
 	std::vector<const char*> pos;
 	for(int i = 1; i < argc; i++){
 		if(strcmp(argv[i], "--mission") == 0 && i + 1 < argc) aLancer = argv[++i];
+		else if(strcmp(argv[i], "--nouvelle-partie") == 0) gestionnaire.actif = true;
 		else if(strcmp(argv[i], "--entrer") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
 			entrees.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
@@ -1069,6 +1211,13 @@ main(int argc, char **argv)
 	lua_register(L, "MissionActive", MissionActive);
 	lua_register(L, "MissionActiveSpecific", MissionActiveSpecific);
 	lua_register(L, "MissionGetCurrentName", MissionGetCurrentName);
+	lua_register(L, "IsMissionCompleated", IsMissionCompleated);
+	lua_register(L, "MissionGetIndex", MissionGetIndex);
+	lua_register(L, "SystemAllowMissionManagerToForceRunMissions", SystemAllowMissionManagerToForceRunMissions);
+	lua_register(L, "AreaTransitionXYZ", AreaTransitionXYZ);
+	lua_register(L, "SystemShouldMovePlayer", SystemShouldMovePlayer);
+	lua_register(L, "SystemResetShouldMovePlayer", SystemResetShouldMovePlayer);
+	lua_register(L, "PlayerSetPosXYZArea", PlayerSetPosXYZArea);
 	lua_register(L, "DATLoad", DATLoad);
 	lua_register(L, "DATUnload", DATUnload);
 	lua_register(L, "DATInit", DATInit);
@@ -1143,6 +1292,7 @@ main(int argc, char **argv)
 		for(auto &e : zones) if(e.second >= 0 && maintenant >= e.first){ zoneCourante = e.second; printf("%6.2f s  le joueur passe dans la zone %d\n", maintenant / 1000.0, e.second); e.second = -1; }
 		MettreAJour(L);
 		AvancerPietons();
+		AvancerGestionnaire(L);
 	}
 
 	size_t crees = 0;

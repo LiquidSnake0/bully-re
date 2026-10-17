@@ -89,11 +89,40 @@ missions avec script. Les deux lisent maintenant les 499.
   d'histoire (`MainMap` pour 5_07, `SGlFunc` pour 6_01 et 3_08).
 - Côté banque, une mission devient lançable quand ses conditions sont vraies ; le
   joueur la démarre en entrant dans son marqueur (`MissionButtonTrigger`).
-- **La première mission** : dans `chap1`, `1_01` est la seule mission sans aucune
-  condition (`tools/missions.py | awk -F'\t' '$1=="chap1" && $4=="-"'`). Ce qui la
-  démarre au début d'une nouvelle partie n'est pas encore lu dans le moteur.
+- **Le gestionnaire, à chaque image** (`FUN_006ad130`, objet 0x020c3ca0, lu dans
+  `export/fonctions.jsonl`) parcourt les 499 entrées : si les conditions d'entrée du
+  nœud sont vraies (aucune condition : toujours), la mission est **activée** (bit 1 de
+  l'octet +4 de son entrée de 6 octets en +0x688 ; `FUN_006ab2d0` joue le nœud
+  `Active`, donc son `MissionButtonTrigger`, le corona) ; activée, elle **démarre
+  seule** (`FUN_006acfa0`) si l'octet +0x33 de `MissionData` (champ 51) est posé et
+  qu'aucune mission ne tourne. `SystemAllowMissionManagerToForceRunMissions` (0x5d5110,
+  7 octets : `mov byte [0x020c441d], 1`) pose +0x77d du gestionnaire, qui autorise ce
+  démarrage pour les missions déjà activées ; `gamemain` l'appelle après ses `DATLoad`.
+- **La première mission** : `1_01` est la seule mission de `chap1` sans condition, mais
+  son champ 51 vaut 0 (il vaut 1 pour `1_02`, `1_02A`… qui s'enchaînent seules) : elle
+  ne démarre pas seule, elle attend le joueur dans son corona. Sa piste
+  `MissionButtonTrigger` dit `24='1_01_Corona', 28=2.0, 36=0, 40=3.0` là où toutes les
+  autres disent `28=1.0, 36=1, 40=25.0` : **le corona de `1_01` se déclenche en entrant**,
+  les autres attendent le bouton (`BUT_LAUNCH`). `1_01_Corona` est une liste de points
+  de `MisTrig.dat` (que `gamemain` charge, `DATLoad("MisTrig.DAT", 1)`), en
+  (297.3, −71.5, 4.9), à 24,8 m de la grille où `gamemain` pose le joueur à la nouvelle
+  partie (`SystemShouldMovePlayer` → `PlayerSetPosXYZArea(272.68, −73.13, 6.97, 0)`) : le
+  joueur sort du bus, marche jusqu'au marqueur, et `1_01` commence (son `MissionSetup`
+  le ramène à la grille et joue la cinématique `1-1-1`). `tests/test_missions` vérifie
+  les champs (conditions, champ 51, corona et son mode) ; 19 coronas sont en mode 2 et
+  27 missions jouables n'ont aucune condition (1_01, 25 mini-jeux, 1 punition).
 - `SMissPass.F_LaunchingMission` prépare l'état du monde selon la mission lancée
   (`MissionGetIndex`, `1_01`, `1_02A`…) : à lire quand on branchera le lancement.
+- **Dans `lancer_lua`**, `--nouvelle-partie` rejoue tout cela sans `--mission` :
+  `SystemShouldMovePlayer`, `PlayerSetPosXYZArea`, `AreaTransitionXYZ`,
+  `SystemAllowMissionManagerToForceRunMissions`, `IsMissionCompleated` (les réussites
+  de la partie), `MissionGetIndex` sont réels, et le gestionnaire réduit active les
+  missions sans condition et lance celle dont le joueur touche le corona en entrant
+  (rayon 2 m, le vrai reste à lire). Avec `--aller 1_01_Corona@2`, le joueur marche au
+  marqueur : **`1_01` démarre à 2,0 s par le gestionnaire, et se termine réussie à 11,1 s**
+  (`--entrer _1_01_BULLYTRIG@6 --aller _1_01_ENDPOINT@10 --zone 2@10.1`). Les classes de
+  conditions (`MissionCond`, `TimeCond`, `ConditionGroup`, `NOT`) ne sont pas lues, donc
+  `1_02` n'enchaîne pas encore.
 
 ## Le déroulement d'une mission (bully.exe)
 
@@ -200,5 +229,6 @@ d'être posées, et valent nil comme il faut : `gMissionSuccess`, `misObj`, `F_S
    qui sont des bouchons qui répondent neutre ; et les vraies vitesses de marche.
 2. Ce que lit `FUN_005d2310` à +0xc de l'entrée de liste (l'AREACODE ?), et la vraie
    zone d'un point.
-3. Lire dans le moteur qui démarre `1_01` à la nouvelle partie
-   (`SystemAllowMissionManagerToForceRunMissions`, 0x5d5110, appelé par `gamemain`).
+3. Les classes de conditions des nœuds (`MissionCond`, `TimeCond`, `ConditionGroup`,
+   `NOT` : `FUN_0061a4f0` les fabrique) pour que `1_02` s'enchaîne après `1_01` ; le
+   rayon du corona (champs 56 et 60 de `MissionButtonTrigger` ?) ; `BUT_LAUNCH`.

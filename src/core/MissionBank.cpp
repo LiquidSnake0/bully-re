@@ -13,6 +13,7 @@ Parcourir(const CActionTreeFile &f, const CActionNode &n, const char *banque, st
           std::vector<std::string> &references)
 {
 	static const uint32 kMissionData = ActionHash("MissionData") & 0x7fffffff;
+	static const uint32 kBouton = ActionHash("MissionButtonTrigger") & 0x7fffffff;
 	if(n.genre == 'r' || n.genre == 'i'){
 		// « chap1.act » dans le fichier : le sous-arbre est chap1.cat dans Act.img.
 		std::string nom = n.nom;
@@ -34,6 +35,17 @@ Parcourir(const CActionTreeFile &f, const CActionNode &n, const char *banque, st
 		if((a = t.Champ(32)) != nil) m.cle = f.ChaineCitee(a->decalage);
 		if((a = t.Champ(36)) != nil) m.afficherTitre = a->valeur[0] != 0;
 		m.type = (int)t.Mot(40);
+		if((a = t.Champ(51)) != nil) m.lancerSeul = a->valeur[0] != 0;
+		m.conditions = (int)n.conditions.size();
+		// L'enfant « Active » porte la piste MissionButtonTrigger : le corona et sa façon de se déclencher.
+		for(const CActionNode &e : n.enfants)
+			for(int32 de : e.pistes){
+				CActionTrack b;
+				if(!f.Piste(de, b) || b.type != kBouton) continue;
+				if((a = b.Champ(24)) != nil) m.corona = f.ChaineCitee(a->decalage);
+				// Le champ 28 est un flottant (2.0 pour 1_01, 1.0 ailleurs), comme le 40.
+				if((a = b.Champ(28)) != nil && a->taille >= 4){ float v; memcpy(&v, a->valeur, 4); m.coronaMode = (int)v; }
+			}
 		dest.push_back(m);
 	}
 	for(const CActionNode &e : n.enfants) Parcourir(f, e, banque, dest, references);
