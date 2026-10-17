@@ -15,7 +15,7 @@ chantier. Un point fini passe en bas, avec son commit.
    (`PedCreatePoint` & co réels) ; `1_01` attend le joueur dans `_1_01_BULLYTRIG`. `--entrer`,
    `--aller` et `--zone` jouent le joueur, et les globales de script valent nil comme dans
    le jeu (`src/core/LuaApi`) : **`1_01` se termine réussie**. Les piétons marchent, courent et se battent
-   (`CScriptPedPool::Avancer`). Suite : les cinématiques et les attentes, `MODELENUM`, qui démarre `1_01` à la nouvelle partie, puis brancher les fonctions que
+   (`CScriptPedPool::Avancer`). `MODELENUM` est lue. Suite : les cinématiques et les attentes, qui démarre `1_01` à la nouvelle partie, puis brancher les fonctions que
    `gamemain` appelle (zones, effets, joueur) en remplaçant les bouchons.
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
@@ -46,6 +46,8 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- `MODELENUM` : `src/core/ModelEnum` reconstruit la table des modèles par nom depuis les `.idb` (4 251 noms, sans la casse, -1 sinon, comme `FUN_0051c1e0`) ; `lancer_lua` pose `MODELENUM` et `POI` (celle-ci à -1, pas encore lue) ; `tests/test_modelenum` ; docs/lua.md.
 
 - Les gestes des piétons : `CScriptPedPool::Avancer` joue image par image la marche, la course et le sprint (`PedMoveToPoint`, `PedMoveToXYZ`, `PedStop`), la bagarre (`PedAttack` : poursuite, coups, mort) et `PedMakeAmbient` ; `lancer_lua` journalise arrivées, coups et morts ; `tests/test_scriptpeds` étendu.
 

@@ -12,6 +12,8 @@
 // (Missions.cat et ses sous-arbres) ; ForceStartMission suit la machine à états du moteur
 // (FUN_006ad3e0) : script de la mission (FUN_005dbf90), MissionSetup jusqu'au bout
 // (FUN_006acba0), main (FUN_006abf20), puis MissionCleanup (FUN_006abed0).
+// Les cinq énumérations du moteur sont posées : POINTLIST, PATH, TRIGGER (les pools de DATLoad),
+// MODELENUM (les noms de modèles des .idb, src/core/ModelEnum.h) et POI (pas encore lue, -1).
 // Les piétons des scripts (src/peds/ScriptPedPool.h) marchent, courent, se battent et meurent
 // image par image : PedMoveToPoint, PedMoveToXYZ, PedStop, PedAttack, PedSetHealth, PedMakeAmbient.
 //   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]...
@@ -22,6 +24,7 @@
 #include "../src/core/ActionTree.h"
 #include "../src/core/MissionBank.h"
 #include "../src/core/LuaApi.h"
+#include "../src/core/ModelEnum.h"
 #include "../src/core/DatPools.h"
 #include "../src/peds/ScriptPedPool.h"
 #include <algorithm>
@@ -71,6 +74,8 @@ static CMissionBank banque;
 static CDatPools donnees;
 // Les piétons des scripts (src/peds/ScriptPedPool.h) : le joueur en 0, PedCreatePoint & co.
 static CScriptPedPool pietons;
+// Les modèles par nom (src/core/ModelEnum.h) : MODELENUM._Taxicab → 286, ou -1.
+static CModelEnum modeles;
 static int zoneCourante = 0;            // DAT_00bd1008 : le code de zone où est le joueur (AreaGetVisible)
 
 // La mission en cours et sa machine à états, réduite de FUN_006ad3e0 :
@@ -524,6 +529,29 @@ static int
 IndexPath(lua_State *L){ const char *n = luaL_checkstring(L, 2); appels["PATH"]++; lua_pushnumber(L, donnees.Trajet(n)); return 1; }
 static int
 IndexTrigger(lua_State *L){ const char *n = luaL_checkstring(L, 2); appels["TRIGGER"]++; lua_pushnumber(L, donnees.Declencheur(n)); return 1; }
+// MODELENUM.x (0x5db1d0) : le nom sans son premier caractère, toujours (pas seulement « _ »), puis
+// FUN_0051c1e0 : l'indice du modèle de ce nom, ou -1.
+static int
+IndexModelEnum(lua_State *L)
+{
+	const char *n = luaL_checkstring(L, 2);
+	appels["MODELENUM"]++;
+	int32 id = modeles.Index(n[0] ? n + 1 : n);
+	if(id < 0 && journalRestant > 0){ journalRestant--; printf("%6.2f s  %-22s MODELENUM.%s : modèle inconnu\n", maintenant / 1000.0, NomThreadCourant(), n); }
+	lua_pushnumber(L, id);
+	return 1;
+}
+// POI.x (0x5db170, nom en 0x901d18) : la cinquième énumération, les points d'intérêt ; sa recherche
+// n'est pas encore lue, l'outil répond -1 et le journalise.
+static int
+IndexPoi(lua_State *L)
+{
+	const char *n = luaL_checkstring(L, 2);
+	appels["POI"]++;
+	if(journalRestant > 0){ journalRestant--; printf("%6.2f s  %-22s POI.%s : pas encore lu, -1\n", maintenant / 1000.0, NomThreadCourant(), n); }
+	lua_pushnumber(L, -1);
+	return 1;
+}
 
 static void
 PoserEnumeration(lua_State *L, const char *nom, lua_CFunction index)
@@ -1077,6 +1105,10 @@ main(int argc, char **argv)
 	PoserEnumeration(L, "POINTLIST", IndexPointList);
 	PoserEnumeration(L, "PATH", IndexPath);
 	PoserEnumeration(L, "TRIGGER", IndexTrigger);
+	PoserEnumeration(L, "MODELENUM", IndexModelEnum);
+	PoserEnumeration(L, "POI", IndexPoi);
+	if(modeles.Charger()) printf("%zu noms de modèles dans Objects/ide.img\n", modeles.Nombre());
+	else printf("Objects\\ide.img introuvable : MODELENUM répondra -1\n");
 	ChargerMissions();
 	ChargerApi();
 	lua_newtable(L);

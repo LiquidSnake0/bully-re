@@ -157,6 +157,21 @@ avant qu'elle n'ait commencé. Le lanceur compte les globales de script lues ava
 d'être posées et les affiche à la fin : sur `1_01`, `gMissionSuccess`, `misObj` et
 `F_StoreSweep`, une fois chacune, toutes légitimes.
 
+## MODELENUM
+
+`MODELENUM._Taxicab` passe par 0x5db1d0 : `lua_tostring`, puis la chaîne **sans son
+premier caractère** (toujours, pas seulement un `_`), puis `FUN_0051c1e0` : `HashString`
+du nom (majuscules) et recherche de ce hachage dans la table des `CModelInfo`
+(12 200 entrées, champ +4), en sautant les entrées dont l'octet +0x1c est posé ;
+l'indice trouvé, ou -1. `src/core/ModelEnum` reconstruit la table depuis les 77 `.idb`
+de `Objects/ide.img` (piétons, objets, véhicules, armes, props, vêtements, 4 251 noms,
+aucun doublon) sans la casse (`tests/test_modelenum`) : `Taxicab` → 286, `GN_Bully01` →
+102 (l'élève de `1_01`), `Tulips` → 9642. Deux noms que des scripts demandent,
+`WBRUSH` (`GraffitiCleanup`) et `STEMROSE` (`3_01D`), ne sont dans aucun `.idb` : le
+nom existe dans `bully.exe`, `Config/dat/object.dat` et `World.img`, donc le moteur les
+enregistre autrement ; -1 en attendant. Dans les scripts, `MODELENUM` ne sert presque
+qu'aux scripts de test (`SObjTest` 244 fois) et à quelques missions des chapitres 3.
+
 ## Ce que donne la sonde
 
 `build/outils/sonde_lua` exécute le premier niveau de chaque script avec les
@@ -179,6 +194,6 @@ ou des calculs sur la valeur renvoyée par un bouchon (nil).
   appelle (liste ci-dessus).
 - Qui voit quoi : les globales de `main` vivent dans l'espace de noms de `main` ;
   vérifier comment une mission voit `gPlayer` (`GlobalImportScript` exécute dans `_G`).
-- Ce que renvoient `MODELENUM.x` et la cinquième énumération, `POI` (0x5db170, nom en
-  0x901d18) ; `POINTLIST`, `PATH` et `TRIGGER` sont lues.
+- La cinquième énumération, `POI` (0x5db170, nom en 0x901d18) : sa recherche n'est pas
+  lue, `lancer_lua` répond -1 et le journalise. `MODELENUM` est lue (ci-dessous).
 - Brancher les 1 508 fonctions, en commençant par celles des scripts d'ambiance.
