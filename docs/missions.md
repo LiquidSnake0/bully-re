@@ -27,7 +27,9 @@ comportements des personnages (docs/cat.md). `tools/missions.py` en sort la tabl
 
 `Missions.cat` est la racine : une banque `MissionBank`, une mission factice, et
 onze références vers les sous-arbres `chap1` à `chap5`, `classes`, `Minigames`,
-`Punish`, `Tutorials`, `Doors` et `Debug`. Chaque mission est un nœud jouable :
+`Punish`, `Tutorials`, `Doors` et `Debug`, dans cet ordre. `src/core/MissionBank.cpp`
+suit ces références comme `FUN_006ac5d0` ; `tools/missions.py` aussi. Chaque mission
+est un nœud jouable :
 
 ```
 n 1_01                                   ← le nom de la mission (MissionGetName)
@@ -51,12 +53,32 @@ La position est le décalage dans l'objet de la piste (docs/cat.md, « Les piste
 | 24 | titre de travail | lisible |
 | 28 | script Lua de la mission | lisible, `chapN\nom.lua` |
 | 32 | clé du titre affiché (`1_01_TITLE`) | lisible, présente dans `Config/Text` |
-| 40 | **type** : 0 histoire et courses, 1 cours, 3 boulots et courses de quartier, 4 tutoriels, 5 mini-jeux | répartition sur 473 missions ; `FUN_006ac110` traite le type 4 à l'heure, `FUN_006aac70` le type 1 |
+| 40 | **type** : 0 histoire et courses, 1 cours, 3 boulots et courses de quartier, 4 tutoriels, 5 mini-jeux | répartition sur les 499 entrées ; `FUN_006ac110` traite le type 4 à l'heure, `FUN_006aac70` le type 1 |
 | 36 | **afficher le titre au lancement** : pour les types 0, 1 et 3, si l'octet vaut 1 et que la clé du champ 32 n'est pas vide, `FUN_00688050` affiche le titre | `FUN_006ad3e0`, cas 1 et 2 ; d'où les 282 missions à 1 (ce n'est pas « lancer au début de la partie ») |
 | 37, 74 | entrent dans le compte +0x754 | `FUN_006ac5d0` |
 
-`tools/missions.py --types` : 132 missions d'histoire, 64 cours, 100 boulots et
-courses, 107 tutoriels, 70 mini-jeux.
+## Le compte : 499 entrées, 360 lançables
+
+Le tableau +0x4b8 a une entrée **par piste `MissionData`**, et `FUN_006ab7e0` parcourt
+tout ce que `Missions.cat` cite, `Doors.cat` compris. `tools/missions.py --types` et
+`build/tests/test_missions` tombent sur le même compte :
+
+| Fichier | Entrées | Fichier | Entrées |
+|---|---|---|---|
+| Missions | 1 (la mission factice) | Minigames | 45 (`ArcadeRace3D` porte deux pistes) |
+| chap1 … chap5 | 33, 37, 21, 14, 21 | Punish | 22 |
+| classes | 69 | Tutorials | 116, **aucune avec un script** |
+| Doors | 17, toutes `none.lua` : des verrous de portes, pas des missions | Debug | 103 |
+
+Par type : 148 d'histoire et courses, 64 cours, 101 boulots et courses, 114 tutoriels,
+72 mini-jeux. **360 ont un script** (champ 28 non vide et autre que `none.lua`) : ce
+sont celles que `ForceStartMission` peut lancer ; les 139 autres (tutoriels, portes,
+cours factices « DO NOT RUN ») n'existent que pour leurs conditions et leurs pistes.
+
+L'ancien écart « 360 côté C++, 473 côté Python » venait de deux défauts de
+`missions.py` : il ignorait `Doors.cat` (17) et perdait une piste `MissionData` quand
+une autre piste la précédait sous le même nœud (9) ; le C++ ne comptait que les
+missions avec script. Les deux lisent maintenant les 499.
 
 ## Ce qui lance une mission
 
@@ -89,10 +111,10 @@ La machine à états du gestionnaire est `FUN_006ad3e0`, appelée à chaque imag
 
 ## Dans lancer_lua
 
-`build/outils/lancer_lua 60 --mission 1_01` charge la table (360 missions dont le
-script est lu ; `tools/missions.py` en trouve 473 : écart à expliquer, sans doute
-des champs 28 hérités d'une piste modèle), lance `main.lua` puis, à 1 s,
-`ForceStartMission("1_01")`, et suit la machine à états ci-dessus.
+`build/outils/lancer_lua 60 --mission 1_01` charge la banque par `CMissionBank`
+(499 entrées, 360 avec un script), lance `main.lua` puis, à 1 s,
+`ForceStartMission("1_01")`, et suit la machine à états ci-dessus. Une mission sans
+script est refusée avec son nom.
 `MissionSucceed` et `MissionFail` arrêtent `main` ; `MissionActive`,
 `MissionActiveSpecific`, `MissionGetCurrentName` répondent pour de vrai.
 `RequestModel`, `WeaponRequestModel` et `VehicleRequestModel` renvoient « chargé »
@@ -111,5 +133,4 @@ s'exécute ensuite proprement.
 
 1. `PedCreatePoint` et les fonctions de création de personnages : un vrai numéro
    de piéton (le pool de piétons, docs/pools.md).
-2. Expliquer l'écart 360 / 473 dans la table des missions.
-3. Lire dans le moteur qui démarre `1_01` à la nouvelle partie.
+2. Lire dans le moteur qui démarre `1_01` à la nouvelle partie.

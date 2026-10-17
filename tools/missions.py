@@ -11,22 +11,33 @@ import os, re, subprocess, sys, collections
 
 ICI = os.path.dirname(os.path.abspath(__file__))
 
-# Les sous-arbres que Missions.cat rattache par référence, dans son ordre.
-BANQUES = ["Missions", "chap1", "chap2", "chap3", "chap4", "chap5", "classes",
-           "Minigames", "Punish", "Tutorials", "Debug"]
+# Missions.cat rattache onze sous-arbres par référence (lignes « r chap1.act -> … ») : on les suit
+# dans l'ordre du fichier, comme FUN_006ac5d0, Doors compris.
+RACINE = "Missions"
 
 TYPES = {"0": "histoire", "1": "cours", "3": "boulot/course", "4": "tutoriel", "5": "mini-jeu"}
 
 
+def lire(banque):
+    return subprocess.run([sys.executable, os.path.join(ICI, "cat.py"), banque + ".cat", "--pistes"],
+                          capture_output=True, text=True).stdout.split("\n")
+
+
 def missions():
-    for banque in BANQUES:
-        sortie = subprocess.run([sys.executable, os.path.join(ICI, "cat.py"), banque + ".cat", "--pistes"],
-                                capture_output=True, text=True).stdout.split("\n")
-        for i, ligne in enumerate(sortie):
+    banques = [RACINE]
+    for ligne in lire(RACINE):
+        m = re.match(r"\s*r (\S+)\.act ", ligne)
+        if m:
+            banques.append(m.group(1))
+    for banque in banques:
+        sortie = lire(banque)
+        noeud = ""
+        for ligne in sortie:
+            # Le dernier nœud ouvert : une piste MissionData peut suivre une autre piste du même nœud.
+            d = ligne.strip()
+            if d[:2] in ("n ", "b ", "l "):
+                noeud = d
             if "· MissionData" not in ligne:
-                continue
-            noeud = sortie[i - 1].strip()
-            if not noeud.startswith("n "):
                 continue
             nom, _, condition = noeud[2:].partition("  si ")
             champs = dict(re.findall(r"(\d+)=('(?:[^']*)'|[-\w.]+)", ligne))

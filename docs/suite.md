@@ -44,6 +44,8 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- La banque des missions dans `src/core/MissionBank.cpp` (`CMissionBank`, suit les références de `Missions.cat`, `Doors.cat` compris) : 499 entrées, 360 avec un script ; l'écart 360 / 473 venait de `missions.py` (Doors ignoré, pistes perdues), corrigé ; `tests/test_missions`.
+
 - `ForceStartMission` dans `lancer_lua` : table des missions lue dans la banque, machine à états du moteur (`FUN_006ad3e0` : MissionSetup, main, MissionCleanup), `RequestModel` et variantes ; `1_01` va jusqu'à `PedCreatePoint` ; champ 36 de `MissionData` = afficher le titre.
 
 - La banque des missions : `Missions.cat` chargée par `CGame::Initialise` (`FUN_006ac5d0`), forme d'une mission, champs de `MissionData` (24 titre, 28 script, 32 clé de titre, 40 type), `ForceStartMission` comme primitive, `1_01` seule mission du chapitre 1 sans condition ; hypothèse « champ 36 = lancer au début » réfutée (282 missions) ; `docs/missions.md`, `tools/missions.py`.

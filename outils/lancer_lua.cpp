@@ -15,6 +15,7 @@
 #include "../src/core/CdStream.h"
 #include "../src/core/Horloge.h"
 #include "../src/core/ActionTree.h"
+#include "../src/core/MissionBank.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -54,9 +55,8 @@ struct Script {
 static std::vector<Script> scripts;
 static int scriptCourant = -1;          // l'objet script dont un thread tourne en ce moment
 
-// Une mission de la banque : le nœud (nom en clair ou haché) et son script (champ 28 de MissionData).
-struct Mission { std::string nom; uint32 hachage; std::string script; };
-static std::vector<Mission> missions;
+// La banque des missions (src/core/MissionBank.h) : Missions.cat et ses sous-arbres, comme FUN_006ac5d0.
+static CMissionBank banque;
 
 // La mission en cours et sa machine à états, réduite de FUN_006ad3e0 :
 // 1 MissionSetup tourne, 2 main tourne, 3 MissionCleanup tourne.
@@ -450,54 +450,14 @@ RequestModel(lua_State *L)
 
 // --- Les missions ---
 
-static const Mission *
-TrouverMission(const char *nom)
-{
-	uint32 h = ActionHash(nom) & 0x7fffffff;
-	for(const Mission &m : missions){
-		if(!m.nom.empty() && strcasecmp(m.nom.c_str(), nom) == 0) return &m;
-		if(m.hachage == h) return &m;
-	}
-	return nil;
-}
-
-static void
-RelirePistes(const CActionTreeFile &f, const CActionNode &n)
-{
-	static const uint32 kMissionData = ActionHash("MissionData") & 0x7fffffff;
-	for(int32 d : n.pistes){
-		CActionTrack t;
-		if(!f.Piste(d, t) || t.type != kMissionData) continue;
-		const CActionAttribut *a = t.Champ(28);
-		Mission m{n.nom, n.hachage & 0x7fffffff, a ? f.ChaineCitee(a->decalage) : std::string()};
-		if(!m.script.empty()) missions.push_back(m);
-	}
-	for(const CActionNode &e : n.enfants) RelirePistes(f, e);
-}
-
 // FUN_006ac5d0 : la banque des missions, Missions.cat et les sous-arbres qu'elle cite.
 static void
 ChargerMissions(void)
 {
-	int32 act = CdStream::AddImage("Act\\Act.img");
-	if(act < 0){ printf("Act\\Act.img introuvable : pas de table des missions\n"); return; }
-	static const char *banques[] = { "Missions", "chap1", "chap2", "chap3", "chap4", "chap5", "classes",
-	                                  "Minigames", "Punish", "Tutorials", "Debug" };
-	for(const char *b : banques){
-		std::string nom = std::string(b) + ".cat";
-		const CDirectoryEntry *d = CdStream::ms_images[act].Find(nom.c_str());
-		if(d == nil) continue;
-		uint32 octets = d->size * CDSTREAM_SECTOR_SIZE;
-		uint8 *buf = (uint8*)malloc(octets);
-		int32 fd = CFileMgr::OpenFile("Act\\Act.img", "rb", 1);
-		CFileMgr::Seek(fd, d->offset * CDSTREAM_SECTOR_SIZE, 0);
-		bool ok = CFileMgr::ReadExact(fd, buf, octets);
-		CFileMgr::CloseFile(fd);
-		CActionTreeFile f;
-		if(ok && f.Load(buf, octets)) RelirePistes(f, f.racine);
-		free(buf);
-	}
-	printf("%zu missions dans la banque\n", missions.size());
+	if(!banque.Charger()){ printf("Act\\Act.img ou Missions.cat introuvable : pas de table des missions\n"); return; }
+	int jouables = 0;
+	for(const CMissionData &m : banque.missions) jouables += m.Jouable();
+	printf("%zu missions dans la banque (%zu fichiers), %d avec un script\n", banque.missions.size(), banque.banques.size(), jouables);
 }
 
 // ForceStartMission(nom) : FUN_006acba0, le script de la mission puis MissionSetup.
@@ -507,8 +467,9 @@ ForceStartMission(lua_State *L)
 	const char *nom = luaL_checkstring(L, 1);
 	Journal("ForceStartMission", L, 1);
 	if(mission.etat != AUCUNE){ printf("        %s refusée : %s est en cours\n", nom, mission.nom.c_str()); return 0; }
-	const Mission *m = TrouverMission(nom);
+	const CMissionData *m = banque.Trouver(nom);
 	if(m == nil){ printf("        %s absente de la banque\n", nom); return 0; }
+	if(!m->Jouable()){ printf("        %s n'a pas de script (%s) : rien à lancer\n", nom, m->script.empty() ? "champ 28 vide" : m->script.c_str()); return 0; }
 	int s = NouveauScript(L, m->script.c_str());
 	if(s < 0){ printf("        %s : CreateNameSpace(%s) a échoué\n", nom, m->script.c_str()); return 0; }
 	mission.nom = nom;
