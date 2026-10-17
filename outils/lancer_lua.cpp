@@ -17,11 +17,13 @@
 #include "../src/core/ActionTree.h"
 #include "../src/core/MissionBank.h"
 #include "../src/core/DatPools.h"
+#include "../src/peds/ScriptPedPool.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <cctype>
+#include <cmath>
 #include <map>
 #include <string>
 #include <vector>
@@ -61,8 +63,8 @@ static CMissionBank banque;
 // Les données de mission chargées par DATLoad (src/core/DatPools.h) : listes de points, trajets,
 // déclencheurs, retrouvés par nom à travers POINTLIST, PATH et TRIGGER.
 static CDatPools donnees;
-static CVector positionJoueur(0, 0, 0);   // PlayerSetPosPoint / PlayerSetPosXYZ, en attendant un vrai joueur
-static float capJoueur = 0;
+// Les piétons des scripts (src/peds/ScriptPedPool.h) : le joueur en 0, PedCreatePoint & co.
+static CScriptPedPool pietons;
 
 // La mission en cours et sa machine à états, réduite de FUN_006ad3e0 :
 // 1 MissionSetup tourne, 2 main tourne, 3 MissionCleanup tourne.
@@ -425,6 +427,7 @@ AvancerMission(lua_State *L)
 		if(!ThreadEnCours(mission.script, "MissionCleanup")){
 			printf("%6.2f s  mission %s terminée (%s)\n", maintenant / 1000.0, mission.nom.c_str(),
 			       mission.reussie ? "réussie" : "échouée ou arrêtée");
+			{ int n = pietons.SupprimerDuScript(mission.script); if(n) printf("        %d piéton(s) laissé(s) par la mission, libéré(s)\n", n); }
 			for(Thread &t : scripts[mission.script].threads)
 				if(t.etat < TUE){ t.etat = TUE; luaL_unref(L, LUA_REGISTRYINDEX, t.ref); t.ref = LUA_NOREF; }
 			mission.etat = AUCUNE;
@@ -550,7 +553,7 @@ PlayerSetPosPoint(lua_State *L)
 {
 	Journal("PlayerSetPosPoint", L, 1);
 	const CTriggerPointPoint *pt = PointArg(L, "PlayerSetPosPoint", 1, 2);
-	if(pt){ positionJoueur = pt->pos; capJoueur = pt->lacetTangageRoulis[0]; }
+	if(pt){ CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR); j->pos = pt->pos; j->cap = pt->lacetTangageRoulis[0]; }
 	return 0;
 }
 
@@ -558,7 +561,7 @@ static int
 PlayerSetPosXYZ(lua_State *L)
 {
 	Journal("PlayerSetPosXYZ", L, 1);
-	positionJoueur = CVector((float)luaL_checknumber(L, 1), (float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3));
+	pietons.Acceder(SCRIPT_PED_JOUEUR)->pos = CVector((float)luaL_checknumber(L, 1), (float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3));
 	return 0;
 }
 
@@ -566,8 +569,155 @@ static int
 PlayerGetPosXYZ(lua_State *L)
 {
 	appels["PlayerGetPosXYZ"]++;
-	lua_pushnumber(L, positionJoueur.x); lua_pushnumber(L, positionJoueur.y); lua_pushnumber(L, positionJoueur.z);
+	const CVector &p = pietons.Acceder(SCRIPT_PED_JOUEUR)->pos;
+	lua_pushnumber(L, p.x); lua_pushnumber(L, p.y); lua_pushnumber(L, p.z);
 	return 3;
+}
+
+// --- Les piétons : le pool des scripts, PedCreatePoint & co. ---
+
+// Le handle d'un piéton en argument : le piéton, ou nil (le moteur répond alors 0 / faux / rien).
+static CScriptPed *
+PedArg(lua_State *L, int arg)
+{
+	return lua_isnumber(L, arg) ? pietons.Acceder((int)lua_tonumber(L, arg)) : nil;
+}
+
+// FUN_005cf6b0 : la création commune, notée à l'objet script courant.
+static int
+CreerPed(lua_State *L, const char *quoi, int32 modele, const CVector &pos, float cap)
+{
+	int h = pietons.Creer(modele, pos, cap, scriptCourant);
+	if(h < 0) printf("        %s : le pool des piétons est plein (%d)\n", quoi, SCRIPT_PED_POOL_SIZE);
+	lua_pushnumber(L, h);
+	return 1;
+}
+
+// PedCreatePoint(modèle, liste, n) (0x5cf9d0) : au n-ième point de la liste, tourné selon son lacet.
+static int
+PedCreatePoint(lua_State *L)
+{
+	Journal("PedCreatePoint", L, 1);
+	int32 modele = (int32)luaL_checknumber(L, 1);
+	const CTriggerPointPoint *pt = PointArg(L, "PedCreatePoint", 2, 3);
+	if(pt == nil){ lua_pushnumber(L, -1); return 1; }
+	return CreerPed(L, "PedCreatePoint", modele, pt->pos, pt->lacetTangageRoulis[0]);
+}
+
+// PedCreateXYZ(modèle, x, y, z) (0x5cfb50).
+static int
+PedCreateXYZ(lua_State *L)
+{
+	Journal("PedCreateXYZ", L, 1);
+	CVector pos((float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3), (float)luaL_checknumber(L, 4));
+	return CreerPed(L, "PedCreateXYZ", (int32)luaL_checknumber(L, 1), pos, 0);
+}
+
+static int
+PedDelete(lua_State *L)
+{
+	Journal("PedDelete", L, 1);
+	if(lua_isnumber(L, 1)) pietons.Supprimer((int)lua_tonumber(L, 1));
+	return 0;
+}
+
+static int
+PedIsValid(lua_State *L)
+{
+	appels["PedIsValid"]++;
+	lua_pushboolean(L, lua_isnumber(L, 1) && pietons.Valide((int)lua_tonumber(L, 1)));
+	return 1;
+}
+
+static int
+PedIsPlayer(lua_State *L)
+{
+	appels["PedIsPlayer"]++;
+	lua_pushboolean(L, lua_isnumber(L, 1) && (int)lua_tonumber(L, 1) == SCRIPT_PED_JOUEUR);
+	return 1;
+}
+
+static int
+PlayerGetPedIndex(lua_State *L)
+{
+	appels["PlayerGetPedIndex"]++;
+	lua_pushnumber(L, SCRIPT_PED_JOUEUR);
+	return 1;
+}
+
+static int
+PedGetPosXYZ(lua_State *L)
+{
+	appels["PedGetPosXYZ"]++;
+	const CScriptPed *p = PedArg(L, 1);
+	lua_pushnumber(L, p ? p->pos.x : 0); lua_pushnumber(L, p ? p->pos.y : 0); lua_pushnumber(L, p ? p->pos.z : 0);
+	return 3;
+}
+
+static int
+PedSetPosXYZ(lua_State *L)
+{
+	Journal("PedSetPosXYZ", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p) p->pos = CVector((float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3), (float)luaL_checknumber(L, 4));
+	return 0;
+}
+
+static int
+PedGetHeading(lua_State *L)
+{
+	appels["PedGetHeading"]++;
+	const CScriptPed *p = PedArg(L, 1);
+	lua_pushnumber(L, p ? p->cap : 0);
+	return 1;
+}
+
+// PedFaceXYZ(ped, x, y, z) : le cap vers ce point, en degrés depuis +x.
+static int
+PedFaceXYZ(lua_State *L)
+{
+	Journal("PedFaceXYZ", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p){
+		float dx = (float)luaL_checknumber(L, 2) - p->pos.x, dy = (float)luaL_checknumber(L, 3) - p->pos.y;
+		p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
+	}
+	return 0;
+}
+
+static int
+PedIsDead(lua_State *L)
+{
+	appels["PedIsDead"]++;
+	const CScriptPed *p = PedArg(L, 1);
+	lua_pushboolean(L, p ? p->mort : 1);
+	return 1;
+}
+
+static int
+PedGetHealth(lua_State *L)
+{
+	appels["PedGetHealth"]++;
+	const CScriptPed *p = PedArg(L, 1);
+	lua_pushnumber(L, p ? p->sante : 0);
+	return 1;
+}
+
+static int
+PedSetHealth(lua_State *L)
+{
+	Journal("PedSetHealth", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p){ p->sante = (float)luaL_checknumber(L, 2); p->mort = p->sante <= 0; }
+	return 0;
+}
+
+static int
+PlayerGetHealth(lua_State *L)
+{
+	appels["PlayerGetHealth"]++;
+	lua_pushnumber(L, pietons.Acceder(SCRIPT_PED_JOUEUR)->sante);
+	return 1;
 }
 
 // --- Les missions ---
@@ -691,6 +841,20 @@ main(int argc, char **argv)
 	lua_register(L, "PlayerSetPosPoint", PlayerSetPosPoint);
 	lua_register(L, "PlayerSetPosXYZ", PlayerSetPosXYZ);
 	lua_register(L, "PlayerGetPosXYZ", PlayerGetPosXYZ);
+	lua_register(L, "PedCreatePoint", PedCreatePoint);
+	lua_register(L, "PedCreateXYZ", PedCreateXYZ);
+	lua_register(L, "PedDelete", PedDelete);
+	lua_register(L, "PedIsValid", PedIsValid);
+	lua_register(L, "PedIsPlayer", PedIsPlayer);
+	lua_register(L, "PlayerGetPedIndex", PlayerGetPedIndex);
+	lua_register(L, "PedGetPosXYZ", PedGetPosXYZ);
+	lua_register(L, "PedSetPosXYZ", PedSetPosXYZ);
+	lua_register(L, "PedGetHeading", PedGetHeading);
+	lua_register(L, "PedFaceXYZ", PedFaceXYZ);
+	lua_register(L, "PedIsDead", PedIsDead);
+	lua_register(L, "PedGetHealth", PedGetHealth);
+	lua_register(L, "PedSetHealth", PedSetHealth);
+	lua_register(L, "PlayerGetHealth", PlayerGetHealth);
 	// Les énumérations posées par 0x5db040 : POINTLIST, PATH et TRIGGER cherchent dans les pools.
 	PoserEnumeration(L, "POINTLIST", IndexPointList);
 	PoserEnumeration(L, "PATH", IndexPath);

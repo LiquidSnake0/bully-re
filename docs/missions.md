@@ -123,16 +123,26 @@ diffusion). `DATLoad("1_01.DAT", 2)` et les tables `POINTLIST`, `PATH`, `TRIGGER
 sont réels (docs/trigger.md) : `PedCreatePoint(85, 534, 2)` reçoit maintenant le
 handle de `_1_01_CHEERPOINTS` et non plus un bouchon.
 
-Résultat pour `1_01`, sans erreur jusqu'à la création des personnages :
-`MissionSetup` (chargement de l'arbre `Act/Conv/1_01.act`, joueur placé, transition
-de zone) fini en 0,2 s ; `main` coupe le contrôle du joueur, règle la météo, charge
-sept groupes d'animations et 17 modèles, règle les personnages uniques, la
-réputation des six factions, place le joueur, vide la zone, puis
-`PedCreatePoint(85, …)` renvoie `nil` et `table.insert` échoue : `MissionCleanup`
-s'exécute ensuite proprement.
+Les piétons des scripts sont un pool de 24 (`src/peds/ScriptPedPool`, le joueur en 0
+comme `PlayerGetPedIndex` le dit, `tests/test_scriptpeds`) : `PedCreatePoint`,
+`PedCreateXYZ`, `PedDelete`, `PedIsValid`, `PedIsPlayer`, `PedGetPosXYZ`, `PedSetPosXYZ`,
+`PedGetHeading`, `PedFaceXYZ`, `PedIsDead`, `PedGetHealth`, `PedSetHealth`,
+`PlayerGetHealth` répondent dessus ; un piéton qu'une mission laisse derrière elle est
+libéré à la fin de la mission (le moteur le note à l'objet script, `FUN_005d94d0`).
+
+Résultat pour `1_01` : `MissionSetup` (chargement de l'arbre `Act/Conv/1_01.act`,
+`DATLoad("1_01.DAT", 2)`, joueur placé, transition de zone) fini en 0,2 s ; `main`
+coupe le contrôle du joueur, règle la météo, charge sept groupes d'animations et 17
+modèles, règle les personnages uniques, la réputation des six factions, place le
+joueur, vide la zone, crée les trois premiers personnages (`PedCreatePoint(85, …)`,
+`99`, `145` sur `_1_01_CHEERPOINTS` et `_1_01_SECSPAWN`), les tourne vers le joueur,
+leur pose `/Global/1_01/Talking`, rend le contrôle, pose le marqueur et l'objectif
+`1_01_StandGround`, puis **attend que le joueur entre dans `_1_01_BULLYTRIG`**
+(`PlayerIsInTrigger(483)` à chaque image). C'est le jeu qui attend le joueur, plus un
+bouchon qui échoue.
 
 ## Suite
 
-1. `PedCreatePoint` et les fonctions de création de personnages : un vrai numéro
-   de piéton (le pool de piétons, docs/pools.md).
+1. `PlayerIsInTrigger` pour de vrai (la zone du déclencheur, `CTriggerZone::Contient`)
+   et une façon de faire entrer le joueur dans un déclencheur depuis l'outil.
 2. Lire dans le moteur qui démarre `1_01` à la nouvelle partie.
