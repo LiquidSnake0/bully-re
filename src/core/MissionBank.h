@@ -18,8 +18,12 @@ struct CMissionData {
 	int type = 0;            // champ 40 : 0 histoire, 1 cours, 3 boulots et courses, 4 tutoriels, 5 mini-jeux
 	bool lancerSeul = false; // champ 51 (+0x33) : FUN_006ad130 la lance dès qu'elle est activée (1_02, pas 1_01)
 	int conditions = 0;      // les conditions d'entrée du nœud (si MissionCond…) ; 0 = toujours activable
-	std::string corona;      // MissionButtonTrigger (champ 24) de l'enfant « Active » : le déclencheur où le joueur la lance
-	int coronaMode = 0;      // champ 28 de cette piste : 2 pour 1_01 (en entrant), 1 partout ailleurs (BUT_LAUNCH)
+	std::string corona;      // MissionButtonTrigger (champ 24) de l'enfant « Active » : la liste de points où le joueur la lance
+	float coronaDemiCote = 0;   // champ 28 : le demi-côté du pavé où le joueur doit être (FUN_006a8650 → FUN_005c2910) : 2 m pour 1_01, 1 m ailleurs
+	int coronaMarqueur = 0;     // champ 32 : le type du marqueur dessiné au point (+0x20)
+	bool coronaMarqueurVisible = false;   // champ 36 : l'octet +0x24 qui autorise le marqueur
+	int coronaTaille = 0;       // champ 40, un entier : la taille passée au marqueur (+0x28) : 25 ou 23, 3 pour 1_01
+	std::string coronaInvite;   // champ 48 : la clé de texte affichée dans le pavé (BUT_LAUNCH, BUT_MISSION)
 	bool Jouable(void) const { return !script.empty() && script != "none.lua"; }
 };
 

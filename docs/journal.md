@@ -457,3 +457,10 @@ en échec plutôt que de les masquer.
   événement et ligne. `src/audio/SpeechEvents` reprend la table, `tests/test_speech` la
   vérifie, `lancer_lua` les joue (2,5 s par ligne, durée réelle non lue) : Jimmy parle à la
   secrétaire et `1_01` finit à 12,1 s. docs/son.md.
+- Suite : **le corona n'a pas de mode, il a une taille.** `FUN_006a8650`, la mise à jour de
+  la piste `MissionButtonTrigger`, lit l'objet par les décalages des attributs : +0x1c
+  (champ 28) est le demi-côté du pavé testé par `FUN_005c2910` autour du point — 2 m pour
+  `1_01`, 1 m pour les autres —, +0x20 le marqueur, +0x28 (champ 40) sa taille, +0x30 la
+  clé de l'invite `BUT_LAUNCH`, puis la manette est lue et `FUN_006acfa0` lance. Le
+  « mode 2 » du 09.10 était ce demi-côté. `CMissionData` lit ces champs, `test_missions`
+  les vérifie, le gestionnaire de `lancer_lua` teste le pavé au lieu d'une sphère de 2 m.

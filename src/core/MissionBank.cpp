@@ -37,14 +37,19 @@ Parcourir(const CActionTreeFile &f, const CActionNode &n, const char *banque, st
 		m.type = (int)t.Mot(40);
 		if((a = t.Champ(51)) != nil) m.lancerSeul = a->valeur[0] != 0;
 		m.conditions = (int)n.conditions.size();
-		// L'enfant « Active » porte la piste MissionButtonTrigger : le corona et sa façon de se déclencher.
+		// L'enfant « Active » porte la piste MissionButtonTrigger : le corona. Les positions des attributs sont
+		// les décalages dans l'objet que FUN_006a8650 lit à chaque image : +0x1c le demi-côté du pavé autour du
+		// point, +0x20 le marqueur, +0x24 et +0x28 sa taille, +0x30 la clé de l'invite.
 		for(const CActionNode &e : n.enfants)
 			for(int32 de : e.pistes){
 				CActionTrack b;
 				if(!f.Piste(de, b) || b.type != kBouton) continue;
 				if((a = b.Champ(24)) != nil) m.corona = f.ChaineCitee(a->decalage);
-				// Le champ 28 est un flottant (2.0 pour 1_01, 1.0 ailleurs), comme le 40.
-				if((a = b.Champ(28)) != nil && a->taille >= 4){ float v; memcpy(&v, a->valeur, 4); m.coronaMode = (int)v; }
+				if((a = b.Champ(28)) != nil && a->taille >= 4) memcpy(&m.coronaDemiCote, a->valeur, 4);
+				m.coronaMarqueur = (int)b.Mot(32);
+				if((a = b.Champ(36)) != nil) m.coronaMarqueurVisible = a->valeur[0] != 0;
+				m.coronaTaille = (int)b.Mot(40);
+				if((a = b.Champ(48)) != nil) m.coronaInvite = f.ChaineCitee(a->decalage);
 			}
 		dest.push_back(m);
 	}

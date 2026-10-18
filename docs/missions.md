@@ -101,24 +101,37 @@ missions avec script. Les deux lisent maintenant les 499.
 - **La première mission** : `1_01` est la seule mission de `chap1` sans condition, mais
   son champ 51 vaut 0 (il vaut 1 pour `1_02`, `1_02A`… qui s'enchaînent seules) : elle
   ne démarre pas seule, elle attend le joueur dans son corona. Sa piste
-  `MissionButtonTrigger` dit `24='1_01_Corona', 28=2.0, 36=0, 40=3.0` là où toutes les
-  autres disent `28=1.0, 36=1, 40=25.0` : **le corona de `1_01` se déclenche en entrant**,
-  les autres attendent le bouton (`BUT_LAUNCH`). `1_01_Corona` est une liste de points
-  de `MisTrig.dat` (que `gamemain` charge, `DATLoad("MisTrig.DAT", 1)`), en
-  (297.3, −71.5, 4.9), à 24,8 m de la grille où `gamemain` pose le joueur à la nouvelle
-  partie (`SystemShouldMovePlayer` → `PlayerSetPosXYZArea(272.68, −73.13, 6.97, 0)`) : le
-  joueur sort du bus, marche jusqu'au marqueur, et `1_01` commence (son `MissionSetup`
-  le ramène à la grille et joue la cinématique `1-1-1`). `tests/test_missions` vérifie
-  les champs (conditions, champ 51, corona et son mode) ; 19 coronas sont en mode 2 et
-  27 missions jouables n'ont aucune condition (1_01, 25 mini-jeux, 1 punition).
+  `MissionButtonTrigger` dit `24='1_01_Corona', 28=2.0, 32=1, 36=0, 40=3, 48='BUT_LAUNCH'`
+  là où presque toutes les autres disent `28=1.0, 32=1, 36=1, 40=25`. **Les positions des
+  attributs sont les décalages dans l'objet** que `FUN_006a8650`, la mise à jour de la
+  piste, lit à chaque image (18.10.2026) : +0x1c (champ 28) est **le demi-côté du pavé**
+  où le joueur doit être, testé par `FUN_005c2910(1, 0, 3, x, y, z, r, r, r, …)`, le même
+  pavé fermé que `PlayerIsInAreaXYZ` : 2 m pour `1_01` (19 coronas sur 212), 1 m
+  ailleurs ; +0x20 (32) le type du marqueur, +0x24 (36) l'octet qui autorise sa taille
+  +0x28 (40, un entier : 25, 23, et 3 pour `1_01`) ; +0x30 (48) la clé de texte de
+  l'invite (`BUT_LAUNCH`, `BUT_MISSION` pour la mission factice), affichée par
+  `FUN_0068f420` une fois dans le pavé ; +0x44 la position du point, +0x50 son lacet.
+  Dans le pavé, et si la mission est lançable (`FUN_006aa840`) et le joueur libre
+  (`FUN_0050de00`, `FUN_00473e80`, `FUN_004ce540`, deux `FUN_004d32a0` : non lus), le
+  moteur lit la manette (`FUN_007386f0(10, 0)`, `FUN_007387b0(9, 0)`) et appelle
+  **`FUN_006acfa0(mission, 0)`**, le joueur passant à
+  `/Global/SimpleLoco/Mission/InvulnerableIdle`. Ce n'était donc pas un « mode » :
+  `28` est une longueur. `1_01_Corona` est une liste de points de `MisTrig.dat` (que
+  `gamemain` charge, `DATLoad("MisTrig.DAT", 1)`), en (297.3, −71.5, 4.9), à 24,8 m de la
+  grille où `gamemain` pose le joueur à la nouvelle partie (`SystemShouldMovePlayer` →
+  `PlayerSetPosXYZArea(272.68, −73.13, 6.97, 0)`) : le joueur sort du bus, marche jusqu'au
+  marqueur, et `1_01` commence (son `MissionSetup` le ramène à la grille et joue la
+  cinématique `1-1-1`). `tests/test_missions` vérifie les champs (conditions, champ 51,
+  corona, demi-côté, marqueur, taille, invite) ; 27 missions jouables n'ont aucune
+  condition (1_01, 25 mini-jeux, 1 punition).
 - `SMissPass.F_LaunchingMission` prépare l'état du monde selon la mission lancée
   (`MissionGetIndex`, `1_01`, `1_02A`…) : à lire quand on branchera le lancement.
 - **Dans `lancer_lua`**, `--nouvelle-partie` rejoue tout cela sans `--mission` :
   `SystemShouldMovePlayer`, `PlayerSetPosXYZArea`, `AreaTransitionXYZ`,
   `SystemAllowMissionManagerToForceRunMissions`, `IsMissionCompleated` (les réussites
   de la partie), `MissionGetIndex` sont réels, et le gestionnaire réduit active les
-  missions sans condition et lance celle dont le joueur touche le corona en entrant
-  (rayon 2 m, le vrai reste à lire). Avec `--aller 1_01_Corona@3`, le joueur marche au
+  missions sans condition et lance celle dont le joueur est dans le pavé du corona
+  (demi-côté du champ 28 ; l'invite et la manette ne sont pas jouées). Avec `--aller 1_01_Corona@3`, le joueur marche au
   marqueur : **`1_01` démarre à 3,0 s par le gestionnaire, et se termine réussie à 15,2 s**
   (`--sans-cinematiques --entrer _1_01_BULLYTRIG@7 --zone 2@9 --aller _1_01_ENDPOINT@11`) ; `MainMap.lua` est
   chargé à 0,17 s par la première demande de zone de `gamemain`. Les classes de
@@ -241,4 +254,5 @@ d'être posées, et valent nil comme il faut : `gMissionSuccess`, `misObj`, `F_S
    (docs/zones.md). Restent les portes du gestionnaire (les paires de +0x10) et qui les enregistre.
 3. Les classes de conditions des nœuds (`MissionCond`, `TimeCond`, `ConditionGroup`,
    `NOT` : `FUN_0061a4f0` les fabrique) pour que `1_02` s'enchaîne après `1_01` ; le
-   rayon du corona (champs 56 et 60 de `MissionButtonTrigger` ?) ; `BUT_LAUNCH`.
+   ce que `FUN_006a8650` demande à la manette avant de lancer (`FUN_007386f0`, `FUN_007387b0`),
+   et les champs 52, 56 et 60 de `MissionButtonTrigger` (1, 95, 81 partout).

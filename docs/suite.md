@@ -51,6 +51,9 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- Le corona d'une mission : `FUN_006a8650` lit la piste `MissionButtonTrigger` par ses décalages, le champ 28 est le
+  demi-côté du pavé (2 m pour `1_01`, 1 m ailleurs), pas un mode ; `CMissionData` lit demi-côté, marqueur, taille,
+  invite ; `tests/test_missions` ; le gestionnaire de `lancer_lua` teste le pavé ; docs/missions.md.
 - La parole des scripts : la table des 493 événements de `bully.exe` (0x00ae74e8), la recherche sans la
   casse de `SoundPlayScriptedSpeechEvent`, la réponse de `SoundSpeechPlaying` (locuteur, événement sur
   9 bits, ligne sur 11) ; `src/audio/SpeechEvents`, `tests/test_speech`, réelles dans `lancer_lua` ; docs/son.md.

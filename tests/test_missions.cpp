@@ -35,20 +35,22 @@ main(int argc, char **argv)
 	VERIF(parType.size() == 5 && parType.count(0) && parType.count(1) && parType.count(3) && parType.count(4) && parType.count(5));
 	VERIF(parType[0] == 148 && parType[1] == 64 && parType[3] == 101 && parType[4] == 114 && parType[5] == 72);
 
-	// Qui démarre à la nouvelle partie : 1_01 n'a aucune condition et ne se lance pas seule (champ 51),
-	// son corona 1_01_Corona se déclenche en entrant (mode 2) ; 1_02 a une condition et se lance seule.
-	int sansCondition = 0, enEntrant = 0;
-	for(const CMissionData &x : b.missions){ sansCondition += x.conditions == 0 && x.Jouable(); enEntrant += x.coronaMode == 2; }
-	printf("%d missions jouables sans condition, %d coronas en mode 2\n", sansCondition, enEntrant);
+	// Qui démarre à la nouvelle partie : 1_01 n'a aucune condition et ne se lance pas seule (champ 51) ;
+	// son corona 1_01_Corona est un pavé de 2 m de demi-côté (champ 28), les autres font 1 m ; 1_02 a une
+	// condition et se lance seule.
+	int sansCondition = 0, larges = 0, coronas = 0;
+	for(const CMissionData &x : b.missions){ sansCondition += x.conditions == 0 && x.Jouable(); coronas += !x.corona.empty(); larges += x.coronaDemiCote == 2; }
+	printf("%d missions jouables sans condition, %d coronas dont %d de 2 m de demi-côté\n", sansCondition, coronas, larges);
+	VERIF(larges == 19);
 	const CMissionData *d2 = b.Trouver("1_02");
 	VERIF(d2 != nil && d2->conditions == 1 && d2->lancerSeul && d2->corona.empty());
 	const CMissionData *d3 = b.Trouver("1_02B");
-	VERIF(d3 != nil && d3->conditions == 1 && d3->corona == "1_02B_Corona" && d3->coronaMode == 1);
+	VERIF(d3 != nil && d3->conditions == 1 && d3->corona == "1_02B_Corona" && d3->coronaDemiCote == 1 && d3->coronaMarqueur == 1 && d3->coronaMarqueurVisible && d3->coronaTaille == 25 && d3->coronaInvite == "BUT_LAUNCH");
 
 	// 1_01 : la première mission, type 0, titre affiché, script chap1\1_01.lua.
 	const CMissionData *m = b.Trouver("1_01");
 	VERIF(m != nil);
-	VERIF(m && m->conditions == 0 && !m->lancerSeul && m->corona == "1_01_Corona" && m->coronaMode == 2);
+	VERIF(m && m->conditions == 0 && !m->lancerSeul && m->corona == "1_01_Corona" && m->coronaDemiCote == 2 && m->coronaMarqueur == 1 && !m->coronaMarqueurVisible && m->coronaTaille == 3 && m->coronaInvite == "BUT_LAUNCH");
 	if(m){
 		VERIF(m->banque == "chap1.cat" && m->type == 0 && m->afficherTitre);
 		VERIF(m->script == "chap1\\1_01.lua" && m->cle == "1_01_TITLE");

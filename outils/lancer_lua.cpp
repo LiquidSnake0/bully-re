@@ -143,9 +143,10 @@ static struct {
 // Le gestionnaire de missions (objet 0x020c3ca0, FUN_006ad130 à chaque image), réduit : une mission
 // dont les conditions sont vraies est « activée » (son corona existe) ; activée, elle démarre seule
 // si son champ 51 le dit, ou, une fois le gestionnaire autorisé (+0x77d, posé par gamemain avec
-// SystemAllowMissionManagerToForceRunMissions), quand le joueur entre dans son corona (mode 2) ;
-// les coronas à bouton (mode 1) attendent BUT_LAUNCH, que l'outil ne joue pas. Les conditions ne
-// sont pas encore lues : seule une mission sans condition passe.
+// SystemAllowMissionManagerToForceRunMissions), quand le joueur est dans le pavé de son corona
+// (FUN_006a8650 : demi-côté = champ 28 de MissionButtonTrigger, 2 m pour 1_01, 1 m ailleurs ; le moteur
+// affiche ensuite l'invite BUT_LAUNCH et lit la manette avant FUN_006acfa0, l'outil lance tout de
+// suite). Les conditions ne sont pas encore lues : seule une mission sans condition passe.
 static struct {
 	bool actif = false;                  // --nouvelle-partie
 	bool autorise = false;               // DAT_020c441d
@@ -1409,8 +1410,6 @@ AvancerZones(lua_State *L)
 }
 
 // FUN_006ad130, réduit : à chaque image, ce que le gestionnaire fait des missions de la banque.
-static const float RAYON_CORONA = 2.0f;   // m
-
 static void
 AvancerGestionnaire(lua_State *L)
 {
@@ -1427,14 +1426,14 @@ AvancerGestionnaire(lua_State *L)
 			gestionnaire.activees[i] = true;
 			printf("%6.2f s  gestionnaire : %s activée (%s%s%s)\n", maintenant / 1000.0, NomMission(m),
 			       m.lancerSeul ? "se lance seule" : m.corona.empty() ? "sans corona" : "corona ", m.corona.c_str(),
-			       m.corona.empty() ? "" : m.coronaMode == 2 ? ", en entrant" : ", bouton");
+			       m.corona.empty() ? "" : m.coronaDemiCote == 2 ? ", pavé de 2 m" : ", pavé de 1 m");
 			if(m.lancerSeul && libre){ LancerMission(L, (int)i, NomMission(m)); continue; }
 		}
-		if(!libre || !gestionnaire.autorise || m.corona.empty() || m.coronaMode != 2) continue;
-		// Un corona qui se déclenche en entrant : une liste de points de MisTrig.dat, que gamemain charge
-		// (DATLoad("MisTrig.DAT", 1)) avant d'autoriser le gestionnaire ; 1_01_Corona est à 24,8 m de la
-		// grille. Le joueur est dedans à moins de RAYON_CORONA (le vrai rayon, champs 56 et 60 de la
-		// piste ?, reste à lire).
+		if(!libre || !gestionnaire.autorise || m.corona.empty()) continue;
+		// Le corona est une liste de points de MisTrig.dat, que gamemain charge (DATLoad("MisTrig.DAT", 1))
+		// avant d'autoriser le gestionnaire ; 1_01_Corona est à 24,8 m de la grille. FUN_006a8650 teste le
+		// joueur dans le pavé de demi-côté +0x1c (champ 28) autour du point, par FUN_005c2910(1, 0, 3, …), le
+		// même pavé fermé que PlayerIsInAreaXYZ.
 		int h = donnees.ListePoints(m.corona.c_str());
 		const CTriggerPointPoint *pt = donnees.Point(h, 1);
 		if(pt == nil){
@@ -1442,9 +1441,9 @@ AvancerGestionnaire(lua_State *L)
 			continue;
 		}
 		const CVector &j = pietons.Acceder(SCRIPT_PED_JOUEUR)->pos;
-		float dx = j.x - pt->pos.x, dy = j.y - pt->pos.y, dz = j.z - pt->pos.z;
-		if(dx * dx + dy * dy + dz * dz > RAYON_CORONA * RAYON_CORONA) continue;
-		printf("%6.2f s  gestionnaire : le joueur est dans le corona %s (%d), %s démarre\n", maintenant / 1000.0, m.corona.c_str(), h, NomMission(m));
+		float r = m.coronaDemiCote;
+		if(fabsf(j.x - pt->pos.x) > r || fabsf(j.y - pt->pos.y) > r || fabsf(j.z - pt->pos.z) > r) continue;
+		printf("%6.2f s  gestionnaire : le joueur est dans le pavé de %.0f m du corona %s (%d), %s démarre\n", maintenant / 1000.0, r, m.corona.c_str(), h, NomMission(m));
 		LancerMission(L, (int)i, NomMission(m));
 	}
 }
