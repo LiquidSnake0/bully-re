@@ -98,7 +98,7 @@ outside the repository.
 
 ## Status
 
-**2.4 % of `bully.exe`'s code recreated** (341 of 20,819 functions), 5.2 %
+**2.5 % of `bully.exe`'s code recreated** (345 of 20,819 functions), 5.6 %
 understood (code, docs, names). Breakdown in [docs/avancement.md](docs/avancement.md),
 regenerated on every commit by `tools/avancement.py`.
 
@@ -119,6 +119,16 @@ business district. `--pietons n` places the game's pedestrians, deformed by
 their own skeleton and **animated** with the game's own animations (the
 `.agr` animation format is worked out, [docs/agr.md](docs/agr.md), in French):
 they **walk** around, on the floor and against the walls.
+
+The game's own **Lua scripts run** in `outils/lancer_lua`, on the original Lua 5.0.2
+VM: `main.lua` and its threads frame by frame, the mission bank read from the
+action trees, and the first mission, `1_01`, played to `MissionSucceed` — its
+cutscene `1-1-1` from `Cuts.img` (61.7 s), the area changes through the engine's
+own state machine (fade, area scripts unloaded and loaded, doors paired by
+`DATInit`), the scripted speech, the pedestrians it creates and moves. The tool
+plays the player (`--entrer`, `--aller`, `--zone`); everything else answers like
+the engine does, or says it is a stub. See `docs/lua.md`, `docs/missions.md`,
+`docs/zones.md`, `docs/cinematiques.md` (in French).
 
 See [docs/journal.md](docs/journal.md) for the running log (in French).
 

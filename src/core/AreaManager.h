@@ -35,6 +35,11 @@ enum eAreaEtat {
 // Ce que FUN_004f11a0 répond sur le fondu de la caméra : l'écran est rendu, noir, ou en train de changer.
 enum eFondu { FONDU_RENDU = 0, FONDU_NOIR = 1, FONDU_EN_COURS = 2 };
 
+// Le pavé fermé de FUN_005c2910, le test derrière PlayerIsInAreaXYZ (0x5d13f0), PedIsInAreaXYZ (0x5c84a0)
+// et le corona des missions (FUN_006a8650) : la position `p` est dans [centre − r, centre + r] sur x et y
+// (FUN_0046d880, deux dimensions) et aussi sur z quand `troisD` (FUN_0046d960) ; les bornes comptent.
+bool PaveContient(const CVector &p, const CVector &centre, float rx, float ry, float rz, bool troisD);
+
 // Une porte du gestionnaire (FUN_00416000, appelée par DATInit) : un déclencheur et la liste de points
 // du même nom, « SV_… » ou « DT_… ». Le joueur dans le déclencheur d'une porte SV_ est demandé au
 // premier point de la liste, dans la zone de son AREACODE (FUN_00416e30, état 0) ; une porte DT_ attend

@@ -824,17 +824,32 @@ PedIsInTrigger(lua_State *L)
 	return 1;
 }
 
-// PlayerIsInAreaXYZ(x, y, z, rayon[, drapeau, angle]) (0x5d13f0) : FUN_005c2910 teste un pavé de
-// demi-côté « rayon » sur les trois axes autour du point ; le joueur est dedans ou non.
+// PlayerIsInAreaXYZ(x, y, z, rayon[, marqueur, angle]) (0x5d13f0) et PedIsInAreaXYZ(ped, x, y, z, rayon[, marqueur,
+// angle]) (0x5c84a0) : FUN_005c2910(1, entité, …) teste le pavé fermé de demi-côté « rayon » sur les trois axes
+// (FUN_0046d960, PaveContient) ; un marqueur non nul fait aussi dessiner un marqueur au point (FUN_0052a4b0, pas
+// ici). PedIsInAreaXYZ répond faux pour un piéton qui n'existe pas.
+static int
+PaveArg(lua_State *L, const CScriptPed *p, int premier)
+{
+	if(p == nil){ lua_pushboolean(L, 0); return 1; }
+	CVector c((float)luaL_checknumber(L, premier), (float)luaL_checknumber(L, premier + 1), (float)luaL_checknumber(L, premier + 2));
+	float r = (float)luaL_optnumber(L, premier + 3, 1);
+	lua_pushboolean(L, PaveContient(p->pos, c, r, r, r, true));
+	return 1;
+}
+
 static int
 PlayerIsInAreaXYZ(lua_State *L)
 {
 	appels["PlayerIsInAreaXYZ"]++;
-	const CVector &p = pietons.Acceder(SCRIPT_PED_JOUEUR)->pos;
-	float r = (float)luaL_optnumber(L, 4, 1);
-	bool dedans = fabsf(p.x - (float)luaL_checknumber(L, 1)) < r && fabsf(p.y - (float)luaL_checknumber(L, 2)) < r && fabsf(p.z - (float)luaL_checknumber(L, 3)) < r;
-	lua_pushboolean(L, dedans);
-	return 1;
+	return PaveArg(L, pietons.Acceder(SCRIPT_PED_JOUEUR), 1);
+}
+
+static int
+PedIsInAreaXYZ(lua_State *L)
+{
+	appels["PedIsInAreaXYZ"]++;
+	return PaveArg(L, lua_isnumber(L, 1) ? pietons.Acceder((int)lua_tonumber(L, 1)) : nil, 2);
 }
 
 // --aller NOM[,n]@s ou --aller x,y,z@s : à s secondes, le joueur est posé au n-ième point de la
@@ -1458,7 +1473,7 @@ AvancerGestionnaire(lua_State *L)
 		}
 		const CVector &j = pietons.Acceder(SCRIPT_PED_JOUEUR)->pos;
 		float r = m.coronaDemiCote;
-		if(fabsf(j.x - pt->pos.x) > r || fabsf(j.y - pt->pos.y) > r || fabsf(j.z - pt->pos.z) > r) continue;
+		if(!PaveContient(j, pt->pos, r, r, r, true)) continue;
 		printf("%6.2f s  gestionnaire : le joueur est dans le pavé de %.0f m du corona %s (%d), %s démarre\n", maintenant / 1000.0, r, m.corona.c_str(), h, NomMission(m));
 		LancerMission(L, (int)i, NomMission(m));
 	}
@@ -1554,6 +1569,7 @@ main(int argc, char **argv)
 	lua_register(L, "PlayerIsInTrigger", PlayerIsInTrigger);
 	lua_register(L, "PedIsInTrigger", PedIsInTrigger);
 	lua_register(L, "PlayerIsInAreaXYZ", PlayerIsInAreaXYZ);
+	lua_register(L, "PedIsInAreaXYZ", PedIsInAreaXYZ);
 	lua_register(L, "AreaGetVisible", AreaGetVisible);
 	lua_register(L, "PlayerGetPosXYZ", PlayerGetPosXYZ);
 	lua_register(L, "PedCreatePoint", PedCreatePoint);

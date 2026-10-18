@@ -472,3 +472,16 @@ en échec plutôt que de les masquer.
   dont l'AREACODE est la zone visible — les deux usages du champ. `AreaTran.dat` : 7 paires
   `SV_` ; les `*_doors.dat` : 38 `DT_`, dont la porte d'entrée de l'école (cour → hall).
   `CAreaManager::ReconstruirePortes` et `PasserUnePorte`, `tests/test_portes`, `DATInit` réel.
+- Suite : **le pavé fermé.** `FUN_005c2910` délègue à `FUN_0046d960` (trois axes) ou
+  `FUN_0046d880` (deux) : bornes remises dans l'ordre, puis min ≤ p ≤ max, les bornes
+  comprises. `PaveContient` le refait pour `PlayerIsInAreaXYZ`, `PedIsInAreaXYZ` (réelle
+  désormais) et le corona ; `tests/test_zones` vérifie les bornes et le corona de `1_01`.
+- **Bilan du jour** : dix commits. Établi : +0xc = AREACODE et tous les champs des blocs
+  POINT ; la zone visible et la machine de changement de zone (`CAreaManager`, scripts de
+  zone chargés pour de vrai) ; les cinématiques (treize fonctions, les fichiers de
+  `Cuts.img`, jouées dans `lancer_lua`) ; `POI` ; le chemin d'un nœud d'action
+  (`CActionBank`) ; la table des 493 événements de parole ; le corona est un pavé, pas un
+  mode ; `DATInit` refait les portes et crée les objets à ramasser ; le pavé fermé. `1_01`
+  se termine réussie avec sa cinématique (78,1 s) ou sans (12,1 s), à la nouvelle partie
+  comme par `--mission`. Ouvert : les conditions des nœuds pour enchaîner `1_02`, les portes
+  `DT_`, la durée de la parole, jouer les nœuds d'action, les constantes des fondus.

@@ -30,6 +30,20 @@ CAreaManager::Script(int32 zone) const
 	return scripts[zone];
 }
 
+// FUN_0046d960 / FUN_0046d880 : les bornes remises dans l'ordre (min, max) puis p >= min && p <= max sur
+// chaque axe ; le moteur compare au point de l'entité (sa matrice si elle en a une, sinon +4).
+bool
+PaveContient(const CVector &p, const CVector &c, float rx, float ry, float rz, bool troisD)
+{
+	float x0 = c.x - rx, x1 = c.x + rx, y0 = c.y - ry, y1 = c.y + ry, z0 = c.z - rz, z1 = c.z + rz;
+	if(x1 < x0){ float t = x0; x0 = x1; x1 = t; }
+	if(y1 < y0){ float t = y0; y0 = y1; y1 = t; }
+	if(z1 < z0){ float t = z0; z0 = z1; z1 = t; }
+	if(p.x < x0 || p.x > x1 || p.y < y0 || p.y > y1) return false;
+	if(troisD && (p.z < z0 || p.z > z1)) return false;
+	return true;
+}
+
 void
 CAreaManager::ReconstruirePortes(const CDatPools &d)
 {

@@ -101,7 +101,17 @@ main(void)
 	VERIF(z.Demander(hall, 0, 0, nil, true));
 	z.AvancerImage(FONDU_RENDU, false, true);
 	VERIF(z.etat == AREA_REPOS && z.evenements.joueurPose && !z.evenements.zoneChangee && !z.evenements.fonduNoir && !z.evenements.decharger && z.evenements.charger == nil);
-	printf("  nouvelle partie, téléportation par un script, porte, même zone : la zone visible ne change qu'à l'état 9\n");
+	// Le pavé fermé de FUN_005c2910 (PlayerIsInAreaXYZ, le corona) : les bornes comptent, z seulement en trois dimensions,
+	// un demi-côté négatif vaut le même pavé.
+	CVector c(10, 20, 30);
+	VERIF(PaveContient(CVector(10, 20, 30), c, 1, 1, 1, true) && PaveContient(CVector(11, 21, 31), c, 1, 1, 1, true) && PaveContient(CVector(9, 19, 29), c, 1, 1, 1, true));
+	VERIF(!PaveContient(CVector(11.01f, 20, 30), c, 1, 1, 1, true) && !PaveContient(CVector(10, 18.9f, 30), c, 1, 1, 1, true) && !PaveContient(CVector(10, 20, 31.5f), c, 1, 1, 1, true));
+	VERIF(PaveContient(CVector(10, 20, 99), c, 1, 1, 1, false) && !PaveContient(CVector(12, 20, 30), c, 1, 1, 1, false));
+	VERIF(PaveContient(CVector(10.5f, 20, 30), c, -1, -1, -1, true) && PaveContient(CVector(10, 22, 30), c, 1, 2, 1, true) && !PaveContient(CVector(10, 22, 30), c, 1, 1, 1, true));
+	// Le corona de 1_01 : un pavé de 2 m autour de (297.3, −71.5, 4.9) ; la grille (272.7, −73.1, 7.0) est dehors.
+	CVector corona(297.334f, -71.4814f, 4.91838f);
+	VERIF(PaveContient(CVector(298.5f, -72.0f, 6.0f), corona, 2, 2, 2, true) && !PaveContient(CVector(272.68f, -73.13f, 6.97f), corona, 2, 2, 2, true));
+	printf("  nouvelle partie, téléportation par un script, porte, même zone : la zone visible ne change qu'à l'état 9 ; le pavé fermé de FUN_005c2910\n");
 	printf("test_zones : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;
 }
