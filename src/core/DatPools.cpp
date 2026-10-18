@@ -63,6 +63,13 @@ CDatPools::Charger(const char *fichier, int emplacement)
 	int32 base = (int32)perimetres.size();
 	for(CTriggerPerimeter &pe : f.perimetres) perimetres.push_back(std::move(pe));
 	for(CTriggerZone &z : f.zones){ if(z.perimetre >= 0) z.perimetre += base; uint32 h = HachageNom(z.nom.c_str()); Placer(zones, nom, emplacement, h, std::move(z), 0); }
+	// FUN_00447bd0 : le groupe, puis chaque point dans le pool des points, chaîné au groupe.
+	for(CTriggerPoi &poi : f.pois){
+		size_t n = poi.points.size();
+		std::vector<uint32> hp; for(const CTriggerPoiPoint &pt : poi.points) hp.push_back(HachageNom(pt.nom.c_str()));
+		int g = Placer(poiGroupes, nom, emplacement, HachageNom(poi.nom.c_str()), std::move(poi), 0);
+		for(size_t i = 0; i < n; i++) Placer(poiPoints, nom, emplacement, hp[i], PoiRef{g, (int)i}, 0);
+	}
 	fichiersCharges++;
 	return true;
 }
@@ -71,6 +78,7 @@ void
 CDatPools::Decharger(int emplacement)
 {
 	Liberer(listes, emplacement); Liberer(trajets, emplacement); Liberer(zones, emplacement);
+	Liberer(poiGroupes, emplacement); Liberer(poiPoints, emplacement);
 	fichiersCharges = 0;
 	for(const Entree<CTriggerPointList> &e : listes) if(!e.libre) fichiersCharges++;   // approximatif : compte les listes
 }
@@ -78,13 +86,51 @@ CDatPools::Decharger(int emplacement)
 void
 CDatPools::Vider(void)
 {
-	listes.clear(); trajets.clear(); zones.clear(); perimetres.clear();
+	listes.clear(); trajets.clear(); zones.clear(); perimetres.clear(); poiGroupes.clear(); poiPoints.clear();
 	fichiersCharges = 0;
 }
 
 int CDatPools::ListePoints(const char *nom) const { return Chercher(listes, HachageNom(nom), 1); }
 int CDatPools::Trajet(const char *nom) const { return Chercher(trajets, HachageNom(nom), 1); }
 int CDatPools::Declencheur(const char *nom) const { return Chercher(zones, HachageNom(nom), 0); }
+
+// FUN_00448e30 : du dernier groupe au premier ; le nom d'un groupe rend son premier point, sinon le
+// premier point de ce nom dans le groupe (FUN_00447a40 puis FUN_00447a80 pour les suivre).
+int
+CDatPools::Poi(const char *nom) const
+{
+	uint32 h = HachageNom(nom);
+	for(int g = (int)poiGroupes.size() - 1; g >= 0; g--){
+		if(poiGroupes[g].libre) continue;
+		if(poiGroupes[g].hachage == h){
+			for(size_t i = 0; i < poiPoints.size(); i++)
+				if(!poiPoints[i].libre && poiPoints[i].donnee.groupe == g && poiPoints[i].donnee.indice == 0) return (int)i;
+			return -1;        // un groupe sans point : le moteur calcule un index depuis un pointeur nul
+		}
+		for(size_t i = 0; i < poiPoints.size(); i++)
+			if(!poiPoints[i].libre && poiPoints[i].donnee.groupe == g && poiPoints[i].hachage == h) return (int)i;
+	}
+	return -1;
+}
+
+const CTriggerPoiPoint *
+CDatPools::PoiPoint(int h) const
+{
+	if(h < 0 || h >= (int)poiPoints.size() || poiPoints[h].libre) return nil;
+	const PoiRef &r = poiPoints[h].donnee;
+	if(r.groupe < 0 || r.groupe >= (int)poiGroupes.size() || poiGroupes[r.groupe].libre) return nil;
+	const CTriggerPoi &g = poiGroupes[r.groupe].donnee;
+	return r.indice < (int)g.points.size() ? &g.points[r.indice] : nil;
+}
+
+const CTriggerPoi *
+CDatPools::PoiGroupe(int h) const
+{
+	if(h < 0 || h >= (int)poiPoints.size() || poiPoints[h].libre) return nil;
+	const PoiRef &r = poiPoints[h].donnee;
+	if(r.groupe < 0 || r.groupe >= (int)poiGroupes.size() || poiGroupes[r.groupe].libre) return nil;
+	return &poiGroupes[r.groupe].donnee;
+}
 
 const CTriggerPointList *
 CDatPools::Liste(int h) const

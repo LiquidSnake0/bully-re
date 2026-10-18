@@ -438,3 +438,9 @@ en échec plutôt que de les masquer.
   `GetCutsceneTime` le rendent, les sous-titres passent au journal, la fin est la dernière
   clé de la piste caméra ; `1-1-1` tourne 61,7 s dans `MissionSetup` de `1_01`, qui se
   termine réussie à 75,7 s ; `--sans-cinematiques` les saute.
+- Suite : **`POI`, la cinquième énumération.** 0x5db170 retire le premier caractère et
+  `FUN_00448e30` parcourt les groupes de points d'intérêt du dernier au premier : le nom
+  d'un groupe rend son premier point, sinon le premier point de ce nom dans le groupe ; le
+  handle est l'index dans le pool des `CStaticPOI` (0x20c7c84, nom haché à +0x84).
+  `CDatPools::Poi` le refait, `tests/test_datpools` le vérifie (`1_04_NemSitSpot`,
+  `F_ClassSmokers` dans « Smoking »), `lancer_lua` ne répond plus −1.

@@ -63,6 +63,21 @@ main(void)
 	}
 	VERIF(!p.DansDeclencheur(-1, CVector()) && !p.DansDeclencheur(9999, CVector()));
 
+	// Les points d'intérêt (POI.x, FUN_00448e30) : par nom de groupe (1_04_NemSitSpot, un point) ou par nom
+	// de point (F_ClassSmokers dans le groupe « Smoking » d'eventsDowntown) ; le handle est l'index du point.
+	VERIF(p.Poi("_1_04_NEMSITSPOT") == -1);
+	VERIF(p.Charger("1_04.DAT", 2));
+	int nem = p.Poi("_1_04_NEMSITSPOT");
+	VERIF(nem >= 0 && p.Poi("1_04_NemSitSpot") == nem && p.PoiGroupe(nem) != nil && p.PoiPoint(nem) != nil);
+	if(p.PoiGroupe(nem)) VERIF(p.PoiGroupe(nem)->nom == "1_04_NemSitSpot" && p.PoiGroupe(nem)->points.size() == 1 && p.PoiPoint(nem) == &p.PoiGroupe(nem)->points[0]);
+	VERIF(p.Charger("eventsDowntown.DAT", 1));
+	int fumeurs = p.Poi("_F_CLASSSMOKERS");
+	VERIF(fumeurs >= 0 && p.PoiPoint(fumeurs) != nil && p.PoiGroupe(fumeurs) != nil);
+	if(p.PoiPoint(fumeurs) && p.PoiGroupe(fumeurs)) VERIF(p.PoiPoint(fumeurs)->nom == "F_ClassSmokers" && p.PoiGroupe(fumeurs)->nom == "Smoking");
+	int fumoir = p.Poi("_SMOKING");
+	VERIF(fumoir >= 0 && p.PoiGroupe(fumoir) && p.PoiGroupe(fumoir)->nom == "Smoking" && p.PoiPoint(fumoir) == &p.PoiGroupe(fumoir)->points[0]);
+	VERIF(p.Poi("_PAS_UN_POI") == -1 && p.PoiPoint(-1) == nil && p.PoiPoint(99999) == nil);
+
 	// Le monde à l'emplacement 1 s'ajoute après ; décharger la mission (2) ne déplace pas ses handles.
 	VERIF(p.Charger("Global.DAT", 1));
 	int monde = p.ListePoints("_GLOBAL_PLAYER_START");
@@ -70,6 +85,7 @@ main(void)
 	p.Decharger(2);
 	VERIF(p.ListePoints("_1_01_PLAYER_START") == -1 && p.Liste(depart) == nil);
 	VERIF(p.Trajet("_1_01_SECPATH") == -1 && p.Declencheur("_1_01_SCHOOLTRIG") == -1);
+	VERIF(p.Poi("_1_04_NEMSITSPOT") == -1 && p.Poi("_F_CLASSSMOKERS") == fumeurs);   // 1_04 était à l'emplacement 2, eventsDowntown à 1
 	if(monde >= 1) VERIF(p.ListePoints("_GLOBAL_PLAYER_START") == monde);
 	// Recharger reprend les trous libérés : 1_01 retrouve des handles en dessous de ceux du monde.
 	VERIF(p.Charger("1_01.DAT", 2));

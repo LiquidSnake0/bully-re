@@ -51,6 +51,9 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- `POI`, la cinquième énumération : `FUN_00448e30` lu (groupes du dernier au premier, le nom d'un groupe
+  rend son premier point, sinon un point de ce nom), `CDatPools::Poi`, `tests/test_datpools`, réel dans
+  `lancer_lua` ; docs/trigger.md.
 - Les cinématiques : ce que les scripts appellent (`PlayCutsceneWithLoad` → treize fonctions du moteur), les
   fichiers de `Cuts/Cuts.img` (`.INF`, `.SUB`, piste caméra `.DAT`), `src/cutscene/CutsceneFiles`,
   `tests/test_cutscene` ; docs/cinematiques.md.

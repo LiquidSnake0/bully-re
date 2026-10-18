@@ -161,6 +161,19 @@ degrés, 0 vers +y), les périodes où le point sert, `USERADIUS` / `RADIUS`,
 1 199 points, comptes NPOIS justes partout (eventsRichArea, eventsPoorArea,
 eventsSchoolHalls, eventsDowntown, MainMap_hangouts, PedPoi…).
 
+**Dans le moteur** (18.10.2026) : `DATLoad` verse un bloc `POI` dans deux pools. Le groupe
+(pool 0x20c7c58, lu par `FUN_00447bd0`) garde son nom haché à +4, l'AREACODE à +0xc,
+l'emplacement de `DATLoad` à +0xd et son premier point à +0x16 ; chaque point est un `CStaticPOI`
+de 0xa4 octets du pool 0x20c7c84 (genre à +0x74, nom haché à +0x84), chaîné au suivant par la
+table `DAT_00bc5d08` (`FUN_00447a40` donne le premier, `FUN_00447a80` le suivant). **`POI._NOM`**
+(0x5db170) retire le premier caractère du nom, toujours, et appelle `FUN_00448e30` : les
+groupes sont parcourus **du dernier au premier** ; un groupe de ce nom rend l'index de son
+premier point, sinon le premier point de ce nom dans le groupe ; −1 si rien. Le handle est donc
+l'index dans le pool des points, et un script peut nommer un groupe (`POI._1_04_NEMSITSPOT`,
+`POI._PETEYPIER`, `POI._CNERD1`) ou un comportement (`F_ClassSmokers` dans le groupe
+« Smoking »). `CDatPools::Poi`, `PoiPoint`, `PoiGroupe` le refont, `tests/test_datpools` le
+vérifie sur `1_04.dat` et `eventsDowntown.dat`, et `POI` est réelle dans `lancer_lua`.
+
 Les périodes sont celles de `Config/timeCycl.dat`, la classe coupée en deux :
 MORNING, EARLYCLASS (= FIRST_CLASS), LUNCH, LATECLASS (= SECOND_CLASS),
 AFTERNOON, EVENING ; le couvre-feu en paliers de fatigue SLIGHTLYTIRED,

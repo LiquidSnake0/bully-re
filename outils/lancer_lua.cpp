@@ -13,7 +13,7 @@
 // (FUN_006ad3e0) : script de la mission (FUN_005dbf90), MissionSetup jusqu'au bout
 // (FUN_006acba0), main (FUN_006abf20), puis MissionCleanup (FUN_006abed0).
 // Les cinq énumérations du moteur sont posées : POINTLIST, PATH, TRIGGER (les pools de DATLoad),
-// MODELENUM (les noms de modèles des .idb, src/core/ModelEnum.h) et POI (pas encore lue, -1).
+// MODELENUM (les noms de modèles des .idb, src/core/ModelEnum.h) et POI (les points d'intérêt des DATLoad).
 // Les piétons des scripts (src/peds/ScriptPedPool.h) marchent, courent, se battent et meurent
 // image par image : PedMoveToPoint, PedMoveToXYZ, PedStop, PedAttack, PedSetHealth, PedMakeAmbient.
 // Les zones (src/core/AreaManager.h, docs/zones.md) : PlayerSetPos… demande un changement de zone, joué image par
@@ -599,15 +599,16 @@ IndexModelEnum(lua_State *L)
 	lua_pushnumber(L, id);
 	return 1;
 }
-// POI.x (0x5db170, nom en 0x901d18) : la cinquième énumération, les points d'intérêt ; sa recherche
-// n'est pas encore lue, l'outil répond -1 et le journalise.
+// POI.x (0x5db170, nom en 0x901d18) : le nom sans son premier caractère (toujours, comme MODELENUM), puis
+// FUN_00448e30 : un groupe de ce nom rend son premier point, sinon le premier point de ce nom ; -1 sinon.
 static int
 IndexPoi(lua_State *L)
 {
 	const char *n = luaL_checkstring(L, 2);
 	appels["POI"]++;
-	if(journalRestant > 0){ journalRestant--; printf("%6.2f s  %-22s POI.%s : pas encore lu, -1\n", maintenant / 1000.0, NomThreadCourant(), n); }
-	lua_pushnumber(L, -1);
+	int h = donnees.Poi(n[0] ? n + 1 : n);
+	if(h < 0 && journalRestant > 0){ journalRestant--; printf("%6.2f s  %-22s POI.%s : aucun point d'intérêt de ce nom chargé\n", maintenant / 1000.0, NomThreadCourant(), n); }
+	lua_pushnumber(L, h);
 	return 1;
 }
 

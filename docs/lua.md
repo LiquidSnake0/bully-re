@@ -194,6 +194,8 @@ ou des calculs sur la valeur renvoyée par un bouchon (nil).
   appelle (liste ci-dessus).
 - Qui voit quoi : les globales de `main` vivent dans l'espace de noms de `main` ;
   vérifier comment une mission voit `gPlayer` (`GlobalImportScript` exécute dans `_G`).
-- La cinquième énumération, `POI` (0x5db170, nom en 0x901d18) : sa recherche n'est pas
-  lue, `lancer_lua` répond -1 et le journalise. `MODELENUM` est lue (ci-dessous).
+- Fait : la cinquième énumération, `POI` (0x5db170, nom en 0x901d18), passe le nom sans son
+  premier caractère à `FUN_00448e30`, qui parcourt les groupes de points d'intérêt du dernier
+  au premier et rend l'index d'un point (docs/trigger.md, « Points d'intérêt ») ;
+  `CDatPools::Poi`, réel dans `lancer_lua`. `MODELENUM` est lue (ci-dessous).
 - Brancher les 1 508 fonctions, en commençant par celles des scripts d'ambiance.
