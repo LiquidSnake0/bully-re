@@ -51,6 +51,9 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- La parole des scripts : la table des 493 événements de `bully.exe` (0x00ae74e8), la recherche sans la
+  casse de `SoundPlayScriptedSpeechEvent`, la réponse de `SoundSpeechPlaying` (locuteur, événement sur
+  9 bits, ligne sur 11) ; `src/audio/SpeechEvents`, `tests/test_speech`, réelles dans `lancer_lua` ; docs/son.md.
 - L'arbre d'actions global et le chemin d'un nœud (`FUN_005f6c50`, `FUN_005f59b0`, `FUN_004849a0`) :
   `src/core/ActionBank`, `tests/test_actionbank` ; `PedSetActionNode` et `PlayerSetControl` réels dans
   `lancer_lua` ; docs/cat.md.

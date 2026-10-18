@@ -134,4 +134,4 @@ quand le joueur passe la porte de l'école), et retirés au changement suivant. 
 chargé, son `main` signale à 1,12 s, le joueur est posé ; la porte à 6,0 s : 14 images, fondu au
 noir fini à 7,52 s, `MainMap.lua` retiré, `SchoolHallways.lua` chargé et son signal à 7,66 s, **la
 zone visible passe à 2**, l'écran revient à 8,66 s ; la secrétaire est créée dès que la zone vaut
-2, et la mission se termine réussie à 9,67 s.
+2, et la mission se termine réussie à 12,1 s (la parole de Jimmy comprise, docs/son.md).

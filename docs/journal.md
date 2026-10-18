@@ -450,3 +450,10 @@ en échec plutôt que de les masquer.
   descend segment par segment par les noms hachés, `..` compris. `CActionBank` le refait,
   `tests/test_actionbank` suit les chemins de `1_01.lua` et le chargement à la demande
   (`FUN_004849a0`) ; `PedSetActionNode` répond vrai ou faux pour de vrai dans `lancer_lua`.
+- Suite : **la parole des scripts.** `SoundPlayScriptedSpeechEvent(ped, "M_1_01", 101)`
+  cherche le nom, sans la casse, dans une table de 493 événements de `bully.exe`
+  (0x00ae74e8, `ALLY_ABOUT_TO_LEAVE` … `YEARBOOK`, 98 missions `M_…`), et passe l'index
+  (9 bits) et la ligne (11 bits) au moteur du son ; `SoundSpeechPlaying` compare locuteur,
+  événement et ligne. `src/audio/SpeechEvents` reprend la table, `tests/test_speech` la
+  vérifie, `lancer_lua` les joue (2,5 s par ligne, durée réelle non lue) : Jimmy parle à la
+  secrétaire et `1_01` finit à 12,1 s. docs/son.md.

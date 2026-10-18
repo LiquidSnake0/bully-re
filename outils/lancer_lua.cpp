@@ -35,6 +35,7 @@
 #include "../src/core/DatPools.h"
 #include "../src/core/AreaManager.h"
 #include "../src/core/ActionBank.h"
+#include "../src/audio/SpeechEvents.h"
 #include "../src/cutscene/CutsceneFiles.h"
 #include "../src/peds/ScriptPedPool.h"
 #include <algorithm>
@@ -103,6 +104,11 @@ static const float FONDU_DEFAUT_MS = 1000;
 static CActionBank arbres;
 // PlayerSetControl(0 / 1) (0x5d12f0) : le joueur rendu au script ou au joueur ; aucun script ne le relit.
 static int controleJoueur = 1;
+// La parole scriptée (src/audio/SpeechEvents.h, docs/son.md) : une seule ligne à la fois, comme le moteur
+// du son la décrit (FUN_005a27b0 : le locuteur, l'événement sur 9 bits, le numéro de ligne sur 11). La
+// durée d'une ligne n'est pas lue : 2,5 s, provisoire.
+static const float PAROLE_MS = 2500;
+static struct { bool enCours = false; int ped = -1, evenement = -1, ligne = -1, id = 0; uint32 fin = 0; } parole;
 // CCutsceneMgr réduit à ses drapeaux (docs/cinematiques.md) : la cinématique chargée (DAT_020c5be2), en cours
 // (DAT_020c5be4), son temps (DAT_020c5b1c), sur les fichiers de Cuts/Cuts.img (src/cutscene/CutsceneFiles.h).
 // La fin, dans le moteur, vient de l'arbre d'actions /Global/CutScenes (FUN_006c3a70) ; ici, faute de le
@@ -1095,6 +1101,42 @@ PlayerSetControl(lua_State *L)
 	return 0;
 }
 
+// SoundPlayScriptedSpeechEvent(ped, événement, ligne[, banque, b, b]) (0x5d37b0) : l'événement cherché dans la table
+// sans la casse ; absent, la fonction sort sans rien rendre ; sinon FUN_005a4980 joue la ligne et le script reçoit
+// l'identifiant (DAT_00cf4e00, -2 si le modèle du piéton n'a pas cet événement : « ATTENTION SCRIPTER »).
+static int
+SoundPlayScriptedSpeechEvent(lua_State *L)
+{
+	Journal("SoundPlayScriptedSpeechEvent", L, 1);
+	const char *nom = luaL_optstring(L, 2, "");
+	int index = SpeechEventIndex(nom);
+	if(index < 0){ printf("        SoundPlayScriptedSpeechEvent : « %s » n'est pas dans la table des %d événements de parole\n", nom, NUM_SPEECH_EVENTS); return 0; }
+	parole.enCours = true;
+	parole.ped = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	parole.evenement = index;
+	parole.ligne = (int)luaL_optnumber(L, 3, 0);
+	parole.id++;
+	parole.fin = maintenant + (uint32)PAROLE_MS;
+	lua_pushnumber(L, parole.id);
+	return 1;
+}
+
+// SoundSpeechPlaying([ped[, événement[, ligne]]]) (0x5d3a50 → FUN_005a27b0) : sans piéton, quelqu'un parle ; avec, ce
+// piéton parle, et de cet événement et de cette ligne si le script les donne.
+static int
+SoundSpeechPlaying(lua_State *L)
+{
+	appels["SoundSpeechPlaying"]++;
+	bool oui = parole.enCours;
+	if(oui && lua_isnumber(L, 1) && (int)lua_tonumber(L, 1) != -1){
+		oui = parole.ped == (int)lua_tonumber(L, 1);
+		if(oui && lua_isstring(L, 2) && !lua_isnumber(L, 2)) oui = SpeechEventIndex(lua_tostring(L, 2)) == parole.evenement;
+		if(oui && lua_isnumber(L, 3) && (int)lua_tonumber(L, 3) != -1) oui = parole.ligne == (int)lua_tonumber(L, 3);
+	}
+	lua_pushboolean(L, oui);
+	return 1;
+}
+
 // --- Les cinématiques (docs/cinematiques.md) ---
 
 // LoadCutscene(nom, drapeau) (0x5bb100 → CCutsceneMgr::LoadCutsceneData, FUN_006c4480) : les fichiers de la
@@ -1471,6 +1513,8 @@ main(int argc, char **argv)
 	lua_register(L, "AreaRegisterAreaScript", AreaRegisterAreaScript);
 	lua_register(L, "CameraFade", CameraFade);
 	lua_register(L, "PedSetActionNode", PedSetActionNode);
+	lua_register(L, "SoundPlayScriptedSpeechEvent", SoundPlayScriptedSpeechEvent);
+	lua_register(L, "SoundSpeechPlaying", SoundSpeechPlaying);
 	lua_register(L, "PlayerSetControl", PlayerSetControl);
 	lua_register(L, "LoadCutscene", LoadCutscene);
 	lua_register(L, "LoadCutsceneSound", LoadCutsceneSound);
@@ -1561,6 +1605,7 @@ main(int argc, char **argv)
 			printf("%6.2f s  le joueur passe une porte vers la zone %d%s\n", maintenant / 1000.0, e.second, zones.Demander(j->pos, j->cap, e.second, nil, false) ? "" : " : refusé, un changement est en cours");
 			e.second = -1;
 		}
+		if(parole.enCours && maintenant >= parole.fin){ parole.enCours = false; if(journalRestant > 0){ journalRestant--; printf("%6.2f s  parole : le piéton %d a fini %s ligne %d\n", maintenant / 1000.0, parole.ped, kSpeechEvents[parole.evenement], parole.ligne); } }
 		if(fondu.enCours && maintenant >= fondu.fin){ fondu.enCours = false; fondu.noir = fondu.versNoir; if(journalRestant > 0){ journalRestant--; printf("%6.2f s  fondu : l'écran est %s\n", maintenant / 1000.0, fondu.versNoir ? "noir" : "rendu"); } }
 		MettreAJour(L);
 		AvancerPietons();

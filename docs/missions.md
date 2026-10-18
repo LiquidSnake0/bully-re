@@ -119,7 +119,7 @@ missions avec script. Les deux lisent maintenant les 499.
   de la partie), `MissionGetIndex` sont réels, et le gestionnaire réduit active les
   missions sans condition et lance celle dont le joueur touche le corona en entrant
   (rayon 2 m, le vrai reste à lire). Avec `--aller 1_01_Corona@3`, le joueur marche au
-  marqueur : **`1_01` démarre à 3,0 s par le gestionnaire, et se termine réussie à 12,7 s**
+  marqueur : **`1_01` démarre à 3,0 s par le gestionnaire, et se termine réussie à 15,2 s**
   (`--sans-cinematiques --entrer _1_01_BULLYTRIG@7 --zone 2@9 --aller _1_01_ENDPOINT@11`) ; `MainMap.lua` est
   chargé à 0,17 s par la première demande de zone de `gamemain`. Les classes de
   conditions (`MissionCond`, `TimeCond`, `ConditionGroup`, `NOT`) ne sont pas lues, donc
@@ -216,7 +216,8 @@ moteur attend de la manette : `--entrer DECLENCHEUR@s` le pose dans un déclench
    `gMissionSuccess = true`, `gMissionRunning = false` : la boucle de `main` s'arrête,
    `L_StopMonitoringTriggers`, `L_CutsceneFade`, **`MissionSucceed(true, false, false)`**.
 
-**`1_01` se termine, réussie, à 9,7 s** : `main fini, MissionCleanup`, le nettoyage
+**`1_01` se termine, réussie, à 12,1 s** (2,5 s de parole de Jimmy à la secrétaire, docs/son.md) :
+`main fini, MissionCleanup`, le nettoyage
 rend les modèles uniques, décharge les animations, rend le contrôle, et les cinq
 piétons laissés par la mission sont libérés.
 
@@ -231,10 +232,9 @@ d'être posées, et valent nil comme il faut : `gMissionSuccess`, `misObj`, `F_S
 
 ## Suite
 
-1. Ce que `1_01` ne joue pas encore pour de vrai : `SoundPlayScriptedSpeechEvent` /
-   `SoundSpeechPlaying`, qui sont des bouchons qui répondent neutre ; les nœuds d'action
-   (`PedSetActionNode` cherche le nœud dans l'arbre global, docs/cat.md, mais ne le joue pas) ;
-   et les vraies vitesses de marche. Les cinématiques se jouent (docs/cinematiques.md),
+1. Ce que `1_01` ne joue pas encore pour de vrai : la durée des lignes de parole (2,5 s
+   provisoires, docs/son.md) ; les nœuds d'action (`PedSetActionNode` cherche le nœud dans
+   l'arbre global, docs/cat.md, mais ne le joue pas) ; et les vraies vitesses de marche. Les cinématiques se jouent (docs/cinematiques.md),
    `CameraFade` est une durée qui court (docs/zones.md).
 2. Fait : +0xc est l'AREACODE (docs/trigger.md), et la zone d'un point n'est que la
    destination d'une téléportation ; la zone visible est celle du gestionnaire de zones
