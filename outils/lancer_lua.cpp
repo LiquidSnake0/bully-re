@@ -584,12 +584,19 @@ DATUnload(lua_State *L)
 	return 0;
 }
 
-// DATInit (0x5bf410) : ce que le moteur fait du fichier chargé (marqueurs, objets) n'est pas lu ;
-// ici, rien à faire, les pools sont prêts dès DATLoad.
+// DATInit (0x5bf410 → FUN_006d2200) : FUN_00416000 refait la table des portes du gestionnaire de zones
+// (chaque liste SV_ ou DT_ avec le déclencheur de son nom), puis FUN_004154e0 crée les objets à ramasser
+// des listes dont l'AREACODE est la zone visible (pas joué ici : pas d'objets).
 static int
 DATInit(lua_State *L)
 {
 	Journal("DATInit", L, 1);
+	size_t avant = zones.portes.size();
+	zones.ReconstruirePortes(donnees);
+	if(zones.portes.size() != avant && journalRestant > 0){
+		int sv = 0; for(const CAreaPorte &p : zones.portes) sv += !p.parObjet;
+		journalRestant--; printf("%6.2f s  zones : %zu portes dans la table (%d SV_ en entrant, %zu DT_ par leur objet)\n", maintenant / 1000.0, zones.portes.size(), sv, zones.portes.size() - sv);
+	}
 	return 0;
 }
 
@@ -1376,6 +1383,15 @@ AvancerZones(lua_State *L)
 	for(const Script &sc : scripts)
 		if(sc.zone && !sc.fin){ scriptsDeZone = true; if(strcasecmp(sc.fichier.c_str(), attendu) == 0) scriptDemande = true; }
 	int avant = zones.zoneVisible;
+	// FUN_00416e30, état 0 : les portes SV_ : le joueur dans leur déclencheur part vers leur point.
+	{
+		const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+		int porte = zones.PasserUnePorte(donnees, j->pos);
+		if(porte >= 0){
+			const CTriggerZone *dz = donnees.ZoneParHandle(zones.portes[porte].declencheur);
+			printf("%6.2f s  zones : le joueur est dans la porte %s, vers la zone %d\n", maintenant / 1000.0, dz ? dz->nom.c_str() : "?", zones.demande.zone);
+		}
+	}
 	zones.AvancerImage(fondu.Etat(), !scriptsDeZone, scriptDemande);
 	const CAreaManager::Evenements &e = zones.evenements;
 	if(e.fonduNoir) LancerFondu(FONDU_DEFAUT_MS, true);

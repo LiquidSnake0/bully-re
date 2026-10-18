@@ -464,3 +464,11 @@ en échec plutôt que de les masquer.
   clé de l'invite `BUT_LAUNCH`, puis la manette est lue et `FUN_006acfa0` lance. Le
   « mode 2 » du 09.10 était ce demi-côté. `CMissionData` lit ces champs, `test_missions`
   les vérifie, le gestionnaire de `lancer_lua` teste le pavé au lieu d'une sphère de 2 m.
+- Suite : **ce que fait `DATInit`.** 0x5bf410 → `FUN_006d2200` → `FUN_00416000` : la table
+  des portes du gestionnaire de zones, refaite depuis les pools : chaque liste `DT_` avec tous
+  les déclencheurs de son nom (marque 1 : la porte passe par son objet, +0x394), chaque liste
+  `SV_` avec le premier (marque 0 : en entrant dans le déclencheur, vers le premier point,
+  dans la zone de son AREACODE) ; puis `FUN_004154e0` crée les objets à ramasser des listes
+  dont l'AREACODE est la zone visible — les deux usages du champ. `AreaTran.dat` : 7 paires
+  `SV_` ; les `*_doors.dat` : 38 `DT_`, dont la porte d'entrée de l'école (cour → hall).
+  `CAreaManager::ReconstruirePortes` et `PasserUnePorte`, `tests/test_portes`, `DATInit` réel.

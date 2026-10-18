@@ -100,6 +100,9 @@ entrée par nom à travers trois tables posées par `CreateLuaState` : `POINTLIS
 (0x5db130 → 0x6d6270), `PATH._NOM` (0x5db220 → 0x5ed1b0), `TRIGGER._NOM` (0x5db0f0 →
 0x6d78c0) ; le « _ » de tête est retiré, le nom haché (`HashString`), et la réponse est
 l'index dans le pool (listes et trajets à partir de 1, déclencheurs de 0), ou −1.
+`DATInit()` (0x5bf410 → `FUN_006d2200`) refait la table des portes du gestionnaire de zones
+(`FUN_00416000` : les listes `SV_` et `DT_` avec le déclencheur de leur nom, docs/zones.md) puis
+crée les objets à ramasser de la zone visible (`FUN_004154e0`).
 `GetPointFromPointList(liste, n)` rend x, y, z, lacet, 0, 0 du n-ième point ;
 `GetPointList(liste)` les six nombres de chaque point. Code : `src/core/DatPools` ;
 test : `tests/test_datpools` ; dans `lancer_lua`, `DATLoad`, `DATUnload`, `DATInit`,

@@ -39,6 +39,12 @@ public:
 
 	// POI.nom (FUN_00448e30) : l'index d'un point d'intérêt dans le pool des points, ou -1.
 	int Poi(const char *nom) const;
+	// Les pools tels que FUN_00416000 les parcourt : le nombre de cases (libres comprises) et le nom
+	// haché d'une case ; 0 pour une case libre.
+	int NombreListes(void) const { return (int)listes.size(); }
+	int NombreZones(void) const { return (int)zones.size(); }
+	uint32 HachageListe(int handle) const { return handle >= 0 && handle < (int)listes.size() && !listes[handle].libre ? listes[handle].hachage : 0; }
+	uint32 HachageZone(int handle) const { return handle >= 0 && handle < (int)zones.size() && !zones[handle].libre ? zones[handle].hachage : 0; }
 	// Par handle : nil si le handle est libre ou hors du pool.
 	const CTriggerPoiPoint *PoiPoint(int handle) const;
 	const CTriggerPoi *PoiGroupe(int handle) const;     // le groupe du point

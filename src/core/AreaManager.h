@@ -10,6 +10,7 @@
 // différence entre l'AREACODE d'un point (où le joueur ira) et la zone visible (où il est).
 #pragma once
 #include "../common.h"
+#include "DatPools.h"
 
 enum { AREA_MAX = 64, AREA_SCRIPT_CASE = 0x6c, AREA_SCRIPT_MAX = 0x64 };   // DAT_009e3440 : une case de 0x6c octets par code
 
@@ -33,6 +34,16 @@ enum eAreaEtat {
 
 // Ce que FUN_004f11a0 répond sur le fondu de la caméra : l'écran est rendu, noir, ou en train de changer.
 enum eFondu { FONDU_RENDU = 0, FONDU_NOIR = 1, FONDU_EN_COURS = 2 };
+
+// Une porte du gestionnaire (FUN_00416000, appelée par DATInit) : un déclencheur et la liste de points
+// du même nom, « SV_… » ou « DT_… ». Le joueur dans le déclencheur d'une porte SV_ est demandé au
+// premier point de la liste, dans la zone de son AREACODE (FUN_00416e30, état 0) ; une porte DT_ attend
+// que son objet (+0x394, la porte animée que le joueur pousse) soit celui du déclencheur.
+struct CAreaPorte {
+	int declencheur = -1;        // +0x10 : l'entrée du pool des déclencheurs
+	int liste = -1;              // +0x14 : l'entrée du pool des listes
+	bool parObjet = false;       // +0x330 : 1 pour une liste DT_, 0 pour SV_
+};
 
 // Ce que FUN_00415640 range dans le gestionnaire.
 struct CAreaDemande {
@@ -60,6 +71,15 @@ public:
 	bool Demander(const CVector &pos, float cap, int32 zone, const CVector *camera = nil, bool immediat = true);
 	// AreaIsLoading (0x415230) : un changement est demandé ou en cours.
 	bool EnChargement(void) const;
+	// FUN_00416000 (DATInit → FUN_006d2200) : la table des portes refaite depuis les pools : chaque liste
+	// DT_ s'apparie à tous les déclencheurs de son nom, chaque liste SV_ au premier ; les autres listes
+	// ne sont pas des portes.
+	void ReconstruirePortes(const CDatPools &donnees);
+	// FUN_00416e30, état 0 : le joueur en `pos` est dans le déclencheur d'une porte SV_ ; la demande est
+	// faite vers le premier point de sa liste, dans la zone de l'AREACODE, le second point servant de
+	// direction de caméra. Renvoie l'index de la porte, ou -1.
+	int PasserUnePorte(const CDatPools &donnees, const CVector &pos);
+	std::vector<CAreaPorte> portes;  // +0x10 (le compte en +8)
 	// +0x870 : le script de la nouvelle zone est prêt ; l'état 8 l'attend.
 	void SignalerPret(void){ pret = true; }
 

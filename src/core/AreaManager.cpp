@@ -1,5 +1,6 @@
 #include "AreaManager.h"
 #include <cstring>
+#include <vector>
 
 // FUN_00415ed0 : tout à zéro, le compte à rebours à 14 images.
 CAreaManager::CAreaManager(void)
@@ -27,6 +28,41 @@ CAreaManager::Script(int32 zone) const
 {
 	if(zone < 0 || zone >= AREA_MAX) return "";
 	return scripts[zone];
+}
+
+void
+CAreaManager::ReconstruirePortes(const CDatPools &d)
+{
+	portes.clear();
+	for(int l = 0; l < d.NombreListes(); l++){
+		const CTriggerPointList *liste = d.Liste(l);
+		if(liste == nil) continue;
+		uint32 h = d.HachageListe(l);
+		if(!liste->sauvegarde && !liste->porte) continue;        // ni SV_ (bit 0 de +0x18) ni DT_ (bit 1)
+		for(int z = 0; z < d.NombreZones(); z++){
+			if(d.ZoneParHandle(z) == nil || d.HachageZone(z) != h) continue;
+			CAreaPorte p; p.declencheur = z; p.liste = l; p.parObjet = !liste->sauvegarde;
+			portes.push_back(p);
+			if(liste->sauvegarde) break;                         // une liste SV_ : le premier déclencheur seulement
+		}
+	}
+}
+
+int
+CAreaManager::PasserUnePorte(const CDatPools &d, const CVector &pos)
+{
+	if(EnChargement()) return -1;
+	for(size_t i = 0; i < portes.size(); i++){
+		const CAreaPorte &p = portes[i];
+		if(p.parObjet) continue;                                 // +0x394, l'objet de porte, n'est pas joué
+		const CTriggerPointList *liste = d.Liste(p.liste);
+		if(liste == nil || liste->points.empty() || !d.DansDeclencheur(p.declencheur, pos)) continue;
+		const CTriggerPointPoint &pt = liste->points[0];
+		const CVector *camera = liste->points.size() > 1 ? &liste->points[1].pos : nil;
+		Demander(pt.pos, pt.lacetTangageRoulis[0], liste->zone, camera, false);
+		return (int)i;
+	}
+	return -1;
 }
 
 // FUN_00415640 : refusé si l'état n'est pas 0, si une demande attend, ou si la seconde machine

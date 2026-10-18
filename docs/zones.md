@@ -78,11 +78,25 @@ en cours (`AreaIsLoading`, 0x415230 : +0x864, +0x86c, +0x868 ou +0x86d non nuls)
 est rangée en +0x878 (position), +0x884 (cap), +0x888 (zone), +0x88c / +0x890 (une direction de
 caméra, facultative), et +0x86c est posé.
 
-**Les portes** : à l'état 0, sans demande, le gestionnaire parcourt ses paires (déclencheur,
-liste de points) en +0x10 (le compte en +8) ; si le joueur est dans le déclencheur
-(`FUN_006d6e50`), il demande lui-même le premier point de la liste, avec le cap du point et
-**la zone de l'octet +0xc de la liste**, et le second point comme direction de caméra. C'est à
-ça que sert l'AREACODE : la porte `MainSchool` (zone 0) mène aux points dont l'AREACODE dit 2.
+**Les portes** : la table des paires (déclencheur, liste de points) en +0x10 (le compte en +8,
+une marque par paire en +0x330) est refaite par **`DATInit`** (0x5bf410 → `FUN_006d2200` →
+`FUN_00416000`) : pour chaque liste de points du pool, si son nom commence par `DT_` (bit 1 de
++0x18), elle s'apparie à tous les déclencheurs **du même nom haché** avec la marque 1 ; si par
+`SV_` (bit 0), au premier, marque 0 ; les autres listes ne sont pas des portes. À l'état 0,
+sans demande, `FUN_00416e30` parcourt les paires : marque 0 et le joueur dans le déclencheur
+(`FUN_006d6e50`) → il demande lui-même le premier point de la liste, avec le cap du point, **la
+zone de l'octet +0xc de la liste** et le second point comme direction de caméra ; marque 1 →
+seulement si le déclencheur est celui de l'objet de porte en cours (+0x394, posé par
+`AreaDoorTransitionFix` et par l'animation de la porte que le joueur pousse). Dans les données :
+`AreaTran.dat` a 7 paires `SV_` (`SV_BioSchool`, du labo (6) vers l'école (2), `SV_ChemSchool`,
+`SV_CarnivalFunhouse`, `SV_BDormCrawl`, `SV_ExtBDormCrawl`, `SV_GirlsDorm`, `SV_GirlsDormExit`) ;
+les fichiers `*_doors.dat` ont 38 paires `DT_` (`DT_tschool_SchoolFrontDoorL` : la porte d'entrée de
+l'école, de la cour (0) au hall (2)). `MainSchool` et sa liste `SV_MainSchool` n'ont pas le même
+nom : ce n'est pas une paire du gestionnaire, le passage se fait par la porte `DT_`. Les 42
+listes `SV_` sans déclencheur sont des points d'arrivée que d'autres mécanismes demandent.
+C'est à ça que sert l'AREACODE d'une liste : la destination d'une porte. `DATInit` enchaîne sur
+`FUN_004154e0`, qui crée les objets à ramasser (`POINTPICKUPNAME`) des listes dont l'AREACODE est
+la zone visible : la seconde utilité de ce champ.
 
 **Les états** (+0x864) :
 
@@ -114,16 +128,19 @@ sont dans `SGlFunc.lua` (importé dans `_G` par `GlobalImportScript`) : `PlayerS
 
 ## Recréé
 
-`CAreaManager` (`src/core/AreaManager`) tient la table des scripts, la zone visible, la demande
-et la machine ci-dessus, image par image, et dit ce qu'elle attend du monde (fondu, scripts à
-retirer, script à charger, joueur à poser). Ce qui n'est pas recréé : les portes de +0x10 (dans
-`lancer_lua`, `--zone N@s` joue la porte en demandant la zone N depuis la position du joueur),
-le délai de l'état 0xb (constante non lue, on passe tout de suite), la seconde machine. Le test
-suit les quatre chemins : nouvelle partie (même zone, script non chargé), téléportation par un
-script (fondu immédiat), porte (14 images puis fondu), même zone avec script.
+`CAreaManager` (`src/core/AreaManager`) tient la table des scripts, la zone visible, la demande,
+la machine ci-dessus, image par image, et dit ce qu'elle attend du monde (fondu, scripts à
+retirer, script à charger, joueur à poser) ; `ReconstruirePortes` refait la table des portes
+comme `FUN_00416000` et `PasserUnePorte` joue l'état 0 pour les portes `SV_` (`tests/test_portes`
+sur `AreaTran.DAT` et `tschool_doors.DAT`). Ce qui n'est pas recréé : les portes `DT_` (leur objet,
++0x394 ; dans `lancer_lua`, `--zone N@s` en tient lieu en demandant la zone N depuis la position du
+joueur), le délai de l'état 0xb (constante non lue, on passe tout de suite), la seconde machine.
+`tests/test_zones` suit les quatre chemins : nouvelle partie (même zone, script non chargé),
+téléportation par un script (fondu immédiat), porte (14 images puis fondu), même zone avec script.
 
 Dans `lancer_lua`, `PlayerSetPosPoint`, `PlayerSetPosPointArea`, `PlayerSetPosXYZArea`,
-`PlayerSetPosXYZ` demandent ; `AreaIsLoading`, `AreaGetVisible`, `AreaRegisterAreaScript`,
+`PlayerSetPosXYZ` demandent ; `DATInit` refait la table des portes et le joueur qui entre dans
+un déclencheur `SV_` part par la porte ; `AreaIsLoading`, `AreaGetVisible`, `AreaRegisterAreaScript`,
 `AreaSignalAreaTransitionReadyToLoad` et `CameraFade` sont réels ; **les scripts de zone sont
 chargés pour de vrai** avec leur `main` (`MainMap.lua` à la nouvelle partie, `SchoolHallways.lua`
 quand le joueur passe la porte de l'école), et retirés au changement suivant. Sur `1_01` :
