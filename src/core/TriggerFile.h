@@ -35,14 +35,46 @@ struct CTriggerPath {
 // Une liste de points (bloc POINT) : les endroits nommés d'une mission, où les scripts
 // posent le joueur, créent un piéton (PedCreatePoint) ou mettent un marqueur. Un bloc
 // porte un ou plusieurs points (NPOINTPOINTS), chacun avec sa position et son lacet.
+//
+// Dans bully.exe, FUN_006d59a0 lit un bloc : l'entrée du pool des listes (0x20c7c54) reçoit le
+// nom haché (+8), l'AREACODE sur un octet (+0xc), l'emplacement de DATLoad (+0xd) et deux drapeaux
+// (+0x18) tirés du préfixe du nom, SV_ (bit 0) et DT_ (bit 1). Chaque point est une entrée de
+// 0x2c octets du pool 0x20c7c88 : position (+0), hachage de POINTLABEL (+0x10), modèle de
+// POINTPICKUPNAME (+0x20, par FUN_0051c040), lacet (+0x1c), son (+0x14, +0x16), heures (+0x22,
+// +0x23), fondus (+0x28, +0x29), masque météo (+0x27), POINTSML (+0x24), mission (+0xc : l'index
+// de MISSIONNAME dans la banque, -1 si vide, -2 pour NONE ; « ! » ou « - » devant le nom posent
+// les bits 2 et 3 de +0x2a), occlusion (bit 0 de +0x2a).
 struct CTriggerPointPoint {
 	CVector pos;                         // POINTPOINT
 	float lacetTangageRoulis[3] = {0, 0, 0};   // POINTYAWPITCHROLL (degrés)
+	std::string etiquette;               // POINTLABEL
+	std::string ramassage;               // POINTPICKUPNAME : le modèle à ramasser (Rubband, GeekCard, brick…), vide sinon
+	std::string sfx;                     // POINTSFXID
+	std::string banqueSon;               // POINTSOUNDBANKID
+	float volumeSfx = 1;                 // POINTSFXVOLUME
+	int32 fonduEntree = 0, fonduSortie = 0;    // STREAMFADEINTIME, STREAMFADEOUTTIME
+	int32 sml = 0;                       // POINTSML
+	int32 heureDebut = 0, heureFin = 0;  // STARTHOUR, ENDHOUR
+	std::string meteo;                   // WEATHERMASK, tel qu'écrit (« PSF », « R », « X »…)
+	uint8 meteoMasque = 0x3f;            // le même en bits, comme FUN_00593f20 le range à +0x27 (MasqueMeteo)
+	bool occlusion = false;              // USEOCCLUSION
+	bool missionSpec = false;            // POINTMISSIONSPEC
+	std::string mission;                 // MISSIONNAME, avec son « ! » ou « - » de tête s'il y en a un
+	bool permanent = false;              // POINTPERMANENT
+	int32 tag = 0;                       // POINTTAG
+	std::string butes;                   // PICKUPBUTES
 };
+
+// FUN_00593f20 : le masque météo d'un point. Une lettre par temps, sans la casse : F → bit 0, W → bit 1,
+// P → bit 2, S → bit 3, R → bit 4, X → bit 5 ; « all » ou la chaîne vide → les six (0x3f).
+uint8 MasqueMeteo(const char *s);
 
 struct CTriggerPointList {
 	std::string nom;                     // POINTNAME
-	int32 zone = 0;                      // AREACODE
+	int32 zone = 0;                      // AREACODE : l'octet +0xc ; PlayerSetPosPoint (FUN_005d2310) en fait la zone de
+	                                     // destination du joueur, -1 voulant dire « rester dans la zone courante »
+	bool sauvegarde = false;             // le nom commence par SV_ (bit 0 de +0x18)
+	bool porte = false;                  // le nom commence par DT_ (bit 1 de +0x18)
 	std::vector<CTriggerPointPoint> points;
 };
 

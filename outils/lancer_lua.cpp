@@ -623,10 +623,11 @@ GetPointList(lua_State *L)
 	return 6 * (int)l->points.size();
 }
 
-// Le joueur posé à un point : position, cap, et une zone. FUN_005d2310 lit un octet (+0xc) de
-// l'entrée de la liste, ou garde DAT_00bd1008 s'il vaut -1 ; on suppose que c'est l'AREACODE du
-// bloc POINT. Attention : l'AREACODE n'est pas toujours la zone visible (1_01_EndPoint dit 5, et
-// le script y attend AreaGetVisible() == 2), d'où --zone pour jouer les portes.
+// Le joueur posé à un point : position, cap, et une zone. FUN_005d2310 lit l'octet +0xc de
+// l'entrée de la liste, qui est l'AREACODE du bloc POINT (FUN_006d59a0 l'y écrit), ou garde
+// DAT_00bd1008 s'il vaut -1 ; c'est la zone de destination d'une téléportation, pas la zone où le
+// joueur est (1_01_EndPoint dit 5, et le script y attend AreaGetVisible() == 2),
+// d'où --zone pour jouer les portes.
 static void
 PoserJoueur(const CTriggerPointPoint *pt, int zone)
 {

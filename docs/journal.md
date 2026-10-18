@@ -400,3 +400,14 @@ en échec plutôt que de les masquer.
   S*_S qui avancent vers −y sont des reculs (vérifié à l'image). Marche sur le
   sol et contre les murs, demi-tour quand bloqué. Collisions en grille de 4 m :
   2,8 s → 11 ms pour 5 s de foule, résultat identique.
+
+## 18.10.2026 — l'octet +0xc, les zones, les cinématiques
+
+- **L'octet +0xc de l'entrée de liste est l'AREACODE.** `FUN_006d59a0`, le lecteur
+  des blocs `POINT`, l'écrit juste après avoir lu le mot-clé ; `FUN_005d2310`
+  (`PlayerSetPosPoint`) le relit, remplace −1 par `DAT_00bd1008`, et le passe à
+  `FUN_00415730` comme zone de destination. Le même lecteur donne tous les autres
+  champs d'un point (étiquette, objet à ramasser, son, horaires, masque météo de
+  `FUN_00593f20`, mission) : `CTriggerPointPoint` les lit tous, `tests/test_trigger`
+  compte 49 listes `SV_`, 114 `DT_` (les trois lettres telles quelles), 408 objets à
+  ramasser, 82 points de mission sur les 6 783. Tableau dans docs/trigger.md.

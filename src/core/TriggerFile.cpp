@@ -3,6 +3,8 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cmath>
+#include <cctype>
+#include <strings.h>
 
 namespace {
 
@@ -48,6 +50,17 @@ const char *const kPopCategorie[POP_NUM] = { "PREFECT", "NERD", "JOCK", "DROPOUT
 const char *const kMoment[MOMENT_NUM] = { "DAY", "CLASS", "NIGHT", "CURFEW" };
 const char *const kPoiPeriode[POI_NUM_PERIODES] = { "MORNING", "EARLYCLASS", "LUNCH", "LATECLASS", "AFTERNOON", "EVENING",
                                                     "SLIGHTLYTIRED", "TIRED", "MORETIRED", "TOOTIRED" };
+
+uint8
+MasqueMeteo(const char *s)
+{
+	uint8 m = 0;
+	if(strcasecmp(s, "all") == 0 || *s == 0) m |= 0x3f;
+	static const char lettres[6] = { 'F', 'W', 'P', 'S', 'R', 'X' };
+	for(int i = 0; i < 6; i++)
+		if(strchr(s, lettres[i]) || strchr(s, (char)tolower(lettres[i]))) m |= 1 << i;
+	return m;
+}
 
 bool
 CTriggerZone::Contient(const std::vector<CTriggerPerimeter> &perimetres, float x, float y, float z) const
@@ -163,11 +176,34 @@ CTriggerFile::Load(const uint8 *data, uint32 size)
 			if(!l.Suivante() || l.mot != "BEGIN") return false;
 			CTriggerPointList pl; CTriggerPointPoint *pt = nil; int32 attendus = -1;
 			while(l.Suivante() && l.mot != "END"){
-				if(l.mot == "POINTNAME") pl.nom = Guillemets(l.reste);
+				if(l.mot == "POINTNAME"){
+					pl.nom = Guillemets(l.reste);
+					// FUN_006d59a0 : les trois premiers caractères du nom, tels quels (pas sans la casse).
+					pl.sauvegarde = pl.nom.compare(0, 3, "SV_") == 0;
+					pl.porte = pl.nom.compare(0, 3, "DT_") == 0;
+				}
 				else if(l.mot == "AREACODE") pl.zone = atoi(l.reste.c_str());
 				else if(l.mot == "NPOINTPOINTS") attendus = atoi(l.reste.c_str());
 				else if(l.mot == "POINTPOINT"){ pl.points.emplace_back(); pt = &pl.points.back(); float v[3] = {0, 0, 0}; Nombres(l.reste, v, 3); pt->pos = CVector(v[0], v[1], v[2]); }
-				else if(pt && l.mot == "POINTYAWPITCHROLL") Nombres(l.reste, pt->lacetTangageRoulis, 3);
+				else if(!pt) continue;
+				else if(l.mot == "POINTYAWPITCHROLL") Nombres(l.reste, pt->lacetTangageRoulis, 3);
+				else if(l.mot == "POINTLABEL") pt->etiquette = Guillemets(l.reste);
+				else if(l.mot == "POINTPICKUPNAME") pt->ramassage = Guillemets(l.reste);
+				else if(l.mot == "POINTSFXID") pt->sfx = Guillemets(l.reste);
+				else if(l.mot == "POINTSOUNDBANKID") pt->banqueSon = Guillemets(l.reste);
+				else if(l.mot == "POINTSFXVOLUME") Nombres(l.reste, &pt->volumeSfx, 1);
+				else if(l.mot == "STREAMFADEINTIME") pt->fonduEntree = atoi(l.reste.c_str());
+				else if(l.mot == "STREAMFADEOUTTIME") pt->fonduSortie = atoi(l.reste.c_str());
+				else if(l.mot == "POINTSML") pt->sml = atoi(l.reste.c_str());
+				else if(l.mot == "STARTHOUR") pt->heureDebut = atoi(l.reste.c_str());
+				else if(l.mot == "ENDHOUR") pt->heureFin = atoi(l.reste.c_str());
+				else if(l.mot == "WEATHERMASK"){ pt->meteo = Guillemets(l.reste); pt->meteoMasque = MasqueMeteo(pt->meteo.c_str()); }
+				else if(l.mot == "USEOCCLUSION") pt->occlusion = l.reste == "TRUE";
+				else if(l.mot == "POINTMISSIONSPEC") pt->missionSpec = l.reste == "TRUE";
+				else if(l.mot == "MISSIONNAME") pt->mission = Guillemets(l.reste);
+				else if(l.mot == "POINTPERMANENT") pt->permanent = l.reste == "TRUE";
+				else if(l.mot == "POINTTAG") pt->tag = atoi(l.reste.c_str());
+				else if(l.mot == "PICKUPBUTES") pt->butes = Guillemets(l.reste);
 			}
 			if(l.mot != "END") return false;
 			if(attendus >= 0 && (int32)pl.points.size() != attendus) incoherences++;

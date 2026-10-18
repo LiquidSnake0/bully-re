@@ -23,6 +23,7 @@ main(void)
 	const CdImage &img = CdStream::ms_images[im];
 	int fichiers = 0, lus = 0, trajets = 0, points = 0, actions = 0, incoherences = 0, perim = 0, zones = 0, comptesFaux = 0, pois = 0, poiPoints = 0, poisFaux = 0;
 	int listes = 0, listesPoints = 0, listesFausses = 0; CTriggerFile premiere;
+	int sauvegardes = 0, portes = 0, ramassages = 0, elastiques = 0, missions = 0, permanents = 0, tags = 0;
 	CTriggerFile carnaval;
 	CTriggerFile pop;
 	const CTriggerPath *ronde = nil; CTriggerFile garde;
@@ -39,7 +40,14 @@ main(void)
 			perim += (int)f.perimetres.size(); zones += (int)f.zones.size();
 			pois += (int)f.pois.size(); for(const CTriggerPoi &p : f.pois) poiPoints += (int)p.points.size();
 			if((int)f.pois.size() != f.nPois) poisFaux++;
-			listes += (int)f.pointLists.size(); for(const CTriggerPointList &pl : f.pointLists) listesPoints += (int)pl.points.size();
+			listes += (int)f.pointLists.size();
+			for(const CTriggerPointList &pl : f.pointLists){
+				listesPoints += (int)pl.points.size(); sauvegardes += pl.sauvegarde; portes += pl.porte;
+				for(const CTriggerPointPoint &pt : pl.points){
+					ramassages += !pt.ramassage.empty(); elastiques += pt.ramassage == "Rubband"; missions += !pt.mission.empty();
+					permanents += pt.permanent; tags += pt.tag != 0;
+				}
+			}
 			if((int)f.pointLists.size() != f.nPoints) listesFausses++;
 			if(strcasecmp(d.name, "1_01.dat") == 0) premiere = f;
 			if(strcasecmp(d.name, "PedPoi.dat") == 0) carnaval = f;
@@ -75,6 +83,26 @@ main(void)
 		VERIF(depart->points.size() == 1 && fabsf(depart->points[0].pos.x - 298.359009f) < 1e-3f && fabsf(depart->points[0].pos.z - 6.068940f) < 1e-3f);
 		VERIF(fabsf(depart->points[0].lacetTangageRoulis[0] - 185) < 1e-3f);
 	}
+	// Les champs d'un point, lus comme FUN_006d59a0 : 1_01_EndPoint est en zone 5 (l'octet +0xc de l'entrée),
+	// tourné de -90° avec un roulis de -2°, et tout le reste vide ou à zéro.
+	const CTriggerPointList *fin = nil;
+	for(const CTriggerPointList &pl : premiere.pointLists) if(pl.nom == "1_01_EndPoint") fin = &pl;
+	VERIF(fin != nil);
+	if(fin){
+		VERIF(fin->zone == 5 && !fin->sauvegarde && !fin->porte && fin->points.size() == 1);
+		const CTriggerPointPoint &p = fin->points[0];
+		VERIF(fabsf(p.lacetTangageRoulis[0] + 90) < 1e-3f && fabsf(p.lacetTangageRoulis[2] + 2) < 1e-3f);
+		VERIF(p.etiquette.empty() && p.ramassage.empty() && p.sfx.empty() && p.banqueSon.empty() && p.meteo.empty() && p.mission.empty() && p.butes.empty());
+		VERIF(fabsf(p.volumeSfx - 1) < 1e-6f && p.fonduEntree == 0 && p.fonduSortie == 0 && p.sml == 0 && p.heureDebut == 0 && p.heureFin == 0);
+		VERIF(!p.occlusion && !p.missionSpec && !p.permanent && p.tag == 0 && p.meteoMasque == 0x3f);
+	}
+	// Le masque météo de FUN_00593f20 : « PSF » (87 points) = P, S et F ; « R » la pluie ; « X » ; vide = tout.
+	VERIF(MasqueMeteo("PSF") == 0x0d && MasqueMeteo("R") == 0x10 && MasqueMeteo("X") == 0x20 && MasqueMeteo("PSFRW") == 0x1f && MasqueMeteo("") == 0x3f && MasqueMeteo("all") == 0x3f && MasqueMeteo("psf") == 0x0d);
+	// Sur les 410 fichiers : 49 listes SV_ (sauvegardes) et 114 DT_ (portes, le moteur compare les trois lettres telles quelles : « dt_smokers » et « dt_SmashCar » n'en sont pas), 408 points à ramasser dont 75 élastiques,
+	// 82 points rattachés à une mission, un seul permanent et un seul tag.
+	printf("  %d listes SV_, %d listes DT_, %d points à ramasser (%d Rubband), %d liés à une mission, %d permanent(s), %d tag(s)\n",
+	       sauvegardes, portes, ramassages, elastiques, missions, permanents, tags);
+	VERIF(sauvegardes == 49 && portes == 114 && ramassages == 408 && elastiques == 75 && missions == 82 && permanents == 1 && tags == 1);
 	printf("  %d périmètres, %d déclencheurs, %d fichier(s) aux comptes d'en-tête différents\n", perim, zones, comptesFaux);
 	VERIF(comptesFaux == 1);                      // tschool_trees.dat : en-tête « NTRIGGERS 1 », fichier vide ensuite
 

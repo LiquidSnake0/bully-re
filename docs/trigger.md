@@ -54,11 +54,42 @@ une position, est non nul dans le seul exemple.
 Un bloc `POINT` est un endroit nommé d'une mission : là où le script pose le joueur
 (`PlayerSetPosPoint`), crée un personnage (`PedCreatePoint`), met un marqueur ou une
 caméra. `POINTNAME`, `AREACODE`, `NPOINTPOINTS`, puis chaque point : `POINTPOINT x, y, z`,
-`POINTYAWPITCHROLL` (degrés), et des champs de son et de ramassage (`POINTSFXID`,
-`POINTPICKUPNAME`, `STARTHOUR`…) qu'on ne lit pas encore. Relevé sur les 410 fichiers :
-**4 188 listes, 6 783 points**, tous les en-têtes `NPOINTS` justes. `1_01.dat` en a 28 :
-`1_01_Player_Start` (298.36, −72.23, 6.07, lacet 185), `1_01_CheerPoints` (plusieurs
-points), `1_01_Secretary`…
+`POINTYAWPITCHROLL` (degrés), puis les champs de son, de ramassage et d'horaire. Relevé sur
+les 410 fichiers : **4 188 listes, 6 783 points**, tous les en-têtes `NPOINTS` justes.
+`1_01.dat` en a 28 : `1_01_Player_Start` (298.36, −72.23, 6.07, lacet 185),
+`1_01_CheerPoints` (plusieurs points), `1_01_Secretary`…
+
+**Ce que le moteur garde d'un bloc POINT** (`FUN_006d59a0`, le lecteur, lu dans l'index le
+18.10.2026). L'entrée de liste (pool 0x20c7c54) reçoit le nom haché (+8), **l'`AREACODE` sur un
+octet (+0xc)**, l'emplacement de `DATLoad` (+0xd), et deux drapeaux en +0x18 tirés des trois
+premiers caractères du nom, tels quels : `SV_` (bit 0, un point de sauvegarde, 49 listes) et
+`DT_` (bit 1, une porte, 114 listes ; `dt_smokers` et `dt_SmashCar` n'en sont pas). Chaque
+point est une entrée de 0x2c octets du pool 0x20c7c88, chaînée à la suivante par +6 :
+
+| Mot-clé | Dans l'entrée | Relevé sur les 6 783 points |
+|---|---|---|
+| `POINTPOINT`, `POINTYAWPITCHROLL` | position +0, lacet +0x1c (le tangage et le roulis ne sont pas gardés) | |
+| `POINTLABEL` | hachage en +0x10 | 971 non vides (`Fireplace`, `Water`, `Sink`…) : des points d'effets |
+| `POINTPICKUPNAME` | index du modèle en +0x20 (`FUN_0051c040`, par hachage dans la table des `CModelInfo`) | 408 objets à ramasser : 75 `Rubband`, 40 `GeekCard`, 30 `brick`… |
+| `POINTSFXID`, `POINTSOUNDBANKID`, `POINTSFXVOLUME` | +0x14 / +0x16, volume en +0x25 | 667 sons |
+| `STREAMFADEINTIME`, `STREAMFADEOUTTIME` | +0x28, +0x29 (le temps divisé par 128) | |
+| `POINTSML` | +0x24, recodé : 0 → 2, 1 → 3, 2 → 5, 3 → 0, 4 → 7, −1 → 1 | 290 non nuls |
+| `STARTHOUR`, `ENDHOUR` | +0x22, +0x23 | 235 horaires |
+| `WEATHERMASK` | +0x27, une lettre par temps (`FUN_00593f20` : F, W, P, S, R, X → bits 0 à 5 ; vide ou `all` → les six) | 87 `PSF`, 15 `R`, 13 `X`, 10 `PSFRW` |
+| `USEOCCLUSION` | bit 0 de +0x2a | 88 |
+| `MISSIONNAME` | +0xc : l'index de la mission dans la banque (`FUN_006a9e70`), −1 si vide, −2 pour `NONE` ; un `!` devant pose le bit 2 de +0x2a, un `-` le bit 3 | 82 (`PumpkinPost` 27, `TombstonePost` 19, `Christmas` 14…) |
+| `POINTMISSIONSPEC`, `POINTPERMANENT`, `POINTTAG`, `PICKUPBUTES` | lus (`PICKUPBUTES` par `FUN_006d5730`) | 1 permanent, 1 tag |
+
+`src/core/TriggerFile` lit tous ces champs (`CTriggerPointPoint`, `MasqueMeteo`) et
+`tests/test_trigger` vérifie `1_01_EndPoint` (zone 5, lacet −90, roulis −2, le reste vide) et
+les comptes ci-dessus.
+
+**L'octet +0xc est bien l'AREACODE**, et `PlayerSetPosPoint` (`FUN_005d2310`) en fait la zone
+de destination du joueur : il lit `(char)entrée[+0xc]`, remplace −1 par la zone courante
+(`DAT_00bd1008`), et passe position, lacet et zone à `FUN_00415730` ; `PlayerSetPosPointArea`
+(`FUN_005d2410`) fait pareil avec la zone donnée par le script. Ce n'est donc pas la zone où le
+joueur **est**, c'est celle où il **sera** s'il y est téléporté ; la différence avec la zone visible
+(`AreaGetVisible`) est traitée dans docs/zones.md.
 
 **Dans le moteur**, `DATLoad("1_01.DAT", 2)` verse le fichier dans quatre pools :
 listes de points (0x20c7c54), points chaînés (0x20c7c88, premier à +4, suivant à +6),
