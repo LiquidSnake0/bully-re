@@ -118,9 +118,10 @@ missions avec script. Les deux lisent maintenant les 499.
   `SystemAllowMissionManagerToForceRunMissions`, `IsMissionCompleated` (les réussites
   de la partie), `MissionGetIndex` sont réels, et le gestionnaire réduit active les
   missions sans condition et lance celle dont le joueur touche le corona en entrant
-  (rayon 2 m, le vrai reste à lire). Avec `--aller 1_01_Corona@2`, le joueur marche au
-  marqueur : **`1_01` démarre à 2,0 s par le gestionnaire, et se termine réussie à 11,1 s**
-  (`--entrer _1_01_BULLYTRIG@6 --aller _1_01_ENDPOINT@10 --zone 2@10.1`). Les classes de
+  (rayon 2 m, le vrai reste à lire). Avec `--aller 1_01_Corona@3`, le joueur marche au
+  marqueur : **`1_01` démarre à 3,0 s par le gestionnaire, et se termine réussie à 12,7 s**
+  (`--entrer _1_01_BULLYTRIG@7 --zone 2@9 --aller _1_01_ENDPOINT@11`) ; `MainMap.lua` est
+  chargé à 0,17 s par la première demande de zone de `gamemain`. Les classes de
   conditions (`MissionCond`, `TimeCond`, `ConditionGroup`, `NOT`) ne sont pas lues, donc
   `1_02` n'enchaîne pas encore.
 
@@ -193,14 +194,17 @@ moteur attend de la manette : `--entrer DECLENCHEUR@s` le pose dans un déclench
 `--aller LISTE[,n]@s` (ou `x,y,z@s`) à un point, `--zone N@s` lui fait passer une porte.
 `1_01` lu avec `tools/lur.py` (fonction `CheckObjs`, ligne 684) :
 
-    build/outils/lancer_lua 40 --mission 1_01 --entrer _1_01_BULLYTRIG@4 --aller _1_01_ENDPOINT@8 --zone 2@8.1
+    build/outils/lancer_lua 14 --mission 1_01 --entrer _1_01_BULLYTRIG@4 --zone 2@6 --aller _1_01_ENDPOINT@8
 
 1. Objectif `1_01_StandGround` ; le joueur entre dans `_1_01_BULLYTRIG` → le premier
    élève redevient ambiant, un bully (modèle 69) est créé sur `_1_01_FIGHTBULLIES` et
    `PedAttack(5, 4, 3)` lance la bagarre (que l'outil ne joue pas).
-2. Le joueur au point 1 de `_1_01_ENDPOINT` **et** `AreaGetVisible() == 2` (le hall de
-   l'école ; l'AREACODE du point dit 5, ce n'est donc pas la zone visible) → la
-   secrétaire (59) est créée sur `_1_01_SECRETARYINOFFICE`, la population revient.
+2. `AreaGetVisible() == 2` (l'intérieur de l'école ; le `PlayerIsInAreaXYZ` sur
+   `_1_01_ENDPOINT` qui précède est calculé mais n'entre pas dans le test compilé ; l'AREACODE
+   5 du point est un reste de l'ancien intérieur du bureau, docs/zones.md) → la secrétaire
+   (59) est créée sur `_1_01_SECRETARYINOFFICE`, la population revient. La zone change par
+   une porte (`--zone 2@6`) : 14 images, un fondu, `MainMap.lua` retiré, `SchoolHallways.lua`
+   chargé, et la zone visible passe à 2 à 7,66 s (`src/core/AreaManager`).
 3. Puis deux élèves (69 et 102) sur `_1_01_KIDRUN`, `PedMoveToPoint`, `PedAttack`, et
    le joueur attendu dans `_1_01_CHECKOBJS1` (les deux élèves redeviennent ambiants).
 4. Le joueur dans `_1_01_PRINCOFFICE` (le point 1 de `_1_01_ENDPOINT` est déjà dedans)
@@ -209,7 +213,7 @@ moteur attend de la manette : `--entrer DECLENCHEUR@s` le pose dans un déclench
    `gMissionSuccess = true`, `gMissionRunning = false` : la boucle de `main` s'arrête,
    `L_StopMonitoringTriggers`, `L_CutsceneFade`, **`MissionSucceed(true, false, false)`**.
 
-**`1_01` se termine, réussie, à 9,1 s** : `main fini, MissionCleanup`, le nettoyage
+**`1_01` se termine, réussie, à 9,7 s** : `main fini, MissionCleanup`, le nettoyage
 rend les modèles uniques, décharge les animations, rend le contrôle, et les cinq
 piétons laissés par la mission sont libérés.
 
@@ -227,8 +231,9 @@ d'être posées, et valent nil comme il faut : `gMissionSuccess`, `misObj`, `F_S
 1. Ce que `1_01` ne joue pas encore pour de vrai : les cinématiques
    (`PlayCutsceneWithLoad`, `CameraFade`), `PedSetActionNode`, `SoundPlayScriptedSpeechEvent`,
    qui sont des bouchons qui répondent neutre ; et les vraies vitesses de marche.
-2. Ce que lit `FUN_005d2310` à +0xc de l'entrée de liste (l'AREACODE ?), et la vraie
-   zone d'un point.
+2. Fait : +0xc est l'AREACODE (docs/trigger.md), et la zone d'un point n'est que la
+   destination d'une téléportation ; la zone visible est celle du gestionnaire de zones
+   (docs/zones.md). Restent les portes du gestionnaire (les paires de +0x10) et qui les enregistre.
 3. Les classes de conditions des nœuds (`MissionCond`, `TimeCond`, `ConditionGroup`,
    `NOT` : `FUN_0061a4f0` les fabrique) pour que `1_02` s'enchaîne après `1_01` ; le
    rayon du corona (champs 56 et 60 de `MissionButtonTrigger` ?) ; `BUT_LAUNCH`.

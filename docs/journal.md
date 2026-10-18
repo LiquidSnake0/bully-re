@@ -411,3 +411,14 @@ en échec plutôt que de les masquer.
   `FUN_00593f20`, mission) : `CTriggerPointPoint` les lit tous, `tests/test_trigger`
   compte 49 listes `SV_`, 114 `DT_` (les trois lettres telles quelles), 408 objets à
   ramasser, 82 points de mission sur les 6 783. Tableau dans docs/trigger.md.
+- Suite : **AREACODE ≠ zone visible, tranché.** La zone visible est `DAT_00bd1008`, écrite
+  par la seule `FUN_00415750`, à l'état 9 de la machine de changement de zone
+  (`FUN_00416e30`, l'objet `PTR_DAT_009e4f4c`) ; l'AREACODE d'un point n'est que la
+  destination que `PlayerSetPosPoint` demande. Les points du bureau du principal disent 5
+  (l'ancien intérieur `PrincipalOffice`, dont la porte est `Disabled_` dans AreaTran.dat),
+  le bureau est dans l'intérieur de l'école (2). `src/core/AreaManager` recrée la table
+  des scripts de zone, la demande et la machine (fondu, scripts de zone retirés puis
+  chargés, joueur posé à l'arrivée) ; `tests/test_zones` suit ses quatre chemins ;
+  `lancer_lua` charge `MainMap.lua` puis `SchoolHallways.lua` pour de vrai, et leur
+  `main` signale la zone prête (`F_PreDATInit` → `AreaSignalAreaTransitionReadyToLoad`).
+  `AreaTransitionXYZ` n'est pas du moteur : SGlFunc.lua la définit. docs/zones.md.

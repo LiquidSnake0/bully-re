@@ -16,6 +16,9 @@
 // MODELENUM (les noms de modèles des .idb, src/core/ModelEnum.h) et POI (pas encore lue, -1).
 // Les piétons des scripts (src/peds/ScriptPedPool.h) marchent, courent, se battent et meurent
 // image par image : PedMoveToPoint, PedMoveToXYZ, PedStop, PedAttack, PedSetHealth, PedMakeAmbient.
+// Les zones (src/core/AreaManager.h, docs/zones.md) : PlayerSetPos… demande un changement de zone, joué image par
+// image comme FUN_00416e30 (fondu, script de zone retiré puis chargé avec son main, zone visible et joueur posés à
+// l'arrivée) ; AreaGetVisible, AreaIsLoading, AreaRegisterAreaScript, AreaSignalAreaTransitionReadyToLoad, CameraFade réels.
 // --nouvelle-partie : pas de --mission ; le gestionnaire de missions (FUN_006ad130, réduit) active les
 // missions sans condition et lance celle dont le joueur touche le corona, comme à la première partie.
 //   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]...
@@ -28,6 +31,7 @@
 #include "../src/core/LuaApi.h"
 #include "../src/core/ModelEnum.h"
 #include "../src/core/DatPools.h"
+#include "../src/core/AreaManager.h"
 #include "../src/peds/ScriptPedPool.h"
 #include <algorithm>
 #include <cstdio>
@@ -65,6 +69,7 @@ struct Script {
 	std::vector<Thread> threads;         // [0] = premier niveau, puis CreateThread
 	int courant = -1;                    // +0x114c
 	bool fin = false;                    // +0x1150 : le script se termine (MissionCleanup)
+	bool zone = false;                   // +0x2b09 : un script de zone, chargé par le changement de zone et retiré au suivant
 };
 // Les objets script vivants : [0] = main.lua, puis la mission en cours.
 static std::vector<Script> scripts;
@@ -79,7 +84,19 @@ static CDatPools donnees;
 static CScriptPedPool pietons;
 // Les modèles par nom (src/core/ModelEnum.h) : MODELENUM._Taxicab → 286, ou -1.
 static CModelEnum modeles;
-static int zoneCourante = 0;            // DAT_00bd1008 : le code de zone où est le joueur (AreaGetVisible)
+// Le gestionnaire de zones (src/core/AreaManager.h, docs/zones.md) : la zone visible (DAT_00bd1008, ce que
+// AreaGetVisible répond), les scripts de zone (AreaRegisterAreaScript) et le changement de zone du joueur,
+// demandé par PlayerSetPos… et joué image par image comme FUN_00416e30 : fondu au noir, scripts de zone
+// retirés puis celui de la nouvelle zone chargé avec son main, zone visible et joueur posés à l'arrivée.
+static CAreaManager zones;
+// Le fondu de la caméra (CameraFade, 0x4f1980), réduit à ce que la machine des zones et les scripts en
+// attendent : une durée, un sens, et « fini ». Les durées par défaut du moteur (DAT_020c8910 + 0x18 et
+// + 0x1c) ne sont pas lues : une seconde.
+static const float FONDU_DEFAUT_MS = 1000;
+static struct {
+	bool enCours = false, versNoir = false, noir = false; uint32 fin = 0;
+	int Etat(void) const { return enCours ? FONDU_EN_COURS : noir ? FONDU_NOIR : FONDU_RENDU; }   // FUN_004f11a0
+} fondu;
 
 // La mission en cours et sa machine à états, réduite de FUN_006ad3e0 :
 // 1 MissionSetup tourne, 2 main tourne, 3 MissionCleanup tourne.
@@ -628,15 +645,26 @@ GetPointList(lua_State *L)
 // DAT_00bd1008 s'il vaut -1 ; c'est la zone de destination d'une téléportation, pas la zone où le
 // joueur est (1_01_EndPoint dit 5, et le script y attend AreaGetVisible() == 2),
 // d'où --zone pour jouer les portes.
+// Toutes les fonctions Lua qui déplacent le joueur posent l'octet +0x8dc (fondu immédiat) puis appellent
+// FUN_00415640 : une demande au gestionnaire de zones, qui pose le joueur à l'arrivée (états 9 et 10 de
+// FUN_00416e30) ; AreaIsLoading répond vrai entre-temps, et c'est ce qu'attendent AreaTransitionXYZ et
+// AreaTransitionPoint, qui sont des fonctions Lua de SGlFunc.lua (PlayerSetPos…Area, puis
+// « while AreaIsLoading() do Wait(0) end », puis Wait(100)).
+static void
+DemanderZone(const char *quoi, const CVector &pos, float cap, int zone)
+{
+	if(zone < 0) zone = zones.zoneVisible;        // FUN_005d2310 : -1 garde DAT_00bd1008
+	if(!zones.Demander(pos, cap, zone, nil, true)) printf("        %s : un changement de zone est déjà en cours, demande ignorée\n", quoi);
+}
+
 static void
 PoserJoueur(const CTriggerPointPoint *pt, int zone)
 {
-	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
-	j->pos = pt->pos; j->cap = pt->lacetTangageRoulis[0];
-	if(zone >= 0) zoneCourante = zone;
+	DemanderZone("PlayerSetPosPoint", pt->pos, pt->lacetTangageRoulis[0], zone);
 }
 
-// PlayerSetPosPoint(liste[, n]) (0x5d2310) : le joueur au point, tourné selon son lacet.
+// PlayerSetPosPoint(liste[, n]) (0x5d2310) : le joueur au point, tourné selon son lacet, dans la zone de
+// l'AREACODE de la liste (l'octet +0xc de l'entrée), ou la zone visible si l'AREACODE vaut -1.
 static int
 PlayerSetPosPoint(lua_State *L)
 {
@@ -647,20 +675,71 @@ PlayerSetPosPoint(lua_State *L)
 	return 0;
 }
 
-// AreaGetVisible() (0x5b7300) : la zone courante, DAT_00bd1008.
+// AreaGetVisible() (0x5b7300) : la zone visible, DAT_00bd1008.
 static int
 AreaGetVisible(lua_State *L)
 {
 	appels["AreaGetVisible"]++;
-	lua_pushnumber(L, zoneCourante);
+	lua_pushnumber(L, zones.zoneVisible);
 	return 1;
 }
 
+// AreaIsLoading() (0x5b6f50 → 0x415230) : un changement de zone est demandé ou en cours.
+static int
+AreaIsLoading(lua_State *L)
+{
+	appels["AreaIsLoading"]++;
+	lua_pushboolean(L, zones.EnChargement());
+	return 1;
+}
+
+// AreaSignalAreaTransitionReadyToLoad() (0x5b6f40) : le main du script de zone dit qu'il a fini de préparer la
+// zone (DAT_00bccdf0) ; l'état 8 de la machine attend ce signal (+0x870) avant de poser la zone et le joueur.
+static int
+AreaSignalAreaTransitionReadyToLoad(lua_State *L)
+{
+	Journal("AreaSignalAreaTransitionReadyToLoad", L, 1);
+	zones.SignalerPret();
+	return 0;
+}
+
+// AreaRegisterAreaScript(code, script) (0x5b7530 → 0x414f10) : le script d'une zone, dans sa case de la table.
+static int
+AreaRegisterAreaScript(lua_State *L)
+{
+	Journal("AreaRegisterAreaScript", L, 1);
+	zones.EnregistrerScript((int32)luaL_checknumber(L, 1), luaL_checkstring(L, 2));
+	return 0;
+}
+
+// PlayerSetPosXYZ(x, y, z) (0x5d1280 → 0x415fb0) : même chemin, avec le cap du joueur et la zone visible.
 static int
 PlayerSetPosXYZ(lua_State *L)
 {
 	Journal("PlayerSetPosXYZ", L, 1);
-	pietons.Acceder(SCRIPT_PED_JOUEUR)->pos = CVector((float)luaL_checknumber(L, 1), (float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3));
+	const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	DemanderZone("PlayerSetPosXYZ", CVector((float)luaL_checknumber(L, 1), (float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3)), j->cap, zones.zoneVisible);
+	return 0;
+}
+
+// CameraFade(ms, sens) (0x5b8ea0 → CameraFade 0x4f1980) : sens 0, l'écran va au noir ; 1, il revient ; une
+// durée négative prend celle du moteur. Ici le fondu n'est qu'une durée qui court : la machine des zones
+// attend sa fin (FUN_004f11a0), et les scripts font Wait(ms) de leur côté.
+static void
+LancerFondu(float ms, bool versNoir)
+{
+	fondu.enCours = true; fondu.versNoir = versNoir; fondu.fin = maintenant + (uint32)ms;
+}
+
+static int
+CameraFade(lua_State *L)
+{
+	Journal("CameraFade", L, 1);
+	float ms = (float)luaL_optnumber(L, 1, -1);
+	int sens = (int)luaL_optnumber(L, 2, 0);
+	if(sens != 0 && sens != 1) return 0;
+	if(ms < 0) ms = FONDU_DEFAUT_MS;
+	LancerFondu(ms, sens == 0);
 	return 0;
 }
 
@@ -673,13 +752,13 @@ PlayerGetPosXYZ(lua_State *L)
 	return 3;
 }
 
-// PlayerSetPosPointArea(zone, liste[, n]) (0x5d2410) : comme PlayerSetPosPoint, avec le code de zone devant.
+// PlayerSetPosPointArea(zone, liste[, n]) (0x5d2410) : comme PlayerSetPosPoint, avec la zone donnée par le script.
 static int
 PlayerSetPosPointArea(lua_State *L)
 {
 	Journal("PlayerSetPosPointArea", L, 1);
 	const CTriggerPointPoint *pt = PointArg(L, "PlayerSetPosPointArea", 2, 3);
-	if(pt) PoserJoueur(pt, (int)luaL_checknumber(L, 1));
+	if(pt) DemanderZone("PlayerSetPosPointArea", pt->pos, pt->lacetTangageRoulis[0], (int)luaL_checknumber(L, 1));
 	return 0;
 }
 
@@ -736,8 +815,8 @@ AllerAuPoint(const char *cible)
 	const CTriggerPointPoint *pt = donnees.Point(h, n);
 	if(pt == nil){ printf("%6.2f s  --aller : la liste %s n'est pas chargée\n", maintenant / 1000.0, nom.c_str()); return; }
 	// La zone ne change pas : c'est une porte qui la change (--zone), pas une marche.
-	PoserJoueur(pt, -1);
-	printf("%6.2f s  le joueur va au point %d de %s (%d) en (%.1f, %.1f, %.1f), toujours en zone %d\n", maintenant / 1000.0, n, nom.c_str(), h, pt->pos.x, pt->pos.y, pt->pos.z, zoneCourante);
+	j->pos = pt->pos; j->cap = pt->lacetTangageRoulis[0];
+	printf("%6.2f s  le joueur va au point %d de %s (%d) en (%.1f, %.1f, %.1f), toujours en zone %d\n", maintenant / 1000.0, n, nom.c_str(), h, pt->pos.x, pt->pos.y, pt->pos.z, zones.zoneVisible);
 }
 
 // --entrer NOM@s : à s secondes, le joueur est posé dans le déclencheur NOM (à la position du
@@ -1076,14 +1155,14 @@ SystemResetShouldMovePlayer(lua_State *L)
 	return 0;
 }
 
-// PlayerSetPosXYZArea(x, y, z, zone) : le joueur posé là, dans cette zone.
+// PlayerSetPosXYZArea(x, y, z, zone) : le joueur demandé là, dans cette zone ; c'est par là que passe
+// AreaTransitionXYZ (SGlFunc.lua), donc gamemain à la nouvelle partie (272.68, -73.13, 6.97, 0).
 static int
 PlayerSetPosXYZArea(lua_State *L)
 {
 	Journal("PlayerSetPosXYZArea", L, 1);
-	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
-	j->pos = CVector((float)luaL_checknumber(L, 1), (float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3));
-	zoneCourante = (int)luaL_optnumber(L, 4, zoneCourante);
+	const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	DemanderZone("PlayerSetPosXYZArea", CVector((float)luaL_checknumber(L, 1), (float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3)), j->cap, (int)luaL_optnumber(L, 4, zones.zoneVisible));
 	return 0;
 }
 
@@ -1105,15 +1184,51 @@ SystemAllowMissionManagerToForceRunMissions(lua_State *L)
 	return 0;
 }
 
-// AreaTransitionXYZ(zone, x, y, z, …) : gamemain y pose le joueur à la nouvelle partie (0, 272.68, -73.13, 6.97).
-static int
-AreaTransitionXYZ(lua_State *L)
+// AreaTransitionXYZ et AreaTransitionPoint ne sont pas des fonctions du moteur : SGlFunc.lua les définit
+// (GlobalImportScript, donc dans _G) autour de PlayerSetPosXYZArea / PlayerSetPosPointArea et d'une attente
+// de AreaIsLoading. Une version C ici serait écrasée par la leur au chargement de main.lua.
+
+// FUN_004176d0 : une image du gestionnaire de zones, et ce qu'il demande au monde.
+static int imagesEnAttenteDuSignal = 0;
+static void
+AvancerZones(lua_State *L)
 {
-	Journal("AreaTransitionXYZ", L, 1);
-	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
-	zoneCourante = (int)luaL_optnumber(L, 1, 0);
-	j->pos = CVector((float)luaL_checknumber(L, 2), (float)luaL_checknumber(L, 3), (float)luaL_checknumber(L, 4));
-	return 0;
+	bool scriptsDeZone = false, scriptDemande = false;
+	const char *attendu = zones.Script(zones.demande.zone);
+	for(const Script &sc : scripts)
+		if(sc.zone && !sc.fin){ scriptsDeZone = true; if(strcasecmp(sc.fichier.c_str(), attendu) == 0) scriptDemande = true; }
+	int avant = zones.zoneVisible;
+	zones.AvancerImage(fondu.Etat(), !scriptsDeZone, scriptDemande);
+	const CAreaManager::Evenements &e = zones.evenements;
+	if(e.fonduNoir) LancerFondu(FONDU_DEFAUT_MS, true);
+	if(e.decharger){
+		// FUN_005dbb20 : les scripts de zone sont retirés (leurs threads avec).
+		for(Script &sc : scripts){
+			if(!sc.zone || sc.fin) continue;
+			sc.fin = true;
+			for(Thread &t : sc.threads) if(t.etat < TUE){ t.etat = TUE; luaL_unref(L, LUA_REGISTRYINDEX, t.ref); t.ref = LUA_NOREF; }
+			printf("%6.2f s  zones : script de zone %s retiré\n", maintenant / 1000.0, sc.fichier.c_str());
+		}
+	}
+	if(e.charger){
+		// FUN_005dc020(script, 1) : l'objet script de la zone, son premier niveau puis son main ; marqué « zone ».
+		if(*e.charger){
+			int s = NouveauScript(L, e.charger);
+			if(s >= 0){ scripts[s].zone = true; NouveauThread(L, s, "main"); printf("%6.2f s  zones : script de zone %s chargé, main démarre\n", maintenant / 1000.0, e.charger); }
+			else printf("%6.2f s  zones : CreateNameSpace(%s) a échoué\n", maintenant / 1000.0, e.charger);
+		}else{ printf("%6.2f s  zones : aucun script enregistré pour la zone %d, rien n'attendra son signal\n", maintenant / 1000.0, zones.demande.zone); zones.SignalerPret(); }
+		imagesEnAttenteDuSignal = 0;
+	}
+	// Le main du script de zone doit appeler AreaSignalAreaTransitionReadyToLoad ; s'il ne le fait pas (un
+	// bouchon qui le bloque avant), on le dit une fois au bout de cinq secondes.
+	if(zones.etat == AREA_PRET && ++imagesEnAttenteDuSignal == 150) printf("%6.2f s  zones : %s n'a pas encore appelé AreaSignalAreaTransitionReadyToLoad, la zone %d attend\n", maintenant / 1000.0, attendu, zones.demande.zone);
+	if(e.zoneChangee) printf("%6.2f s  zones : la zone visible passe de %d à %d\n", maintenant / 1000.0, avant, zones.zoneVisible);
+	if(e.joueurPose){
+		CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+		j->pos = zones.demande.pos; j->cap = zones.demande.cap;
+		printf("%6.2f s  zones : le joueur est posé en (%.1f, %.1f, %.1f), cap %.0f, zone %d\n", maintenant / 1000.0, j->pos.x, j->pos.y, j->pos.z, j->cap, zones.zoneVisible);
+	}
+	if(e.fonduRetour) LancerFondu(FONDU_DEFAUT_MS, false);
 }
 
 // FUN_006ad130, réduit : à chaque image, ce que le gestionnaire fait des missions de la banque.
@@ -1163,7 +1278,7 @@ main(int argc, char **argv)
 	const char *aLancer = nil;           // --mission NOM : ForceStartMission(NOM) après une seconde
 	std::vector<std::pair<uint32, std::string>> entrees;   // --entrer NOM@s : le joueur entre dans NOM à s secondes
 	std::vector<std::pair<uint32, std::string>> allers;    // --aller NOM[,n]@s ou x,y,z@s : le joueur y est posé à s secondes
-	std::vector<std::pair<uint32, int>> zones;             // --zone N@s : le joueur passe dans la zone N (une porte) à s secondes
+	std::vector<std::pair<uint32, int>> portes;            // --zone N@s : le joueur passe dans la zone N (une porte) à s secondes
 	std::vector<const char*> pos;
 	for(int i = 1; i < argc; i++){
 		if(strcmp(argv[i], "--mission") == 0 && i + 1 < argc) aLancer = argv[++i];
@@ -1174,7 +1289,7 @@ main(int argc, char **argv)
 		}
 		else if(strcmp(argv[i], "--zone") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
-			zones.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), atoi(e.c_str())});
+			portes.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), atoi(e.c_str())});
 		}
 		else if(strcmp(argv[i], "--aller") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
@@ -1215,7 +1330,10 @@ main(int argc, char **argv)
 	lua_register(L, "IsMissionCompleated", IsMissionCompleated);
 	lua_register(L, "MissionGetIndex", MissionGetIndex);
 	lua_register(L, "SystemAllowMissionManagerToForceRunMissions", SystemAllowMissionManagerToForceRunMissions);
-	lua_register(L, "AreaTransitionXYZ", AreaTransitionXYZ);
+	lua_register(L, "AreaIsLoading", AreaIsLoading);
+	lua_register(L, "AreaSignalAreaTransitionReadyToLoad", AreaSignalAreaTransitionReadyToLoad);
+	lua_register(L, "AreaRegisterAreaScript", AreaRegisterAreaScript);
+	lua_register(L, "CameraFade", CameraFade);
 	lua_register(L, "SystemShouldMovePlayer", SystemShouldMovePlayer);
 	lua_register(L, "SystemResetShouldMovePlayer", SystemResetShouldMovePlayer);
 	lua_register(L, "PlayerSetPosXYZArea", PlayerSetPosXYZArea);
@@ -1290,9 +1408,16 @@ main(int argc, char **argv)
 		}
 		for(auto &e : entrees) if(!e.second.empty() && maintenant >= e.first){ EntrerDansDeclencheur(e.second.c_str()); e.second.clear(); }
 		for(auto &e : allers) if(!e.second.empty() && maintenant >= e.first){ AllerAuPoint(e.second.c_str()); e.second.clear(); }
-		for(auto &e : zones) if(e.second >= 0 && maintenant >= e.first){ zoneCourante = e.second; printf("%6.2f s  le joueur passe dans la zone %d\n", maintenant / 1000.0, e.second); e.second = -1; }
+		for(auto &e : portes) if(e.second >= 0 && maintenant >= e.first){
+			// Une porte : la demande de FUN_00416e30 (état 0) pour le point d'arrivée, sans l'octet +0x8dc.
+			const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+			printf("%6.2f s  le joueur passe une porte vers la zone %d%s\n", maintenant / 1000.0, e.second, zones.Demander(j->pos, j->cap, e.second, nil, false) ? "" : " : refusé, un changement est en cours");
+			e.second = -1;
+		}
+		if(fondu.enCours && maintenant >= fondu.fin){ fondu.enCours = false; fondu.noir = fondu.versNoir; if(journalRestant > 0){ journalRestant--; printf("%6.2f s  fondu : l'écran est %s\n", maintenant / 1000.0, fondu.versNoir ? "noir" : "rendu"); } }
 		MettreAJour(L);
 		AvancerPietons();
+		AvancerZones(L);
 		AvancerGestionnaire(L);
 	}
 

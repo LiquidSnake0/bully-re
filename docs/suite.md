@@ -16,7 +16,9 @@ chantier. Un point fini passe en bas, avec son commit.
    `--aller` et `--zone` jouent le joueur, et les globales de script valent nil comme dans
    le jeu (`src/core/LuaApi`) : **`1_01` se termine réussie**. Les piétons marchent, courent et se battent
    (`CScriptPedPool::Avancer`). `MODELENUM` est lue. Suite : les cinématiques et les attentes, qui démarre `1_01` à la nouvelle partie, puis brancher les fonctions que
-   `gamemain` appelle (zones, effets, joueur) en remplaçant les bouchons.
+   `gamemain` appelle (zones, effets, joueur) en remplaçant les bouchons. Les zones sont faites
+   (`src/core/AreaManager`, docs/zones.md) : le changement de zone est joué comme `FUN_00416e30`,
+   les scripts de zone (`MainMap.lua`, `SchoolHallways.lua`) sont chargés pour de vrai.
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
    directement au lieu des exports headless. Prérequis : Ghidra 12.1.4 et
@@ -46,6 +48,13 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- Les zones : `CAreaManager` (table des scripts de zone, zone visible, demande et machine à états de
+  `FUN_00416e30`), `tests/test_zones` ; `lancer_lua` charge les scripts de zone avec leur `main`,
+  `AreaIsLoading`, `AreaRegisterAreaScript`, `AreaSignalAreaTransitionReadyToLoad`, `CameraFade` réels ;
+  `AreaTransitionXYZ` était une version C morte (SGlFunc.lua la définit en Lua) ; docs/zones.md.
+- L'octet +0xc de l'entrée de liste de points = l'AREACODE (`FUN_006d59a0`) ; tous les champs d'un
+  bloc POINT lus (`CTriggerPointPoint`, `MasqueMeteo` = `FUN_00593f20`) ; docs/trigger.md.
 
 - `MODELENUM` : `src/core/ModelEnum` reconstruit la table des modèles par nom depuis les `.idb` (4 251 noms, sans la casse, -1 sinon, comme `FUN_0051c1e0`) ; `lancer_lua` pose `MODELENUM` et `POI` (celle-ci à -1, pas encore lue) ; `tests/test_modelenum` ; docs/lua.md.
 
