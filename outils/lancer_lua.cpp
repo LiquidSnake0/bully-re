@@ -21,7 +21,9 @@
 // l'arrivée) ; AreaGetVisible, AreaIsLoading, AreaRegisterAreaScript, AreaSignalAreaTransitionReadyToLoad, CameraFade réels.
 // --nouvelle-partie : pas de --mission ; le gestionnaire de missions (FUN_006ad130, réduit) active les
 // missions sans condition et lance celle dont le joueur touche le corona, comme à la première partie.
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]...
+// Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
+// de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -32,6 +34,7 @@
 #include "../src/core/ModelEnum.h"
 #include "../src/core/DatPools.h"
 #include "../src/core/AreaManager.h"
+#include "../src/cutscene/CutsceneFiles.h"
 #include "../src/peds/ScriptPedPool.h"
 #include <algorithm>
 #include <cstdio>
@@ -93,6 +96,22 @@ static CAreaManager zones;
 // attendent : une durée, un sens, et « fini ». Les durées par défaut du moteur (DAT_020c8910 + 0x18 et
 // + 0x1c) ne sont pas lues : une seconde.
 static const float FONDU_DEFAUT_MS = 1000;
+// CCutsceneMgr réduit à ses drapeaux (docs/cinematiques.md) : la cinématique chargée (DAT_020c5be2), en cours
+// (DAT_020c5be4), son temps (DAT_020c5b1c), sur les fichiers de Cuts/Cuts.img (src/cutscene/CutsceneFiles.h).
+// La fin, dans le moteur, vient de l'arbre d'actions /Global/CutScenes (FUN_006c3a70) ; ici, faute de le
+// jouer, c'est la dernière clé de la piste caméra. --sans-cinematiques : IsCutsceneLoaded répond faux et
+// SCutscenes.lua passe directement à StopCutscene, comme quand le chargement échoue.
+static struct {
+	CCutsceneFiles fichiers;
+	bool jouer = true;              // --sans-cinematiques l'éteint
+	bool chargee = false;           // DAT_020c5be2
+	bool enCours = false;           // DAT_020c5be4
+	float temps = 0;                // DAT_020c5b1c, en secondes
+	float duree = 0;                // la dernière clé de la piste caméra
+	bool son = false;               // DAT_020c5be7 (LoadCutsceneSound)
+	size_t sousTitre = 0;           // le prochain sous-titre à afficher
+	std::string nomTable; int tailleTable = 0;   // CutSetCutsceneName (DAT_00bceb08), CutSetCutsceneTableSize (DAT_00bceb00)
+} cinematique;
 static struct {
 	bool enCours = false, versNoir = false, noir = false; uint32 fin = 0;
 	int Etat(void) const { return enCours ? FONDU_EN_COURS : noir ? FONDU_NOIR : FONDU_RENDU; }   // FUN_004f11a0
@@ -1043,6 +1062,89 @@ PlayerGetHealth(lua_State *L)
 	return 1;
 }
 
+// --- Les cinématiques (docs/cinematiques.md) ---
+
+// LoadCutscene(nom, drapeau) (0x5bb100 → CCutsceneMgr::LoadCutsceneData, FUN_006c4480) : les fichiers de la
+// cinématique ; elle n'est « chargée » (DAT_020c5be2) que si son .INF donne au moins un objet et que tous
+// leurs modèles sont là : ici, qu'il y ait des objets.
+static int
+LoadCutscene(lua_State *L)
+{
+	Journal("LoadCutscene", L, 1);
+	const char *nom = luaL_checkstring(L, 1);
+	cinematique.chargee = cinematique.enCours = false;
+	cinematique.temps = cinematique.duree = 0; cinematique.sousTitre = 0;
+	if(!cinematique.jouer){ printf("        cinématique %s : --sans-cinematiques, elle ne sera pas chargée\n", nom); return 0; }
+	if(!cinematique.fichiers.Charger(nom)){ printf("        Cuts\\Cuts.img introuvable : %s ne sera pas chargée\n", nom); return 0; }
+	const CCutsceneFiles &f = cinematique.fichiers;
+	cinematique.chargee = f.aObjets && !f.inf.objets.empty();
+	cinematique.duree = f.aCamera ? f.camera.Duree() : 0;
+	printf("        cinématique %s : %zu objets (%zu faciaux), %zu sous-titres, caméra %s (%.2f s), %zu fichiers d'animation%s\n", nom,
+	       f.inf.objets.size(), f.inf.faciaux.size(), f.sub.lignes.size(), f.aCamera ? "lue" : "absente", cinematique.duree, f.animations.size(),
+	       cinematique.chargee ? "" : " : pas d'objet, elle ne sera pas jouée");
+	return 0;
+}
+
+// LoadCutsceneSound(nom) (0x5bb130 → FUN_006c3750) : la banque de sons du nom ; DAT_020c5be7.
+static int
+LoadCutsceneSound(lua_State *L){ Journal("LoadCutsceneSound", L, 1); cinematique.son = true; return 0; }
+
+// IsCutsceneLoaded() (0x5bb240) : DAT_020c5be2.
+static int
+IsCutsceneLoaded(lua_State *L){ appels["IsCutsceneLoaded"]++; lua_pushboolean(L, cinematique.chargee); return 1; }
+
+// StartCutscene() (0x5bb150 → FUN_006c6210) : le temps à zéro, l'arbre d'actions lancé, DAT_020c5be4 = 1.
+static int
+StartCutscene(lua_State *L)
+{
+	Journal("StartCutscene", L, 1);
+	if(!cinematique.chargee) return 0;
+	cinematique.enCours = true; cinematique.temps = 0; cinematique.sousTitre = 0;
+	printf("%6.2f s  cinématique %s : elle commence, %.2f s à jouer\n", maintenant / 1000.0, cinematique.fichiers.nom.c_str(), cinematique.duree);
+	return 0;
+}
+
+// StopCutscene() (0x5bb160 → CCutsceneMgr::DeleteCutsceneData, FUN_006c3ed0) : tout est libéré.
+static int
+StopCutscene(lua_State *L)
+{
+	Journal("StopCutscene", L, 1);
+	if(cinematique.chargee) printf("%6.2f s  cinématique %s : arrêtée à %.2f s\n", maintenant / 1000.0, cinematique.fichiers.nom.c_str(), cinematique.temps);
+	cinematique.chargee = cinematique.enCours = cinematique.son = false;
+	return 0;
+}
+
+// GetCutsceneRunning() (0x5bb190) : l'octet DAT_020c5be4, en nombre ; GetCutsceneTime() (0x5bb170) : le temps en ms.
+static int
+GetCutsceneRunning(lua_State *L){ appels["GetCutsceneRunning"]++; lua_pushnumber(L, cinematique.enCours ? 1 : 0); return 1; }
+static int
+GetCutsceneTime(lua_State *L){ appels["GetCutsceneTime"]++; lua_pushnumber(L, (lua_Number)(long)(cinematique.temps * 1000 + 0.5f)); return 1; }
+
+// CutSetCutsceneTableSize(n) (0x5bb1e0), CutSetCutsceneName(nom) (0x5bb200) : SCutscenes.lua les pose au chargement.
+static int
+CutSetCutsceneTableSize(lua_State *L){ Journal("CutSetCutsceneTableSize", L, 1); cinematique.tailleTable = (int)luaL_optnumber(L, 1, 0); return 0; }
+static int
+CutSetCutsceneName(lua_State *L){ Journal("CutSetCutsceneName", L, 1); cinematique.nomTable = luaL_optstring(L, 1, ""); if(cinematique.nomTable.size() > 16) cinematique.nomTable.resize(16); return 0; }
+
+// Une image de FUN_006c4350 : le temps avance tant que la cinématique tourne ; les sous-titres passent au
+// journal à leur image de début ; à la dernière clé de la caméra, la cinématique est finie.
+static void
+AvancerCinematique(void)
+{
+	if(!cinematique.enCours) return;
+	cinematique.temps += 0.033f;
+	const CCutsceneSub &sub = cinematique.fichiers.sub;
+	if(cinematique.fichiers.aSousTitres && sub.imagesParSeconde > 0)
+		while(cinematique.sousTitre < sub.lignes.size() && sub.lignes[cinematique.sousTitre].debut <= cinematique.temps * sub.imagesParSeconde){
+			if(journalRestant > 0){ journalRestant--; printf("%6.2f s  cinématique %s : sous-titre %s (%.1f à %.1f s)\n", maintenant / 1000.0, cinematique.fichiers.nom.c_str(), sub.lignes[cinematique.sousTitre].cle.c_str(), sub.lignes[cinematique.sousTitre].debut / sub.imagesParSeconde, sub.lignes[cinematique.sousTitre].fin / sub.imagesParSeconde); }
+			cinematique.sousTitre++;
+		}
+	if(cinematique.temps >= cinematique.duree){
+		cinematique.enCours = false;
+		printf("%6.2f s  cinématique %s : finie (%.2f s)\n", maintenant / 1000.0, cinematique.fichiers.nom.c_str(), cinematique.temps);
+	}
+}
+
 // --- Les missions ---
 
 // FUN_006ac5d0 : la banque des missions, Missions.cat et les sous-arbres qu'elle cite.
@@ -1283,6 +1385,7 @@ main(int argc, char **argv)
 	for(int i = 1; i < argc; i++){
 		if(strcmp(argv[i], "--mission") == 0 && i + 1 < argc) aLancer = argv[++i];
 		else if(strcmp(argv[i], "--nouvelle-partie") == 0) gestionnaire.actif = true;
+		else if(strcmp(argv[i], "--sans-cinematiques") == 0) cinematique.jouer = false;
 		else if(strcmp(argv[i], "--entrer") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
 			entrees.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
@@ -1334,6 +1437,15 @@ main(int argc, char **argv)
 	lua_register(L, "AreaSignalAreaTransitionReadyToLoad", AreaSignalAreaTransitionReadyToLoad);
 	lua_register(L, "AreaRegisterAreaScript", AreaRegisterAreaScript);
 	lua_register(L, "CameraFade", CameraFade);
+	lua_register(L, "LoadCutscene", LoadCutscene);
+	lua_register(L, "LoadCutsceneSound", LoadCutsceneSound);
+	lua_register(L, "IsCutsceneLoaded", IsCutsceneLoaded);
+	lua_register(L, "StartCutscene", StartCutscene);
+	lua_register(L, "StopCutscene", StopCutscene);
+	lua_register(L, "GetCutsceneRunning", GetCutsceneRunning);
+	lua_register(L, "GetCutsceneTime", GetCutsceneTime);
+	lua_register(L, "CutSetCutsceneTableSize", CutSetCutsceneTableSize);
+	lua_register(L, "CutSetCutsceneName", CutSetCutsceneName);
 	lua_register(L, "SystemShouldMovePlayer", SystemShouldMovePlayer);
 	lua_register(L, "SystemResetShouldMovePlayer", SystemResetShouldMovePlayer);
 	lua_register(L, "PlayerSetPosXYZArea", PlayerSetPosXYZArea);
@@ -1417,6 +1529,7 @@ main(int argc, char **argv)
 		if(fondu.enCours && maintenant >= fondu.fin){ fondu.enCours = false; fondu.noir = fondu.versNoir; if(journalRestant > 0){ journalRestant--; printf("%6.2f s  fondu : l'écran est %s\n", maintenant / 1000.0, fondu.versNoir ? "noir" : "rendu"); } }
 		MettreAJour(L);
 		AvancerPietons();
+		AvancerCinematique();
 		AvancerZones(L);
 		AvancerGestionnaire(L);
 	}

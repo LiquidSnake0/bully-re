@@ -120,7 +120,7 @@ missions avec script. Les deux lisent maintenant les 499.
   missions sans condition et lance celle dont le joueur touche le corona en entrant
   (rayon 2 m, le vrai reste à lire). Avec `--aller 1_01_Corona@3`, le joueur marche au
   marqueur : **`1_01` démarre à 3,0 s par le gestionnaire, et se termine réussie à 12,7 s**
-  (`--entrer _1_01_BULLYTRIG@7 --zone 2@9 --aller _1_01_ENDPOINT@11`) ; `MainMap.lua` est
+  (`--sans-cinematiques --entrer _1_01_BULLYTRIG@7 --zone 2@9 --aller _1_01_ENDPOINT@11`) ; `MainMap.lua` est
   chargé à 0,17 s par la première demande de zone de `gamemain`. Les classes de
   conditions (`MissionCond`, `TimeCond`, `ConditionGroup`, `NOT`) ne sont pas lues, donc
   `1_02` n'enchaîne pas encore.
@@ -194,7 +194,10 @@ moteur attend de la manette : `--entrer DECLENCHEUR@s` le pose dans un déclench
 `--aller LISTE[,n]@s` (ou `x,y,z@s`) à un point, `--zone N@s` lui fait passer une porte.
 `1_01` lu avec `tools/lur.py` (fonction `CheckObjs`, ligne 684) :
 
-    build/outils/lancer_lua 14 --mission 1_01 --entrer _1_01_BULLYTRIG@4 --zone 2@6 --aller _1_01_ENDPOINT@8
+    build/outils/lancer_lua 14 --mission 1_01 --sans-cinematiques --entrer _1_01_BULLYTRIG@4 --zone 2@6 --aller _1_01_ENDPOINT@8
+
+(sans `--sans-cinematiques`, la cinématique `1-1-1` se joue pour de vrai pendant `MissionSetup`,
+61,7 s, et tout se décale d'autant : docs/cinematiques.md.)
 
 1. Objectif `1_01_StandGround` ; le joueur entre dans `_1_01_BULLYTRIG` → le premier
    élève redevient ambiant, un bully (modèle 69) est créé sur `_1_01_FIGHTBULLIES` et
@@ -228,9 +231,10 @@ d'être posées, et valent nil comme il faut : `gMissionSuccess`, `misObj`, `F_S
 
 ## Suite
 
-1. Ce que `1_01` ne joue pas encore pour de vrai : les cinématiques
-   (`PlayCutsceneWithLoad`, `CameraFade`), `PedSetActionNode`, `SoundPlayScriptedSpeechEvent`,
-   qui sont des bouchons qui répondent neutre ; et les vraies vitesses de marche.
+1. Ce que `1_01` ne joue pas encore pour de vrai : `PedSetActionNode`,
+   `SoundPlayScriptedSpeechEvent` / `SoundSpeechPlaying`, qui sont des bouchons qui répondent
+   neutre ; et les vraies vitesses de marche. Les cinématiques se jouent (docs/cinematiques.md),
+   `CameraFade` est une durée qui court (docs/zones.md).
 2. Fait : +0xc est l'AREACODE (docs/trigger.md), et la zone d'un point n'est que la
    destination d'une téléportation ; la zone visible est celle du gestionnaire de zones
    (docs/zones.md). Restent les portes du gestionnaire (les paires de +0x10) et qui les enregistre.

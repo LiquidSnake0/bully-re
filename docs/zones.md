@@ -128,7 +128,7 @@ Dans `lancer_lua`, `PlayerSetPosPoint`, `PlayerSetPosPointArea`, `PlayerSetPosXY
 chargés pour de vrai** avec leur `main` (`MainMap.lua` à la nouvelle partie, `SchoolHallways.lua`
 quand le joueur passe la porte de l'école), et retirés au changement suivant. Sur `1_01` :
 
-    build/outils/lancer_lua 14 --mission 1_01 --entrer _1_01_BULLYTRIG@4 --zone 2@6 --aller _1_01_ENDPOINT@8
+    build/outils/lancer_lua 14 --mission 1_01 --sans-cinematiques --entrer _1_01_BULLYTRIG@4 --zone 2@6 --aller _1_01_ENDPOINT@8
 
 `MissionSetup` demande la grille (`AreaTransitionPoint(0, …)`) : zone 0 déjà visible, `MainMap.lua`
 chargé, son `main` signale à 1,12 s, le joueur est posé ; la porte à 6,0 s : 14 images, fondu au

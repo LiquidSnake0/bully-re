@@ -432,3 +432,9 @@ en échec plutôt que de les masquer.
   caméra de `FUN_004f86d0` : champ de vision, position, cible, en clés à 6 et 12 colonnes),
   et les `.agr` / `.hxd` / `.mxd` à côté. `src/cutscene/CutsceneFiles` les lit tous,
   `tests/test_cutscene` passe les 863 entrées et vérifie `1-1-1` (61,67 s). docs/cinematiques.md.
+- Suite : **`lancer_lua` joue les cinématiques.** `LoadCutscene` lit les fichiers de
+  `Cuts.img`, `IsCutsceneLoaded` ne répond vrai que s'il y a des objets (comme
+  `DAT_020c5be2`), `StartCutscene` lance le temps, `GetCutsceneRunning` /
+  `GetCutsceneTime` le rendent, les sous-titres passent au journal, la fin est la dernière
+  clé de la piste caméra ; `1-1-1` tourne 61,7 s dans `MissionSetup` de `1_01`, qui se
+  termine réussie à 75,7 s ; `--sans-cinematiques` les saute.

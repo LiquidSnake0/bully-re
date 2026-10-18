@@ -88,11 +88,25 @@ fois, puis « Create Objects », la caméra, les sous-titres, et `DAT_020c5be2 =
 leur facial (pas la voiture), 20 sous-titres de 270 à 1 695 images, 13 / 20 / 30 / 29 clés,
 61,67 s ; `1-1-02` n'a que sa caméra.
 
+## Dans lancer_lua
+
+`LoadCutscene`, `LoadCutsceneSound`, `IsCutsceneLoaded`, `StartCutscene`, `GetCutsceneRunning`,
+`GetCutsceneTime`, `StopCutscene`, `CutSetCutsceneTableSize` et `CutSetCutsceneName` sont réels
+sur `CCutsceneFiles` : la cinématique est « chargée » si son `.INF` donne des objets (sans
+objet, le moteur ne pose jamais `DAT_020c5be2`, et `SCutscenes.lua` passe à `StopCutscene`),
+elle tourne le temps de la dernière clé de sa piste caméra (l'arbre d'actions n'est pas joué),
+et ses sous-titres passent au journal à leur image de début. Sur `1_01` :
+
+    build/outils/lancer_lua 80 --mission 1_01 --entrer _1_01_BULLYTRIG@70 --zone 2@72 --aller _1_01_ENDPOINT@74
+
+`MissionSetup` charge `1-1-1` à 1,06 s (3 objets, 20 sous-titres, 61,67 s), la lance à 1,29 s, le
+premier sous-titre `1-1-1.SUB0001` tombe à 9,0 s, la cinématique finit à 62,93 s, `StopCutscene`
+à 63,00 s, et `main` démarre ; **`1_01` se termine réussie à 75,7 s**. `--sans-cinematiques`
+les saute (`IsCutsceneLoaded` répond faux, comme quand le chargement échoue) et rend les 9,7 s
+d'avant.
+
 ## Reste à faire
 
-- Jouer la cinématique dans `lancer_lua` : `LoadCutscene`, `IsCutsceneLoaded`, `StartCutscene`,
-  `GetCutsceneRunning`, `GetCutsceneTime`, `StopCutscene` sur `CCutsceneFiles`, la durée étant
-  celle de la piste caméra faute de l'arbre d'actions.
 - Les animations : relier `NOM_CHAR.agr` et `NOM_CS.HXD` aux objets de l'`.INF` (ce que fait
   `FUN_006c6210` par les hachages `NOM_OBJET`), puis les jouer dans la visite.
 - Le sens des deux derniers nombres des clés caméra (0,3 et 0,2 par endroits) et de la
