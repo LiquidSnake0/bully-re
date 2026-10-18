@@ -422,3 +422,13 @@ en échec plutôt que de les masquer.
   `lancer_lua` charge `MainMap.lua` puis `SchoolHallways.lua` pour de vrai, et leur
   `main` signale la zone prête (`F_PreDATInit` → `AreaSignalAreaTransitionReadyToLoad`).
   `AreaTransitionXYZ` n'est pas du moteur : SGlFunc.lua la définit. docs/zones.md.
+- Suite : **les cinématiques, lues.** Aucune mission ne parle au moteur : les 80 scripts
+  appellent `PlayCutsceneWithLoad` de `SCutscenes.lua`, qui enchaîne `LoadCutscene`,
+  `IsCutsceneLoaded`, `StartCutscene`, la boucle sur `GetCutsceneRunning` /
+  `GetCutsceneTime` contre la durée de `cutsceneTable`, `StopCutscene`. Treize fonctions
+  du moteur relevées avec leurs adresses ; la fin vient de l'arbre d'actions
+  `/Global/CutScenes` (`FUN_006c3a70`), pas d'un compteur. Dans `Cuts/Cuts.img` : `.INF`
+  (objets, jeux faciaux `f_`), `.SUB` (30 images/s, `{début}{fin}CLÉ`), `.DAT` (la piste
+  caméra de `FUN_004f86d0` : champ de vision, position, cible, en clés à 6 et 12 colonnes),
+  et les `.agr` / `.hxd` / `.mxd` à côté. `src/cutscene/CutsceneFiles` les lit tous,
+  `tests/test_cutscene` passe les 863 entrées et vérifie `1-1-1` (61,67 s). docs/cinematiques.md.
