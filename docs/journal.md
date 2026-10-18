@@ -444,3 +444,9 @@ en échec plutôt que de les masquer.
   handle est l'index dans le pool des `CStaticPOI` (0x20c7c84, nom haché à +0x84).
   `CDatPools::Poi` le refait, `tests/test_datpools` le vérifie (`1_04_NemSitSpot`,
   `F_ClassSmokers` dans « Smoking »), `lancer_lua` ne répond plus −1.
+- Suite : **le chemin d'un nœud d'action.** `/Global/1_01/Talking` : la banque `Global`
+  sous une racine sans nom (`FUN_005f6f20`), chaque `.act` greffé sous `Global` par sa
+  banque de tête (`FUN_005f6c50`, l'extension changée en `.cat`), et `FUN_005f59b0` qui
+  descend segment par segment par les noms hachés, `..` compris. `CActionBank` le refait,
+  `tests/test_actionbank` suit les chemins de `1_01.lua` et le chargement à la demande
+  (`FUN_004849a0`) ; `PedSetActionNode` répond vrai ou faux pour de vrai dans `lancer_lua`.

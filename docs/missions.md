@@ -231,9 +231,10 @@ d'être posées, et valent nil comme il faut : `gMissionSuccess`, `misObj`, `F_S
 
 ## Suite
 
-1. Ce que `1_01` ne joue pas encore pour de vrai : `PedSetActionNode`,
-   `SoundPlayScriptedSpeechEvent` / `SoundSpeechPlaying`, qui sont des bouchons qui répondent
-   neutre ; et les vraies vitesses de marche. Les cinématiques se jouent (docs/cinematiques.md),
+1. Ce que `1_01` ne joue pas encore pour de vrai : `SoundPlayScriptedSpeechEvent` /
+   `SoundSpeechPlaying`, qui sont des bouchons qui répondent neutre ; les nœuds d'action
+   (`PedSetActionNode` cherche le nœud dans l'arbre global, docs/cat.md, mais ne le joue pas) ;
+   et les vraies vitesses de marche. Les cinématiques se jouent (docs/cinematiques.md),
    `CameraFade` est une durée qui court (docs/zones.md).
 2. Fait : +0xc est l'AREACODE (docs/trigger.md), et la zone d'un point n'est que la
    destination d'une téléportation ; la zone visible est celle du gestionnaire de zones

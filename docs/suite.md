@@ -51,6 +51,9 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- L'arbre d'actions global et le chemin d'un nœud (`FUN_005f6c50`, `FUN_005f59b0`, `FUN_004849a0`) :
+  `src/core/ActionBank`, `tests/test_actionbank` ; `PedSetActionNode` et `PlayerSetControl` réels dans
+  `lancer_lua` ; docs/cat.md.
 - `POI`, la cinquième énumération : `FUN_00448e30` lu (groupes du dernier au premier, le nom d'un groupe
   rend son premier point, sinon un point de ce nom), `CDatPools::Poi`, `tests/test_datpools`, réel dans
   `lancer_lua` ; docs/trigger.md.

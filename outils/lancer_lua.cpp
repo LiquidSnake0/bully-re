@@ -34,6 +34,7 @@
 #include "../src/core/ModelEnum.h"
 #include "../src/core/DatPools.h"
 #include "../src/core/AreaManager.h"
+#include "../src/core/ActionBank.h"
 #include "../src/cutscene/CutsceneFiles.h"
 #include "../src/peds/ScriptPedPool.h"
 #include <algorithm>
@@ -96,6 +97,12 @@ static CAreaManager zones;
 // attendent : une durée, un sens, et « fini ». Les durées par défaut du moteur (DAT_020c8910 + 0x18 et
 // + 0x1c) ne sont pas lues : une seconde.
 static const float FONDU_DEFAUT_MS = 1000;
+// L'arbre d'actions global (src/core/ActionBank.h) : PedSetActionNode(ped, « /Global/1_01/Talking »,
+// « Act/Conv/1_01.act ») cherche le nœud et charge le fichier au besoin (FUN_004849a0) ; le nœud n'est pas
+// joué (pas d'animation ici), mais le script reçoit la vraie réponse : le nœud existe ou non.
+static CActionBank arbres;
+// PlayerSetControl(0 / 1) (0x5d12f0) : le joueur rendu au script ou au joueur ; aucun script ne le relit.
+static int controleJoueur = 1;
 // CCutsceneMgr réduit à ses drapeaux (docs/cinematiques.md) : la cinématique chargée (DAT_020c5be2), en cours
 // (DAT_020c5be4), son temps (DAT_020c5b1c), sur les fichiers de Cuts/Cuts.img (src/cutscene/CutsceneFiles.h).
 // La fin, dans le moteur, vient de l'arbre d'actions /Global/CutScenes (FUN_006c3a70) ; ici, faute de le
@@ -1063,6 +1070,31 @@ PlayerGetHealth(lua_State *L)
 	return 1;
 }
 
+// PedSetActionNode(ped, nœud, fichier) (0x5ca0d0) : faux si le piéton n'existe pas ; sinon FUN_00473fa0 → FUN_004849a0 :
+// le nœud trouvé dans l'arbre global, ou le fichier chargé puis le nœud retrouvé ; vrai s'il existe. Le moteur
+// note aussi le fichier à l'objet script courant (FUN_005dc040) pour le décharger à la fin.
+static int
+PedSetActionNode(lua_State *L)
+{
+	Journal("PedSetActionNode", L, 1);
+	const CScriptPed *p = PedArg(L, 1);
+	if(p == nil){ lua_pushboolean(L, 0); return 1; }
+	const char *noeud = luaL_optstring(L, 2, ""), *fichier = luaL_optstring(L, 3, "");
+	bool ok = arbres.TrouverOuCharger(noeud, fichier);
+	if(!ok) printf("        PedSetActionNode : %s absent de %s%s\n", noeud, *fichier ? fichier : "l'arbre global", arbres.EstCharge(fichier) ? "" : " (fichier introuvable)");
+	lua_pushboolean(L, ok);
+	return 1;
+}
+
+static int
+PlayerSetControl(lua_State *L)
+{
+	Journal("PlayerSetControl", L, 1);
+	int c = (int)luaL_optnumber(L, 1, 1);
+	if(c == 0 || c == 1) controleJoueur = c;
+	return 0;
+}
+
 // --- Les cinématiques (docs/cinematiques.md) ---
 
 // LoadCutscene(nom, drapeau) (0x5bb100 → CCutsceneMgr::LoadCutsceneData, FUN_006c4480) : les fichiers de la
@@ -1438,6 +1470,8 @@ main(int argc, char **argv)
 	lua_register(L, "AreaSignalAreaTransitionReadyToLoad", AreaSignalAreaTransitionReadyToLoad);
 	lua_register(L, "AreaRegisterAreaScript", AreaRegisterAreaScript);
 	lua_register(L, "CameraFade", CameraFade);
+	lua_register(L, "PedSetActionNode", PedSetActionNode);
+	lua_register(L, "PlayerSetControl", PlayerSetControl);
 	lua_register(L, "LoadCutscene", LoadCutscene);
 	lua_register(L, "LoadCutsceneSound", LoadCutsceneSound);
 	lua_register(L, "IsCutsceneLoaded", IsCutsceneLoaded);

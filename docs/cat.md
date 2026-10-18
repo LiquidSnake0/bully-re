@@ -60,6 +60,30 @@ classe, que le moteur cherche dans un registre de fabriques
 (`FUN_0061a4f0`) : `Not`, `Or`, `ConditionGroup`, `HavePOIOfType`,
 `IsSocializing`, `pedType`, `RangeToTarget`, `WeaponModelRequest`…
 
+## Le chemin d'un nœud (18.10.2026)
+
+Les scripts désignent un nœud par un chemin, `PedSetActionNode(ped, "/Global/1_01/Talking",
+"Act/Conv/1_01.act")`. Dans le moteur :
+
+- `FUN_005f6f20` crée la banque **`Global`** sous une racine sans nom (`DAT_01b649dc`, celle que
+  `/` seul désigne) ; `FUN_005f6c50("Act/Conv/1_01.act")` retire un `/` de tête, écrit `.cat` à
+  la place de l'extension, charge le fichier (`FUN_005fb3f0`) et greffe sa banque de tête sous
+  `Global` (vtable +0x18 de la racine) : `1_01` devient `/Global/1_01`. `FUN_005dbe60` dit si un
+  fichier est déjà chargé, par le hachage de son nom sans dossier.
+- `FUN_005f59b0(chemin)` résout : depuis la racine si le chemin commence par `/` ou `\`, un
+  segment à la fois (`FUN_0061a250`), `..` remontant au parent (vtable +0x34), et sinon l'enfant
+  (vtable +0x2c compte, +0x30 enfant i, +8 nom) dont le nom haché est `HashString(segment)` ; un
+  chemin sans `/` de tête passe par un registre de noms (vtable +0xc de la racine), pas lu.
+- `FUN_004849a0(ped, chemin, fichier)`, ce que `PedSetActionNode` (0x5ca0d0 → `FUN_00473fa0`)
+  appelle : le nœud, sinon le fichier chargé puis le nœud retrouvé ; vrai s'il existe, et le
+  piéton le joue (vtable +0x4c, `FUN_005f4490`). Le script Lua reçoit ce vrai ou faux.
+
+`src/core/ActionBank` (`CActionBank` : `Charger`, `EstCharge`, `Trouver`, `TrouverOuCharger`)
+refait ces quatre fonctions sur `CActionTreeFile` ; `tests/test_actionbank` vérifie les chemins
+que `1_01.lua` demande (`/Global/1_01/Talking`, `ShortIdle`, `Gates/BarUpHold`…), `..`, les deux
+séparateurs, la casse, et le chargement à la demande de `Player.act` puis `1_02.act` sous la même
+racine. Dans `lancer_lua`, `PedSetActionNode` répond pour de vrai (le nœud n'est pas joué).
+
 ## Les pistes
 
 Le nœud ne garde que des pointeurs ; la piste est créée à la demande
