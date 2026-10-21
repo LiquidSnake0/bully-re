@@ -1,6 +1,7 @@
 // La banque des missions lue comme le moteur : Missions.cat et les onze sous-arbres qu'il cite.
 //   BULLY_DATA=<racine du jeu> build/tests/test_missions [--liste]
 #include "../src/core/MissionBank.h"
+#include "../src/core/ActionTree.h"
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -46,6 +47,57 @@ main(int argc, char **argv)
 	VERIF(d2 != nil && d2->conditions == 1 && d2->lancerSeul && d2->corona.empty());
 	const CMissionData *d3 = b.Trouver("1_02B");
 	VERIF(d3 != nil && d3->conditions == 1 && d3->corona == "1_02B_Corona" && d3->coronaDemiCote == 1 && d3->coronaMarqueur == 1 && d3->coronaMarqueurVisible && d3->coronaTaille == 25 && d3->coronaInvite == "BUT_LAUNCH");
+
+	// Les conditions, construites sur l'enregistrement comme la fabrique FUN_0061a4f0 le fait : la chaîne
+	// du chapitre 1. 1_02 attend la réussite de 1_01, 1_02A celle de 1_02, 1_02C celle de 1_02B ; 1_03
+	// attend 1_02C et 1_02B, entre 8 h et 19 h (TimeCond : +4 = 8, +8 = 19, minutes à 0).
+	{
+		CEtatMissions etat; etat.reussites.assign(b.missions.size(), 0);
+		int i01 = b.Index("1_01"), i02 = b.Index("1_02"), i02a = b.Index("1_02A"), i02b = b.Index("1_02B"),
+		    i02c = b.Index("1_02C"), i03 = b.Index("1_03");
+		VERIF(i01 >= 0 && i02 >= 0 && i02a >= 0 && i02b >= 0 && i02c >= 0 && i03 >= 0);
+		VERIF(d2 && d2->conds.size() == 1 && d2->conds[0].mots[0] == (ActionHash("1_01") & 0x7fffffff));
+		VERIF(b.Activable(i01, etat) == 1);                  // aucune condition
+		VERIF(b.Activable(i02, etat) == 0 && b.Activable(i02a, etat) == 0);
+		etat.reussites[i01] = 1;
+		VERIF(b.Activable(i02, etat) == 1 && b.Activable(i02a, etat) == 0);
+		etat.reussites[i02] = 1;
+		VERIF(b.Activable(i02a, etat) == 1);
+		const CMissionData &m3 = b.missions[i03];
+		VERIF(m3.conds.size() == 3);
+		int temps = 0;
+		for(const CMissionCondition &c : m3.conds)
+			if(c.type == (ActionHash("TimeCond") & 0x7fffffff)){ temps++; VERIF(c.mots[0] == 8 && c.mots[1] == 19 && c.mots[2] == 0 && c.mots[3] == 0); }
+		VERIF(temps == 1);
+		etat.reussites[i02b] = 1; etat.reussites[i02c] = 1;
+		etat.heure = 7; etat.minute = 59; VERIF(b.Activable(i03, etat) == 0);
+		etat.heure = 8; etat.minute = 0; VERIF(b.Activable(i03, etat) == 1);
+		etat.heure = 18; etat.minute = 59; VERIF(b.Activable(i03, etat) == 1);
+		etat.heure = 19; VERIF(b.Activable(i03, etat) == 0);
+		// Une plage qui passe minuit (FUN_00425cf0) : 22 h – 6 h.
+		CMissionCondition nuit; nuit.type = ActionHash("TimeCond") & 0x7fffffff; nuit.mots[0] = 22; nuit.mots[1] = 6;
+		etat.heure = 23; VERIF(b.Evaluer(nuit, etat) == 1);
+		etat.heure = 3; VERIF(b.Evaluer(nuit, etat) == 1);
+		etat.heure = 12; VERIF(b.Evaluer(nuit, etat) == 0);
+		// Le relevé : sur les 360 missions jouables, combien de conditions chaque classe porte, et combien de
+		// missions ne s'évaluent qu'avec les trois classes lues.
+		std::map<std::string, int> classes; int lisibles = 0, avecConditions = 0;
+		for(size_t i = 0; i < b.missions.size(); i++){
+			if(!b.missions[i].Jouable() || b.missions[i].conds.empty()) continue;
+			avecConditions++;
+			bool toutes = true;
+			for(const CMissionCondition &c : b.missions[i].conds){
+				const char *cl = nil; int v = b.Evaluer(c, etat, &cl);
+				classes[cl ? cl : "autre"]++;
+				if(v < 0) toutes = false;
+			}
+			lisibles += toutes;
+		}
+		printf("conditions des missions jouables :");
+		for(auto &k : classes) printf(" %s %d", k.first.c_str(), k.second);
+		printf(" ; %d missions sur %d s'évaluent entièrement\n", lisibles, avecConditions);
+		VERIF(classes["MissionCond"] > 0 && classes["TimeCond"] > 0);
+	}
 
 	// 1_01 : la première mission, type 0, titre affiché, script chap1\1_01.lua.
 	const CMissionData *m = b.Trouver("1_01");

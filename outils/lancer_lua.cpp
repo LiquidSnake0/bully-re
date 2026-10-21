@@ -20,7 +20,8 @@
 // image comme FUN_00416e30 (fondu, script de zone retiré puis chargé avec son main, zone visible et joueur posés à
 // l'arrivée) ; AreaGetVisible, AreaIsLoading, AreaRegisterAreaScript, AreaSignalAreaTransitionReadyToLoad, CameraFade réels.
 // --nouvelle-partie : pas de --mission ; le gestionnaire de missions (FUN_006ad130, réduit) active les
-// missions sans condition et lance celle dont le joueur touche le corona, comme à la première partie.
+// missions dont les conditions sont vraies (MissionCond, TimeCond, ConditionFalse lues, docs/missions.md),
+// lance celle dont le joueur touche le corona, et celles qui se lancent seules (champ 51) : 1_02 après 1_01.
 // Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
 // de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
 //   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]...
@@ -146,12 +147,13 @@ static struct {
 // SystemAllowMissionManagerToForceRunMissions), quand le joueur est dans le pavé de son corona
 // (FUN_006a8650 : demi-côté = champ 28 de MissionButtonTrigger, 2 m pour 1_01, 1 m ailleurs ; le moteur
 // affiche ensuite l'invite BUT_LAUNCH et lit la manette avant FUN_006acfa0, l'outil lance tout de
-// suite). Les conditions ne sont pas encore lues : seule une mission sans condition passe.
+// suite). Les conditions sont évaluées par CMissionBank::Activable (MissionCond, TimeCond, ConditionFalse) ;
+// une mission dont une condition est d'une classe pas encore lue reste inactive.
 static struct {
 	bool actif = false;                  // --nouvelle-partie
 	bool autorise = false;               // DAT_020c441d
 	std::vector<bool> activees;          // bit 1 de l'octet +4 de l'entrée de 6 octets (+0x688)
-	std::set<uint32> terminees;          // IsMissionCompleated, par hachage du nom
+	CEtatMissions etat;                  // le mot +2 de chaque entrée (réussites) et l'heure, que les conditions lisent
 	bool deplacerJoueur = true;          // SystemShouldMovePlayer : vrai une fois à la nouvelle partie
 } gestionnaire;
 
@@ -529,7 +531,11 @@ AvancerMission(lua_State *L)
 		if(!ThreadEnCours(mission.script, "MissionCleanup")){
 			printf("%6.2f s  mission %s terminée (%s)\n", maintenant / 1000.0, mission.nom.c_str(),
 			       mission.reussie ? "réussie" : "échouée ou arrêtée");
-			if(mission.reussie && mission.indice >= 0) gestionnaire.terminees.insert(banque.missions[mission.indice].hachage);
+			// FUN_006ac910 : la réussite incrémente le mot +2 de l'entrée de la mission.
+			if(mission.reussie && mission.indice >= 0){
+				if(gestionnaire.etat.reussites.size() != banque.missions.size()) gestionnaire.etat.reussites.assign(banque.missions.size(), 0);
+				gestionnaire.etat.reussites[mission.indice]++;
+			}
 			{ int n = pietons.SupprimerDuScript(mission.script); if(n) printf("        %d piéton(s) laissé(s) par la mission, libéré(s)\n", n); }
 			for(Thread &t : scripts[mission.script].threads)
 				if(t.etat < TUE){ t.etat = TUE; luaL_unref(L, LUA_REGISTRYINDEX, t.ref); t.ref = LUA_NOREF; }
@@ -1331,7 +1337,8 @@ static int
 IsMissionCompleated(lua_State *L)
 {
 	appels["IsMissionCompleated"]++;
-	lua_pushboolean(L, gestionnaire.terminees.count(ActionHash(luaL_checkstring(L, 1)) & 0x7fffffff) != 0);
+	int i = banque.Index(luaL_checkstring(L, 1));
+	lua_pushboolean(L, i >= 0 && i < (int)gestionnaire.etat.reussites.size() && gestionnaire.etat.reussites[i] != 0);
 	return 1;
 }
 
@@ -1447,11 +1454,13 @@ AvancerGestionnaire(lua_State *L)
 	static std::set<std::string> coronasAbsents;
 	if(!gestionnaire.actif) return;
 	if(gestionnaire.activees.size() != banque.missions.size()) gestionnaire.activees.assign(banque.missions.size(), false);
+	if(gestionnaire.etat.reussites.size() != banque.missions.size()) gestionnaire.etat.reussites.assign(banque.missions.size(), 0);
+	gestionnaire.etat.heure = horloge.Heure(); gestionnaire.etat.minute = horloge.Minute();
 	for(size_t i = 0; i < banque.missions.size(); i++){
 		const CMissionData &m = banque.missions[i];
-		if(!m.Jouable() || gestionnaire.terminees.count(m.hachage)) continue;
-		bool conditions = m.conditions == 0;        // les classes de conditions (MissionCond…) ne sont pas lues
-		if(!conditions) continue;
+		// Une mission déjà réussie n'est plus reprise par l'outil (le moteur garde ce choix ailleurs, pas lu).
+		if(!m.Jouable() || gestionnaire.etat.reussites[i]) continue;
+		if(banque.Activable((int)i, gestionnaire.etat) != 1) continue;
 		bool libre = mission.etat == AUCUNE;
 		if(!gestionnaire.activees[i]){
 			gestionnaire.activees[i] = true;

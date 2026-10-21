@@ -20,9 +20,8 @@ chantier. Un point fini passe en bas, avec son commit.
    (`src/core/AreaManager`, docs/zones.md) : le changement de zone est joué comme `FUN_00416e30`,
    les scripts de zone (`MainMap.lua`, `SchoolHallways.lua`) sont chargés pour de vrai. Les fichiers
    des cinématiques sont lus et `lancer_lua` les joue (docs/cinematiques.md : `1-1-1` dure 61,7 s
-   dans `MissionSetup` de `1_01`, `--sans-cinematiques` pour les sauter). Suite : les classes de
-   conditions des nœuds (`MissionCond`, `TimeCond`, la fabrique `FUN_0064b090`) pour que `1_02`
-   s'enchaîne après `1_01` ; les portes `DT_` (l'objet de porte, +0x394) ; la durée des lignes de
+   dans `MissionSetup` de `1_01`, `--sans-cinematiques` pour les sauter). Les conditions `MissionCond`,
+   `TimeCond`, `ConditionFalse` sont lues : `1_02` s'enchaîne après `1_01`. Suite : les portes `DT_` (l'objet de porte, +0x394) ; la durée des lignes de
    parole ; jouer les nœuds d'action des piétons.
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
@@ -54,6 +53,9 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- Les conditions des nœuds de mission (`FUN_0061a4f0` construit sur l'enregistrement, à +4) : `MissionCond`
+  (mot +2 de l'entrée = réussites, incrémenté par `FUN_006ac910`), `TimeCond` (`FUN_00425cf0`), `ConditionFalse` ;
+  `CMissionBank::Evaluer` / `Activable`, `tests/test_missions` ; `1_02` démarre seule après `1_01` ; docs/missions.md.
 - Le pavé fermé de `FUN_005c2910` (`FUN_0046d960` en trois dimensions, `FUN_0046d880` en deux) : `PaveContient`,
   derrière `PlayerIsInAreaXYZ`, `PedIsInAreaXYZ` (réelle) et le corona ; `tests/test_zones`.
 - `DATInit` lu : `FUN_00416000` refait la table des portes du gestionnaire de zones (listes `SV_` et `DT_`

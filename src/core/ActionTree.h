@@ -72,6 +72,10 @@ public:
 	bool Load(const uint8 *buf, uint32 n);
 	// Le type d'une condition : le hachage du nom de sa classe.
 	uint32 TypeCondition(int32 decalage) const;
+	// Les mots d'une condition. FUN_005fa910 passe l'enregistrement à la fabrique FUN_0061a4f0, qui
+	// construit l'objet sur place, à +4 (FUN_0063a170 pour MissionCond, FUN_0063a270 pour TimeCond) :
+	// le champ +k de l'objet est le mot +4+k de l'enregistrement. mots[i] = champ +4 * (i + 1).
+	bool Condition(int32 decalage, uint32 &type, uint32 mots[6]) const;
 	// Lit la piste à ce décalage des données (le tampon doit être encore là).
 	bool Piste(int32 decalage, CActionTrack &t) const;
 	// La chaîne citée par l'attribut placé à ce décalage des données, s'il en cite une.

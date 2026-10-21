@@ -42,7 +42,41 @@ n 1_01                                   ← le nom de la mission (MissionGetNam
 ```
 
 Les conditions d'entrée du nœud (`si MissionCond`, `si MissionCond TimeCond`)
-disent quand la mission devient lançable.
+disent quand la mission devient lançable (« Les conditions », plus bas).
+
+## Les conditions
+
+Le nœud garde, pour chaque condition, un décalage vers un enregistrement des données.
+`FUN_005fa910` passe l'enregistrement à la fabrique `FUN_0061a4f0`, qui cherche le premier
+mot (le `HashString` du nom de classe) dans un registre de 419 classes (rempli par
+`FUN_0064b090` : nom, création, construction sur place) et appelle la **construction sur
+place à +4** : l'objet est bâti sur les données du fichier, sa table virtuelle écrite à +4 de
+l'enregistrement. Le champ +k de l'objet est donc le mot +4+k de l'enregistrement.
+L'évaluation est l'emplacement 1 de la table virtuelle (`export/rtti.json`).
+
+| Classe (nom du registre) | Construction | Évaluation | Champs |
+|---|---|---|---|
+| `CMissionCond` (`MissionCond`) | `FUN_0063a170` → `FUN_006a7d50` | `FUN_006a7db0` | +4 le nom haché de la mission, +8 son indice (−2 tant qu'il n'est pas cherché) |
+| `CTimeCond` (`TimeCond`) | `FUN_0063a270` | `FUN_006a7380` → `FUN_00425cf0` | +4 heure de début, +8 heure de fin, +0xc minute de début, +0x10 minute de fin |
+| `ConditionFalse` (`False`) | `FUN_00638950` | `FUN_006094f0` : rend 0 | — |
+
+- **`MissionCond` est vraie quand la mission nommée a réussi au moins une fois** : l'indice
+  est cherché une fois par `FUN_006a9e70` (le premier nœud de ce nom ; −1 rend faux), puis
+  `FUN_006aa660` donne l'entrée de 6 octets (+0x688 du gestionnaire) et la condition rend
+  `mot +2 ≠ 0`. Ce mot est le **compte des réussites** : `FUN_006ac910`, la fin de mission,
+  l'incrémente quand la mission a réussi, et `FUN_006a9ff0` compte les missions où il n'est
+  pas nul (+0x748 du gestionnaire). Deux noms sont à part : `CurrentMission` (`FUN_006a9ed0`)
+  et `CurrentClassMission` (`FUN_006aa630`), pas encore lus.
+- **`TimeCond` est vraie quand l'heure du jeu est dans [début, fin[** : `FUN_00425cf0` compte
+  en minutes depuis minuit (`DAT_00bceb4b` heures, `DAT_00bceb4a` minutes) et laisse la plage
+  passer minuit quand la fin précède le début.
+
+La chaîne du chapitre 1, lue dans `chap1.cat` : `1_02` attend `1_01`, `1_02A` attend `1_02`,
+`1_02B` attend `1_02B Force Run Dummy`, `1_02C` attend `1_02B`, `1_03` attend `1_02C` et
+`1_02B` entre 8 h et 19 h. `CMissionBank::Evaluer` et `Activable` refont les trois classes ;
+`tests/test_missions` suit la chaîne et la plage de nuit. Sur les 333 missions jouables qui ont des
+conditions, 195 s'évaluent entièrement avec ces trois classes ; les autres attendent
+`ConditionGroup` (402 conditions), `DayCond` et une vingtaine de classes plus rares.
 
 ## Les champs de `MissionData`
 
@@ -132,11 +166,11 @@ missions avec script. Les deux lisent maintenant les 499.
   de la partie), `MissionGetIndex` sont réels, et le gestionnaire réduit active les
   missions sans condition et lance celle dont le joueur est dans le pavé du corona
   (demi-côté du champ 28 ; l'invite et la manette ne sont pas jouées). Avec `--aller 1_01_Corona@3`, le joueur marche au
-  marqueur : **`1_01` démarre à 3,0 s par le gestionnaire, et se termine réussie à 15,2 s**
+  marqueur : **`1_01` démarre à 3,0 s par le gestionnaire, et se termine réussie à 15,2 s**, puis **`1_02` s'active et démarre seule à 15,15 s**
   (`--sans-cinematiques --entrer _1_01_BULLYTRIG@7 --zone 2@9 --aller _1_01_ENDPOINT@11`) ; `MainMap.lua` est
-  chargé à 0,17 s par la première demande de zone de `gamemain`. Les classes de
-  conditions (`MissionCond`, `TimeCond`, `ConditionGroup`, `NOT`) ne sont pas lues, donc
-  `1_02` n'enchaîne pas encore.
+  chargé à 0,17 s par la première demande de zone de `gamemain`. Les conditions sont
+  évaluées par `CMissionBank::Activable` (« Les conditions ») ; une mission qui en porte une
+  d'une classe pas encore lue reste inactive, et une mission réussie n'est plus reprise par l'outil.
 
 ## Le déroulement d'une mission (bully.exe)
 
@@ -252,7 +286,6 @@ d'être posées, et valent nil comme il faut : `gMissionSuccess`, `misObj`, `F_S
 2. Fait : +0xc est l'AREACODE (docs/trigger.md), et la zone d'un point n'est que la
    destination d'une téléportation ; la zone visible est celle du gestionnaire de zones
    (docs/zones.md). Restent les portes du gestionnaire (les paires de +0x10) et qui les enregistre.
-3. Les classes de conditions des nœuds (`MissionCond`, `TimeCond`, `ConditionGroup`,
-   `NOT` : `FUN_0061a4f0` les fabrique) pour que `1_02` s'enchaîne après `1_01` ; le
-   ce que `FUN_006a8650` demande à la manette avant de lancer (`FUN_007386f0`, `FUN_007387b0`),
+3. Fait : `MissionCond`, `TimeCond`, `ConditionFalse` (« Les conditions ») ; `1_02` s'enchaîne.
+   Restent `ConditionGroup`, `DayCond`, `CurrentMission` ; ce que `FUN_006a8650` demande à la manette avant de lancer (`FUN_007386f0`, `FUN_007387b0`),
    et les champs 52, 56 et 60 de `MissionButtonTrigger` (1, 95, 81 partout).

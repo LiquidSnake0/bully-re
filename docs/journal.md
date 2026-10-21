@@ -485,3 +485,18 @@ en échec plutôt que de les masquer.
   se termine réussie avec sa cinématique (78,1 s) ou sans (12,1 s), à la nouvelle partie
   comme par `--mission`. Ouvert : les conditions des nœuds pour enchaîner `1_02`, les portes
   `DT_`, la durée de la parole, jouer les nœuds d'action, les constantes des fondus.
+
+## 21.10.2026 — 1_02 s'enchaîne
+
+- **Les conditions des nœuds, construites sur place.** `FUN_005fa910` passe chaque
+  enregistrement à la fabrique `FUN_0061a4f0`, qui cherche la classe dans le registre de
+  `FUN_0064b090` (419 classes : nom, création, construction) et construit l'objet **à +4 de
+  l'enregistrement** : les champs sont les mots du fichier. `MissionCond` (`FUN_006a7db0`)
+  est vraie quand le mot +2 de l'entrée de la mission nommée n'est pas nul, et ce mot est le
+  compte des réussites (`FUN_006ac910` l'incrémente, `FUN_006a9ff0` les compte) ; `TimeCond`
+  (`FUN_00425cf0`) compare l'heure du jeu à une plage en minutes qui peut passer minuit ;
+  `ConditionFalse` rend 0. `CMissionBank::Evaluer` / `Activable`, `tests/test_missions` (la
+  chaîne `1_01` → `1_02` → `1_02A`, `1_03` entre 8 h et 19 h, une plage de nuit). Dans
+  `lancer_lua --nouvelle-partie`, **`1_02` s'active et démarre seule à la réussite de `1_01`**
+  (15,15 s), sans `--mission`. 195 des 333 missions à conditions s'évaluent déjà ;
+  `ConditionGroup` est la suivante par le nombre. docs/missions.md.

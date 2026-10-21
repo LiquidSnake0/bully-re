@@ -6,6 +6,21 @@
 #include <string>
 #include <vector>
 
+// Une condition d'entrée d'un nœud de mission, telle que la fabrique FUN_0061a4f0 la construit sur
+// l'enregistrement (docs/missions.md, « Les conditions ») : son type et ses champs +4 à +0x18.
+struct CMissionCondition {
+	uint32 type = 0;           // HashString du nom de classe : MissionCond, TimeCond, ConditionFalse…
+	uint32 mots[6] = {0, 0, 0, 0, 0, 0};
+};
+
+// Ce que les conditions lisent de la partie : l'entrée de 6 octets de chaque mission (+0x688 du
+// gestionnaire), dont le mot +2 compte les réussites (FUN_006ac910 l'incrémente), et l'heure du jeu
+// (DAT_00bceb4b, DAT_00bceb4a).
+struct CEtatMissions {
+	std::vector<uint16> reussites;   // une par entrée de la banque
+	int heure = 8, minute = 0;
+};
+
 // Une entrée du tableau +0x4b8 du gestionnaire : la piste MissionData copiée, avec le nœud.
 struct CMissionData {
 	std::string banque;      // le fichier .cat d'où elle vient
@@ -18,6 +33,7 @@ struct CMissionData {
 	int type = 0;            // champ 40 : 0 histoire, 1 cours, 3 boulots et courses, 4 tutoriels, 5 mini-jeux
 	bool lancerSeul = false; // champ 51 (+0x33) : FUN_006ad130 la lance dès qu'elle est activée (1_02, pas 1_01)
 	int conditions = 0;      // les conditions d'entrée du nœud (si MissionCond…) ; 0 = toujours activable
+	std::vector<CMissionCondition> conds;   // ces conditions, lues
 	std::string corona;      // MissionButtonTrigger (champ 24) de l'enfant « Active » : la liste de points où le joueur la lance
 	float coronaDemiCote = 0;   // champ 28 : le demi-côté du pavé où le joueur doit être (FUN_006a8650 → FUN_005c2910) : 2 m pour 1_01, 1 m ailleurs
 	int coronaMarqueur = 0;     // champ 32 : le type du marqueur dessiné au point (+0x20)
@@ -39,6 +55,17 @@ public:
 	// MissionGetIndex : par nom en clair (sans la casse) ou par hachage.
 	const CMissionData *Trouver(const char *nom) const;
 	int Index(const char *nom) const;
+
+	// Une condition, comme sa méthode d'évaluation (emplacement 1 de sa table virtuelle) : 1 vraie,
+	// 0 fausse, -1 classe pas encore lue (le nom de la classe dans *classe quand on le connaît).
+	//  MissionCond (FUN_006a7db0) : la mission nommée au champ +4 a réussi au moins une fois (mot +2
+	//    de son entrée non nul) ; une mission inconnue de la banque rend faux.
+	//  TimeCond (FUN_006a7380 → FUN_00425cf0) : l'heure du jeu est dans [+4 h +0xc min, +8 h +0x10 min[,
+	//    l'intervalle pouvant passer minuit.
+	//  ConditionFalse (FUN_006094f0) : toujours fausse.
+	int Evaluer(const CMissionCondition &c, const CEtatMissions &etat, const char **classe = nil) const;
+	// FUN_006ad130 : toutes les conditions du nœud vraies (aucune : toujours). -1 si l'une n'est pas lue.
+	int Activable(int index, const CEtatMissions &etat, const char **classe = nil) const;
 private:
 	bool LireFichier(int32 image, const char *fichier);
 };
