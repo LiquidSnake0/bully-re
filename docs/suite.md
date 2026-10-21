@@ -21,7 +21,7 @@ chantier. Un point fini passe en bas, avec son commit.
    les scripts de zone (`MainMap.lua`, `SchoolHallways.lua`) sont chargés pour de vrai. Les fichiers
    des cinématiques sont lus et `lancer_lua` les joue (docs/cinematiques.md : `1-1-1` dure 61,7 s
    dans `MissionSetup` de `1_01`, `--sans-cinematiques` pour les sauter). Les conditions `MissionCond`,
-   `TimeCond`, `ConditionFalse` sont lues : `1_02` s'enchaîne après `1_01`. Suite : les portes `DT_` (l'objet de porte, +0x394) ; jouer les nœuds d'action des piétons.
+   `TimeCond`, `ConditionFalse` sont lues : `1_02` s'enchaîne après `1_01`. Les portes `DT_` passent (`--porte`). Suite : (l'objet de porte, +0x394) ; jouer les nœuds d'action des piétons.
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
    directement au lieu des exports headless. Prérequis : Ghidra 12.1.4 et
@@ -52,6 +52,9 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- Les portes `DT_` : le déclencheur de l'objet de porte en cours (+0x394, `FUN_00415160`), le retour gardé de
+  neuf zones (`FUN_0042e570`, `FUN_00416750`) ; `CAreaManager::PousserPorte`, `tests/test_portes`,
+  `lancer_lua --porte` ; docs/zones.md.
 - La durée réelle de la parole : `SpeechDB.bin` (voix, ligne, échantillon) et la table de `Speech.bin` (clé
   `FUN_005a7c10`, banques XACT `SDBK`/`WBND`) ; `CSpeechBank`, `tests/test_speechbank` ; docs/son.md.
 - Le préchargement d'une ligne de parole (`SoundPreloadSpeech`, le bloc `DAT_00cfb3b4`, le rappel `FUN_005d49d0`) :

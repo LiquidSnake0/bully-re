@@ -24,7 +24,7 @@
 // lance celle dont le joueur touche le corona, et celles qui se lancent seules (champ 51) : 1_02 après 1_01.
 // Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
 // de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]...
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -1461,13 +1461,15 @@ AvancerZones(lua_State *L)
 	for(const Script &sc : scripts)
 		if(sc.zone && !sc.fin){ scriptsDeZone = true; if(strcasecmp(sc.fichier.c_str(), attendu) == 0) scriptDemande = true; }
 	int avant = zones.zoneVisible;
-	// FUN_00416e30, état 0 : les portes SV_ : le joueur dans leur déclencheur part vers leur point.
+	// FUN_00416e30, état 0 : les portes SV_ (le joueur dans leur déclencheur) et DT_ (leur objet poussé)
+	// envoient le joueur vers leur point.
 	{
 		const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
-		int porte = zones.PasserUnePorte(donnees, j->pos);
+		int porte = zones.PasserUnePorte(donnees, j->pos, j->cap);
 		if(porte >= 0){
 			const CTriggerZone *dz = donnees.ZoneParHandle(zones.portes[porte].declencheur);
-			printf("%6.2f s  zones : le joueur est dans la porte %s, vers la zone %d\n", maintenant / 1000.0, dz ? dz->nom.c_str() : "?", zones.demande.zone);
+			printf("%6.2f s  zones : le joueur passe la porte %s, vers la zone %d%s\n", maintenant / 1000.0, dz ? dz->nom.c_str() : "?", zones.demande.zone,
+			       zones.retourEnReserve ? " (retour gardé)" : "");
 		}
 	}
 	zones.AvancerImage(fondu.Etat(), !scriptsDeZone, scriptDemande);
@@ -1551,6 +1553,7 @@ main(int argc, char **argv)
 	std::vector<std::pair<uint32, std::string>> entrees;   // --entrer NOM@s : le joueur entre dans NOM à s secondes
 	std::vector<std::pair<uint32, std::string>> allers;    // --aller NOM[,n]@s ou x,y,z@s : le joueur y est posé à s secondes
 	std::vector<std::pair<uint32, int>> portes;            // --zone N@s : le joueur passe dans la zone N (une porte) à s secondes
+	std::vector<std::pair<uint32, std::string>> poussees;  // --porte NOM@s : le joueur pousse la porte du déclencheur NOM (DT_…) à s secondes
 	std::vector<const char*> pos;
 	for(int i = 1; i < argc; i++){
 		if(strcmp(argv[i], "--mission") == 0 && i + 1 < argc) aLancer = argv[++i];
@@ -1563,6 +1566,10 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--zone") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
 			portes.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), atoi(e.c_str())});
+		}
+		else if(strcmp(argv[i], "--porte") == 0 && i + 1 < argc){
+			std::string e = argv[++i]; size_t at = e.find('@');
+			poussees.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
 		}
 		else if(strcmp(argv[i], "--aller") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
@@ -1698,6 +1705,14 @@ main(int argc, char **argv)
 		}
 		for(auto &e : entrees) if(!e.second.empty() && maintenant >= e.first){ EntrerDansDeclencheur(e.second.c_str()); e.second.clear(); }
 		for(auto &e : allers) if(!e.second.empty() && maintenant >= e.first){ AllerAuPoint(e.second.c_str()); e.second.clear(); }
+		// Une porte DT_ poussée : FUN_00415160 pose l'objet de porte en cours (+0x394) ; le moteur le fait depuis
+		// l'animation de la porte (FUN_00610ed0, non jouée), l'outil le fait au nom du déclencheur.
+		for(auto &e : poussees) if(!e.second.empty() && maintenant >= e.first){
+			int h = donnees.Declencheur(e.second.c_str());
+			if(h < 0) printf("%6.2f s  le joueur pousse la porte %s : aucun déclencheur de ce nom n'est chargé\n", maintenant / 1000.0, e.second.c_str());
+			else { zones.PousserPorte(h); printf("%6.2f s  le joueur pousse la porte %s (+0x394)\n", maintenant / 1000.0, e.second.c_str()); }
+			e.second.clear();
+		}
 		for(auto &e : portes) if(e.second >= 0 && maintenant >= e.first){
 			// Une porte : la demande de FUN_00416e30 (état 0) pour le point d'arrivée, sans l'octet +0x8dc.
 			const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);

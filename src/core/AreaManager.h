@@ -80,10 +80,20 @@ public:
 	// DT_ s'apparie à tous les déclencheurs de son nom, chaque liste SV_ au premier ; les autres listes
 	// ne sont pas des portes.
 	void ReconstruirePortes(const CDatPools &donnees);
-	// FUN_00416e30, état 0 : le joueur en `pos` est dans le déclencheur d'une porte SV_ ; la demande est
-	// faite vers le premier point de sa liste, dans la zone de l'AREACODE, le second point servant de
-	// direction de caméra. Renvoie l'index de la porte, ou -1.
-	int PasserUnePorte(const CDatPools &donnees, const CVector &pos);
+	// FUN_00416e30, état 0, la boucle des paires. Une porte SV_ passe quand le joueur (en `pos`) est dans
+	// son déclencheur ; une porte DT_ quand son déclencheur est celui de l'objet de porte en cours (+0x394,
+	// PousserPorte), le joueur où qu'il soit. La demande va au premier point de la liste, dans la zone de
+	// son AREACODE, le second point servant de direction de caméra. Une porte DT_ vers une des neuf zones
+	// de FUN_0042e570 met d'abord le retour en réserve (FUN_00416750 : la zone visible, le joueur, +0x86f) ;
+	// la porte DT_ suivante ramène à cette réserve au lieu de sa liste, et la vide
+	// (AreaCancelStoredTransition). Renvoie l'index de la porte, ou -1.
+	int PasserUnePorte(const CDatPools &donnees, const CVector &pos, float cap = 0);
+	// FUN_00415160 : l'objet de porte en cours, que l'animation de la porte poussée par le joueur pose
+	// (FUN_00610ed0, FUN_00655c40 : le déclencheur +0x23c de la porte) ; AreaDoorTransitionFix (0x415140)
+	// et l'état 0xd le remettent à zéro. Ici, l'entrée du pool des déclencheurs, -1 pour aucune.
+	void PousserPorte(int declencheur){ porteObjet = declencheur; }
+	// FUN_0042e570 : les zones où l'on entre par une porte en gardant le chemin du retour.
+	static bool ZoneAvecRetour(int32 zone);
 	std::vector<CAreaPorte> portes;  // +0x10 (le compte en +8)
 	// +0x870 : le script de la nouvelle zone est prêt ; l'état 8 l'attend.
 	void SignalerPret(void){ pret = true; }
@@ -115,6 +125,9 @@ public:
 	int32 compteARebours = 0;        // +0x8ec
 	int32 attenteImages = 14;        // +0x8e0
 	CAreaDemande demande;
+	int porteObjet = -1;             // +0x394
+	bool retourEnReserve = false;    // +0x86f
+	CAreaDemande retour;             // +0x8a0 position, +0x8ac cap, +0x8b0 zone (FUN_00416750)
 private:
 	char scripts[AREA_MAX][AREA_SCRIPT_CASE];
 };

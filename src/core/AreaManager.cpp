@@ -63,20 +63,45 @@ CAreaManager::ReconstruirePortes(const CDatPools &d)
 }
 
 int
-CAreaManager::PasserUnePorte(const CDatPools &d, const CVector &pos)
+CAreaManager::PasserUnePorte(const CDatPools &d, const CVector &pos, float cap)
 {
 	if(EnChargement()) return -1;
 	for(size_t i = 0; i < portes.size(); i++){
 		const CAreaPorte &p = portes[i];
-		if(p.parObjet) continue;                                 // +0x394, l'objet de porte, n'est pas joué
 		const CTriggerPointList *liste = d.Liste(p.liste);
-		if(liste == nil || liste->points.empty() || !d.DansDeclencheur(p.declencheur, pos)) continue;
+		if(liste == nil || liste->points.empty()) continue;
+		if(!p.parObjet){
+			if(!d.DansDeclencheur(p.declencheur, pos)) continue;
+		}else{
+			if(p.declencheur != porteObjet) continue;
+			if(retourEnReserve){
+				// La sortie d'une zone où l'on est entré par une porte : la réserve, pas la liste.
+				Demander(retour.pos, retour.cap, retour.zone, nil, false);
+				retourEnReserve = false;
+				return (int)i;
+			}
+			if(ZoneAvecRetour(liste->zone)){
+				// FUN_00416750 : le moteur recule le point d'un pas et le tourne face à la porte quand elle a
+				// un objet ; ici, la position et le cap du joueur tels quels.
+				retour.pos = pos; retour.cap = cap; retour.zone = zoneVisible;
+				retourEnReserve = true;
+			}
+		}
 		const CTriggerPointPoint &pt = liste->points[0];
 		const CVector *camera = liste->points.size() > 1 ? &liste->points[1].pos : nil;
 		Demander(pt.pos, pt.lacetTangageRoulis[0], liste->zone, camera, false);
 		return (int)i;
 	}
 	return -1;
+}
+
+bool
+CAreaManager::ZoneAvecRetour(int32 zone)
+{
+	switch(zone){
+	case 0xf: case 0x1a: case 0x1c: case 0x1d: case 0x21: case 0x22: case 0x27: case 0x2c: case 0x2e: return true;
+	}
+	return false;
 }
 
 // FUN_00415640 : refusé si l'état n'est pas 0, si une demande attend, ou si la seconde machine
@@ -175,6 +200,7 @@ CAreaManager::Avancer(int fondu, bool scriptsDecharges, bool scriptDeZoneCharge)
 	case AREA_FIN:
 		demandeEnAttente = false;
 		pret = false;
+		porteObjet = -1;                              // +0x394
 		etat = AREA_REPOS;
 		return false;
 	}

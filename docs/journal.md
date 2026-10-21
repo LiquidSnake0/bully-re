@@ -514,3 +514,8 @@ en échec plutôt que de les masquer.
   banque XACT (`SDBK`, puis `WBND` à +0x800) dont l'onde porte sa durée. `CSpeechBank`,
   `tests/test_speechbank` ; dans `lancer_lua`, les lignes durent leur échantillon : `1_01` finit à
   10,5 s (la ligne de Jimmy dure 0,80 s, pas 2,5), la narration de `1_02` prend 18 s. docs/son.md.
+- Suite : **les portes `DT_`.** L'état 0 de `FUN_00416e30` les passe quand le mot +0x394 du gestionnaire,
+  le déclencheur de la porte que le joueur pousse (`FUN_00415160`), est le leur ; neuf zones
+  (`FUN_0042e570`) gardent le retour (`FUN_00416750`, +0x86f), que la porte suivante rejoue.
+  `CAreaManager::PousserPorte`, `tests/test_portes` (37 portes `DT_` hors `tschool_doors`, 6 sorties du
+  hall, l'aller-retour par la salle de classe) ; `lancer_lua --porte`. docs/zones.md.
