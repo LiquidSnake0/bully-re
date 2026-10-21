@@ -115,6 +115,17 @@ main(int argc, char **argv)
 		VERIF(essai({cond("1_01"), cond("1_02"), ou, cond("1_01")}) == 1);   // (1_01 et 1_02) ou 1_01
 		VERIF(essai({cond("1_02"), cond("1_01"), ou, cond("1_01")}) == 0);   // un faux suivi d'autre chose qu'un OR arrête tout
 		VERIF(essai({}) == 1);
+		// CurrentMission : la mission du moment, réussie au moins une fois.
+		{
+			CMissionCondition cur; cur.type = kM; cur.mots[0] = ActionHash("CurrentMission") & 0x7fffffff;
+			CMissionCondition cls = cur; cls.mots[0] = ActionHash("CurrentClassMission") & 0x7fffffff;
+			etat.courante = -1; VERIF(t.Evaluer(cur, etat) == 0);
+			etat.courante = i01; VERIF(t.Evaluer(cur, etat) == 1);
+			etat.courante = i02; VERIF(t.Evaluer(cur, etat) == 0);
+			etat.coursCourant = -1; VERIF(t.Evaluer(cls, etat) == 0);
+			etat.coursCourant = i01; VERIF(t.Evaluer(cls, etat) == 1);
+			etat.courante = etat.coursCourant = -1;
+		}
 		// Après une réussite, FUN_006ad130 ne réactive une mission que si son champ 44 (+0x2c) le permet.
 		int rejouables = 0; for(const CMissionData &x : b.missions) rejouables += x.rejouable;
 		printf("%d missions rejouables (champ 44)\n", rejouables);

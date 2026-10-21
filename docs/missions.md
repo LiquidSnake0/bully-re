@@ -65,8 +65,11 @@ L'évaluation est l'emplacement 1 de la table virtuelle (`export/rtti.json`).
   `FUN_006aa660` donne l'entrée de 6 octets (+0x688 du gestionnaire) et la condition rend
   `mot +2 ≠ 0`. Ce mot est le **compte des réussites** : `FUN_006ac910`, la fin de mission,
   l'incrémente quand la mission a réussi, et `FUN_006a9ff0` compte les missions où il n'est
-  pas nul (+0x748 du gestionnaire). Deux noms sont à part : `CurrentMission` (`FUN_006a9ed0`)
-  et `CurrentClassMission` (`FUN_006aa630`), pas encore lus.
+  pas nul (+0x748 du gestionnaire). Deux noms sont à part (21.10, sur l'assembleur de `FUN_006a7db0` : « CurrentMission » est
+  haché en 0x020c3594, « CurrentClassMission » en 0x020c3590, et l'indice est alors recalculé à chaque
+  fois) : **`CurrentMission`** est la mission en cours (`FUN_006aa630` : le second emplacement du
+  gestionnaire, +0x5a0, s'il joue, sinon le premier, +0x4bc), **`CurrentClassMission`** la première
+  mission de cours active (`FUN_006a9ed0` : bit 0 de l'état posé, type 1).
 - **`TimeCond` est vraie quand l'heure du jeu est dans [début, fin[** : `FUN_00425cf0` compte
   en minutes depuis minuit (`DAT_00bceb4b` heures, `DAT_00bceb4a` minutes) et laisse la plage
   passer minuit quand la fin précède le début.

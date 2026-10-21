@@ -543,3 +543,7 @@ en échec plutôt que de les masquer.
   `tests/test_actionbank` ; réel dans `lancer_lua` sur le nœud que `PedSetActionNode` pose. L'entraînement
   de `1_02` attend `/Global/TrainingPlayer/Default`, que seul le contrôleur, en jouant l'arbre posé par
   `PedSetActionTree`, atteint : c'est le chantier suivant. docs/cat.md.
+- Suite : **`CurrentMission` et `CurrentClassMission`.** L'assembleur de `FUN_006a7db0` range les deux noms
+  dans deux globales : `CurrentMission` vaut la mission en cours (`FUN_006aa630`, un des deux
+  emplacements du gestionnaire), `CurrentClassMission` le cours actif (`FUN_006a9ed0`) ; le premier
+  relevé les avait inversés. `CEtatMissions::courante` / `coursCourant`, `tests/test_missions`.

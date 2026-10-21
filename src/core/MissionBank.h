@@ -20,6 +20,10 @@ struct CMissionCondition {
 struct CEtatMissions {
 	std::vector<uint16> reussites;   // une par entrée de la banque
 	int heure = 8, minute = 0;
+	// La mission en cours (FUN_006aa630 : le second emplacement, +0x5a0, s'il joue, sinon le premier,
+	// +0x4bc) et la mission de cours active (FUN_006a9ed0 : la première dont le bit 0 de l'état est posé
+	// et dont le type, champ 40, vaut 1) ; -1 pour aucune.
+	int courante = -1, coursCourant = -1;
 };
 
 // Une entrée du tableau +0x4b8 du gestionnaire : la piste MissionData copiée, avec le nœud.
@@ -61,7 +65,8 @@ public:
 	// Une condition, comme sa méthode d'évaluation (emplacement 1 de sa table virtuelle) : 1 vraie,
 	// 0 fausse, -1 classe pas encore lue (le nom de la classe dans *classe quand on le connaît).
 	//  MissionCond (FUN_006a7db0) : la mission nommée au champ +4 a réussi au moins une fois (mot +2
-	//    de son entrée non nul) ; une mission inconnue de la banque rend faux.
+	//    de son entrée non nul) ; une mission inconnue de la banque rend faux. Deux noms désignent une
+	//    mission du moment : « CurrentMission » (FUN_006aa630) et « CurrentClassMission » (FUN_006a9ed0).
 	//  TimeCond (FUN_006a7380 → FUN_00425cf0) : l'heure du jeu est dans [+4 h +0xc min, +8 h +0x10 min[,
 	//    l'intervalle pouvant passer minuit.
 	//  ConditionFalse (FUN_006094f0) : toujours fausse.

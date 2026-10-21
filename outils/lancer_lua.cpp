@@ -1567,6 +1567,8 @@ AvancerGestionnaire(lua_State *L)
 	if(gestionnaire.activees.size() != banque.missions.size()) gestionnaire.activees.assign(banque.missions.size(), false);
 	if(gestionnaire.etat.reussites.size() != banque.missions.size()) gestionnaire.etat.reussites.assign(banque.missions.size(), 0);
 	gestionnaire.etat.heure = horloge.Heure(); gestionnaire.etat.minute = horloge.Minute();
+	gestionnaire.etat.courante = mission.etat != AUCUNE ? mission.indice : -1;
+	gestionnaire.etat.coursCourant = mission.etat != AUCUNE && mission.indice >= 0 && banque.missions[mission.indice].type == 1 ? mission.indice : -1;
 	for(size_t i = 0; i < banque.missions.size(); i++){
 		const CMissionData &m = banque.missions[i];
 		// FUN_006ad130 : une mission déjà réussie n'est réactivée que si son champ 44 (+0x2c) le dit.

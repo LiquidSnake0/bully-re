@@ -143,9 +143,12 @@ CMissionBank::Evaluer(const CMissionCondition &c, const CEtatMissions &etat, con
 	if(c.type == kMissionCond){
 		if(classe) *classe = "MissionCond";
 		uint32 nom = c.mots[0] & 0x7fffffff;
-		// CurrentMission et CurrentClassMission passent par la mission en cours (FUN_006a9ed0,
-		// FUN_006aa630) : pas encore lues.
-		if(nom == kCurrentMission || nom == kCurrentClassMission) return -1;
+		// FUN_006a7db0 range « CurrentMission » en 0x020c3594 et « CurrentClassMission » en 0x020c3590 ;
+		// l'indice est alors recalculé à chaque fois (FUN_006aa630, FUN_006a9ed0), jamais gardé.
+		if(nom == kCurrentMission || nom == kCurrentClassMission){
+			int i = nom == kCurrentMission ? etat.courante : etat.coursCourant;
+			return i >= 0 && i < (int)etat.reussites.size() && etat.reussites[i] != 0;
+		}
 		// FUN_006a9e70 : la première entrée de ce nom ; -1 rend faux.
 		for(size_t i = 0; i < missions.size(); i++)
 			if(missions[i].hachage == nom) return i < etat.reussites.size() && etat.reussites[i] != 0;
