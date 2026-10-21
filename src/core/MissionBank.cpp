@@ -116,6 +116,7 @@ CMissionBank::Trouver(const char *nom) const
 static const uint32 kMissionCond = ActionHash("MissionCond") & 0x7fffffff;
 static const uint32 kTimeCond = ActionHash("TimeCond") & 0x7fffffff;
 static const uint32 kFalse = ActionHash("False") & 0x7fffffff;              // ConditionFalse, enregistrée sous « False »
+static const uint32 kDayCond = ActionHash("DayCond") & 0x7fffffff;      // CDayCond (FUN_0063a2f0)
 static const uint32 kNot = ActionHash("NOT") & 0x7fffffff;               // ConditionNOT (FUN_00639470)
 static const uint32 kOr = ActionHash("OR") & 0x7fffffff;                 // ConditionOR (FUN_00639490)
 static const uint32 kCurrentMission = ActionHash("CurrentMission") & 0x7fffffff;
@@ -158,6 +159,11 @@ CMissionBank::Evaluer(const CMissionCondition &c, const CEtatMissions &etat, con
 		if(classe) *classe = "TimeCond";
 		int debut = (int)c.mots[0] * 60 + (int)c.mots[2], fin = (int)c.mots[1] * 60 + (int)c.mots[3];
 		return DansLaPlage(etat.heure * 60 + etat.minute, debut, fin);
+	}
+	if(c.type == kDayCond){
+		if(classe) *classe = "DayCond";
+		int j = (c.mots[1] & 0xff) ? etat.jour % etat.joursParCycle : etat.jour;
+		return (int)c.mots[0] == j;
 	}
 	if(c.type == kFalse){
 		if(classe) *classe = "ConditionFalse";

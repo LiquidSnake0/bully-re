@@ -53,6 +53,8 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- `DayCond` (`FUN_006a8b30`, `TimeCycleButes` = 5) et `CurrentMission` / `CurrentClassMission` (`FUN_006aa630`,
+  `FUN_006a9ed0`) ; `GetCurrentDay` réel ; `tests/test_missions` ; docs/missions.md.
 - `PedIsPlaying` (`FUN_005f3bf0`, `FUN_005f4f80`) : `CActionBank::Joue`, `tests/test_actionbank` ; docs/cat.md.
 - Les coups et l'invulnérabilité (`FUN_0047b6b0`, `FUN_004782a0` : +0x138c, +0x1364, +0x1ca8) :
   `CScriptPedPool::Blesser`, `tests/test_scriptpeds` ; `1_02` va jusqu'au combat de Russell.

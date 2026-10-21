@@ -98,7 +98,7 @@ outside the repository.
 
 ## Status
 
-**2.6 % of `bully.exe`'s code recreated** (384 of 20,819 functions), 5.8 %
+**2.6 % of `bully.exe`'s code recreated** (389 of 20,819 functions), 5.8 %
 understood (code, docs, names). Breakdown in [docs/avancement.md](docs/avancement.md),
 regenerated on every commit by `tools/avancement.py`.
 
@@ -125,9 +125,13 @@ VM: `main.lua` and its threads frame by frame, the mission bank read from the
 action trees, and the first mission, `1_01`, played to `MissionSucceed` — its
 cutscene `1-1-1` from `Cuts.img` (61.7 s), the area changes through the engine's
 own state machine (fade, area scripts unloaded and loaded, doors paired by
-`DATInit`), the scripted speech, the pedestrians it creates and moves. The tool
-plays the player (`--entrer`, `--aller`, `--zone`); everything else answers like
-the engine does, or says it is a stub. See `docs/lua.md`, `docs/missions.md`,
+`DATInit`), the scripted speech, the pedestrians it creates and moves. Since 21.10,
+on a new game, **`1_02` follows on its own** after `1_01` (mission node conditions
+read: `MissionCond`, `TimeCond`, `DayCond`, `NOT`, `OR`), its narration is preloaded and
+lasts as long as the real samples in `Speech.bin`, the player leaves the school
+through a `DT_` door, and the mission runs up to the training fight with Russell.
+The tool plays the player (`--entrer`, `--aller`, `--zone`, `--porte`); everything
+else answers like the engine does, or says it is a stub. See `docs/lua.md`, `docs/missions.md`,
 `docs/zones.md`, `docs/cinematiques.md` (in French).
 
 See [docs/journal.md](docs/journal.md) for the running log (in French).

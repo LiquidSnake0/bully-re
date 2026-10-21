@@ -547,3 +547,16 @@ en échec plutôt que de les masquer.
   dans deux globales : `CurrentMission` vaut la mission en cours (`FUN_006aa630`, un des deux
   emplacements du gestionnaire), `CurrentClassMission` le cours actif (`FUN_006a9ed0`) ; le premier
   relevé les avait inversés. `CEtatMissions::courante` / `coursCourant`, `tests/test_missions`.
+- Suite : **`DayCond`.** `FUN_006a8b30` compare son champ au jour du calendrier (`DAT_020c3640`, ce que
+  `GetCurrentDay` rend), modulo le +0x18 de `TimeCycleButes` (5 dans `Globals.cat`) quand l'octet +8 le
+  demande, ce que font les 59 `DayCond` des missions. `GetCurrentDay` réel dans `lancer_lua`.
+- **Bilan du jour** : dix commits. `1_02` s'enchaîne seule après `1_01` (conditions `MissionCond`,
+  `TimeCond`, `DayCond`, `ConditionFalse`, `NOT` / `OR` et la liste de `FUN_005fb9b0`, `CurrentMission`,
+  le champ 44 « rejouable ») ; la parole se précharge (`SoundPreloadSpeech`) et dure ses vrais
+  échantillons (`SpeechDB.bin`, la table de `Speech.bin`, banques XACT) ; les portes `DT_` passent
+  (+0x394, retour gardé) ; les coups respectent invulnérabilité et santé minimale ; `PedIsPlaying` est
+  réel ; `tests/test_transform` repasse (formes cachées). Dans `lancer_lua --nouvelle-partie`, `1_02`
+  joue sa narration, la secrétaire, la sortie de l'école et va jusqu'au combat de Russell. Ouvert : le
+  contrôleur d'actions qui descend dans l'arbre de `PedSetActionTree` (l'entraînement attend
+  `/Global/TrainingPlayer/Default`), `ConditionGroup` (la référence vers le groupe nommé), les constantes
+  des fondus, le recul de `FUN_00416750`, l'animation de la porte qui pose +0x394.

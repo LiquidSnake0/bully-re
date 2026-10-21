@@ -92,8 +92,12 @@ La chaîne du chapitre 1, lue dans `chap1.cat` : `1_02` attend `1_01`, `1_02A` a
 `tests/test_missions` suit la chaîne et la plage de nuit. Sur les 333 missions jouables qui ont des
 conditions, 195 s'évaluent entièrement avec ces trois classes ; les autres attendent
 `ConditionGroup` (402 conditions : `ConditionGroupCondition`, `FUN_005fbaf0`, qui évalue un groupe nommé
-par la même `FUN_005fb9b0`, la référence n'étant pas encore résolue), `DayCond` (`FUN_006a8b30` : le jour
-du calendrier, +0x58, éventuellement modulo +0x18, pas lu) et une vingtaine de classes plus rares.
+par la même `FUN_005fb9b0`, la référence n'étant pas encore résolue), et une vingtaine de classes plus rares. **`DayCond`** (`CDayCond`, `FUN_006a7480` → `FUN_006a8b30` sur l'objet
+0x020c35e8) compare son champ +4 au jour du calendrier (+0x58 de l'objet, `DAT_020c3640`, ce que
+`GetCurrentDay`, 0x5c0c00, rend ; 0 au démarrage, posé entre 0 et 4 par `FUN_0061d320`) ; avec l'octet +8,
+le jour est pris modulo le +0x18 de **`TimeCycleButes`** (`DAT_020c88ac`, trouvé par son nom par
+`FUN_0072ad00` parmi les pistes « Butes » ; dans `Globals.cat`, position 24 = 5, le diviseur que
+`GetCurrentDay(true)` écrit en dur). Les 59 `DayCond` des missions demandent toutes le modulo.
 
 ## Les champs de `MissionData`
 

@@ -1187,6 +1187,16 @@ PedSetActionNode(lua_State *L)
 
 // PedIsPlaying(ped, chemin[, sous]) (0x5cb830 → FUN_005f3bf0) : le piéton joue ce nœud, ou, avec `sous`, un
 // nœud placé dessous.
+// GetCurrentDay([modulo]) (0x5c0c00) : le jour du calendrier (DAT_020c3640), ou ce jour modulo 5.
+static int
+GetCurrentDay(lua_State *L)
+{
+	appels["GetCurrentDay"]++;
+	int j = gestionnaire.etat.jour;
+	lua_pushnumber(L, lua_toboolean(L, 1) ? j % 5 : j);
+	return 1;
+}
+
 static int
 PedIsPlaying(lua_State *L)
 {
@@ -1671,6 +1681,7 @@ main(int argc, char **argv)
 	lua_register(L, "CameraFade", CameraFade);
 	lua_register(L, "PedSetActionNode", PedSetActionNode);
 	lua_register(L, "PedIsPlaying", PedIsPlaying);
+	lua_register(L, "GetCurrentDay", GetCurrentDay);
 	lua_register(L, "SoundPlayScriptedSpeechEvent", SoundPlayScriptedSpeechEvent);
 	lua_register(L, "SoundSpeechPlaying", SoundSpeechPlaying);
 	lua_register(L, "SoundPreloadSpeech", SoundPreloadSpeech);

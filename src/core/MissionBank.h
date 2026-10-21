@@ -24,6 +24,10 @@ struct CEtatMissions {
 	// +0x4bc) et la mission de cours active (FUN_006a9ed0 : la première dont le bit 0 de l'état est posé
 	// et dont le type, champ 40, vaut 1) ; -1 pour aucune.
 	int courante = -1, coursCourant = -1;
+	// Le jour du calendrier (+0x58 de l'objet 0x020c35e8, soit DAT_020c3640, que GetCurrentDay, 0x5c0c00,
+	// rend) : 0 au démarrage (mémoire mise à zéro), puis posé entre 0 et 4 par FUN_0061d320.
+	int jour = 0;
+	int joursParCycle = 5;           // TimeCycleButes, position 24 (+0x18), dans Globals.cat
 };
 
 // Une entrée du tableau +0x4b8 du gestionnaire : la piste MissionData copiée, avec le nœud.
@@ -69,6 +73,9 @@ public:
 	//    mission du moment : « CurrentMission » (FUN_006aa630) et « CurrentClassMission » (FUN_006a9ed0).
 	//  TimeCond (FUN_006a7380 → FUN_00425cf0) : l'heure du jeu est dans [+4 h +0xc min, +8 h +0x10 min[,
 	//    l'intervalle pouvant passer minuit.
+	//  DayCond (FUN_006a7480 → FUN_006a8b30) : le jour du calendrier vaut +4 ; avec l'octet +8, c'est le
+	//    jour modulo le +0x18 de TimeCycleButes (DAT_020c88ac, la piste de Globals.cat : 5, le même
+	//    diviseur que GetCurrentDay écrit en dur).
 	//  ConditionFalse (FUN_006094f0) : toujours fausse.
 	//  ConditionNOT et ConditionOR (FUN_00609b30) : vraies ; ce sont des opérateurs de la liste.
 	int Evaluer(const CMissionCondition &c, const CEtatMissions &etat, const char **classe = nil) const;

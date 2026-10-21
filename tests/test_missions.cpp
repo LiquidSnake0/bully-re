@@ -126,6 +126,19 @@ main(int argc, char **argv)
 			etat.coursCourant = i01; VERIF(t.Evaluer(cls, etat) == 1);
 			etat.courante = etat.coursCourant = -1;
 		}
+		// DayCond : le jour du calendrier, tel quel (l'octet +8 demande un modulo dont le diviseur n'est pas lu).
+		{
+			int simples = 0, modulo = 0, egaux = 0;
+			for(const CMissionData &x : b.missions) for(const CMissionCondition &c : x.conds)
+				if(c.type == (ActionHash("DayCond") & 0x7fffffff)){ (c.mots[1] & 0xff) ? modulo++ : simples++; }
+			CMissionCondition jour; jour.type = ActionHash("DayCond") & 0x7fffffff; jour.mots[0] = 2;
+			etat.jour = 2; egaux += t.Evaluer(jour, etat) == 1; etat.jour = 3; egaux += t.Evaluer(jour, etat) == 0;
+			jour.mots[1] = 1; etat.jour = 7; VERIF(t.Evaluer(jour, etat) == 1);   // 7 modulo 5
+			etat.jour = 8; VERIF(t.Evaluer(jour, etat) == 0);
+			etat.jour = 0;
+			printf("DayCond : %d sans modulo, %d avec\n", simples, modulo);
+			VERIF(egaux == 2 && simples + modulo > 0);
+		}
 		// Après une réussite, FUN_006ad130 ne réactive une mission que si son champ 44 (+0x2c) le permet.
 		int rejouables = 0; for(const CMissionData &x : b.missions) rejouables += x.rejouable;
 		printf("%d missions rejouables (champ 44)\n", rejouables);
