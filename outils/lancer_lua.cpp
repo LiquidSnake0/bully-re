@@ -37,6 +37,7 @@
 #include "../src/core/AreaManager.h"
 #include "../src/core/ActionBank.h"
 #include "../src/audio/SpeechEvents.h"
+#include "../src/audio/SpeechBank.h"
 #include "../src/cutscene/CutsceneFiles.h"
 #include "../src/peds/ScriptPedPool.h"
 #include <algorithm>
@@ -107,8 +108,26 @@ static CActionBank arbres;
 static int controleJoueur = 1;
 // La parole scriptée (src/audio/SpeechEvents.h, docs/son.md) : une seule ligne à la fois, comme le moteur
 // du son la décrit (FUN_005a27b0 : le locuteur, l'événement sur 9 bits, le numéro de ligne sur 11). La
-// durée d'une ligne n'est pas lue : 2,5 s, provisoire.
+// durée d'une ligne est celle de son échantillon dans Speech.bin (src/audio/SpeechBank.h) : le premier que
+// FUN_0059ee10 retiendrait pour le modèle du locuteur et la ligne (le moteur tire au hasard parmi les prises
+// pas encore jouées) ; sans échantillon, 2,5 s.
 static const float PAROLE_MS = 2500;
+static CSpeechBank banqueParole;
+static bool banqueParoleLue = false;
+
+static uint32
+DureeParole(int ped, int evenement, int ligne)
+{
+	const CScriptPed *p = ped >= 0 ? pietons.Acceder(ped) : nil;
+	if(p == nil || !banqueParoleLue) return (uint32)PAROLE_MS;
+	std::vector<int> c = banqueParole.Candidats(evenement, p->modele, ligne);
+	int ms = c.empty() ? -1 : banqueParole.DureeMs(c[0]);
+	if(ms < 0){
+		printf("        parole : aucun échantillon de %s ligne %d pour le modèle %d, 2,5 s\n", kSpeechEvents[evenement], ligne, p->modele);
+		return (uint32)PAROLE_MS;
+	}
+	return (uint32)ms;
+}
 static struct { bool enCours = false; int ped = -1, evenement = -1, ligne = -1, id = 0; uint32 fin = 0; } parole;
 // Le préchargement d'une ligne (SoundPreloadSpeech, docs/son.md) : l'outil n'a pas de diffusion, la ligne est
 // prête à l'image qui suit, et le rappel FUN_005d49d0 est joué à chaque image tant qu'elle attend.
@@ -1148,7 +1167,7 @@ SoundPlayScriptedSpeechEvent(lua_State *L)
 	parole.evenement = index;
 	parole.ligne = (int)luaL_optnumber(L, 3, 0);
 	parole.id++;
-	parole.fin = maintenant + (uint32)PAROLE_MS;
+	parole.fin = maintenant + DureeParole(parole.ped, parole.evenement, parole.ligne);
 	lua_pushnumber(L, parole.id);
 	return 1;
 }
@@ -1291,6 +1310,8 @@ static void
 ChargerMissions(void)
 {
 	if(!banque.Charger()){ printf("Act\\Act.img ou Missions.cat introuvable : pas de table des missions\n"); return; }
+	banqueParoleLue = banqueParole.Charger();
+	printf("parole : %s\n", banqueParoleLue ? "SpeechDB.bin et Speech.bin lus, durées réelles" : "SpeechDB.bin ou Speech.bin illisible, 2,5 s par ligne");
 	int jouables = 0;
 	for(const CMissionData &m : banque.missions) jouables += m.Jouable();
 	printf("%zu missions dans la banque (%zu fichiers), %d avec un script\n", banque.missions.size(), banque.banques.size(), jouables);
@@ -1687,7 +1708,7 @@ main(int argc, char **argv)
 			bool annulee = false;
 			if(prechargement.Rappel(true, maintenant, &annulee)){
 				parole.enCours = true; parole.ped = prechargement.ped; parole.evenement = prechargement.evenement;
-				parole.ligne = prechargement.ligne; parole.fin = maintenant + (uint32)PAROLE_MS;
+				parole.ligne = prechargement.ligne; parole.fin = maintenant + DureeParole(parole.ped, parole.evenement, parole.ligne);
 				if(journalRestant > 0){ journalRestant--; printf("%6.2f s  parole : le piéton %d dit %s ligne %d (préchargée)\n", maintenant / 1000.0, parole.ped, kSpeechEvents[parole.evenement], parole.ligne); }
 			}
 			else if(annulee) printf("%6.2f s  parole : %s ligne %d préchargée et jamais demandée, annulée après 30 s\n", maintenant / 1000.0, kSpeechEvents[prechargement.evenement], prechargement.ligne);

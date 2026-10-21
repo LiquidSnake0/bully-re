@@ -507,3 +507,10 @@ en échec plutôt que de les masquer.
   « jouer », et l'annule passé l'échéance. `CSpeechPreload`, `tests/test_speech` ; dans `lancer_lua`,
   la narration de `1_02` (quatre lignes) et la secrétaire passent, et la mission donne au joueur
   l'objectif du dortoir à 32,3 s. docs/son.md.
+- Suite : **la vraie durée de la parole.** `SpeechDB.bin` donne pour chaque événement ses éléments
+  (voix = indice du modèle du locuteur, ligne sur un octet, numéro d'échantillon), et le numéro est
+  l'indice dans la table triée de `Speech.bin` (« Hash », 40 400 entrées, clé = hachage `FUN_005a7c10`
+  du nom de fichier, vérifié sur les 40 400 noms de `Speech.lst`). Chaque échantillon est une petite
+  banque XACT (`SDBK`, puis `WBND` à +0x800) dont l'onde porte sa durée. `CSpeechBank`,
+  `tests/test_speechbank` ; dans `lancer_lua`, les lignes durent leur échantillon : `1_01` finit à
+  10,5 s (la ligne de Jimmy dure 0,80 s, pas 2,5), la narration de `1_02` prend 18 s. docs/son.md.
