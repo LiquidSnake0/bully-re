@@ -25,7 +25,7 @@ posséder le jeu (Steam ou disque).
 
 ## Avancement
 
-**2,5 % du code de `bully.exe` recréé** (345 fonctions sur 20 819), 5,6 % compris
+**2,6 % du code de `bully.exe` recréé** (389 fonctions sur 20 819), 5,8 % compris
 (code, documentation, noms). Le détail par sous-système est dans
 [docs/avancement.md](docs/avancement.md), régénéré à chaque commit par
 `tools/avancement.py`.
@@ -36,9 +36,12 @@ dans les arbres d'actions, et la première mission, `1_01`, jouée jusqu'à
 `MissionSucceed` — sa cinématique `1-1-1` lue dans `Cuts.img` (61,7 s), les
 changements de zone par la machine à états du moteur (fondu, scripts de zone
 retirés puis chargés, portes appariées par `DATInit`), la parole scriptée, les
-piétons qu'elle crée et fait marcher. L'outil joue le joueur (`--entrer`,
-`--aller`, `--zone`) ; tout le reste répond comme le moteur, ou dit qu'il est un
-bouchon. Voir `docs/lua.md`, `docs/missions.md`, `docs/zones.md`,
+piétons qu'elle crée et fait marcher. Depuis le 21.10, à la nouvelle partie, **`1_02` s'enchaîne
+seule** après `1_01` (les conditions des nœuds de mission lues : `MissionCond`, `TimeCond`, `DayCond`,
+`NOT`, `OR`), sa narration se précharge et dure le temps de ses vrais échantillons (`Speech.bin`), le
+joueur sort de l'école par une porte `DT_` et la mission va jusqu'au combat d'entraînement contre Russell.
+L'outil joue le joueur (`--entrer`, `--aller`, `--zone`, `--porte`) ; tout le reste répond comme le
+moteur, ou dit qu'il est un bouchon. Voir `docs/lua.md`, `docs/missions.md`, `docs/zones.md`,
 `docs/cinematiques.md`.
 
 ## Ce qui est recréé et vérifié sur les vrais fichiers

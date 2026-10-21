@@ -485,3 +485,78 @@ en échec plutôt que de les masquer.
   se termine réussie avec sa cinématique (78,1 s) ou sans (12,1 s), à la nouvelle partie
   comme par `--mission`. Ouvert : les conditions des nœuds pour enchaîner `1_02`, les portes
   `DT_`, la durée de la parole, jouer les nœuds d'action, les constantes des fondus.
+
+## 21.10.2026 — 1_02 s'enchaîne
+
+- **Les conditions des nœuds, construites sur place.** `FUN_005fa910` passe chaque
+  enregistrement à la fabrique `FUN_0061a4f0`, qui cherche la classe dans le registre de
+  `FUN_0064b090` (419 classes : nom, création, construction) et construit l'objet **à +4 de
+  l'enregistrement** : les champs sont les mots du fichier. `MissionCond` (`FUN_006a7db0`)
+  est vraie quand le mot +2 de l'entrée de la mission nommée n'est pas nul, et ce mot est le
+  compte des réussites (`FUN_006ac910` l'incrémente, `FUN_006a9ff0` les compte) ; `TimeCond`
+  (`FUN_00425cf0`) compare l'heure du jeu à une plage en minutes qui peut passer minuit ;
+  `ConditionFalse` rend 0. `CMissionBank::Evaluer` / `Activable`, `tests/test_missions` (la
+  chaîne `1_01` → `1_02` → `1_02A`, `1_03` entre 8 h et 19 h, une plage de nuit). Dans
+  `lancer_lua --nouvelle-partie`, **`1_02` s'active et démarre seule à la réussite de `1_01`**
+  (15,15 s), sans `--mission`. 195 des 333 missions à conditions s'évaluent déjà ;
+  `ConditionGroup` est la suivante par le nombre. docs/missions.md.
+- Suite : **le préchargement de la parole.** `1_02` attendait `SoundIsSpeechPreloaded`. `SoundPreloadSpeech`
+  (0x5d4a20) remet à zéro le bloc `DAT_00cfb3b4` (en attente, échéance à 30 s, jouer, préchargée,
+  locuteur) et le confie au moteur du son avec le rappel `FUN_005d49d0`, qui pose « préchargée »
+  quand la ligne est prête, la retient tant que `SoundPlayPreloadedSpeech` (0x5d39d0) n'a pas posé
+  « jouer », et l'annule passé l'échéance. `CSpeechPreload`, `tests/test_speech` ; dans `lancer_lua`,
+  la narration de `1_02` (quatre lignes) et la secrétaire passent, et la mission donne au joueur
+  l'objectif du dortoir à 32,3 s. docs/son.md.
+- Suite : **la vraie durée de la parole.** `SpeechDB.bin` donne pour chaque événement ses éléments
+  (voix = indice du modèle du locuteur, ligne sur un octet, numéro d'échantillon), et le numéro est
+  l'indice dans la table triée de `Speech.bin` (« Hash », 40 400 entrées, clé = hachage `FUN_005a7c10`
+  du nom de fichier, vérifié sur les 40 400 noms de `Speech.lst`). Chaque échantillon est une petite
+  banque XACT (`SDBK`, puis `WBND` à +0x800) dont l'onde porte sa durée. `CSpeechBank`,
+  `tests/test_speechbank` ; dans `lancer_lua`, les lignes durent leur échantillon : `1_01` finit à
+  10,5 s (la ligne de Jimmy dure 0,80 s, pas 2,5), la narration de `1_02` prend 18 s. docs/son.md.
+- Suite : **les portes `DT_`.** L'état 0 de `FUN_00416e30` les passe quand le mot +0x394 du gestionnaire,
+  le déclencheur de la porte que le joueur pousse (`FUN_00415160`), est le leur ; neuf zones
+  (`FUN_0042e570`) gardent le retour (`FUN_00416750`, +0x86f), que la porte suivante rejoue.
+  `CAreaManager::PousserPorte`, `tests/test_portes` (37 portes `DT_` hors `tschool_doors`, 6 sorties du
+  hall, l'aller-retour par la salle de classe) ; `lancer_lua --porte`. docs/zones.md.
+- Suite : **NOT, OR et la liste.** `FUN_005fb9b0` parcourt la liste de conditions d'un nœud : NOT et OR
+  sont des conditions vraies de genre 1 et 2 (emplacement 2 de la table virtuelle), le résultat suit
+  la dernière condition (inversée après un NOT), un faux arrête la liste sauf devant un OR, et un vrai
+  avant un OR saute la suite jusqu'au prochain opérateur. `FUN_006ad130` ne réactive une mission
+  réussie que si son champ 44 (+0x2c) le dit (171 missions). `CMissionBank::Activable`,
+  `tests/test_missions` (sept listes faites à la main). docs/missions.md.
+- Suite : **`tests/test_transform` repasse.** Il échouait depuis le 25.09 (`exactT == 0` : un modèle,
+  `jphoto`, collait à la lecture transposée). Le parcours « Rᵀ·v » du test gardait les nœuds et les
+  formes cachés (drapeau 1, `APP_CULLED`) que `NifWalkShapes` saute comme Gamebryo : `jphoto` porte
+  une forme cachée qui gonflait une boîte et pas l'autre. Les deux parcours suivent maintenant la même
+  règle ; il ne reste que la différence de convention : 47 modèles départagent, 13 collent à `R·v` à
+  moins de 1 %, aucun à `Rᵀ·v`, et `catwalk` reste à 0,0000 contre 42.
+- Suite : **`1_02` jusqu'au combat de Russell.** Avec `--porte DT_ischool_FrontDoorL` puis `--entrer
+  _GARYTRIGGER`, la mission joue la scène de Gary et lance l'entraînement au combat. Les coups suivent
+  maintenant `FUN_0047b6b0` / `FUN_004782a0` : invulnérabilité (+0x138c), invulnérabilité au joueur
+  (+0x1364, type 13), santé minimale (+0x1ca8) ; `PedSetInvulnerable`, `PedSetInvulnerableToPlayer`,
+  `PlayerSetInvulnerable`, `PedSetMinHealth` réels ; `CScriptPedPool::Blesser`, `tests/test_scriptpeds`.
+  Le joueur ne meurt plus sous les coups de Russell (il mourait à 66,5 s). Reste : `PedIsPlaying` du
+  joueur sur `/Global/TrainingPlayer/Default`, que l'entraînement attend.
+- Suite : **`PedIsPlaying`.** `FUN_005f3bf0` compare le nœud du chemin au nœud joué (+0x10 du contrôleur)
+  et, avec le troisième argument, `FUN_005f4f80` remonte les parents du nœud joué. `CActionBank::Joue`,
+  `tests/test_actionbank` ; réel dans `lancer_lua` sur le nœud que `PedSetActionNode` pose. L'entraînement
+  de `1_02` attend `/Global/TrainingPlayer/Default`, que seul le contrôleur, en jouant l'arbre posé par
+  `PedSetActionTree`, atteint : c'est le chantier suivant. docs/cat.md.
+- Suite : **`CurrentMission` et `CurrentClassMission`.** L'assembleur de `FUN_006a7db0` range les deux noms
+  dans deux globales : `CurrentMission` vaut la mission en cours (`FUN_006aa630`, un des deux
+  emplacements du gestionnaire), `CurrentClassMission` le cours actif (`FUN_006a9ed0`) ; le premier
+  relevé les avait inversés. `CEtatMissions::courante` / `coursCourant`, `tests/test_missions`.
+- Suite : **`DayCond`.** `FUN_006a8b30` compare son champ au jour du calendrier (`DAT_020c3640`, ce que
+  `GetCurrentDay` rend), modulo le +0x18 de `TimeCycleButes` (5 dans `Globals.cat`) quand l'octet +8 le
+  demande, ce que font les 59 `DayCond` des missions. `GetCurrentDay` réel dans `lancer_lua`.
+- **Bilan du jour** : dix commits. `1_02` s'enchaîne seule après `1_01` (conditions `MissionCond`,
+  `TimeCond`, `DayCond`, `ConditionFalse`, `NOT` / `OR` et la liste de `FUN_005fb9b0`, `CurrentMission`,
+  le champ 44 « rejouable ») ; la parole se précharge (`SoundPreloadSpeech`) et dure ses vrais
+  échantillons (`SpeechDB.bin`, la table de `Speech.bin`, banques XACT) ; les portes `DT_` passent
+  (+0x394, retour gardé) ; les coups respectent invulnérabilité et santé minimale ; `PedIsPlaying` est
+  réel ; `tests/test_transform` repasse (formes cachées). Dans `lancer_lua --nouvelle-partie`, `1_02`
+  joue sa narration, la secrétaire, la sortie de l'école et va jusqu'au combat de Russell. Ouvert : le
+  contrôleur d'actions qui descend dans l'arbre de `PedSetActionTree` (l'entraînement attend
+  `/Global/TrainingPlayer/Default`), `ConditionGroup` (la référence vers le groupe nommé), les constantes
+  des fondus, le recul de `FUN_00416750`, l'animation de la porte qui pose +0x394.

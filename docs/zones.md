@@ -132,7 +132,8 @@ sont dans `SGlFunc.lua` (importé dans `_G` par `GlobalImportScript`) : `PlayerS
 la machine ci-dessus, image par image, et dit ce qu'elle attend du monde (fondu, scripts à
 retirer, script à charger, joueur à poser) ; `ReconstruirePortes` refait la table des portes
 comme `FUN_00416000` et `PasserUnePorte` joue l'état 0 pour les portes `SV_` (`tests/test_portes`
-sur `AreaTran.DAT` et `tschool_doors.DAT`). Ce qui n'est pas recréé : les portes `DT_` (leur objet,
+sur `AreaTran.DAT` et `tschool_doors.DAT`). Les portes `DT_` passent depuis le 21.10 (« Les portes DT_ »,
+plus bas). Ce qui n'était pas recréé avant : les portes `DT_` (leur objet,
 +0x394 ; dans `lancer_lua`, `--zone N@s` en tient lieu en demandant la zone N depuis la position du
 joueur), le délai de l'état 0xb (constante non lue, on passe tout de suite), la seconde machine.
 `tests/test_zones` suit les quatre chemins : nouvelle partie (même zone, script non chargé),
@@ -151,4 +152,24 @@ quand le joueur passe la porte de l'école), et retirés au changement suivant. 
 chargé, son `main` signale à 1,12 s, le joueur est posé ; la porte à 6,0 s : 14 images, fondu au
 noir fini à 7,52 s, `MainMap.lua` retiré, `SchoolHallways.lua` chargé et son signal à 7,66 s, **la
 zone visible passe à 2**, l'écran revient à 8,66 s ; la secrétaire est créée dès que la zone vaut
-2, et la mission se termine réussie à 12,1 s (la parole de Jimmy comprise, docs/son.md).
+2, et la mission se termine réussie à 10,5 s (la parole de Jimmy comprise, docs/son.md).
+
+## Les portes DT_
+
+Une porte `DT_` ne passe pas quand le joueur entre dans son déclencheur : l'état 0 de `FUN_00416e30`
+compare le déclencheur de la paire au **déclencheur de l'objet de porte en cours**, le mot +0x394 du
+gestionnaire. `FUN_00415160` le pose ; ses appelants (`FUN_00610ed0`, `FUN_00655c40`…) le prennent au
++0x23c de la porte que le joueur pousse, et `AreaDoorTransitionFix` (0x415140) comme l'état 0xd le
+remettent à zéro. Le joueur peut être n'importe où : c'est la porte qui décide. La demande va au premier
+point de la liste, dans la zone de son AREACODE, comme une porte `SV_`.
+
+Neuf zones gardent le chemin du retour (`FUN_0042e570` : 0xf, 0x1a, 0x1c, 0x1d, 0x21, 0x22, 0x27, 0x2c,
+0x2e) : y entrer par une porte `DT_` fait d'abord `FUN_00416750`, qui range la zone visible, une position
+et un cap (+0x8a0, +0x8ac, +0x8b0, recalculés d'après l'objet de la porte) et pose +0x86f ; la porte
+`DT_` suivante ramène à cette réserve au lieu de sa liste, puis `AreaCancelStoredTransition` la vide.
+`CAreaManager::PousserPorte` et `PasserUnePorte` le refont (la réserve garde la position et le cap du
+joueur tels quels, sans le recul calculé d'après la porte) ; `tests/test_portes` passe la porte d'entrée
+de l'école, trouve les 6 sorties du hall vers la cour (`DT_ischool_FrontDoorL`…) et fait l'aller-retour
+par `DT_ischool_Classroom` (zone 15). `lancer_lua --porte DT_NOM@s` pose +0x394 à la place de
+l'animation de la porte (non jouée) : dans `1_02`, `--porte DT_ischool_FrontDoorL@40` ramène le joueur
+dans la cour (zone 0, `MainMap.lua` rechargé) par la vraie machine.

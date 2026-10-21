@@ -135,13 +135,17 @@ sont modélisés à leurs coordonnées monde alors que leur collision est locale
 | | Modèles |
 |---|---|
 | appariés à une collision | 3 842 |
-| dont les deux conventions donnent la même boîte à 5 % près | 3 782 |
-| discriminants | 60 |
-| quasi exacts (écart < 1 %) avec `R·v` seulement | 12 |
+| dont les deux conventions donnent la même boîte à 5 % près | 3 795 |
+| discriminants | 47 |
+| quasi exacts (écart < 1 %) avec `R·v` seulement | 13 |
 | quasi exacts avec `Rᵀ·v` seulement | 0 |
 
+(Relevé du 21.10.2026, en espace entité et les formes cachées sautées dans les deux parcours ; le
+premier relevé, 60 / 12 / 0, gardait ces formes. Entre-temps, une forme cachée de `jphoto` avait
+fait coller ce modèle à la transposée et faisait échouer le test.)
+
 Le cas le plus net est `catwalk`, une passerelle à poteaux et rambardes : écart
-de 0,0001 avec `R·v`, de 42 avec la transposée. Les 48 autres discriminants
+de 0,0001 avec `R·v`, de 42 avec la transposée. Les 34 autres discriminants
 sont des modèles dont la collision ne suit pas la géométrie visible, ils ne
 départagent rien de fiable.
 

@@ -102,8 +102,8 @@ et ses sous-titres passent au journal à leur image de début. Sur `1_01` :
 `MissionSetup` charge `1-1-1` à 1,06 s (3 objets, 20 sous-titres, 61,67 s), la lance à 1,29 s, le
 premier sous-titre `1-1-1.SUB0001` tombe à 9,0 s, la cinématique finit à 62,93 s, `StopCutscene`
 à 63,00 s, et `main` démarre ; **`1_01` se termine réussie à 78,1 s**. `--sans-cinematiques`
-les saute (`IsCutsceneLoaded` répond faux, comme quand le chargement échoue) et rend les 12,1 s
-d'avant.
+les saute (`IsCutsceneLoaded` répond faux, comme quand le chargement échoue) : 10,5 s depuis que la
+parole a sa vraie durée (docs/son.md).
 
 ## Reste à faire
 

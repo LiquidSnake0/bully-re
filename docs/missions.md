@@ -42,7 +42,62 @@ n 1_01                                   ← le nom de la mission (MissionGetNam
 ```
 
 Les conditions d'entrée du nœud (`si MissionCond`, `si MissionCond TimeCond`)
-disent quand la mission devient lançable.
+disent quand la mission devient lançable (« Les conditions », plus bas).
+
+## Les conditions
+
+Le nœud garde, pour chaque condition, un décalage vers un enregistrement des données.
+`FUN_005fa910` passe l'enregistrement à la fabrique `FUN_0061a4f0`, qui cherche le premier
+mot (le `HashString` du nom de classe) dans un registre de 419 classes (rempli par
+`FUN_0064b090` : nom, création, construction sur place) et appelle la **construction sur
+place à +4** : l'objet est bâti sur les données du fichier, sa table virtuelle écrite à +4 de
+l'enregistrement. Le champ +k de l'objet est donc le mot +4+k de l'enregistrement.
+L'évaluation est l'emplacement 1 de la table virtuelle (`export/rtti.json`).
+
+| Classe (nom du registre) | Construction | Évaluation | Champs |
+|---|---|---|---|
+| `CMissionCond` (`MissionCond`) | `FUN_0063a170` → `FUN_006a7d50` | `FUN_006a7db0` | +4 le nom haché de la mission, +8 son indice (−2 tant qu'il n'est pas cherché) |
+| `CTimeCond` (`TimeCond`) | `FUN_0063a270` | `FUN_006a7380` → `FUN_00425cf0` | +4 heure de début, +8 heure de fin, +0xc minute de début, +0x10 minute de fin |
+| `ConditionFalse` (`False`) | `FUN_00638950` | `FUN_006094f0` : rend 0 | — |
+
+- **`MissionCond` est vraie quand la mission nommée a réussi au moins une fois** : l'indice
+  est cherché une fois par `FUN_006a9e70` (le premier nœud de ce nom ; −1 rend faux), puis
+  `FUN_006aa660` donne l'entrée de 6 octets (+0x688 du gestionnaire) et la condition rend
+  `mot +2 ≠ 0`. Ce mot est le **compte des réussites** : `FUN_006ac910`, la fin de mission,
+  l'incrémente quand la mission a réussi, et `FUN_006a9ff0` compte les missions où il n'est
+  pas nul (+0x748 du gestionnaire). Deux noms sont à part (21.10, sur l'assembleur de `FUN_006a7db0` : « CurrentMission » est
+  haché en 0x020c3594, « CurrentClassMission » en 0x020c3590, et l'indice est alors recalculé à chaque
+  fois) : **`CurrentMission`** est la mission en cours (`FUN_006aa630` : le second emplacement du
+  gestionnaire, +0x5a0, s'il joue, sinon le premier, +0x4bc), **`CurrentClassMission`** la première
+  mission de cours active (`FUN_006a9ed0` : bit 0 de l'état posé, type 1).
+- **`TimeCond` est vraie quand l'heure du jeu est dans [début, fin[** : `FUN_00425cf0` compte
+  en minutes depuis minuit (`DAT_00bceb4b` heures, `DAT_00bceb4a` minutes) et laisse la plage
+  passer minuit quand la fin précède le début.
+
+**La liste** : le gestionnaire (`FUN_006ad130`) fait tester au nœud sa liste de conditions
+(emplacement +0x4c du nœud), que **`FUN_005fb9b0`** parcourt. Chaque condition a un genre,
+l'emplacement 2 de sa table virtuelle : 0 pour une condition (`FUN_00824d30`), 1 pour `ConditionNOT`
+(`FUN_006f2ad0`), 2 pour `ConditionOR` (`FUN_00765c70`) ; NOT et OR s'évaluent vrais
+(`FUN_00609b30`), ce sont des opérateurs. Le résultat part à vrai ; chaque élément est évalué, et
+après un élément de genre 0 le résultat devient sa valeur, après un NOT son contraire, après un OR
+la suite est sautée jusqu'au prochain opérateur ; un résultat faux arrête la liste, sauf si
+l'élément suivant est un OR, qui est alors sauté. `A B OR C` vaut donc `(A et B) ou C` quand A est
+vrai, mais faux dès que A est faux : c'est le moteur. Dans la même boucle, une mission déjà réussie
+(mot +2 non nul) n'est réactivée que si l'octet +0x2c de sa `MissionData` (champ 44) est posé : 171
+missions sont ainsi rejouables, ni `1_01` ni `1_02`.
+
+La chaîne du chapitre 1, lue dans `chap1.cat` : `1_02` attend `1_01`, `1_02A` attend `1_02`,
+`1_02B` attend `1_02B Force Run Dummy`, `1_02C` attend `1_02B`, `1_03` attend `1_02C` et
+`1_02B` entre 8 h et 19 h. `CMissionBank::Evaluer` et `Activable` refont les trois classes ;
+`tests/test_missions` suit la chaîne et la plage de nuit. Sur les 333 missions jouables qui ont des
+conditions, 195 s'évaluent entièrement avec ces trois classes ; les autres attendent
+`ConditionGroup` (402 conditions : `ConditionGroupCondition`, `FUN_005fbaf0`, qui évalue un groupe nommé
+par la même `FUN_005fb9b0`, la référence n'étant pas encore résolue), et une vingtaine de classes plus rares. **`DayCond`** (`CDayCond`, `FUN_006a7480` → `FUN_006a8b30` sur l'objet
+0x020c35e8) compare son champ +4 au jour du calendrier (+0x58 de l'objet, `DAT_020c3640`, ce que
+`GetCurrentDay`, 0x5c0c00, rend ; 0 au démarrage, posé entre 0 et 4 par `FUN_0061d320`) ; avec l'octet +8,
+le jour est pris modulo le +0x18 de **`TimeCycleButes`** (`DAT_020c88ac`, trouvé par son nom par
+`FUN_0072ad00` parmi les pistes « Butes » ; dans `Globals.cat`, position 24 = 5, le diviseur que
+`GetCurrentDay(true)` écrit en dur). Les 59 `DayCond` des missions demandent toutes le modulo.
 
 ## Les champs de `MissionData`
 
@@ -132,11 +187,11 @@ missions avec script. Les deux lisent maintenant les 499.
   de la partie), `MissionGetIndex` sont réels, et le gestionnaire réduit active les
   missions sans condition et lance celle dont le joueur est dans le pavé du corona
   (demi-côté du champ 28 ; l'invite et la manette ne sont pas jouées). Avec `--aller 1_01_Corona@3`, le joueur marche au
-  marqueur : **`1_01` démarre à 3,0 s par le gestionnaire, et se termine réussie à 15,2 s**
+  marqueur : **`1_01` démarre à 3,0 s par le gestionnaire, et se termine réussie à 13,5 s**, puis **`1_02` s'active et démarre seule**
   (`--sans-cinematiques --entrer _1_01_BULLYTRIG@7 --zone 2@9 --aller _1_01_ENDPOINT@11`) ; `MainMap.lua` est
-  chargé à 0,17 s par la première demande de zone de `gamemain`. Les classes de
-  conditions (`MissionCond`, `TimeCond`, `ConditionGroup`, `NOT`) ne sont pas lues, donc
-  `1_02` n'enchaîne pas encore.
+  chargé à 0,17 s par la première demande de zone de `gamemain`. Les conditions sont
+  évaluées par `CMissionBank::Activable` (« Les conditions ») ; une mission qui en porte une
+  d'une classe pas encore lue reste inactive, et une mission réussie n'est plus reprise par l'outil.
 
 ## Le déroulement d'une mission (bully.exe)
 
@@ -173,6 +228,13 @@ comme `PlayerGetPedIndex` le dit, `tests/test_scriptpeds`) : `PedCreatePoint`,
 `PedGetHeading`, `PedFaceXYZ`, `PedIsDead`, `PedGetHealth`, `PedSetHealth`,
 `PlayerGetHealth` répondent dessus ; un piéton qu'une mission laisse derrière elle est
 libéré à la fin de la mission (le moteur le note à l'objet script, `FUN_005d94d0`).
+
+Un coup passe par `FUN_0047b6b0` puis `FUN_004782a0` (`CScriptPedPool::Blesser`) : rien si la cible
+est invulnérable (+0x138c : `PedSetInvulnerable`, 0x5c9160, et `PlayerSetInvulnerable`, 0x5d1810, pour
+le joueur), ou si l'attaquant est le joueur (type 13) et la cible invulnérable au joueur (+0x1364,
+`PedSetInvulnerableToPlayer`, 0x5c9200) ; sinon la santé (+0x1cb8) baisse sans passer sous 0 ni sous
+la santé minimale (+0x1ca8, `PedSetMinHealth`, 0x5c8ef0). Dans `1_02`, Russell frappe le joueur rendu
+invulnérable pour l'entraînement, et le joueur garde ses 150 points de vie.
 
 Les piétons ont un geste à la fois, joué image par image (`CScriptPedPool::Avancer`) :
 `PedMoveToPoint(ped, allure, liste, n)` et `PedMoveToXYZ(ped, allure, x, y, z)` font
@@ -229,7 +291,7 @@ moteur attend de la manette : `--entrer DECLENCHEUR@s` le pose dans un déclench
    `gMissionSuccess = true`, `gMissionRunning = false` : la boucle de `main` s'arrête,
    `L_StopMonitoringTriggers`, `L_CutsceneFade`, **`MissionSucceed(true, false, false)`**.
 
-**`1_01` se termine, réussie, à 12,1 s** (2,5 s de parole de Jimmy à la secrétaire, docs/son.md) :
+**`1_01` se termine, réussie, à 10,5 s** (0,80 s de parole de Jimmy à la secrétaire, docs/son.md) :
 `main fini, MissionCleanup`, le nettoyage
 rend les modèles uniques, décharge les animations, rend le contrôle, et les cinq
 piétons laissés par la mission sont libérés.
@@ -245,14 +307,12 @@ d'être posées, et valent nil comme il faut : `gMissionSuccess`, `misObj`, `F_S
 
 ## Suite
 
-1. Ce que `1_01` ne joue pas encore pour de vrai : la durée des lignes de parole (2,5 s
-   provisoires, docs/son.md) ; les nœuds d'action (`PedSetActionNode` cherche le nœud dans
+1. Ce que `1_01` ne joue pas encore pour de vrai : les nœuds d'action (`PedSetActionNode` cherche le nœud dans
    l'arbre global, docs/cat.md, mais ne le joue pas) ; et les vraies vitesses de marche. Les cinématiques se jouent (docs/cinematiques.md),
    `CameraFade` est une durée qui court (docs/zones.md).
 2. Fait : +0xc est l'AREACODE (docs/trigger.md), et la zone d'un point n'est que la
    destination d'une téléportation ; la zone visible est celle du gestionnaire de zones
    (docs/zones.md). Restent les portes du gestionnaire (les paires de +0x10) et qui les enregistre.
-3. Les classes de conditions des nœuds (`MissionCond`, `TimeCond`, `ConditionGroup`,
-   `NOT` : `FUN_0061a4f0` les fabrique) pour que `1_02` s'enchaîne après `1_01` ; le
-   ce que `FUN_006a8650` demande à la manette avant de lancer (`FUN_007386f0`, `FUN_007387b0`),
+3. Fait : `MissionCond`, `TimeCond`, `ConditionFalse` (« Les conditions ») ; `1_02` s'enchaîne.
+   Restent `ConditionGroup`, `DayCond`, `CurrentMission` ; ce que `FUN_006a8650` demande à la manette avant de lancer (`FUN_007386f0`, `FUN_007387b0`),
    et les champs 52, 56 et 60 de `MissionButtonTrigger` (1, 95, 81 partout).

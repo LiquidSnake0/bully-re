@@ -20,10 +20,9 @@ chantier. Un point fini passe en bas, avec son commit.
    (`src/core/AreaManager`, docs/zones.md) : le changement de zone est joué comme `FUN_00416e30`,
    les scripts de zone (`MainMap.lua`, `SchoolHallways.lua`) sont chargés pour de vrai. Les fichiers
    des cinématiques sont lus et `lancer_lua` les joue (docs/cinematiques.md : `1-1-1` dure 61,7 s
-   dans `MissionSetup` de `1_01`, `--sans-cinematiques` pour les sauter). Suite : les classes de
-   conditions des nœuds (`MissionCond`, `TimeCond`, la fabrique `FUN_0064b090`) pour que `1_02`
-   s'enchaîne après `1_01` ; les portes `DT_` (l'objet de porte, +0x394) ; la durée des lignes de
-   parole ; jouer les nœuds d'action des piétons.
+   dans `MissionSetup` de `1_01`, `--sans-cinematiques` pour les sauter). Les conditions `MissionCond`,
+   `TimeCond`, `ConditionFalse` sont lues : `1_02` s'enchaîne après `1_01`. Les portes `DT_` passent (`--porte`). Suite : (l'objet de porte, +0x394) ; jouer les nœuds d'action des piétons (le contrôleur qui descend dans l'arbre posé par
+   `PedSetActionTree`, ce qu'attend l'entraînement de `1_02`).
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
    directement au lieu des exports headless. Prérequis : Ghidra 12.1.4 et
@@ -54,6 +53,23 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- `DayCond` (`FUN_006a8b30`, `TimeCycleButes` = 5) et `CurrentMission` / `CurrentClassMission` (`FUN_006aa630`,
+  `FUN_006a9ed0`) ; `GetCurrentDay` réel ; `tests/test_missions` ; docs/missions.md.
+- `PedIsPlaying` (`FUN_005f3bf0`, `FUN_005f4f80`) : `CActionBank::Joue`, `tests/test_actionbank` ; docs/cat.md.
+- Les coups et l'invulnérabilité (`FUN_0047b6b0`, `FUN_004782a0` : +0x138c, +0x1364, +0x1ca8) :
+  `CScriptPedPool::Blesser`, `tests/test_scriptpeds` ; `1_02` va jusqu'au combat de Russell.
+- La liste de conditions d'un nœud (`FUN_005fb9b0` : NOT, OR, genres 1 et 2) et le champ 44 (rejouable) de
+  `MissionData` ; `CMissionBank::Activable`, `tests/test_missions` ; docs/missions.md.
+- Les portes `DT_` : le déclencheur de l'objet de porte en cours (+0x394, `FUN_00415160`), le retour gardé de
+  neuf zones (`FUN_0042e570`, `FUN_00416750`) ; `CAreaManager::PousserPorte`, `tests/test_portes`,
+  `lancer_lua --porte` ; docs/zones.md.
+- La durée réelle de la parole : `SpeechDB.bin` (voix, ligne, échantillon) et la table de `Speech.bin` (clé
+  `FUN_005a7c10`, banques XACT `SDBK`/`WBND`) ; `CSpeechBank`, `tests/test_speechbank` ; docs/son.md.
+- Le préchargement d'une ligne de parole (`SoundPreloadSpeech`, le bloc `DAT_00cfb3b4`, le rappel `FUN_005d49d0`) :
+  `CSpeechPreload`, `tests/test_speech` ; la narration de `1_02` passe ; docs/son.md.
+- Les conditions des nœuds de mission (`FUN_0061a4f0` construit sur l'enregistrement, à +4) : `MissionCond`
+  (mot +2 de l'entrée = réussites, incrémenté par `FUN_006ac910`), `TimeCond` (`FUN_00425cf0`), `ConditionFalse` ;
+  `CMissionBank::Evaluer` / `Activable`, `tests/test_missions` ; `1_02` démarre seule après `1_01` ; docs/missions.md.
 - Le pavé fermé de `FUN_005c2910` (`FUN_0046d960` en trois dimensions, `FUN_0046d880` en deux) : `PaveContient`,
   derrière `PlayerIsInAreaXYZ`, `PedIsInAreaXYZ` (réelle) et le corona ; `tests/test_zones`.
 - `DATInit` lu : `FUN_00416000` refait la table des portes du gestionnaire de zones (listes `SV_` et `DT_`

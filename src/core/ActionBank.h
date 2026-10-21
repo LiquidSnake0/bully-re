@@ -24,6 +24,10 @@ public:
 	const CActionNode *Trouver(const char *chemin) const;
 	// FUN_004849a0 : trouver, sinon charger `act` et retrouver ; vrai si le nœud existe à la fin.
 	bool TrouverOuCharger(const char *chemin, const char *act);
+	// FUN_005f3bf0, le test de PedIsPlaying(ped, chemin, sous) : le nœud joué (+0x10 du contrôleur) est celui du
+	// chemin ; avec `sous`, FUN_005f4f80 remonte aussi ses parents (emplacement +0x34) jusqu'à le trouver.
+	// Faux si le chemin ne se résout pas ou si rien n'est joué.
+	bool Joue(const CActionNode *courant, const char *chemin, bool sous) const;
 
 	CActionNode racine;                      // DAT_01b649dc : sans nom, son seul enfant est la banque « Global »
 	CActionNode *Global(void){ return &racine.enfants[0]; }

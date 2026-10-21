@@ -100,6 +100,16 @@ CActionTreeFile::TypeCondition(int32 decalage) const
 }
 
 bool
+CActionTreeFile::Condition(int32 decalage, uint32 &type, uint32 mots[6]) const
+{
+	uint32 at = finEntete + (uint32)decalage;
+	if(decalage < 0 || at + 8 > n) return false;
+	type = Mot(at) & 0x7fffffff;
+	for(int i = 0; i < 6; i++) mots[i] = at + 8 + 4 * i + 4 <= n ? Mot(at + 8 + 4 * i) : 0;
+	return true;
+}
+
+bool
 CActionTreeFile::Attributs(uint32 at, CActionTrack &t, int prof) const
 {
 	if(prof > 32 || at + 4 > n) return false;

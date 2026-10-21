@@ -20,10 +20,11 @@
 // image comme FUN_00416e30 (fondu, script de zone retiré puis chargé avec son main, zone visible et joueur posés à
 // l'arrivée) ; AreaGetVisible, AreaIsLoading, AreaRegisterAreaScript, AreaSignalAreaTransitionReadyToLoad, CameraFade réels.
 // --nouvelle-partie : pas de --mission ; le gestionnaire de missions (FUN_006ad130, réduit) active les
-// missions sans condition et lance celle dont le joueur touche le corona, comme à la première partie.
+// missions dont les conditions sont vraies (MissionCond, TimeCond, ConditionFalse lues, docs/missions.md),
+// lance celle dont le joueur touche le corona, et celles qui se lancent seules (champ 51) : 1_02 après 1_01.
 // Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
 // de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]...
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -36,6 +37,7 @@
 #include "../src/core/AreaManager.h"
 #include "../src/core/ActionBank.h"
 #include "../src/audio/SpeechEvents.h"
+#include "../src/audio/SpeechBank.h"
 #include "../src/cutscene/CutsceneFiles.h"
 #include "../src/peds/ScriptPedPool.h"
 #include <algorithm>
@@ -102,13 +104,35 @@ static const float FONDU_DEFAUT_MS = 1000;
 // « Act/Conv/1_01.act ») cherche le nœud et charge le fichier au besoin (FUN_004849a0) ; le nœud n'est pas
 // joué (pas d'animation ici), mais le script reçoit la vraie réponse : le nœud existe ou non.
 static CActionBank arbres;
+static std::map<int, const CActionNode *> noeudJoue;   // par piéton : le nœud posé par PedSetActionNode
 // PlayerSetControl(0 / 1) (0x5d12f0) : le joueur rendu au script ou au joueur ; aucun script ne le relit.
 static int controleJoueur = 1;
 // La parole scriptée (src/audio/SpeechEvents.h, docs/son.md) : une seule ligne à la fois, comme le moteur
 // du son la décrit (FUN_005a27b0 : le locuteur, l'événement sur 9 bits, le numéro de ligne sur 11). La
-// durée d'une ligne n'est pas lue : 2,5 s, provisoire.
+// durée d'une ligne est celle de son échantillon dans Speech.bin (src/audio/SpeechBank.h) : le premier que
+// FUN_0059ee10 retiendrait pour le modèle du locuteur et la ligne (le moteur tire au hasard parmi les prises
+// pas encore jouées) ; sans échantillon, 2,5 s.
 static const float PAROLE_MS = 2500;
+static CSpeechBank banqueParole;
+static bool banqueParoleLue = false;
+
+static uint32
+DureeParole(int ped, int evenement, int ligne)
+{
+	const CScriptPed *p = ped >= 0 ? pietons.Acceder(ped) : nil;
+	if(p == nil || !banqueParoleLue) return (uint32)PAROLE_MS;
+	std::vector<int> c = banqueParole.Candidats(evenement, p->modele, ligne);
+	int ms = c.empty() ? -1 : banqueParole.DureeMs(c[0]);
+	if(ms < 0){
+		printf("        parole : aucun échantillon de %s ligne %d pour le modèle %d, 2,5 s\n", kSpeechEvents[evenement], ligne, p->modele);
+		return (uint32)PAROLE_MS;
+	}
+	return (uint32)ms;
+}
 static struct { bool enCours = false; int ped = -1, evenement = -1, ligne = -1, id = 0; uint32 fin = 0; } parole;
+// Le préchargement d'une ligne (SoundPreloadSpeech, docs/son.md) : l'outil n'a pas de diffusion, la ligne est
+// prête à l'image qui suit, et le rappel FUN_005d49d0 est joué à chaque image tant qu'elle attend.
+static CSpeechPreload prechargement;
 // CCutsceneMgr réduit à ses drapeaux (docs/cinematiques.md) : la cinématique chargée (DAT_020c5be2), en cours
 // (DAT_020c5be4), son temps (DAT_020c5b1c), sur les fichiers de Cuts/Cuts.img (src/cutscene/CutsceneFiles.h).
 // La fin, dans le moteur, vient de l'arbre d'actions /Global/CutScenes (FUN_006c3a70) ; ici, faute de le
@@ -146,12 +170,13 @@ static struct {
 // SystemAllowMissionManagerToForceRunMissions), quand le joueur est dans le pavé de son corona
 // (FUN_006a8650 : demi-côté = champ 28 de MissionButtonTrigger, 2 m pour 1_01, 1 m ailleurs ; le moteur
 // affiche ensuite l'invite BUT_LAUNCH et lit la manette avant FUN_006acfa0, l'outil lance tout de
-// suite). Les conditions ne sont pas encore lues : seule une mission sans condition passe.
+// suite). Les conditions sont évaluées par CMissionBank::Activable (MissionCond, TimeCond, ConditionFalse) ;
+// une mission dont une condition est d'une classe pas encore lue reste inactive.
 static struct {
 	bool actif = false;                  // --nouvelle-partie
 	bool autorise = false;               // DAT_020c441d
 	std::vector<bool> activees;          // bit 1 de l'octet +4 de l'entrée de 6 octets (+0x688)
-	std::set<uint32> terminees;          // IsMissionCompleated, par hachage du nom
+	CEtatMissions etat;                  // le mot +2 de chaque entrée (réussites) et l'heure, que les conditions lisent
 	bool deplacerJoueur = true;          // SystemShouldMovePlayer : vrai une fois à la nouvelle partie
 } gestionnaire;
 
@@ -529,7 +554,11 @@ AvancerMission(lua_State *L)
 		if(!ThreadEnCours(mission.script, "MissionCleanup")){
 			printf("%6.2f s  mission %s terminée (%s)\n", maintenant / 1000.0, mission.nom.c_str(),
 			       mission.reussie ? "réussie" : "échouée ou arrêtée");
-			if(mission.reussie && mission.indice >= 0) gestionnaire.terminees.insert(banque.missions[mission.indice].hachage);
+			// FUN_006ac910 : la réussite incrémente le mot +2 de l'entrée de la mission.
+			if(mission.reussie && mission.indice >= 0){
+				if(gestionnaire.etat.reussites.size() != banque.missions.size()) gestionnaire.etat.reussites.assign(banque.missions.size(), 0);
+				gestionnaire.etat.reussites[mission.indice]++;
+			}
 			{ int n = pietons.SupprimerDuScript(mission.script); if(n) printf("        %d piéton(s) laissé(s) par la mission, libéré(s)\n", n); }
 			for(Thread &t : scripts[mission.script].threads)
 				if(t.etat < TUE){ t.etat = TUE; luaL_unref(L, LUA_REGISTRYINDEX, t.ref); t.ref = LUA_NOREF; }
@@ -1026,6 +1055,44 @@ PedSetHealth(lua_State *L)
 	return 0;
 }
 
+// PedSetInvulnerable(ped, oui) (0x5c9160) : +0x138c ; PedSetInvulnerableToPlayer(ped, oui) (0x5c9200) : +0x1364 ;
+// PlayerSetInvulnerable(oui) (0x5d1810) : +0x138c du joueur ; PedSetMinHealth(ped, pv) (0x5c8ef0) : +0x1ca8.
+// FUN_0047b6b0 et FUN_004782a0 les lisent quand un coup porte (CScriptPedPool::Blesser).
+static CScriptPed *
+PietonArg(lua_State *L, int i){ return lua_isnumber(L, i) ? pietons.Acceder((int)lua_tonumber(L, i)) : nil; }
+
+static int
+PedSetInvulnerable(lua_State *L)
+{
+	Journal("PedSetInvulnerable", L, 1);
+	if(CScriptPed *p = PietonArg(L, 1)) p->invulnerable = lua_toboolean(L, 2) != 0;
+	return 0;
+}
+
+static int
+PedSetInvulnerableToPlayer(lua_State *L)
+{
+	Journal("PedSetInvulnerableToPlayer", L, 1);
+	if(CScriptPed *p = PietonArg(L, 1)) p->invulnerableAuJoueur = lua_toboolean(L, 2) != 0;
+	return 0;
+}
+
+static int
+PlayerSetInvulnerable(lua_State *L)
+{
+	Journal("PlayerSetInvulnerable", L, 1);
+	pietons.Acceder(SCRIPT_PED_JOUEUR)->invulnerable = lua_toboolean(L, 1) != 0;
+	return 0;
+}
+
+static int
+PedSetMinHealth(lua_State *L)
+{
+	Journal("PedSetMinHealth", L, 1);
+	if(CScriptPed *p = PietonArg(L, 1)) p->santeMin = (float)luaL_checknumber(L, 2);
+	return 0;
+}
+
 // --- Les gestes des piétons : marche, course, arrêt, bagarre (src/peds/ScriptPedPool.h). ---
 
 // PedMoveToPoint(ped, allure, liste, n) (0x5c7df0) : vers le n-ième point de la liste.
@@ -1086,7 +1153,7 @@ AvancerPietons(void)
 		const CScriptPed *p = pietons.Acceder(i);
 		if(p == nil || journalRestant <= 0) continue;
 		if(p->arrive){ journalRestant--; printf("%6.2f s  piéton %d (modèle %d) arrivé en (%.1f, %.1f, %.1f)\n", maintenant / 1000.0, i, p->modele, p->pos.x, p->pos.y, p->pos.z); }
-		if(p->aFrappe){ journalRestant--; printf("%6.2f s  piéton %d frappe le piéton %d (%.0f pv)\n", maintenant / 1000.0, i, p->attaque, pietons.Acceder(p->attaque) ? pietons.Acceder(p->attaque)->sante : 0); }
+		if(p->aFrappe){ journalRestant--; printf("%6.2f s  piéton %d frappe le piéton %d (%.0f pv)\n", maintenant / 1000.0, i, p->dernierFrappe, pietons.Acceder(p->dernierFrappe) ? pietons.Acceder(p->dernierFrappe)->sante : 0); }
 		if(p->vientDeMourir){ journalRestant--; printf("%6.2f s  piéton %d (modèle %d) est mort\n", maintenant / 1000.0, i, p->modele); }
 	}
 }
@@ -1110,8 +1177,32 @@ PedSetActionNode(lua_State *L)
 	if(p == nil){ lua_pushboolean(L, 0); return 1; }
 	const char *noeud = luaL_optstring(L, 2, ""), *fichier = luaL_optstring(L, 3, "");
 	bool ok = arbres.TrouverOuCharger(noeud, fichier);
+	// Le nœud devient celui que le piéton joue (+0x10 de son contrôleur) ; le moteur l'y met quand le
+	// contrôleur le prend, l'outil tout de suite.
+	if(ok) noeudJoue[(int)lua_tonumber(L, 1)] = arbres.Trouver(noeud);
 	if(!ok) printf("        PedSetActionNode : %s absent de %s%s\n", noeud, *fichier ? fichier : "l'arbre global", arbres.EstCharge(fichier) ? "" : " (fichier introuvable)");
 	lua_pushboolean(L, ok);
+	return 1;
+}
+
+// PedIsPlaying(ped, chemin[, sous]) (0x5cb830 → FUN_005f3bf0) : le piéton joue ce nœud, ou, avec `sous`, un
+// nœud placé dessous.
+// GetCurrentDay([modulo]) (0x5c0c00) : le jour du calendrier (DAT_020c3640), ou ce jour modulo 5.
+static int
+GetCurrentDay(lua_State *L)
+{
+	appels["GetCurrentDay"]++;
+	int j = gestionnaire.etat.jour;
+	lua_pushnumber(L, lua_toboolean(L, 1) ? j % 5 : j);
+	return 1;
+}
+
+static int
+PedIsPlaying(lua_State *L)
+{
+	Journal("PedIsPlaying", L, 1);
+	auto it = lua_isnumber(L, 1) ? noeudJoue.find((int)lua_tonumber(L, 1)) : noeudJoue.end();
+	lua_pushboolean(L, it != noeudJoue.end() && arbres.Joue(it->second, luaL_optstring(L, 2, ""), lua_toboolean(L, 3) != 0));
 	return 1;
 }
 
@@ -1139,9 +1230,41 @@ SoundPlayScriptedSpeechEvent(lua_State *L)
 	parole.evenement = index;
 	parole.ligne = (int)luaL_optnumber(L, 3, 0);
 	parole.id++;
-	parole.fin = maintenant + (uint32)PAROLE_MS;
+	parole.fin = maintenant + DureeParole(parole.ped, parole.evenement, parole.ligne);
 	lua_pushnumber(L, parole.id);
 	return 1;
+}
+
+// SoundPreloadSpeech(ped, événement, ligne[, taille[, b, b]]) (0x5d4a20) : le nom cherché dans la table comme
+// SoundPlayScriptedSpeechEvent (absent : rien), puis le bloc DAT_00cfb3b4 remis à zéro, l'échéance à 30 s.
+static int
+SoundPreloadSpeech(lua_State *L)
+{
+	Journal("SoundPreloadSpeech", L, 1);
+	const char *nom = luaL_checkstring(L, 2);
+	int index = SpeechEventIndex(nom);
+	if(index < 0){ printf("        SoundPreloadSpeech : « %s » n'est pas dans la table des %d événements de parole\n", nom, NUM_SPEECH_EVENTS); return 0; }
+	prechargement.Precharger(maintenant, lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1, index, (int)luaL_optnumber(L, 3, 0));
+	lua_pushnumber(L, ++parole.id);
+	return 1;
+}
+
+// SoundIsSpeechPreloaded() (0x5d39e0) : l'octet +9 du bloc, posé par le rappel quand la ligne est prête.
+static int
+SoundIsSpeechPreloaded(lua_State *L)
+{
+	appels["SoundIsSpeechPreloaded"]++;
+	lua_pushboolean(L, prechargement.prechargee);
+	return 1;
+}
+
+// SoundPlayPreloadedSpeech() (0x5d39d0) : l'octet +8, « jouer » ; le rappel suivant la lance.
+static int
+SoundPlayPreloadedSpeech(lua_State *L)
+{
+	Journal("SoundPlayPreloadedSpeech", L, 1);
+	prechargement.jouer = true;
+	return 0;
 }
 
 // SoundSpeechPlaying([ped[, événement[, ligne]]]) (0x5d3a50 → FUN_005a27b0) : sans piéton, quelqu'un parle ; avec, ce
@@ -1250,6 +1373,8 @@ static void
 ChargerMissions(void)
 {
 	if(!banque.Charger()){ printf("Act\\Act.img ou Missions.cat introuvable : pas de table des missions\n"); return; }
+	banqueParoleLue = banqueParole.Charger();
+	printf("parole : %s\n", banqueParoleLue ? "SpeechDB.bin et Speech.bin lus, durées réelles" : "SpeechDB.bin ou Speech.bin illisible, 2,5 s par ligne");
 	int jouables = 0;
 	for(const CMissionData &m : banque.missions) jouables += m.Jouable();
 	printf("%zu missions dans la banque (%zu fichiers), %d avec un script\n", banque.missions.size(), banque.banques.size(), jouables);
@@ -1331,7 +1456,8 @@ static int
 IsMissionCompleated(lua_State *L)
 {
 	appels["IsMissionCompleated"]++;
-	lua_pushboolean(L, gestionnaire.terminees.count(ActionHash(luaL_checkstring(L, 1)) & 0x7fffffff) != 0);
+	int i = banque.Index(luaL_checkstring(L, 1));
+	lua_pushboolean(L, i >= 0 && i < (int)gestionnaire.etat.reussites.size() && gestionnaire.etat.reussites[i] != 0);
 	return 1;
 }
 
@@ -1398,13 +1524,15 @@ AvancerZones(lua_State *L)
 	for(const Script &sc : scripts)
 		if(sc.zone && !sc.fin){ scriptsDeZone = true; if(strcasecmp(sc.fichier.c_str(), attendu) == 0) scriptDemande = true; }
 	int avant = zones.zoneVisible;
-	// FUN_00416e30, état 0 : les portes SV_ : le joueur dans leur déclencheur part vers leur point.
+	// FUN_00416e30, état 0 : les portes SV_ (le joueur dans leur déclencheur) et DT_ (leur objet poussé)
+	// envoient le joueur vers leur point.
 	{
 		const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
-		int porte = zones.PasserUnePorte(donnees, j->pos);
+		int porte = zones.PasserUnePorte(donnees, j->pos, j->cap);
 		if(porte >= 0){
 			const CTriggerZone *dz = donnees.ZoneParHandle(zones.portes[porte].declencheur);
-			printf("%6.2f s  zones : le joueur est dans la porte %s, vers la zone %d\n", maintenant / 1000.0, dz ? dz->nom.c_str() : "?", zones.demande.zone);
+			printf("%6.2f s  zones : le joueur passe la porte %s, vers la zone %d%s\n", maintenant / 1000.0, dz ? dz->nom.c_str() : "?", zones.demande.zone,
+			       zones.retourEnReserve ? " (retour gardé)" : "");
 		}
 	}
 	zones.AvancerImage(fondu.Etat(), !scriptsDeZone, scriptDemande);
@@ -1447,11 +1575,15 @@ AvancerGestionnaire(lua_State *L)
 	static std::set<std::string> coronasAbsents;
 	if(!gestionnaire.actif) return;
 	if(gestionnaire.activees.size() != banque.missions.size()) gestionnaire.activees.assign(banque.missions.size(), false);
+	if(gestionnaire.etat.reussites.size() != banque.missions.size()) gestionnaire.etat.reussites.assign(banque.missions.size(), 0);
+	gestionnaire.etat.heure = horloge.Heure(); gestionnaire.etat.minute = horloge.Minute();
+	gestionnaire.etat.courante = mission.etat != AUCUNE ? mission.indice : -1;
+	gestionnaire.etat.coursCourant = mission.etat != AUCUNE && mission.indice >= 0 && banque.missions[mission.indice].type == 1 ? mission.indice : -1;
 	for(size_t i = 0; i < banque.missions.size(); i++){
 		const CMissionData &m = banque.missions[i];
-		if(!m.Jouable() || gestionnaire.terminees.count(m.hachage)) continue;
-		bool conditions = m.conditions == 0;        // les classes de conditions (MissionCond…) ne sont pas lues
-		if(!conditions) continue;
+		// FUN_006ad130 : une mission déjà réussie n'est réactivée que si son champ 44 (+0x2c) le dit.
+		if(!m.Jouable() || (gestionnaire.etat.reussites[i] && !m.rejouable)) continue;
+		if(banque.Activable((int)i, gestionnaire.etat) != 1) continue;
 		bool libre = mission.etat == AUCUNE;
 		if(!gestionnaire.activees[i]){
 			gestionnaire.activees[i] = true;
@@ -1486,6 +1618,7 @@ main(int argc, char **argv)
 	std::vector<std::pair<uint32, std::string>> entrees;   // --entrer NOM@s : le joueur entre dans NOM à s secondes
 	std::vector<std::pair<uint32, std::string>> allers;    // --aller NOM[,n]@s ou x,y,z@s : le joueur y est posé à s secondes
 	std::vector<std::pair<uint32, int>> portes;            // --zone N@s : le joueur passe dans la zone N (une porte) à s secondes
+	std::vector<std::pair<uint32, std::string>> poussees;  // --porte NOM@s : le joueur pousse la porte du déclencheur NOM (DT_…) à s secondes
 	std::vector<const char*> pos;
 	for(int i = 1; i < argc; i++){
 		if(strcmp(argv[i], "--mission") == 0 && i + 1 < argc) aLancer = argv[++i];
@@ -1498,6 +1631,10 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--zone") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
 			portes.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), atoi(e.c_str())});
+		}
+		else if(strcmp(argv[i], "--porte") == 0 && i + 1 < argc){
+			std::string e = argv[++i]; size_t at = e.find('@');
+			poussees.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
 		}
 		else if(strcmp(argv[i], "--aller") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
@@ -1543,8 +1680,13 @@ main(int argc, char **argv)
 	lua_register(L, "AreaRegisterAreaScript", AreaRegisterAreaScript);
 	lua_register(L, "CameraFade", CameraFade);
 	lua_register(L, "PedSetActionNode", PedSetActionNode);
+	lua_register(L, "PedIsPlaying", PedIsPlaying);
+	lua_register(L, "GetCurrentDay", GetCurrentDay);
 	lua_register(L, "SoundPlayScriptedSpeechEvent", SoundPlayScriptedSpeechEvent);
 	lua_register(L, "SoundSpeechPlaying", SoundSpeechPlaying);
+	lua_register(L, "SoundPreloadSpeech", SoundPreloadSpeech);
+	lua_register(L, "SoundIsSpeechPreloaded", SoundIsSpeechPreloaded);
+	lua_register(L, "SoundPlayPreloadedSpeech", SoundPlayPreloadedSpeech);
 	lua_register(L, "PlayerSetControl", PlayerSetControl);
 	lua_register(L, "LoadCutscene", LoadCutscene);
 	lua_register(L, "LoadCutsceneSound", LoadCutsceneSound);
@@ -1573,6 +1715,10 @@ main(int argc, char **argv)
 	lua_register(L, "AreaGetVisible", AreaGetVisible);
 	lua_register(L, "PlayerGetPosXYZ", PlayerGetPosXYZ);
 	lua_register(L, "PedCreatePoint", PedCreatePoint);
+	lua_register(L, "PedSetInvulnerable", PedSetInvulnerable);
+	lua_register(L, "PedSetInvulnerableToPlayer", PedSetInvulnerableToPlayer);
+	lua_register(L, "PlayerSetInvulnerable", PlayerSetInvulnerable);
+	lua_register(L, "PedSetMinHealth", PedSetMinHealth);
 	lua_register(L, "PedCreateXYZ", PedCreateXYZ);
 	lua_register(L, "PedDelete", PedDelete);
 	lua_register(L, "PedIsValid", PedIsValid);
@@ -1630,11 +1776,28 @@ main(int argc, char **argv)
 		}
 		for(auto &e : entrees) if(!e.second.empty() && maintenant >= e.first){ EntrerDansDeclencheur(e.second.c_str()); e.second.clear(); }
 		for(auto &e : allers) if(!e.second.empty() && maintenant >= e.first){ AllerAuPoint(e.second.c_str()); e.second.clear(); }
+		// Une porte DT_ poussée : FUN_00415160 pose l'objet de porte en cours (+0x394) ; le moteur le fait depuis
+		// l'animation de la porte (FUN_00610ed0, non jouée), l'outil le fait au nom du déclencheur.
+		for(auto &e : poussees) if(!e.second.empty() && maintenant >= e.first){
+			int h = donnees.Declencheur(e.second.c_str());
+			if(h < 0) printf("%6.2f s  le joueur pousse la porte %s : aucun déclencheur de ce nom n'est chargé\n", maintenant / 1000.0, e.second.c_str());
+			else { zones.PousserPorte(h); printf("%6.2f s  le joueur pousse la porte %s (+0x394)\n", maintenant / 1000.0, e.second.c_str()); }
+			e.second.clear();
+		}
 		for(auto &e : portes) if(e.second >= 0 && maintenant >= e.first){
 			// Une porte : la demande de FUN_00416e30 (état 0) pour le point d'arrivée, sans l'octet +0x8dc.
 			const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
 			printf("%6.2f s  le joueur passe une porte vers la zone %d%s\n", maintenant / 1000.0, e.second, zones.Demander(j->pos, j->cap, e.second, nil, false) ? "" : " : refusé, un changement est en cours");
 			e.second = -1;
+		}
+		if(prechargement.attente){
+			bool annulee = false;
+			if(prechargement.Rappel(true, maintenant, &annulee)){
+				parole.enCours = true; parole.ped = prechargement.ped; parole.evenement = prechargement.evenement;
+				parole.ligne = prechargement.ligne; parole.fin = maintenant + DureeParole(parole.ped, parole.evenement, parole.ligne);
+				if(journalRestant > 0){ journalRestant--; printf("%6.2f s  parole : le piéton %d dit %s ligne %d (préchargée)\n", maintenant / 1000.0, parole.ped, kSpeechEvents[parole.evenement], parole.ligne); }
+			}
+			else if(annulee) printf("%6.2f s  parole : %s ligne %d préchargée et jamais demandée, annulée après 30 s\n", maintenant / 1000.0, kSpeechEvents[prechargement.evenement], prechargement.ligne);
 		}
 		if(parole.enCours && maintenant >= parole.fin){ parole.enCours = false; if(journalRestant > 0){ journalRestant--; printf("%6.2f s  parole : le piéton %d a fini %s ligne %d\n", maintenant / 1000.0, parole.ped, kSpeechEvents[parole.evenement], parole.ligne); } }
 		if(fondu.enCours && maintenant >= fondu.fin){ fondu.enCours = false; fondu.noir = fondu.versNoir; if(journalRestant > 0){ journalRestant--; printf("%6.2f s  fondu : l'écran est %s\n", maintenant / 1000.0, fondu.versNoir ? "noir" : "rendu"); } }

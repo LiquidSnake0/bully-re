@@ -90,6 +90,22 @@ CActionBank::Trouver(const char *chemin) const
 	return pile.back();
 }
 
+static bool
+Contient(const CActionNode &a, const CActionNode *n)
+{
+	for(const CActionNode &e : a.enfants) if(&e == n || Contient(e, n)) return true;
+	return false;
+}
+
+bool
+CActionBank::Joue(const CActionNode *courant, const char *chemin, bool sous) const
+{
+	const CActionNode *n = Trouver(chemin);
+	if(n == nil || courant == nil) return false;
+	if(courant == n) return true;
+	return sous && Contient(*n, courant);   // remonter les parents de `courant` jusqu'à `n` revient à le chercher sous `n`
+}
+
 bool
 CActionBank::TrouverOuCharger(const char *chemin, const char *act)
 {

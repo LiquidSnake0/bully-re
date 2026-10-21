@@ -65,9 +65,9 @@ static T CompT(const T &p, const NifAVObject &o){
 static void ParcT(const CNifFile &f, int32 bloc, const T &p, int prof, Boite &b){
 	if(bloc < 0 || bloc >= f.numBlocks || prof > 64 || !f.blocks[bloc].data) return;
 	const NifBlock &bl = f.blocks[bloc];
-	if(bl.kind == NIF_NODE){ const NifNode *n = (const NifNode*)bl.data; T t = prof <= 1 ? p : CompT(p, *n); for(int32 i = 0; i < n->numChildren; i++) ParcT(f, n->children[i], t, prof+1, b); return; }
+	if(bl.kind == NIF_NODE){ const NifNode *n = (const NifNode*)bl.data; if(n->flags & 1) return; T t = prof <= 1 ? p : CompT(p, *n); for(int32 i = 0; i < n->numChildren; i++) ParcT(f, n->children[i], t, prof+1, b); return; }
 	if(bl.kind != NIF_TRISHAPE && bl.kind != NIF_TRISTRIPS) return;
-	const NifGeometry *g = (const NifGeometry*)bl.data; if(g->data < 0 || g->data >= f.numBlocks || !f.blocks[g->data].data) return;
+	const NifGeometry *g = (const NifGeometry*)bl.data; if(g->flags & 1) return; if(g->data < 0 || g->data >= f.numBlocks || !f.blocks[g->data].data) return;
 	const NifGeometryData *d = (const NifGeometryData*)f.blocks[g->data].data; if(!d->vertices) return;
 	T t = prof <= 1 ? p : CompT(p, *g);
 	for(int i = 0; i < d->numVertices; i++){ CVector v = NifRotate(t.r, CVector(d->vertices[i].x*t.s, d->vertices[i].y*t.s, d->vertices[i].z*t.s)); Ajouter(b, CVector(v.x+t.t.x, v.y+t.t.y, v.z+t.t.z)); }
@@ -146,7 +146,7 @@ main(void)
 		discriminants++;
 		float seuil = 0.01f * taille;
 		if(eR < seuil && eT >= seuil) exactR++;
-		if(eT < seuil && eR >= seuil) exactT++;
+		if(eT < seuil && eR >= seuil)exactT++;
 	}
 	printf("%d modèles appariés, %d discriminants ; quasi exacts (< 1 %%) pour R·v : %d, pour Rᵀ·v : %d\n", apparies, discriminants, exactR, exactT);
 	printf("catwalk : écart R·v %.4f, Rᵀ·v %.4f\n", catwalkR, catwalkT);

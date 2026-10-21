@@ -44,6 +44,14 @@ main(void)
 	// 1_01 est encore là après les autres.
 	VERIF(b.Trouver("/Global/1_01/Talking") == talking);
 	printf("  %zu fichiers sous /Global (%zu banques), /Global/1_01/Talking, Gates/BarUpHold, Player et 1_02 trouvés\n", b.fichiers.size(), b.Global()->enfants.size());
+	// PedIsPlaying (FUN_005f3bf0 / FUN_005f4f80) : le nœud lui-même, ou, avec « sous », un de ses descendants.
+	{
+		const CActionNode *talking = b.Trouver("/Global/1_01/Talking");
+		VERIF(talking != nil);
+		VERIF(b.Joue(talking, "/Global/1_01/Talking", false) && b.Joue(talking, "/Global/1_01", true));
+		VERIF(!b.Joue(talking, "/Global/1_01", false) && !b.Joue(nil, "/Global/1_01", true) && !b.Joue(talking, "/Global/Absent", true));
+		VERIF(!b.Joue(b.Trouver("/Global/1_01"), "/Global/1_01/Talking", true));   // un parent n'est pas « sous » son enfant
+	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;
 }

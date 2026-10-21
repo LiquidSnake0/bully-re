@@ -62,10 +62,53 @@ main(void)
 	const CTriggerZone *ez = d.ZoneParHandle(entree); const CTriggerPointList *el = d.Liste(entreeListe);
 	VERIF(ez && el && ez->zone == 0 && el->zone == 2 && el->porte);
 	if(ez){ VERIF(z2.PasserUnePorte(d, CVector(ez->pos.x, ez->pos.y, ez->pos.z + 0.5f)) == -1); }   // DT_ : sans l'objet, rien
+	// Avec l'objet de porte en cours (+0x394, FUN_00415160) : la porte passe, le joueur où qu'il soit, vers le
+	// premier point de sa liste en zone 2 ; l'état 0xd remet +0x394 à zéro.
+	if(el && !el->points.empty()){
+		z2.PousserPorte(entree);
+		int i = z2.PasserUnePorte(d, CVector(0, 0, 0));
+		VERIF(i >= 0 && &z2.portes[i] == porte && z2.demande.zone == 2 && z2.demande.pos.x == el->points[0].pos.x && !z2.retourEnReserve);
+		for(int k = 0; k < 200 && z2.EnChargement(); k++){ z2.AvancerImage(FONDU_NOIR, true, true); if(z2.etat == AREA_PRET) z2.SignalerPret(); }
+		VERIF(!z2.EnChargement() && z2.porteObjet == -1 && z2.zoneVisible == 2);
+	}
 	// Décharger les portes de l'école (emplacement 5) et refaire la table : les sept SV_ restent.
 	d.Decharger(5);
 	z2.ReconstruirePortes(d);
 	VERIF(z2.portes.size() == 7);
+	// Les autres fichiers de portes : la sortie de l'école (déclencheur dans le hall, zone 2, vers la cour, 0),
+	// et les portes qui gardent le retour (FUN_0042e570).
+	static const char *fichiers[] = { "ischool_doors.dat", "BDorm_Doors.dat", "tbusines_doors.dat", "tindustrial_doors.dat",
+	                                  "trich_doors.dat", "tschool_garagedoors.dat", "tschool_maindoors.dat" };
+	int emplacement = 6, sorties = 0, avecRetour = 0, total = 0;
+	for(const char *f : fichiers) VERIF(d.Charger(f, emplacement++));
+	CAreaManager z3;
+	z3.ReconstruirePortes(d);
+	const CAreaPorte *sortie = nil;
+	for(const CAreaPorte &p : z3.portes){
+		if(!p.parObjet) continue;
+		total++;
+		const CTriggerZone *tz = d.ZoneParHandle(p.declencheur); const CTriggerPointList *tl = d.Liste(p.liste);
+		if(!tz || !tl) continue;
+		if(tz->zone == 2 && tl->zone == 0){ sorties++; if(!sortie) sortie = &p; printf("    sortie de l'école : %s\n", tz->nom.c_str()); }
+		avecRetour += CAreaManager::ZoneAvecRetour(tl->zone);
+	}
+	printf("  tous les fichiers de portes : %d portes DT_, %d du hall de l'école vers la cour, %d vers une zone qui garde le retour\n", total, sorties, avecRetour);
+	VERIF(sortie != nil && avecRetour > 0);
+	// Une porte qui garde le retour : y entrer met la zone visible et le joueur en réserve ; la porte suivante
+	// y ramène, quelle que soit sa liste.
+	for(const CAreaPorte &p : z3.portes){
+		const CTriggerPointList *tl = d.Liste(p.liste);
+		if(!p.parObjet || !tl || !CAreaManager::ZoneAvecRetour(tl->zone)) continue;
+		z3.zoneVisible = 0;
+		z3.PousserPorte(p.declencheur);
+		VERIF(z3.PasserUnePorte(d, CVector(1, 2, 3), 90) >= 0 && z3.retourEnReserve && z3.retour.zone == 0 && z3.retour.cap == 90 && z3.demande.zone == tl->zone);
+		for(int k = 0; k < 200 && z3.EnChargement(); k++){ z3.AvancerImage(FONDU_NOIR, true, true); if(z3.etat == AREA_PRET) z3.SignalerPret(); }
+		z3.PousserPorte(p.declencheur);
+		VERIF(z3.PasserUnePorte(d, CVector(5, 5, 5)) >= 0 && !z3.retourEnReserve && z3.demande.zone == 0 && z3.demande.pos.x == 1 && z3.demande.cap == 90);
+		const CTriggerZone *tz = d.ZoneParHandle(p.declencheur);
+		printf("  %s : déclencheur en zone %d → zone %d, retour gardé\n", tz ? tz->nom.c_str() : "?", tz ? tz->zone : -1, tl->zone);
+		break;
+	}
 	printf("test_portes : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;
 }

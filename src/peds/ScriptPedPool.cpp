@@ -113,6 +113,20 @@ CScriptPedPool::Attaquer(int h, int cible)
 	return true;
 }
 
+bool
+CScriptPedPool::Blesser(int cible, float degats, int attaquant)
+{
+	CScriptPed *c = Acceder(cible);
+	if(c == nil || c->mort) return false;
+	if(c->invulnerable) return false;
+	if(attaquant == SCRIPT_PED_JOUEUR && c->invulnerableAuJoueur) return false;
+	float s = c->sante - degats;
+	if(s < 0) s = 0;
+	if(s < c->santeMin) s = c->santeMin;
+	Sante(cible, s);
+	return true;
+}
+
 void
 CScriptPedPool::Sante(int h, float sante)
 {
@@ -166,7 +180,8 @@ CScriptPedPool::Avancer(float dt)
 			if(p.prochainCoup > 0) continue;
 			p.prochainCoup = SCRIPT_PED_CADENCE;
 			p.aFrappe = true;
-			Sante(p.attaque, c->sante - SCRIPT_PED_DEGATS);
+			p.dernierFrappe = p.attaque;
+			Blesser(p.attaque, SCRIPT_PED_DEGATS, (int)(&p - peds));
 			if(c->mort) p.attaque = -1;
 		}else if(p.enMarche){
 			if(Pas(p, p.cible, p.vitesse * dt, 0)){ p.enMarche = false; p.arrive = true; }

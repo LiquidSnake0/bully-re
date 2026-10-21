@@ -332,3 +332,13 @@ Code : `src/core/ActionTree` (CActionTreeFile, ActionHash) ; test :
 `tools/cat.py --stats`. Scripts Ghidra :
 `bully-test/scripts/ExportArbre.java` (une fonction et ses appelées),
 `ExportAsm.java` (les instructions d'une fonction).
+
+## Le nœud joué : PedIsPlaying
+
+`PedIsPlaying(ped, chemin, sous)` (0x5cb830) résout le chemin par `FUN_005f59b0` et le compare au nœud
+que joue le contrôleur d'actions du piéton (+0x10, `FUN_005f3bf0`) ; avec `sous`, `FUN_005f4f80` remonte
+les parents du nœud joué (emplacement +0x34) jusqu'à le trouver. `CActionBank::Joue` le refait,
+`tests/test_actionbank` le vérifie sur `/Global/1_01/Talking`. Dans `lancer_lua`, le nœud joué est celui
+que `PedSetActionNode` a posé ; un arbre posé par `PedSetActionTree` n'est pas encore joué, donc rien
+ne choisit son premier nœud : `1_02` attend toujours que le joueur joue
+`/Global/TrainingPlayer/Default` (le contrôleur y descend seul dans le jeu).

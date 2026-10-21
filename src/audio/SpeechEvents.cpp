@@ -97,3 +97,30 @@ SpeechEventIndex(const char *nom)
 		if(strcasecmp(nom, kSpeechEvents[i]) == 0) return i;
 	return -1;
 }
+
+void
+CSpeechPreload::Precharger(uint32 maintenant, int locuteur, int index, int numero)
+{
+	echeance = maintenant + 30000;
+	ped = locuteur; evenement = index; ligne = numero;
+	prechargee = false;
+	attente = true;
+	jouer = false;
+}
+
+bool
+CSpeechPreload::Rappel(bool prete, uint32 maintenant, bool *annulee)
+{
+	if(annulee) *annulee = false;
+	if(!prete) return true;
+	prechargee = true;
+	if(attente && !jouer){
+		if(echeance < maintenant){
+			attente = false;
+			if(annulee) *annulee = true;
+		}
+		return false;
+	}
+	attente = false;
+	return true;
+}
