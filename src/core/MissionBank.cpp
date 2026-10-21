@@ -36,6 +36,7 @@ Parcourir(const CActionTreeFile &f, const CActionNode &n, const char *banque, st
 		if((a = t.Champ(36)) != nil) m.afficherTitre = a->valeur[0] != 0;
 		m.type = (int)t.Mot(40);
 		if((a = t.Champ(51)) != nil) m.lancerSeul = a->valeur[0] != 0;
+		if((a = t.Champ(44)) != nil) m.rejouable = a->valeur[0] != 0;
 		m.conditions = (int)n.conditions.size();
 		for(int32 dc : n.conditions){
 			CMissionCondition c;
@@ -115,6 +116,8 @@ CMissionBank::Trouver(const char *nom) const
 static const uint32 kMissionCond = ActionHash("MissionCond") & 0x7fffffff;
 static const uint32 kTimeCond = ActionHash("TimeCond") & 0x7fffffff;
 static const uint32 kFalse = ActionHash("False") & 0x7fffffff;              // ConditionFalse, enregistrée sous « False »
+static const uint32 kNot = ActionHash("NOT") & 0x7fffffff;               // ConditionNOT (FUN_00639470)
+static const uint32 kOr = ActionHash("OR") & 0x7fffffff;                 // ConditionOR (FUN_00639490)
 static const uint32 kCurrentMission = ActionHash("CurrentMission") & 0x7fffffff;
 static const uint32 kCurrentClassMission = ActionHash("CurrentClassMission") & 0x7fffffff;
 
@@ -125,6 +128,12 @@ DansLaPlage(int maintenant, int debut, int fin)
 {
 	if(fin < debut) return debut <= maintenant || maintenant < fin;
 	return debut <= maintenant && maintenant < fin;
+}
+
+int
+CMissionCondition::Genre(void) const
+{
+	return type == kNot ? 1 : type == kOr ? 2 : 0;
 }
 
 int
@@ -151,6 +160,10 @@ CMissionBank::Evaluer(const CMissionCondition &c, const CEtatMissions &etat, con
 		if(classe) *classe = "ConditionFalse";
 		return 0;
 	}
+	if(c.type == kNot || c.type == kOr){
+		if(classe) *classe = c.type == kNot ? "ConditionNOT" : "ConditionOR";
+		return 1;
+	}
 	return -1;
 }
 
@@ -160,11 +173,24 @@ CMissionBank::Activable(int index, const CEtatMissions &etat, const char **class
 	if(index < 0 || index >= (int)missions.size()) return 0;
 	const CMissionData &m = missions[index];
 	if((int)m.conds.size() != m.conditions) return -1;
-	int r = 1;
-	for(const CMissionCondition &c : m.conds){
-		int v = Evaluer(c, etat, classe);
-		if(v < 0) return -1;
-		if(v == 0) r = 0;
+	const std::vector<CMissionCondition> &l = m.conds;
+	bool resultat = true, saute = false;
+	int precedent = 0;
+	for(size_t i = 0; i < l.size(); i++){
+		if(!saute){
+			int v = Evaluer(l[i], etat, classe);
+			if(v < 0) return -1;
+			if(precedent == 0) resultat = v != 0;
+			else if(precedent == 1) resultat = v == 0;
+			else saute = true;
+		}
+		int genre = l[i].Genre();
+		precedent = genre;
+		if(saute && genre != 0){ saute = false; continue; }
+		if(resultat) continue;
+		if(i + 1 >= l.size()) break;
+		if(l[i + 1].Genre() != 2) break;
+		i++;                                         // le OR qui suit un faux est sauté
 	}
-	return r;
+	return resultat;
 }

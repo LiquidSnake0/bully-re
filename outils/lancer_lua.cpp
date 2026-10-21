@@ -1516,8 +1516,8 @@ AvancerGestionnaire(lua_State *L)
 	gestionnaire.etat.heure = horloge.Heure(); gestionnaire.etat.minute = horloge.Minute();
 	for(size_t i = 0; i < banque.missions.size(); i++){
 		const CMissionData &m = banque.missions[i];
-		// Une mission déjà réussie n'est plus reprise par l'outil (le moteur garde ce choix ailleurs, pas lu).
-		if(!m.Jouable() || gestionnaire.etat.reussites[i]) continue;
+		// FUN_006ad130 : une mission déjà réussie n'est réactivée que si son champ 44 (+0x2c) le dit.
+		if(!m.Jouable() || (gestionnaire.etat.reussites[i] && !m.rejouable)) continue;
 		if(banque.Activable((int)i, gestionnaire.etat) != 1) continue;
 		bool libre = mission.etat == AUCUNE;
 		if(!gestionnaire.activees[i]){

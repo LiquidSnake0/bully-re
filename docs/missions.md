@@ -71,12 +71,26 @@ L'évaluation est l'emplacement 1 de la table virtuelle (`export/rtti.json`).
   en minutes depuis minuit (`DAT_00bceb4b` heures, `DAT_00bceb4a` minutes) et laisse la plage
   passer minuit quand la fin précède le début.
 
+**La liste** : le gestionnaire (`FUN_006ad130`) fait tester au nœud sa liste de conditions
+(emplacement +0x4c du nœud), que **`FUN_005fb9b0`** parcourt. Chaque condition a un genre,
+l'emplacement 2 de sa table virtuelle : 0 pour une condition (`FUN_00824d30`), 1 pour `ConditionNOT`
+(`FUN_006f2ad0`), 2 pour `ConditionOR` (`FUN_00765c70`) ; NOT et OR s'évaluent vrais
+(`FUN_00609b30`), ce sont des opérateurs. Le résultat part à vrai ; chaque élément est évalué, et
+après un élément de genre 0 le résultat devient sa valeur, après un NOT son contraire, après un OR
+la suite est sautée jusqu'au prochain opérateur ; un résultat faux arrête la liste, sauf si
+l'élément suivant est un OR, qui est alors sauté. `A B OR C` vaut donc `(A et B) ou C` quand A est
+vrai, mais faux dès que A est faux : c'est le moteur. Dans la même boucle, une mission déjà réussie
+(mot +2 non nul) n'est réactivée que si l'octet +0x2c de sa `MissionData` (champ 44) est posé : 171
+missions sont ainsi rejouables, ni `1_01` ni `1_02`.
+
 La chaîne du chapitre 1, lue dans `chap1.cat` : `1_02` attend `1_01`, `1_02A` attend `1_02`,
 `1_02B` attend `1_02B Force Run Dummy`, `1_02C` attend `1_02B`, `1_03` attend `1_02C` et
 `1_02B` entre 8 h et 19 h. `CMissionBank::Evaluer` et `Activable` refont les trois classes ;
 `tests/test_missions` suit la chaîne et la plage de nuit. Sur les 333 missions jouables qui ont des
 conditions, 195 s'évaluent entièrement avec ces trois classes ; les autres attendent
-`ConditionGroup` (402 conditions), `DayCond` et une vingtaine de classes plus rares.
+`ConditionGroup` (402 conditions : `ConditionGroupCondition`, `FUN_005fbaf0`, qui évalue un groupe nommé
+par la même `FUN_005fb9b0`, la référence n'étant pas encore résolue), `DayCond` (`FUN_006a8b30` : le jour
+du calendrier, +0x58, éventuellement modulo +0x18, pas lu) et une vingtaine de classes plus rares.
 
 ## Les champs de `MissionData`
 

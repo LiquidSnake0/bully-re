@@ -97,6 +97,28 @@ main(int argc, char **argv)
 		for(auto &k : classes) printf(" %s %d", k.first.c_str(), k.second);
 		printf(" ; %d missions sur %d s'évaluent entièrement\n", lisibles, avecConditions);
 		VERIF(classes["MissionCond"] > 0 && classes["TimeCond"] > 0);
+		// La liste de FUN_005fb9b0, sur des nœuds faits à la main : A NOT B, A OR B, A B OR C.
+		const uint32 kM = ActionHash("MissionCond") & 0x7fffffff, kN = ActionHash("NOT") & 0x7fffffff, kO = ActionHash("OR") & 0x7fffffff;
+		auto cond = [&](const char *mission){ CMissionCondition c; c.type = kM; c.mots[0] = ActionHash(mission) & 0x7fffffff; return c; };
+		CMissionCondition non; non.type = kN; CMissionCondition ou; ou.type = kO;
+		VERIF(non.Genre() == 1 && ou.Genre() == 2 && cond("1_01").Genre() == 0);
+		CMissionBank t = b;
+		auto essai = [&](std::vector<CMissionCondition> l){
+			CMissionData &x = t.missions[0]; x.conds = l; x.conditions = (int)l.size(); return t.Activable(0, etat); };
+		etat.reussites.assign(t.missions.size(), 0);
+		etat.reussites[i01] = 1;                                     // 1_01 réussie, 1_02 non
+		VERIF(essai({cond("1_01"), non, cond("1_02")}) == 1);        // 1_01 et pas 1_02
+		VERIF(essai({cond("1_01"), non, cond("1_01")}) == 0);
+		VERIF(essai({cond("1_02"), ou, cond("1_01")}) == 1);         // faux, puis OR : on continue
+		VERIF(essai({cond("1_01"), ou, cond("1_02")}) == 1);         // vrai avant le OR : la suite est sautée
+		VERIF(essai({cond("1_02"), ou, cond("1_02A")}) == 0);
+		VERIF(essai({cond("1_01"), cond("1_02"), ou, cond("1_01")}) == 1);   // (1_01 et 1_02) ou 1_01
+		VERIF(essai({cond("1_02"), cond("1_01"), ou, cond("1_01")}) == 0);   // un faux suivi d'autre chose qu'un OR arrête tout
+		VERIF(essai({}) == 1);
+		// Après une réussite, FUN_006ad130 ne réactive une mission que si son champ 44 (+0x2c) le permet.
+		int rejouables = 0; for(const CMissionData &x : b.missions) rejouables += x.rejouable;
+		printf("%d missions rejouables (champ 44)\n", rejouables);
+		VERIF(!b.missions[i01].rejouable && !b.missions[i02].rejouable);
 	}
 
 	// 1_01 : la première mission, type 0, titre affiché, script chap1\1_01.lua.

@@ -52,6 +52,8 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- La liste de conditions d'un nœud (`FUN_005fb9b0` : NOT, OR, genres 1 et 2) et le champ 44 (rejouable) de
+  `MissionData` ; `CMissionBank::Activable`, `tests/test_missions` ; docs/missions.md.
 - Les portes `DT_` : le déclencheur de l'objet de porte en cours (+0x394, `FUN_00415160`), le retour gardé de
   neuf zones (`FUN_0042e570`, `FUN_00416750`) ; `CAreaManager::PousserPorte`, `tests/test_portes`,
   `lancer_lua --porte` ; docs/zones.md.

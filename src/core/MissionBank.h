@@ -9,6 +9,7 @@
 // Une condition d'entrée d'un nœud de mission, telle que la fabrique FUN_0061a4f0 la construit sur
 // l'enregistrement (docs/missions.md, « Les conditions ») : son type et ses champs +4 à +0x18.
 struct CMissionCondition {
+	int Genre(void) const;     // emplacement 2 de la table virtuelle : 0, ConditionNOT 1, ConditionOR 2
 	uint32 type = 0;           // HashString du nom de classe : MissionCond, TimeCond, ConditionFalse…
 	uint32 mots[6] = {0, 0, 0, 0, 0, 0};
 };
@@ -32,6 +33,7 @@ struct CMissionData {
 	bool afficherTitre = false;   // champ 36
 	int type = 0;            // champ 40 : 0 histoire, 1 cours, 3 boulots et courses, 4 tutoriels, 5 mini-jeux
 	bool lancerSeul = false; // champ 51 (+0x33) : FUN_006ad130 la lance dès qu'elle est activée (1_02, pas 1_01)
+	bool rejouable = false;  // champ 44 (+0x2c) : FUN_006ad130 l'active encore après une réussite
 	int conditions = 0;      // les conditions d'entrée du nœud (si MissionCond…) ; 0 = toujours activable
 	std::vector<CMissionCondition> conds;   // ces conditions, lues
 	std::string corona;      // MissionButtonTrigger (champ 24) de l'enfant « Active » : la liste de points où le joueur la lance
@@ -63,8 +65,14 @@ public:
 	//  TimeCond (FUN_006a7380 → FUN_00425cf0) : l'heure du jeu est dans [+4 h +0xc min, +8 h +0x10 min[,
 	//    l'intervalle pouvant passer minuit.
 	//  ConditionFalse (FUN_006094f0) : toujours fausse.
+	//  ConditionNOT et ConditionOR (FUN_00609b30) : vraies ; ce sont des opérateurs de la liste.
 	int Evaluer(const CMissionCondition &c, const CEtatMissions &etat, const char **classe = nil) const;
-	// FUN_006ad130 : toutes les conditions du nœud vraies (aucune : toujours). -1 si l'une n'est pas lue.
+	// FUN_005fb9b0, la liste de conditions du nœud que FUN_006ad130 fait tester (aucune : vraie). Chaque
+	// condition a un genre (emplacement 2 de sa table : 0, NOT 1, OR 2). Le résultat part à vrai ; une
+	// condition après une condition simple le remplace, après un NOT le remplace par son contraire ; un
+	// résultat faux arrête la liste, sauf si l'élément suivant est un OR, qui est sauté ; après un OR
+	// atteint avec un résultat vrai, les conditions sont sautées jusqu'au prochain opérateur. -1 si une
+	// condition évaluée n'est pas d'une classe lue.
 	int Activable(int index, const CEtatMissions &etat, const char **classe = nil) const;
 private:
 	bool LireFichier(int32 image, const char *fichier);

@@ -519,3 +519,9 @@ en échec plutôt que de les masquer.
   (`FUN_0042e570`) gardent le retour (`FUN_00416750`, +0x86f), que la porte suivante rejoue.
   `CAreaManager::PousserPorte`, `tests/test_portes` (37 portes `DT_` hors `tschool_doors`, 6 sorties du
   hall, l'aller-retour par la salle de classe) ; `lancer_lua --porte`. docs/zones.md.
+- Suite : **NOT, OR et la liste.** `FUN_005fb9b0` parcourt la liste de conditions d'un nœud : NOT et OR
+  sont des conditions vraies de genre 1 et 2 (emplacement 2 de la table virtuelle), le résultat suit
+  la dernière condition (inversée après un NOT), un faux arrête la liste sauf devant un OR, et un vrai
+  avant un OR saute la suite jusqu'au prochain opérateur. `FUN_006ad130` ne réactive une mission
+  réussie que si son champ 44 (+0x2c) le dit (171 missions). `CMissionBank::Activable`,
+  `tests/test_missions` (sept listes faites à la main). docs/missions.md.
