@@ -222,6 +222,13 @@ comme `PlayerGetPedIndex` le dit, `tests/test_scriptpeds`) : `PedCreatePoint`,
 `PlayerGetHealth` répondent dessus ; un piéton qu'une mission laisse derrière elle est
 libéré à la fin de la mission (le moteur le note à l'objet script, `FUN_005d94d0`).
 
+Un coup passe par `FUN_0047b6b0` puis `FUN_004782a0` (`CScriptPedPool::Blesser`) : rien si la cible
+est invulnérable (+0x138c : `PedSetInvulnerable`, 0x5c9160, et `PlayerSetInvulnerable`, 0x5d1810, pour
+le joueur), ou si l'attaquant est le joueur (type 13) et la cible invulnérable au joueur (+0x1364,
+`PedSetInvulnerableToPlayer`, 0x5c9200) ; sinon la santé (+0x1cb8) baisse sans passer sous 0 ni sous
+la santé minimale (+0x1ca8, `PedSetMinHealth`, 0x5c8ef0). Dans `1_02`, Russell frappe le joueur rendu
+invulnérable pour l'entraînement, et le joueur garde ses 150 points de vie.
+
 Les piétons ont un geste à la fois, joué image par image (`CScriptPedPool::Avancer`) :
 `PedMoveToPoint(ped, allure, liste, n)` et `PedMoveToXYZ(ped, allure, x, y, z)` font
 marcher (allure 0 et 1), courir (2) ou sprinter (3 : les deux élèves de `_1_01_KIDRUN`)

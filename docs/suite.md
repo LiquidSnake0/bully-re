@@ -52,6 +52,8 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- Les coups et l'invulnérabilité (`FUN_0047b6b0`, `FUN_004782a0` : +0x138c, +0x1364, +0x1ca8) :
+  `CScriptPedPool::Blesser`, `tests/test_scriptpeds` ; `1_02` va jusqu'au combat de Russell.
 - La liste de conditions d'un nœud (`FUN_005fb9b0` : NOT, OR, genres 1 et 2) et le champ 44 (rejouable) de
   `MissionData` ; `CMissionBank::Activable`, `tests/test_missions` ; docs/missions.md.
 - Les portes `DT_` : le déclencheur de l'objet de porte en cours (+0x394, `FUN_00415160`), le retour gardé de

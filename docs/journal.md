@@ -531,3 +531,10 @@ en échec plutôt que de les masquer.
   une forme cachée qui gonflait une boîte et pas l'autre. Les deux parcours suivent maintenant la même
   règle ; il ne reste que la différence de convention : 47 modèles départagent, 13 collent à `R·v` à
   moins de 1 %, aucun à `Rᵀ·v`, et `catwalk` reste à 0,0000 contre 42.
+- Suite : **`1_02` jusqu'au combat de Russell.** Avec `--porte DT_ischool_FrontDoorL` puis `--entrer
+  _GARYTRIGGER`, la mission joue la scène de Gary et lance l'entraînement au combat. Les coups suivent
+  maintenant `FUN_0047b6b0` / `FUN_004782a0` : invulnérabilité (+0x138c), invulnérabilité au joueur
+  (+0x1364, type 13), santé minimale (+0x1ca8) ; `PedSetInvulnerable`, `PedSetInvulnerableToPlayer`,
+  `PlayerSetInvulnerable`, `PedSetMinHealth` réels ; `CScriptPedPool::Blesser`, `tests/test_scriptpeds`.
+  Le joueur ne meurt plus sous les coups de Russell (il mourait à 66,5 s). Reste : `PedIsPlaying` du
+  joueur sur `/Global/TrainingPlayer/Default`, que l'entraînement attend.

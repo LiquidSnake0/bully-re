@@ -31,7 +31,10 @@ struct CScriptPed {
 	CVector pos;
 	float cap = 0;               // degrés, 0 vers +x comme les lacets des .dat
 	int32 script = -1;           // l'objet script qui l'a créé, -1 pour le joueur ou un piéton rendu ambiant
-	float sante = 100;
+	float sante = 100;           // +0x1cb8
+	float santeMin = 0;          // +0x1ca8, PedSetMinHealth (0x5c8ef0)
+	bool invulnerable = false;   // +0x138c, PedSetInvulnerable (0x5c9160), PlayerSetInvulnerable (0x5d1810)
+	bool invulnerableAuJoueur = false;   // +0x1364, PedSetInvulnerableToPlayer (0x5c9200)
 	bool mort = false;
 	// Le geste en cours.
 	bool enMarche = false;       // va vers `cible` à `vitesse`
@@ -41,6 +44,7 @@ struct CScriptPed {
 	float prochainCoup = 0;      // s avant le prochain coup
 	// Ce qui s'est passé pendant la dernière image (pour le journal de lancer_lua).
 	bool arrive = false, aFrappe = false, vientDeMourir = false;
+	int dernierFrappe = -1;      // la cible du dernier coup (pour le journal)
 };
 
 class CScriptPedPool
@@ -66,6 +70,11 @@ public:
 	bool Attaquer(int handle, int cible);
 	// lua_PedSetHealth : la santé ; à zéro, le piéton meurt et lâche son geste.
 	void Sante(int handle, float sante);
+	// FUN_0047b6b0 puis FUN_004782a0 : un coup de `degats` porté par `attaquant` (-1 : personne). Rien si la
+	// cible est invulnérable (+0x138c), ou si l'attaquant est le joueur (type 13) et la cible invulnérable
+	// au joueur (+0x1364) ; sinon la santé baisse, jamais sous 0 ni sous la santé minimale (+0x1ca8).
+	// Renvoie vrai si le coup a porté.
+	bool Blesser(int cible, float degats, int attaquant);
 	// lua_PedMakeAmbient (0x5ca850) : rendu à la population, plus ramassé par son script.
 	bool RendreAmbiant(int handle);
 	// Une image de dt secondes : marches, poursuites et coups ; pose les drapeaux d'événements.

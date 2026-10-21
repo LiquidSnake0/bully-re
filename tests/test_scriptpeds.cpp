@@ -88,6 +88,23 @@ main(void)
 	VERIF(!q.RendreAmbiant(SCRIPT_PED_JOUEUR) && q.RendreAmbiant(at) && q.Acceder(at)->script == -1);
 	VERIF(q.SupprimerDuScript(1) == 3 && q.Valide(at));   // m, ci et c libérés, a reste
 
+	// FUN_0047b6b0 / FUN_004782a0 : l'invulnérabilité, l'invulnérabilité au joueur et la santé minimale.
+	{
+		CScriptPedPool q;
+		int a = q.Creer(85, CVector(0, 0, 0), 0, 1), b = q.Creer(99, CVector(1, 0, 0), 0, 1);
+		CScriptPed *pa = q.Acceder(a), *pj = q.Acceder(SCRIPT_PED_JOUEUR);
+		VERIF(q.Blesser(a, 30, b) && pa->sante == 70);
+		pa->invulnerable = true;
+		VERIF(!q.Blesser(a, 30, b) && pa->sante == 70);
+		pa->invulnerable = false; pa->invulnerableAuJoueur = true;
+		VERIF(!q.Blesser(a, 30, SCRIPT_PED_JOUEUR) && q.Blesser(a, 30, b) && pa->sante == 40);
+		pa->santeMin = 75;                                    // plus bas que la santé actuelle : elle remonte au plancher
+		VERIF(q.Blesser(a, 10, b) && pa->sante == 75 && !pa->mort);
+		pa->santeMin = 0;
+		VERIF(q.Blesser(a, 500, b) && pa->sante == 0 && pa->mort);
+		pj->invulnerable = true;
+		VERIF(!q.Blesser(SCRIPT_PED_JOUEUR, 10, b) && pj->sante == 100);
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }

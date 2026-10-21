@@ -1054,6 +1054,44 @@ PedSetHealth(lua_State *L)
 	return 0;
 }
 
+// PedSetInvulnerable(ped, oui) (0x5c9160) : +0x138c ; PedSetInvulnerableToPlayer(ped, oui) (0x5c9200) : +0x1364 ;
+// PlayerSetInvulnerable(oui) (0x5d1810) : +0x138c du joueur ; PedSetMinHealth(ped, pv) (0x5c8ef0) : +0x1ca8.
+// FUN_0047b6b0 et FUN_004782a0 les lisent quand un coup porte (CScriptPedPool::Blesser).
+static CScriptPed *
+PietonArg(lua_State *L, int i){ return lua_isnumber(L, i) ? pietons.Acceder((int)lua_tonumber(L, i)) : nil; }
+
+static int
+PedSetInvulnerable(lua_State *L)
+{
+	Journal("PedSetInvulnerable", L, 1);
+	if(CScriptPed *p = PietonArg(L, 1)) p->invulnerable = lua_toboolean(L, 2) != 0;
+	return 0;
+}
+
+static int
+PedSetInvulnerableToPlayer(lua_State *L)
+{
+	Journal("PedSetInvulnerableToPlayer", L, 1);
+	if(CScriptPed *p = PietonArg(L, 1)) p->invulnerableAuJoueur = lua_toboolean(L, 2) != 0;
+	return 0;
+}
+
+static int
+PlayerSetInvulnerable(lua_State *L)
+{
+	Journal("PlayerSetInvulnerable", L, 1);
+	pietons.Acceder(SCRIPT_PED_JOUEUR)->invulnerable = lua_toboolean(L, 1) != 0;
+	return 0;
+}
+
+static int
+PedSetMinHealth(lua_State *L)
+{
+	Journal("PedSetMinHealth", L, 1);
+	if(CScriptPed *p = PietonArg(L, 1)) p->santeMin = (float)luaL_checknumber(L, 2);
+	return 0;
+}
+
 // --- Les gestes des piétons : marche, course, arrêt, bagarre (src/peds/ScriptPedPool.h). ---
 
 // PedMoveToPoint(ped, allure, liste, n) (0x5c7df0) : vers le n-ième point de la liste.
@@ -1114,7 +1152,7 @@ AvancerPietons(void)
 		const CScriptPed *p = pietons.Acceder(i);
 		if(p == nil || journalRestant <= 0) continue;
 		if(p->arrive){ journalRestant--; printf("%6.2f s  piéton %d (modèle %d) arrivé en (%.1f, %.1f, %.1f)\n", maintenant / 1000.0, i, p->modele, p->pos.x, p->pos.y, p->pos.z); }
-		if(p->aFrappe){ journalRestant--; printf("%6.2f s  piéton %d frappe le piéton %d (%.0f pv)\n", maintenant / 1000.0, i, p->attaque, pietons.Acceder(p->attaque) ? pietons.Acceder(p->attaque)->sante : 0); }
+		if(p->aFrappe){ journalRestant--; printf("%6.2f s  piéton %d frappe le piéton %d (%.0f pv)\n", maintenant / 1000.0, i, p->dernierFrappe, pietons.Acceder(p->dernierFrappe) ? pietons.Acceder(p->dernierFrappe)->sante : 0); }
 		if(p->vientDeMourir){ journalRestant--; printf("%6.2f s  piéton %d (modèle %d) est mort\n", maintenant / 1000.0, i, p->modele); }
 	}
 }
@@ -1648,6 +1686,10 @@ main(int argc, char **argv)
 	lua_register(L, "AreaGetVisible", AreaGetVisible);
 	lua_register(L, "PlayerGetPosXYZ", PlayerGetPosXYZ);
 	lua_register(L, "PedCreatePoint", PedCreatePoint);
+	lua_register(L, "PedSetInvulnerable", PedSetInvulnerable);
+	lua_register(L, "PedSetInvulnerableToPlayer", PedSetInvulnerableToPlayer);
+	lua_register(L, "PlayerSetInvulnerable", PlayerSetInvulnerable);
+	lua_register(L, "PedSetMinHealth", PedSetMinHealth);
 	lua_register(L, "PedCreateXYZ", PedCreateXYZ);
 	lua_register(L, "PedDelete", PedDelete);
 	lua_register(L, "PedIsValid", PedIsValid);
