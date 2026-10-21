@@ -53,6 +53,8 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- Le préchargement d'une ligne de parole (`SoundPreloadSpeech`, le bloc `DAT_00cfb3b4`, le rappel `FUN_005d49d0`) :
+  `CSpeechPreload`, `tests/test_speech` ; la narration de `1_02` passe ; docs/son.md.
 - Les conditions des nœuds de mission (`FUN_0061a4f0` construit sur l'enregistrement, à +4) : `MissionCond`
   (mot +2 de l'entrée = réussites, incrémenté par `FUN_006ac910`), `TimeCond` (`FUN_00425cf0`), `ConditionFalse` ;
   `CMissionBank::Evaluer` / `Activable`, `tests/test_missions` ; `1_02` démarre seule après `1_01` ; docs/missions.md.

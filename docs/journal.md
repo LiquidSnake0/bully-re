@@ -500,3 +500,10 @@ en échec plutôt que de les masquer.
   `lancer_lua --nouvelle-partie`, **`1_02` s'active et démarre seule à la réussite de `1_01`**
   (15,15 s), sans `--mission`. 195 des 333 missions à conditions s'évaluent déjà ;
   `ConditionGroup` est la suivante par le nombre. docs/missions.md.
+- Suite : **le préchargement de la parole.** `1_02` attendait `SoundIsSpeechPreloaded`. `SoundPreloadSpeech`
+  (0x5d4a20) remet à zéro le bloc `DAT_00cfb3b4` (en attente, échéance à 30 s, jouer, préchargée,
+  locuteur) et le confie au moteur du son avec le rappel `FUN_005d49d0`, qui pose « préchargée »
+  quand la ligne est prête, la retient tant que `SoundPlayPreloadedSpeech` (0x5d39d0) n'a pas posé
+  « jouer », et l'annule passé l'échéance. `CSpeechPreload`, `tests/test_speech` ; dans `lancer_lua`,
+  la narration de `1_02` (quatre lignes) et la secrétaire passent, et la mission donne au joueur
+  l'objectif du dortoir à 32,3 s. docs/son.md.

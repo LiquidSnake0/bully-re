@@ -24,6 +24,27 @@ et `SoundSpeechPlaying` répond selon le locuteur, l'événement et la ligne. Su
 dit `M_1_01` ligne 101 à la secrétaire avant la réussite ; le script attend la fin, et la mission se
 termine à 12,1 s au lieu de 9,7.
 
+## Le préchargement d'une ligne
+
+Les cinématiques sans film (`1_02` en joue une au début, la narration de Jimmy) préparent leurs
+lignes une à une : `SoundPreloadSpeech(0, "NARRATION", 101, "supersize")`, attente de
+`SoundIsSpeechPreloaded()`, `SoundPlayPreloadedSpeech()` quand la caméra est en place.
+
+| Fonction Lua | Adresse | Ce qu'elle fait |
+|---|---|---|
+| `SoundPreloadSpeech(ped, nom, ligne[, taille, b, b])` | 0x5d4a20 | la même recherche du nom que `SoundPlayScriptedSpeechEvent` (absent : rien) ; puis le bloc **`DAT_00cfb3b4`** est remis à zéro : +0 en attente (1), +4 échéance = `DAT_00c1a9b4` + 30 000 ms, +8 jouer (0), +9 préchargée (0), +0xc le locuteur ; `FUN_005a4980` reçoit le bloc et le rappel `FUN_005d49d0` ; le script reçoit l'identifiant |
+| `SoundIsSpeechPreloaded()` | 0x5d39e0 | rend l'octet +9 (`DAT_00cfb3bd`) |
+| `SoundPlayPreloadedSpeech()` | 0x5d39d0 | pose l'octet +8 (`DAT_00cfb3bc`) |
+
+Le rappel **`FUN_005d49d0(prête, bloc)`** décide : prête, la ligne devient préchargée (+9) ; tant
+qu'elle attend et que « jouer » n'est pas posé, il la retient (rend 0), et l'annule une fois
+l'échéance passée (`FUN_005a5880(locuteur, 3, 0x19)`) ; sinon il la sort de l'attente et la laisse
+jouer (rend 1). `CSpeechPreload` (`src/audio/SpeechEvents`) le refait, `tests/test_speech` le
+vérifie. Dans `lancer_lua`, la ligne est prête à l'image suivante (pas de diffusion) et le rappel
+passe à chaque image : `1_02` dit ses quatre lignes de `NARRATION` (101 à 104), la secrétaire
+`M_1_02` 101 et 123, puis la mission rend la main au joueur et lui donne l'objectif du dortoir
+(`1_02B_LOGOBJ04`).
+
 ## Reste à faire
 
 - Les banques de sons (`LoadCutsceneSound`, `SoundPlay…`) et la durée d'une ligne.

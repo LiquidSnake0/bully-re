@@ -28,6 +28,23 @@ main(void)
 	}
 	VERIF(doublons == 0 && missions == 98);
 	printf("  %d événements, %d de missions (M_…), M_1_01 = %d, aucun doublon\n", NUM_SPEECH_EVENTS, missions, SpeechEventIndex("M_1_01"));
+	// Le préchargement (SoundPreloadSpeech, FUN_005d49d0) : préchargée au premier rappel prêt, retenue
+	// tant que le script ne l'a pas demandée, jouée dès qu'il la demande ; annulée passé 30 s.
+	{
+		CSpeechPreload p;
+		p.Precharger(1000, 0, SpeechEventIndex("NARRATION"), 101);
+		VERIF(p.attente && !p.prechargee && p.echeance == 31000);
+		VERIF(p.Rappel(false, 1033));                       // pas prête : le rappel ne décide rien
+		VERIF(!p.prechargee);
+		VERIF(!p.Rappel(true, 1066) && p.prechargee && p.attente);   // prête, pas demandée : retenue
+		p.jouer = true;                                     // SoundPlayPreloadedSpeech
+		VERIF(p.Rappel(true, 2000) && !p.attente);          // jouée
+		bool annulee = false;
+		p.Precharger(5000, 0, 0, 1);
+		VERIF(!p.Rappel(true, 35000, &annulee) && !annulee && p.attente);   // 35 000 n'est pas après 35 000
+		VERIF(!p.Rappel(true, 35001, &annulee) && annulee && !p.attente);
+		VERIF(SpeechEventIndex("NARRATION") >= 0);
+	}
 	printf("test_speech : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;
 }

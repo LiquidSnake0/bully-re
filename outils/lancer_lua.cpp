@@ -110,6 +110,9 @@ static int controleJoueur = 1;
 // durée d'une ligne n'est pas lue : 2,5 s, provisoire.
 static const float PAROLE_MS = 2500;
 static struct { bool enCours = false; int ped = -1, evenement = -1, ligne = -1, id = 0; uint32 fin = 0; } parole;
+// Le préchargement d'une ligne (SoundPreloadSpeech, docs/son.md) : l'outil n'a pas de diffusion, la ligne est
+// prête à l'image qui suit, et le rappel FUN_005d49d0 est joué à chaque image tant qu'elle attend.
+static CSpeechPreload prechargement;
 // CCutsceneMgr réduit à ses drapeaux (docs/cinematiques.md) : la cinématique chargée (DAT_020c5be2), en cours
 // (DAT_020c5be4), son temps (DAT_020c5b1c), sur les fichiers de Cuts/Cuts.img (src/cutscene/CutsceneFiles.h).
 // La fin, dans le moteur, vient de l'arbre d'actions /Global/CutScenes (FUN_006c3a70) ; ici, faute de le
@@ -1150,6 +1153,38 @@ SoundPlayScriptedSpeechEvent(lua_State *L)
 	return 1;
 }
 
+// SoundPreloadSpeech(ped, événement, ligne[, taille[, b, b]]) (0x5d4a20) : le nom cherché dans la table comme
+// SoundPlayScriptedSpeechEvent (absent : rien), puis le bloc DAT_00cfb3b4 remis à zéro, l'échéance à 30 s.
+static int
+SoundPreloadSpeech(lua_State *L)
+{
+	Journal("SoundPreloadSpeech", L, 1);
+	const char *nom = luaL_checkstring(L, 2);
+	int index = SpeechEventIndex(nom);
+	if(index < 0){ printf("        SoundPreloadSpeech : « %s » n'est pas dans la table des %d événements de parole\n", nom, NUM_SPEECH_EVENTS); return 0; }
+	prechargement.Precharger(maintenant, lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1, index, (int)luaL_optnumber(L, 3, 0));
+	lua_pushnumber(L, ++parole.id);
+	return 1;
+}
+
+// SoundIsSpeechPreloaded() (0x5d39e0) : l'octet +9 du bloc, posé par le rappel quand la ligne est prête.
+static int
+SoundIsSpeechPreloaded(lua_State *L)
+{
+	appels["SoundIsSpeechPreloaded"]++;
+	lua_pushboolean(L, prechargement.prechargee);
+	return 1;
+}
+
+// SoundPlayPreloadedSpeech() (0x5d39d0) : l'octet +8, « jouer » ; le rappel suivant la lance.
+static int
+SoundPlayPreloadedSpeech(lua_State *L)
+{
+	Journal("SoundPlayPreloadedSpeech", L, 1);
+	prechargement.jouer = true;
+	return 0;
+}
+
 // SoundSpeechPlaying([ped[, événement[, ligne]]]) (0x5d3a50 → FUN_005a27b0) : sans piéton, quelqu'un parle ; avec, ce
 // piéton parle, et de cet événement et de cette ligne si le script les donne.
 static int
@@ -1554,6 +1589,9 @@ main(int argc, char **argv)
 	lua_register(L, "PedSetActionNode", PedSetActionNode);
 	lua_register(L, "SoundPlayScriptedSpeechEvent", SoundPlayScriptedSpeechEvent);
 	lua_register(L, "SoundSpeechPlaying", SoundSpeechPlaying);
+	lua_register(L, "SoundPreloadSpeech", SoundPreloadSpeech);
+	lua_register(L, "SoundIsSpeechPreloaded", SoundIsSpeechPreloaded);
+	lua_register(L, "SoundPlayPreloadedSpeech", SoundPlayPreloadedSpeech);
 	lua_register(L, "PlayerSetControl", PlayerSetControl);
 	lua_register(L, "LoadCutscene", LoadCutscene);
 	lua_register(L, "LoadCutsceneSound", LoadCutsceneSound);
@@ -1644,6 +1682,15 @@ main(int argc, char **argv)
 			const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
 			printf("%6.2f s  le joueur passe une porte vers la zone %d%s\n", maintenant / 1000.0, e.second, zones.Demander(j->pos, j->cap, e.second, nil, false) ? "" : " : refusé, un changement est en cours");
 			e.second = -1;
+		}
+		if(prechargement.attente){
+			bool annulee = false;
+			if(prechargement.Rappel(true, maintenant, &annulee)){
+				parole.enCours = true; parole.ped = prechargement.ped; parole.evenement = prechargement.evenement;
+				parole.ligne = prechargement.ligne; parole.fin = maintenant + (uint32)PAROLE_MS;
+				if(journalRestant > 0){ journalRestant--; printf("%6.2f s  parole : le piéton %d dit %s ligne %d (préchargée)\n", maintenant / 1000.0, parole.ped, kSpeechEvents[parole.evenement], parole.ligne); }
+			}
+			else if(annulee) printf("%6.2f s  parole : %s ligne %d préchargée et jamais demandée, annulée après 30 s\n", maintenant / 1000.0, kSpeechEvents[prechargement.evenement], prechargement.ligne);
 		}
 		if(parole.enCours && maintenant >= parole.fin){ parole.enCours = false; if(journalRestant > 0){ journalRestant--; printf("%6.2f s  parole : le piéton %d a fini %s ligne %d\n", maintenant / 1000.0, parole.ped, kSpeechEvents[parole.evenement], parole.ligne); } }
 		if(fondu.enCours && maintenant >= fondu.fin){ fondu.enCours = false; fondu.noir = fondu.versNoir; if(journalRestant > 0){ journalRestant--; printf("%6.2f s  fondu : l'écran est %s\n", maintenant / 1000.0, fondu.versNoir ? "noir" : "rendu"); } }
