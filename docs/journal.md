@@ -525,3 +525,9 @@ en échec plutôt que de les masquer.
   avant un OR saute la suite jusqu'au prochain opérateur. `FUN_006ad130` ne réactive une mission
   réussie que si son champ 44 (+0x2c) le dit (171 missions). `CMissionBank::Activable`,
   `tests/test_missions` (sept listes faites à la main). docs/missions.md.
+- Suite : **`tests/test_transform` repasse.** Il échouait depuis le 25.09 (`exactT == 0` : un modèle,
+  `jphoto`, collait à la lecture transposée). Le parcours « Rᵀ·v » du test gardait les nœuds et les
+  formes cachés (drapeau 1, `APP_CULLED`) que `NifWalkShapes` saute comme Gamebryo : `jphoto` porte
+  une forme cachée qui gonflait une boîte et pas l'autre. Les deux parcours suivent maintenant la même
+  règle ; il ne reste que la différence de convention : 47 modèles départagent, 13 collent à `R·v` à
+  moins de 1 %, aucun à `Rᵀ·v`, et `catwalk` reste à 0,0000 contre 42.
