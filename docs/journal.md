@@ -538,3 +538,8 @@ en échec plutôt que de les masquer.
   `PlayerSetInvulnerable`, `PedSetMinHealth` réels ; `CScriptPedPool::Blesser`, `tests/test_scriptpeds`.
   Le joueur ne meurt plus sous les coups de Russell (il mourait à 66,5 s). Reste : `PedIsPlaying` du
   joueur sur `/Global/TrainingPlayer/Default`, que l'entraînement attend.
+- Suite : **`PedIsPlaying`.** `FUN_005f3bf0` compare le nœud du chemin au nœud joué (+0x10 du contrôleur)
+  et, avec le troisième argument, `FUN_005f4f80` remonte les parents du nœud joué. `CActionBank::Joue`,
+  `tests/test_actionbank` ; réel dans `lancer_lua` sur le nœud que `PedSetActionNode` pose. L'entraînement
+  de `1_02` attend `/Global/TrainingPlayer/Default`, que seul le contrôleur, en jouant l'arbre posé par
+  `PedSetActionTree`, atteint : c'est le chantier suivant. docs/cat.md.

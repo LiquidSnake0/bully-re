@@ -21,7 +21,8 @@ chantier. Un point fini passe en bas, avec son commit.
    les scripts de zone (`MainMap.lua`, `SchoolHallways.lua`) sont chargés pour de vrai. Les fichiers
    des cinématiques sont lus et `lancer_lua` les joue (docs/cinematiques.md : `1-1-1` dure 61,7 s
    dans `MissionSetup` de `1_01`, `--sans-cinematiques` pour les sauter). Les conditions `MissionCond`,
-   `TimeCond`, `ConditionFalse` sont lues : `1_02` s'enchaîne après `1_01`. Les portes `DT_` passent (`--porte`). Suite : (l'objet de porte, +0x394) ; jouer les nœuds d'action des piétons.
+   `TimeCond`, `ConditionFalse` sont lues : `1_02` s'enchaîne après `1_01`. Les portes `DT_` passent (`--porte`). Suite : (l'objet de porte, +0x394) ; jouer les nœuds d'action des piétons (le contrôleur qui descend dans l'arbre posé par
+   `PedSetActionTree`, ce qu'attend l'entraînement de `1_02`).
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
    directement au lieu des exports headless. Prérequis : Ghidra 12.1.4 et
@@ -52,6 +53,7 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- `PedIsPlaying` (`FUN_005f3bf0`, `FUN_005f4f80`) : `CActionBank::Joue`, `tests/test_actionbank` ; docs/cat.md.
 - Les coups et l'invulnérabilité (`FUN_0047b6b0`, `FUN_004782a0` : +0x138c, +0x1364, +0x1ca8) :
   `CScriptPedPool::Blesser`, `tests/test_scriptpeds` ; `1_02` va jusqu'au combat de Russell.
 - La liste de conditions d'un nœud (`FUN_005fb9b0` : NOT, OR, genres 1 et 2) et le champ 44 (rejouable) de

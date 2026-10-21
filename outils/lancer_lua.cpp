@@ -104,6 +104,7 @@ static const float FONDU_DEFAUT_MS = 1000;
 // « Act/Conv/1_01.act ») cherche le nœud et charge le fichier au besoin (FUN_004849a0) ; le nœud n'est pas
 // joué (pas d'animation ici), mais le script reçoit la vraie réponse : le nœud existe ou non.
 static CActionBank arbres;
+static std::map<int, const CActionNode *> noeudJoue;   // par piéton : le nœud posé par PedSetActionNode
 // PlayerSetControl(0 / 1) (0x5d12f0) : le joueur rendu au script ou au joueur ; aucun script ne le relit.
 static int controleJoueur = 1;
 // La parole scriptée (src/audio/SpeechEvents.h, docs/son.md) : une seule ligne à la fois, comme le moteur
@@ -1176,8 +1177,22 @@ PedSetActionNode(lua_State *L)
 	if(p == nil){ lua_pushboolean(L, 0); return 1; }
 	const char *noeud = luaL_optstring(L, 2, ""), *fichier = luaL_optstring(L, 3, "");
 	bool ok = arbres.TrouverOuCharger(noeud, fichier);
+	// Le nœud devient celui que le piéton joue (+0x10 de son contrôleur) ; le moteur l'y met quand le
+	// contrôleur le prend, l'outil tout de suite.
+	if(ok) noeudJoue[(int)lua_tonumber(L, 1)] = arbres.Trouver(noeud);
 	if(!ok) printf("        PedSetActionNode : %s absent de %s%s\n", noeud, *fichier ? fichier : "l'arbre global", arbres.EstCharge(fichier) ? "" : " (fichier introuvable)");
 	lua_pushboolean(L, ok);
+	return 1;
+}
+
+// PedIsPlaying(ped, chemin[, sous]) (0x5cb830 → FUN_005f3bf0) : le piéton joue ce nœud, ou, avec `sous`, un
+// nœud placé dessous.
+static int
+PedIsPlaying(lua_State *L)
+{
+	Journal("PedIsPlaying", L, 1);
+	auto it = lua_isnumber(L, 1) ? noeudJoue.find((int)lua_tonumber(L, 1)) : noeudJoue.end();
+	lua_pushboolean(L, it != noeudJoue.end() && arbres.Joue(it->second, luaL_optstring(L, 2, ""), lua_toboolean(L, 3) != 0));
 	return 1;
 }
 
@@ -1653,6 +1668,7 @@ main(int argc, char **argv)
 	lua_register(L, "AreaRegisterAreaScript", AreaRegisterAreaScript);
 	lua_register(L, "CameraFade", CameraFade);
 	lua_register(L, "PedSetActionNode", PedSetActionNode);
+	lua_register(L, "PedIsPlaying", PedIsPlaying);
 	lua_register(L, "SoundPlayScriptedSpeechEvent", SoundPlayScriptedSpeechEvent);
 	lua_register(L, "SoundSpeechPlaying", SoundSpeechPlaying);
 	lua_register(L, "SoundPreloadSpeech", SoundPreloadSpeech);
