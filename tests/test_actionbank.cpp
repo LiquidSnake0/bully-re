@@ -5,6 +5,7 @@
 #include "../src/core/ActionBank.h"
 #include "../src/core/ActionController.h"
 #include "../src/core/Opportunite.h"
+#include "../src/core/ConditionListe.h"
 #include <cstdio>
 #include <cstring>
 
@@ -91,6 +92,11 @@ main(void)
 			VERIF(o.porteur && b.Relatif(o.porteur, o.chemin.c_str()) == b.Trouver("/Global/TrainingPlayer/Attacks"));
 		}
 		// FUN_00465910 : une période < 2 passe toujours ; sinon le plus petit bit posé de (graine + image) mod 0xffff + 1.
+		// FUN_005fb750 : les six comparateurs (≈ à 1e-5 près) ; FUN_005fd650 : l'état d'un bouton selon le mode.
+		VERIF(ComparerCondition(1.0f, 1.000001f, 0) && !ComparerCondition(1.0f, 1.1f, 0) && ComparerCondition(1.0f, 1.1f, 1));
+		VERIF(ComparerCondition(0.1f, 0.2f, 2) && !ComparerCondition(0.2f, 0.2f, 2) && ComparerCondition(0.3f, 0.2f, 3));
+		VERIF(ComparerCondition(0.2f, 0.2f, 4) && ComparerCondition(0.2f, 0.2f, 5) && !ComparerCondition(0.1f, 0.2f, 5) && !ComparerCondition(0.1f, 0.2f, 9));
+		VERIF(EtatBoutonCondition(1, 1) && !EtatBoutonCondition(2, 1) && EtatBoutonCondition(2, 2) && EtatBoutonCondition(0, 3) && !EtatBoutonCondition(1, 3));
 		// rand() du CRT : graine 1 → 41, puis 18467, 6334 (les premières valeurs connues de Visual C++).
 		{
 			uint32 g = 1;

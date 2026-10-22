@@ -88,13 +88,14 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
 |---|---|
 | `ConditionGroup`, `TargetConditionGroup` | +4 : renvoi de la seconde table vers le groupe |
 | `WeaponEquiped` | +4 : le nom de l'arme, cité par la première table (`unarmed`, `any`, `bat`, `leadpipe`…) |
-| `ActionRequest` | +4 : le numéro de l'action (0x16, 3, 1…), +8 : 1 ou 2 |
-| `ActionNodePlayTime` | +4 : un temps (s), +8 : un comparateur (2 et 5 relevés, lus `<` et `≥`) ; deux champs |
+| `ActionRequest` | (`ConditionActionRequestButton`, `FUN_005fd650`) +4 : le numéro de l'action (0x16, 3, 1…), +8 : le mode (3 : bouton lâché, `(état & 3) == 0` ; 2 : `état & 3` ; sinon `état & 1`), +0xc / +0x10 : un seuil et son comparateur sur la durée tenue (`FUN_005fbc30`), +0x14 : si non nul, seule la durée compte |
+| `ActionNodePlayTime` | (`FUN_005fb940`) +4 : un temps (s), +8 : le comparateur de `FUN_005fb750` sur le temps du nœud ; deux champs |
 | `TargetPlaying` | +4 : un nom de nœud haché (`RollAway`…), +8 : 1 ; deux champs |
 | `LuaCond` | +0x10 : `mission`, +0x14 : la fonction du script (`F_PlayerGroundKicks`, `F_FinalAttacks`…) |
 
-  Les comparateurs et le sens exact de +8 restent à confirmer dans les fonctions des classes (le registre
-  `FUN_0064b090` les construit depuis une table sur la pile, pas lue).
+  Le comparateur des conditions à seuil (`FUN_005fb750`, 22.10) : 0 `≈`, 1 `≉`, 2 `<`, 3 `>`, 4 `<` ou `≈`, 5 `>` ou
+  `≈`, `≈` étant `|a − b| ≤ 1e-5` (`FUN_00432910`, `DAT_008ff230`) ; `ComparerCondition`, `EtatBoutonCondition`
+  (`src/core/ConditionListe.h`).
 - **Le contrôleur de l'outil** (`src/core/ActionController.h`) : l'arbre posé, le nœud joué, son départ et sa fin
   (le plus tard des entrée +12 + durée de vie +16 des pistes). Entrer dans un nœud (`PedSetActionNode`, l'emplacement
   +0x4c que `FUN_004849a0` appelle) descend dans une banque. Quand le nœud joué finit, ou qu'une `ActionRequest`
