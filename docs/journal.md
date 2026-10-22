@@ -630,3 +630,23 @@ en échec plutôt que de les masquer.
 - **Garde-fous de l'outil, dits** : pas de pile de nœuds joués ni de références montées ; une `Opportunity` qui vise
   un nœud contenant déjà le nœud joué, ou hors de l'arbre posé, ne fait pas passer.
 - **Bilan** : 417 fonctions recréées (2,8 % du code), contre 403 ce matin.
+
+## 22.10.2026, quatrième séance
+
+- **Une `Sequence` sort de l'arbre posé** (`FUN_005f7030` / `FUN_005f4e30` ne le limitent pas) : après la poussée,
+  `PushFwd/RCV` finit et le bully passe par `HitTree/Standing/PostHit/BellyUp/OnGroundBounce` puis `BellyUp/On_Ground` ;
+  la charge de la prise enchaîne `Charge_Pt2`.
+- **La fin des animations** (`AnimationTrack`, `FUN_0060ae00`) : en mode 0, la piste finit quand le temps (parti de +40,
+  vitesse +48) dépasse +44 ou la durée de l'animation ; 3 169 durées lues dans `MAINPED.HXD`.
+- **Les coups** (`CollisionTrack`, `FUN_005f9e70`) : fenêtre +0x18 / +0x1c, drapeau +0x2c, dégâts +0x34, nœud de
+  l'attaquant +0x68 ; les `Collision` d'un nœud joué par un `Execute` sont relevées. Le coup touche la cible verrouillée
+  (l'outil n'a pas les os) ; la cible descend dans `HitTree` (à terre : `GroundAndWallHits/On_Ground`, supposé) ; jugées :
+  `ConditionFlag`, `MePlaying`, `HitLocation` (supposée vraie pendant un coup). Le coup reçu est le slot 15 de `CPed`
+  (`FUN_0047b810`).
+- **`1_02`** : avec `--sequence @63` (la prise maintenue, `1_02_GrapplePunch`) puis la poussée à 64 s, la leçon pose
+  `1_02_GroundKicks` à 65 s ; le coup de pied lourd au sol (`--jouer …/GroundAttacks/GroundAttacks/Strikes/HeavyAttacks@67`)
+  porte, le bully joue `GroundAndWallHits/On_Ground/BellyUp/GroundHitHeavy/GroundHitHeavy`, et la mission affiche
+  `1_02_FightMsg` (67,2 s). `LANCER_CONTROLEURS=1` journalise tous les contrôleurs.
+- **Supposé, dit** : la route directe vers `GroundAndWallHits` (le moteur passe par un `Execute` de `HitTreeBase`) ; le
+  corps projeté ne touche pas celui qui le pousse ; le drapeau du coup tient une seconde ; `HitLocation`.
+- **Bilan** : 423 fonctions recréées (2,9 % du code), contre 417 ce matin.
