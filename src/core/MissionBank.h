@@ -27,7 +27,7 @@ struct CEtatMissions {
 	// Le jour du calendrier (+0x58 de l'objet 0x020c35e8, soit DAT_020c3640, que GetCurrentDay, 0x5c0c00,
 	// rend) : 0 au démarrage (mémoire mise à zéro), puis posé entre 0 et 4 par FUN_0061d320.
 	int jour = 0;
-	int joursParCycle = 5;           // TimeCycleButes, position 24 (+0x18), dans Globals.cat
+	int joursParCycle = 5;           // TimeCycleButes, position 24 (+0x18), dans Globals.cat ; lancer_lua la relit au démarrage
 };
 
 // Une entrée du tableau +0x4b8 du gestionnaire : la piste MissionData copiée, avec le nœud.

@@ -1215,7 +1215,7 @@ GetCurrentDay(lua_State *L)
 {
 	appels["GetCurrentDay"]++;
 	int j = gestionnaire.etat.jour;
-	lua_pushnumber(L, lua_toboolean(L, 1) ? j % 5 : j);
+	lua_pushnumber(L, lua_toboolean(L, 1) ? j % 5 : j);   // 5 écrit en dur dans 0x5c0c00 (DayCond, lui, lit TimeCycleButes)
 	return 1;
 }
 
@@ -1406,6 +1406,9 @@ ChargerMissions(void)
 			fonduNoirMs = CActionBank::ButesReel(t, 24) * 1000;
 			fonduRetourMs = CActionBank::ButesReel(t, 28) * 1000;
 		}
+		// FUN_0072ae00 : TimeCycleButes → DAT_020c88ac ; +0x18 = jours d'un cycle, le modulo de DayCond et de
+		// GetCurrentDay(true).
+		if(CActionBank::Butes("TimeCycleButes", t) && t.Mot(24) > 0) gestionnaire.etat.joursParCycle = (int)t.Mot(24);
 	}
 }
 
