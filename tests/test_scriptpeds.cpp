@@ -63,6 +63,10 @@ main(void)
 	// La bagarre : l'attaquant rejoint sa cible, frappe toutes les 0,8 s, la cible meurt à 0 et il s'arrête.
 	int at = q.Creer(69, CVector(0, 0, 0), 0, 1), ci = q.Creer(102, CVector(10, 0, 0), 0, 1);
 	VERIF(!q.Attaquer(at, at) && !q.Attaquer(at, 23) && q.Attaquer(at, ci));
+	// PedLockTarget (0x5cb060) : verrouiller une cible qui existe, lever par -1, rien pour une cible absente.
+	VERIF(q.Verrouiller(at, ci, 3) && q.Acceder(at)->verrou == ci && q.Acceder(at)->verrouMode == 3);
+	VERIF(!q.Verrouiller(at, 23, 3) && q.Acceder(at)->verrou == ci && !q.Verrouiller(23, ci, 3));
+	VERIF(q.Verrouiller(at, -1, 0) && q.Acceder(at)->verrou == -1);
 	int coups = 0, mortA = -1;
 	for(int i = 0; i < 1000 && mortA < 0; i++){
 		q.Avancer(0.033f);

@@ -898,6 +898,17 @@ PlayerIsInAreaObject(lua_State *L)
 	return 1;
 }
 
+// PedLockTarget(ped, cible, mode) (0x5cb060) : le verrou de cible du piéton (CScriptPedPool::Verrouiller).
+static int
+PedLockTarget(lua_State *L)
+{
+	Journal("PedLockTarget", L, 1);
+	// Le troisième argument : un nombre, ou un booléen que FUN_004969a0 convertit (FUN_005d81c0 choisit).
+	int mode = lua_isnumber(L, 3) ? (int)lua_tonumber(L, 3) : lua_toboolean(L, 3);
+	pietons.Verrouiller((int)luaL_optnumber(L, 1, -1), (int)luaL_optnumber(L, 2, -1), mode);
+	return 0;
+}
+
 // --aller NOM[,n]@s ou --aller x,y,z@s : à s secondes, le joueur est posé au n-ième point de la
 // liste NOM (1 par défaut), ou aux coordonnées, comme s'il y avait marché.
 static void
@@ -1749,6 +1760,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedIsPlaying", PedIsPlaying);
 	lua_register(L, "PedMePlaying", PedMePlaying);
 	lua_register(L, "PlayerIsInAreaObject", PlayerIsInAreaObject);
+	lua_register(L, "PedLockTarget", PedLockTarget);
 	lua_register(L, "PedSetActionTree", PedSetActionTree);
 	lua_register(L, "GetCurrentDay", GetCurrentDay);
 	lua_register(L, "SoundPlayScriptedSpeechEvent", SoundPlayScriptedSpeechEvent);
