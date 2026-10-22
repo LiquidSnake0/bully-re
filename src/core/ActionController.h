@@ -30,6 +30,16 @@ public:
 	struct SurCible { float entree; std::string chemin; bool fait; };
 	std::vector<SurCible> surCible;
 	std::vector<const CActionNode *> pourCible;   // les nœuds à faire jouer à la cible, rendus par Avancer (vidés à chaque image)
+	// Ses pistes Collision (CollisionTrack, table 0x92decc ; mise à jour FUN_005f9e70), y compris celles du nœud qu'une
+	// piste Execute fait jouer à côté (« ./Collision » sous HeavyAttacks) : le coup porte entre +0x18 (24) et +0x1c
+	// (28) du temps du nœud. Le moteur cherche alors le contact entre les sphères des os de l'attaquant et les
+	// piétons proches ; l'outil n'a pas les os : le coup est rendu à l'appelant, qui le porte à la cible verrouillée.
+	// +0x2c (44) le drapeau du coup (« GROUNDHITHEAVY »), passé à la méthode du coup de la cible (slot 15 de CPed,
+	// FUN_0047b810) ; +0x34 (52) les dégâts ; +0x68 (104) un nœud de l'attaquant, joué si le coup porte sur un
+	// piéton (FUN_005f4490), relatif au nœud qui porte la piste (supposé : +0x78, 120, n'est pas suivi).
+	struct Contact { const CActionNode *porteur; float debut, fin; uint32 drapeau; float degats; std::string surCoup; bool fait; };
+	std::vector<Contact> contacts;
+	std::vector<Contact> touches;                 // les coups qui portent à cette image, rendus par Avancer
 	uint16 graine = 0;                // le mot +0x10c du piéton, pour le tirage (FUN_00465910) ; posé par l'appelant
 	uint32 image = 0;                 // le compteur d'images du jeu (DAT_00c1a99c, CTimer), tenu par l'appelant
 	uint32 hasard = 1;                // la graine du rand() du CRT (OpportunityRandomLatch)
@@ -53,5 +63,6 @@ public:
 	// La fin d'un nœud : le plus tard des (entrée + durée de vie) de ses pistes à durée finie ; -1 si aucune n'en a.
 	static float Duree(const CActionBank &b, const CActionNode &n);
 private:
+	void Contacts(const CActionBank &b, const CActionNode &n, float entree, int prof);
 	const CActionNode *Descendre(const CActionBank &b, const CActionNode *depuis, const CJugeAction &juge) const;
 };

@@ -2,6 +2,7 @@
 // les chemins que 1_01.lua donne à PedSetActionNode, « .. », la casse, le chargement à la demande
 // de Player.act (FUN_004849a0), deux fichiers sous la même racine.
 //   BULLY_DATA=<racine du jeu> build/tests/test_actionbank
+#include <cmath>
 #include "../src/core/ActionBank.h"
 #include "../src/core/ActionController.h"
 #include "../src/core/Opportunite.h"
@@ -20,6 +21,8 @@ ChercherOpportunite(const CActionBank &b, const CActionNode &n, const char *chem
 	for(const CActionNode &e : n.enfants) if(ChercherOpportunite(b, e, chemin, o)) return true;
 	return false;
 }
+
+struct CJugeAction_Rien : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return 0; } };
 
 int
 main(void)
@@ -311,6 +314,30 @@ main(void)
 		// Les inclusions : GlobalActions inclut Grapples.act sous « actions », comme les scripts le désignent.
 		VERIF(g.Trouver("/Global/Actions/Grapples/Front/Grapples/GrappleAttempt/GrappleSuccess/GIVE") != nil);
 		VERIF(g.Trouver("/Global/Actions/Grapples/Front/Grapples/GrappleMoves/GrappleStrikes/HitC/Charge") != nil);
+		// Les pistes Collision (FUN_005f9e70) : le coup de pied au sol de TrainingPlayer porte la sienne par un Execute
+		// (« ./Collision », la feuille « ped ») : GROUNDHITHEAVY entre 0,0833 et 0,217 s, 8 de dégâts.
+		{
+			CActionBank tp;
+			VERIF(tp.TrouverOuCharger("/Global/TrainingPlayer", "Act/TrainingPlayer.act"));
+			const CActionNode *lourd = tp.Trouver("/Global/TrainingPlayer/Attacks/GroundAttacks/GroundAttacks/Strikes/HeavyAttacks");
+			const CActionNode *coup = lourd && !lourd->enfants.empty() && !lourd->enfants[0].enfants.empty() ? &lourd->enfants[0].enfants[0] : nil;
+			VERIF(coup != nil);
+			if(coup){
+				CActionController c;
+				c.Jouer(tp, coup, 10.0f);
+				bool vu = false;
+				for(const CActionController::Contact &k : c.contacts)
+					if(k.drapeau == ActionHash("GROUNDHITHEAVY") && fabsf(k.debut - 0.0833f) < 1e-3f && fabsf(k.fin - 0.217f) < 1e-3f && k.degats == 8.0f) vu = true;
+				VERIF(vu);
+				c.Avancer(tp, nil, CJugeAction_Rien(), 10.05f);
+				VERIF(c.touches.empty());
+				c.Avancer(tp, nil, CJugeAction_Rien(), 10.1f);
+				VERIF(c.touches.size() == 1);
+				c.Avancer(tp, nil, CJugeAction_Rien(), 10.15f);
+				VERIF(c.touches.empty());   // un coup ne porte qu'une fois
+				printf("  Collision : %s → GROUNDHITHEAVY entre 0,083 et 0,217 s\n", tp.CheminDe(coup).c_str());
+			}
+		}
 		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());
 	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");

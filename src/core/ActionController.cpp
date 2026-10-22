@@ -45,6 +45,34 @@ CActionController::Duree(const CActionBank &b, const CActionNode &n)
 	return d;
 }
 
+// Les pistes Collision d'un nœud (entree : l'instant où il a été lancé dans le nœud joué), et celles des nœuds que ses
+// pistes Execute font jouer : la descente sans juge, comme le fait l'outil pour un nœud sans contexte (une feuille à
+// conditions n'est pas prise ; sous HeavyAttacks/…/Collision, c'est « ped »).
+void
+CActionController::Contacts(const CActionBank &b, const CActionNode &n, float entree, int prof)
+{
+	static const uint32 kCollision = ActionHash("Collision"), kExecute = ActionHash("Execute");
+	const CActionTreeFile *f = b.Fichier(n);
+	if(f == nil || prof > 4) return;
+	for(int32 dp : n.pistes){
+		CActionTrack p;
+		if(!f->Piste(dp, p)) continue;
+		if(p.type == kCollision){
+			const CActionAttribut *dr = p.Champ(44), *sur = p.Champ(104);
+			Contact c{&n, entree + Reel(p, 24, 0.0f), entree + Reel(p, 28, -1.0f),
+			          dr ? ActionHash(f->ChaineCitee(dr->decalage).c_str()) : 0u, Reel(p, 52, 0.0f),
+			          sur ? f->ChaineCitee(sur->decalage) : std::string(), false};
+			contacts.push_back(c);
+		}else if(p.type == kExecute){
+			const CActionAttribut *a = p.Champ(32);
+			if(a == nil) continue;
+			const CActionNode *v = b.Relatif(&n, f->ChaineCitee(a->decalage).c_str());
+			const CActionNode *d = v ? b.Choisir(v) : nil;
+			if(d) Contacts(b, *d, entree + Reel(p, 12, 0.0f), prof + 1);
+		}
+	}
+}
+
 void
 CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t)
 {
@@ -53,6 +81,8 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t)
 	occasions = n ? COpportunite::DuNoeud(b, *n) : std::vector<COpportunite>();
 	suites.clear();
 	surCible.clear();
+	contacts.clear();
+	if(n) Contacts(b, *n, 0.0f, 0);
 	if(n){
 		static const uint32 kSequence = ActionHash("Sequence"), kSurCible = ActionHash("PlayOnTarget");
 		if(const CActionTreeFile *f = b.Fichier(*n))
@@ -148,6 +178,9 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 {
 	(void)depuisRacine;
 	pourCible.clear();
+	touches.clear();
+	for(Contact &c : contacts)    // FUN_005f9e70 : la fenêtre du coup
+		if(!c.fait && Temps(t) >= c.debut && (c.fin < 0.0f || Temps(t) <= c.fin)){ c.fait = true; touches.push_back(c); }
 	for(SurCible &c : surCible)   // FUN_006615f0
 		if(!c.fait && Temps(t) >= c.entree){
 			c.fait = true;
