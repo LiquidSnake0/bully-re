@@ -1,8 +1,8 @@
 // Une liste de conditions, comme FUN_005fb9b0 la juge (celle d'un nœud d'action, d'une mission, ou d'un groupe :
 // ConditionGroup). Chaque élément est une condition (genre 0), un NOT (genre 1) ou un OR (genre 2), dans l'ordre :
 //   - une condition après une condition (ou en tête) donne le résultat ; après un NOT, son contraire ;
-//   - un OR après une condition fausse est sauté : la condition suivante décide ; après une vraie, la liste est
-//     déjà vraie et la condition qui suit l'OR n'est pas jugée ;
+//   - un OR après une condition fausse est sauté : la condition suivante décide ; après une vraie, la condition
+//     qui suit l'OR est encore jugée, mais sa valeur ne compte pas (seule une condition inconnue y change tout) ;
 //   - le premier résultat faux qui n'est pas suivi d'un OR rend la liste fausse.
 // juge(i) : 1 vrai, 0 faux, -1 inconnu (la liste devient inconnue) ; genre(i) : 0, 1 ou 2.
 #pragma once
