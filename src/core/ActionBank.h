@@ -73,6 +73,7 @@ public:
 	const CActionNode *Global(void) const { return &racine.enfants[0]; }
 	std::vector<std::string> fichiers;       // les .cat chargés, dans l'ordre
 	std::vector<uint32> hachages;            // HashString de chaque nom de fichier sans dossier ni extension
+	bool Inclure(CActionNode &n, int prof = 0);    // les inclusions 'i' remplacées par l'arbre de leur fichier
 	static std::string NomCat(const char *act);   // « Act/Conv/1_01.act » → « 1_01.cat »
 	// FUN_0072ad00 : une piste « Butes » (réglages du jeu) trouvée par le HashString de son nom parmi les pistes d'un
 	// fichier (Globals.cat pour AreaTransitionButes, TimeCycleButes…) ; FUN_0072ae00 les range au démarrage

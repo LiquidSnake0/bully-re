@@ -92,11 +92,35 @@ CActionBank::ButesReel(const CActionTrack &piste, uint16 position)
 	return r;
 }
 
+
 static void
 Marquer(CActionNode &n, int16 source)
 {
 	n.source = source;
 	for(CActionNode &e : n.enfants) Marquer(e, source);
+}
+
+// Une inclusion ('i') insère à sa place l'arbre d'un autre fichier : « actions » de GlobalActions inclut Grapples.act,
+// RisingAttacks.act…, et les scripts désignent ensuite /Global/Actions/Grapples/Front/… . Le nœud 'i' porte le nom du
+// fichier et son dossier ; sa banque de tête (« Grapples ») prend la place, avec ses données gardées comme les autres.
+// Une référence ('r') reste un lien vers un autre arbre (GlobalLoco), que la descente ne suit pas.
+bool
+CActionBank::Inclure(CActionNode &n, int prof)
+{
+	if(prof > 8) return false;
+	for(CActionNode &e : n.enfants){
+		if(e.genre == 'i'){
+			int32 image = ImageAct();
+			const CDirectoryEntry *d = image < 0 ? nil : CdStream::ms_images[image].Find(NomCat(e.nom.c_str()).c_str());
+			std::shared_ptr<Source> src = std::make_shared<Source>();
+			if(d == nil || !LireCat(d, src->donnees) || !src->fichier.Load(src->donnees.data(), (uint32)src->donnees.size())) continue;
+			Marquer(src->fichier.racine, (int16)sources.size());
+			sources.push_back(src);
+			e = std::move(src->fichier.racine);
+			Inclure(e, prof + 1);
+		}else Inclure(e, prof);
+	}
+	return true;
 }
 
 bool
@@ -113,6 +137,7 @@ CActionBank::Charger(const char *act)
 	if(!LireCat(d, src->donnees) || !f.Load(src->donnees.data(), (uint32)src->donnees.size())) return false;
 	Marquer(f.racine, (int16)sources.size());
 	sources.push_back(src);
+	Inclure(f.racine);
 	// La banque de tête du fichier (« 1_01 », « Player ») devient un enfant de /Global ; une banque du
 	// même nom déjà là reçoit ses enfants (vtable +0x18 de la racine).
 	CActionNode *cible = nil;
