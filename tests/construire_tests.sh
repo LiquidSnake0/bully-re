@@ -61,7 +61,7 @@ g++ $FLAGS tests/test_speech.cpp src/audio/SpeechEvents.cpp -o build/tests/test_
 # La parole enregistrée : SpeechDB.bin et la table de Speech.bin.
 g++ $FLAGS tests/test_speechbank.cpp src/audio/SpeechBank.cpp src/audio/SpeechEvents.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp -o build/tests/test_speechbank
 # L'arbre d'actions global et le chemin d'un nœud (PedSetActionNode).
-g++ $FLAGS tests/test_actionbank.cpp src/core/ActionBank.cpp src/core/ActionController.cpp src/core/ActionTree.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_actionbank
+g++ $FLAGS tests/test_actionbank.cpp src/core/ActionBank.cpp src/core/ActionController.cpp src/core/Opportunite.cpp src/core/ActionTree.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_actionbank
 # test_zones : le gestionnaire de zones (demande, machine à états), sans fichier du jeu ; test_portes : ses portes, sur AreaTran.DAT.
 g++ $FLAGS tests/test_zones.cpp src/core/AreaManager.cpp src/core/DatPools.cpp src/core/TriggerFile.cpp src/core/ActionTree.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_zones
 g++ $FLAGS tests/test_portes.cpp src/core/AreaManager.cpp src/core/DatPools.cpp src/core/TriggerFile.cpp src/core/ActionTree.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_portes

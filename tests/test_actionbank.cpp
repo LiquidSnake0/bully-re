@@ -4,11 +4,21 @@
 //   BULLY_DATA=<racine du jeu> build/tests/test_actionbank
 #include "../src/core/ActionBank.h"
 #include "../src/core/ActionController.h"
+#include "../src/core/Opportunite.h"
 #include <cstdio>
 #include <cstring>
 
 static int echecs = 0;
 #define VERIF(cond) do{ if(!(cond)){ printf("ECHEC : %s\n", #cond); echecs++; } }while(0)
+
+// La première Opportunity de l'arbre qui vise ce chemin, et son nœud.
+static bool
+ChercherOpportunite(const CActionBank &b, const CActionNode &n, const char *chemin, COpportunite &o)
+{
+	for(const COpportunite &x : COpportunite::DuNoeud(b, n)) if(x.chemin == chemin){ o = x; return true; }
+	for(const CActionNode &e : n.enfants) if(ChercherOpportunite(b, e, chemin, o)) return true;
+	return false;
+}
 
 int
 main(void)
@@ -68,6 +78,26 @@ main(void)
 			VERIF(b.Relatif(feuille, "../") == banque && b.Relatif(feuille, ".") == feuille && b.Relatif(feuille, "./") == feuille);
 			VERIF(b.Relatif(feuille, "../../Attacks") == b.Trouver("/Global/TrainingPlayer/Attacks"));
 			VERIF(b.Relatif(feuille, "../Absent") == nil && b.Relatif(feuille, "/Global/TrainingPlayer") == b.Trouver("/Global/TrainingPlayer"));
+		}
+		// Les pistes Opportunity (FUN_005f7d70) : GroundStomp2 se ferme et bascule à 0,367 s ; l'occasion d'attaquer de
+		// DEFAULT vise ../../Attacks avec la priorité 1 ; leur nœud visé se résout depuis le nœud qui les porte.
+		{
+			COpportunite o;
+			const CActionNode *tp = b.Trouver("/Global/TrainingPlayer");
+			VERIF(tp && ChercherOpportunite(b, *tp, "./GroundStomp2", o));
+			VERIF(o.porteur && o.fermeture > 0.36f && o.fermeture < 0.37f && o.bascule > 0.36f && o.bascule < 0.37f && o.priorite == 0 && o.periode == 0 && !o.soiMeme);
+			VERIF(o.porteur && b.Relatif(o.porteur, o.chemin.c_str()) != nil && !o.prise && o.cible == nil);
+			VERIF(tp && ChercherOpportunite(b, *tp, "../../Attacks", o) && o.priorite == 1 && o.fermeture < 0.0f && o.bascule == 0.0f);
+			VERIF(o.porteur && b.Relatif(o.porteur, o.chemin.c_str()) == b.Trouver("/Global/TrainingPlayer/Attacks"));
+		}
+		// FUN_00465910 : une période < 2 passe toujours ; sinon le plus petit bit posé de (graine + image) mod 0xffff + 1.
+		VERIF(TirageOpportunite(0, 0, 7) && TirageOpportunite(1, 5, 9));
+		VERIF(TirageOpportunite(2, 0, 1) && !TirageOpportunite(2, 0, 2) && TirageOpportunite(4, 0, 3) && !TirageOpportunite(4, 0, 5));
+		VERIF(TirageOpportunite(3, 0, 3) && !TirageOpportunite(3, 0, 1));   // 3 : il faut le bit 4, une chance sur quatre
+		{
+			int n = 0;
+			for(uint32 i = 0; i < 4096; i++) n += TirageOpportunite(8, 77, i);
+			VERIF(n == 512);
 		}
 		const CActionNode *arbre = b.Trouver("/Global/TrainingPlayer");
 		const CActionNode *pris = b.Choisir(arbre);
