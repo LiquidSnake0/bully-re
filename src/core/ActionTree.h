@@ -39,7 +39,7 @@ uint32 ActionHash(const char *s);      // HashString : majuscules, h = h * 0x83 
 struct CActionNode {
 	char genre = 'b';                  // 'b' banque, 'n' nœud jouable, 'l' feuille, 'i' / 'r' référence
 	uint32 hachage = 0;                // le nom haché (toujours rempli)
-	std::string nom;                   // le nom en clair quand le fichier le donne
+	mutable std::string nom;           // le nom en clair quand le fichier le donne, ou appris d'un chemin (CActionBank::Trouver)
 	std::vector<int32> conditions;     // décalages des enregistrements dans les données
 	std::vector<int32> pistes;
 	std::string cible;                 // une référence : le chemin du nœud visé

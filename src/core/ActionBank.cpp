@@ -142,6 +142,7 @@ CActionBank::Trouver(const char *chemin) const
 		const CActionNode *courant = pile.back(), *suivant = nil;
 		for(const CActionNode &x : courant->enfants) if(x.hachage == h){ suivant = &x; break; }
 		if(suivant == nil) return nil;
+		if(suivant->nom.empty()) suivant->nom = segment;   // un nom haché, appris du chemin qui le désigne (journaux)
 		pile.push_back(suivant);
 	}
 	return pile.back();

@@ -25,7 +25,7 @@ main(void)
 	// Les nœuds que 1_01.lua demande : /Global/1_01/Talking (une banque), ShortIdle, PunchHands, WaveToSec
 	// (des feuilles à une piste), Gates/BarUpHold.
 	const CActionNode *talking = b.Trouver("/Global/1_01/Talking");
-	VERIF(talking != nil && talking->genre == 'b' && talking->hachage == ActionHash("Talking") && talking->nom.empty() && talking->enfants.size() == 1);
+	VERIF(talking != nil && talking->genre == 'b' && talking->hachage == ActionHash("Talking") && talking->nom == "Talking" && talking->enfants.size() == 1);
 	const CActionNode *idle = b.Trouver("/Global/1_01/ShortIdle");
 	VERIF(idle != nil && idle->genre == 'l' && idle->pistes.size() == 1);
 	VERIF(b.Trouver("/Global/1_01/PunchHands") != nil && b.Trouver("/Global/1_01/WaveToSec") != nil);
@@ -95,6 +95,7 @@ main(void)
 		// HitTree) se termine, et le contrôleur redescend dans l'arbre posé.
 		CActionController c;
 		VERIF(c.Poser(b, arbre, sansArme, 10.0f) && c.joue == pris);
+		VERIF(b.CheminDe(pris) == "/Global/TrainingPlayer/Default/Default");   // noms hachés appris des chemins demandés
 		// Le premier nœud de TrainingPlayer dont une piste a une durée de vie finie (un coup, une provocation).
 		const CActionNode *cible = nil; float d = -1.0f;
 		std::vector<const CActionNode *> pile(1, arbre);
