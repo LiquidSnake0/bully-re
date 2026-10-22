@@ -1185,6 +1185,27 @@ PedSetActionNode(lua_State *L)
 	return 1;
 }
 
+// PedSetActionTree(ped, arbre, fichier) (0x5cac20) : FUN_00473f80 charge le fichier, puis FUN_005dc040 pose l'arbre au
+// contrôleur du piéton, qui y descend (CActionBank::Choisir, FUN_005f5490 / FUN_005f5500) : le premier nœud qui
+// aboutit devient le nœud joué. Les conditions des nœuds ne sont pas encore jugées ici : une branche qui en porte
+// n'est pas prise, et le contrôleur ne redescend pas aux images suivantes.
+static int
+PedSetActionTree(lua_State *L)
+{
+	Journal("PedSetActionTree", L, 1);
+	const CScriptPed *p = PedArg(L, 1);
+	const char *arbre = luaL_optstring(L, 2, ""), *fichier = luaL_optstring(L, 3, "");
+	if(p == nil || *arbre == 0 || *fichier == 0) return 0;
+	if(!arbres.TrouverOuCharger(arbre, fichier)){
+		printf("        PedSetActionTree : %s absent de %s\n", arbre, fichier);
+		return 0;
+	}
+	const CActionNode *n = arbres.Choisir(arbres.Trouver(arbre));
+	if(n) noeudJoue[(int)lua_tonumber(L, 1)] = n;
+	else printf("        PedSetActionTree : rien ne s'ouvre dans %s sans juger ses conditions\n", arbre);
+	return 0;
+}
+
 // PedIsPlaying(ped, chemin[, sous]) (0x5cb830 → FUN_005f3bf0) : le piéton joue ce nœud, ou, avec `sous`, un
 // nœud placé dessous.
 // GetCurrentDay([modulo]) (0x5c0c00) : le jour du calendrier (DAT_020c3640), ou ce jour modulo 5.
@@ -1681,6 +1702,7 @@ main(int argc, char **argv)
 	lua_register(L, "CameraFade", CameraFade);
 	lua_register(L, "PedSetActionNode", PedSetActionNode);
 	lua_register(L, "PedIsPlaying", PedIsPlaying);
+	lua_register(L, "PedSetActionTree", PedSetActionTree);
 	lua_register(L, "GetCurrentDay", GetCurrentDay);
 	lua_register(L, "SoundPlayScriptedSpeechEvent", SoundPlayScriptedSpeechEvent);
 	lua_register(L, "SoundSpeechPlaying", SoundSpeechPlaying);

@@ -114,3 +114,22 @@ CActionBank::TrouverOuCharger(const char *chemin, const char *act)
 	if(!Charger(act)) return false;
 	return Trouver(chemin) != nil;
 }
+
+const CActionNode *
+CActionBank::Choisir(const CActionNode *depuis, Conditions conditions, void *contexte) const
+{
+	if(depuis == nil) return nil;
+	if(!depuis->conditions.empty() && (conditions == nil || !conditions(*depuis, contexte))) return nil;
+	switch(depuis->genre){
+	case 'n': case 'l':
+		return depuis;                       // FUN_005f5500
+	case 'b':
+		for(const CActionNode &e : depuis->enfants){   // FUN_005f5490 : le premier enfant qui aboutit
+			const CActionNode *r = Choisir(&e, conditions, contexte);
+			if(r) return r;
+		}
+		return nil;
+	default:
+		return nil;
+	}
+}

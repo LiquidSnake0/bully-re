@@ -28,6 +28,14 @@ public:
 	// chemin ; avec `sous`, FUN_005f4f80 remonte aussi ses parents (emplacement +0x34) jusqu'à le trouver.
 	// Faux si le chemin ne se résout pas ou si rien n'est joué.
 	bool Joue(const CActionNode *courant, const char *chemin, bool sous) const;
+	// La descente du contrôleur dans un arbre posé par PedSetActionTree (FUN_005dc040, puis l'emplacement +0x4c de
+	// chaque nœud) : une banque (FUN_005f5490) teste ses conditions (FUN_005fb9b0, s'il en a : emplacement +0x50),
+	// puis rend le premier de ses enfants, dans l'ordre, dont la descente aboutit ; un nœud jouable ou une feuille
+	// (FUN_005f5500) se rend lui-même si ses conditions passent. `conditions` répond pour un nœud qui en porte
+	// (vrai = elles passent) ; sans réponse, un nœud à conditions n'est pas pris. Une référence ('i', 'r') renvoie
+	// à un autre fichier que l'on ne suit pas : elle n'aboutit pas. Rend nil si rien n'aboutit.
+	typedef bool (*Conditions)(const CActionNode &n, void *contexte);
+	const CActionNode *Choisir(const CActionNode *depuis, Conditions conditions = nil, void *contexte = nil) const;
 
 	CActionNode racine;                      // DAT_01b649dc : sans nom, son seul enfant est la banque « Global »
 	CActionNode *Global(void){ return &racine.enfants[0]; }

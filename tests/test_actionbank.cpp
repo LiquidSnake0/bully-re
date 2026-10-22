@@ -52,6 +52,21 @@ main(void)
 		VERIF(!b.Joue(talking, "/Global/1_01", false) && !b.Joue(nil, "/Global/1_01", true) && !b.Joue(talking, "/Global/Absent", true));
 		VERIF(!b.Joue(b.Trouver("/Global/1_01"), "/Global/1_01/Talking", true));   // un parent n'est pas « sous » son enfant
 	}
+	// La descente du contrôleur (FUN_005f5490 / FUN_005f5500) : dans /Global/TrainingPlayer, la banque DEFAULT vient
+	// en premier, sans condition, et sa première feuille est DEFAULT : c'est le nœud que l'entraînement de 1_02 attend
+	// sous /Global/TrainingPlayer/Default. Une branche à conditions n'est pas prise sans réponse.
+	{
+		VERIF(b.TrouverOuCharger("/Global/TrainingPlayer", "Act/TrainingPlayer.act"));
+		const CActionNode *arbre = b.Trouver("/Global/TrainingPlayer");
+		const CActionNode *pris = b.Choisir(arbre);
+		VERIF(pris != nil && pris->genre == 'l' && pris == b.Trouver("/Global/TrainingPlayer/Default/Default"));
+		VERIF(b.Joue(pris, "/Global/TrainingPlayer/Default", true) && !b.Joue(pris, "/Global/TrainingPlayer/Default", false));
+		const CActionNode *attaques = b.Trouver("/Global/TrainingPlayer/Attacks");
+		VERIF(attaques != nil && !attaques->conditions.empty() && b.Choisir(attaques) == nil);
+		VERIF(b.Choisir(attaques, [](const CActionNode &, void *){ return true; }) != nil);
+		VERIF(b.Choisir(nil) == nil);
+		printf("  descente : /Global/TrainingPlayer → %s/%s\n", "Default", pris ? pris->nom.c_str() : "?");
+	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;
 }
