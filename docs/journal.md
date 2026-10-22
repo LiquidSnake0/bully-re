@@ -584,3 +584,31 @@ en échec plutôt que de les masquer.
   conditions des nœuds d'action (garder les données des .cat), la résolution de `ConditionGroup` (le +4 n'est pas
   donné par la seconde table de renvois telle qu'on la lit), redescendre quand le nœud joué finit.
 
+## 22.10.2026, seconde séance
+
+- **`ConditionGroup`.** La seconde table de renvois ne cite pas des chaînes : sa valeur est un décalage après la fin
+  de l'arbre, où le fichier range des listes de conditions (un octet n, n décalages). Le +4 d'une `ConditionGroup`
+  (mot +8 de l'enregistrement) y renvoie : c'est son groupe. Les 3 220 listes des 479 fichiers se lisent ainsi.
+- **Les conditions des nœuds sont jugées.** `CActionBank` garde les données des .cat ; la liste de `FUN_005fb9b0`
+  sort de `CMissionBank::Activable` dans `ConditionListe.h` et sert aux nœuds et aux groupes ; `NOT`, `OR`, `False`,
+  `ConditionGroup` par la banque, le reste par un juge : `WeaponEquiped` (le nom de l'arme cité, « unarmed » vrai
+  dans l'outil), `ActionRequest` (n° de l'action), `ActionNodePlayTime` (temps du nœud, comparateurs 2 et 5 lus
+  `<` et `≥`), `TargetPlaying` (le nœud de la cible verrouillée), `LuaCond` (la fonction du script de mission).
+- **Le contrôleur d'actions** (`CActionController`) : chaque piéton de `lancer_lua` en a un ; la fin d'un nœud vient
+  de ses pistes (+12 + +16) ; quand il finit, ou qu'une demande attend, un enfant qui aboutit le remplace, sinon
+  il redescend depuis l'arbre posé. `PedSetActionNode` et `--jouer` entrent dans le nœud (une banque descend).
+- **Les inclusions** `i` sont remplacées par l'arbre de leur fichier : `/Global/Actions/Grapples/…` existe.
+- **L'historique des boutons** : les rappels « réussie » et « ratée » de la séquence sont gardés ; `--sequence @s`
+  fait réussir le joueur.
+- Dans `1_02`, la leçon de combat avance jusqu'à la prise et sa charge :
+  `lancer_lua 130 --mission 1_02 --sans-cinematiques --porte DT_ischool_FrontDoorL@3 --entrer _GARYTRIGGER@6
+  --jouer /Global/HitTree/Standing/BlockHits@42 --jouer /Global/GlobalLoco/Locomotion/Combat/0_BLOCK_0:Act/Globals/GlobalLoco.act@45
+  --demander 0@46 --sequence @48 --sequence @51 --sequence @53 --jouer /Global/Actions/Grapples/Front/Grapples/GrappleAttempt/GrappleSuccess/GIVE@54
+  --sequence @56 --jouer /Global/Actions/Grapples/Front/Grapples/GrappleMoves/GrappleStrikes/HitC/Charge@57` :
+  la parade relâchée ramène le joueur à `/Global/TrainingPlayer/Default`, la séquence X passe, la prise (`GIVE`)
+  ouvre la leçon de coup, la charge descend dans son coup (0,57 s) et le joueur revient à `Default`.
+- **Bilan de la séance** : quinze commits ; 403 fonctions recréées (2,7 % du code), comme ce matin : la séance a
+  porté sur les données (groupes, champs des conditions) et l'outil, sans nouvelle fonction du moteur citée.
+  Ouvert : les pistes `Opportunity`, les comparateurs d'`ActionNodePlayTime` et le +8 d'`ActionRequest` à
+  confirmer dans les classes (`FUN_0064b090`), la fin de la leçon de prise, les coups au sol, le combat de Russell.
+
