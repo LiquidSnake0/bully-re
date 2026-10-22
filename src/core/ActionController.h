@@ -30,8 +30,8 @@ public:
 	struct SurCible { float entree; std::string chemin; bool fait; };
 	std::vector<SurCible> surCible;
 	std::vector<const CActionNode *> pourCible;   // les nœuds à faire jouer à la cible, rendus par Avancer (vidés à chaque image)
-	uint16 graine = 0;                // le mot +0x10c du piéton, pour le tirage (FUN_00465910)
-	uint32 image = 0;                 // le compteur d'images (DAT_00c1a99c), avancé par Avancer
+	uint16 graine = 0;                // le mot +0x10c du piéton, pour le tirage (FUN_00465910) ; posé par l'appelant
+	uint32 image = 0;                 // le compteur d'images du jeu (DAT_00c1a99c, CTimer), tenu par l'appelant
 	uint32 hasard = 1;                // la graine du rand() du CRT (OpportunityRandomLatch)
 	const CActionNode *demandeNoeud = nil;   // la demande retenue à cette image (FUN_005f3bc0 : +0x14)
 	int32 demandePriorite = -1;              // sa priorité (+4)

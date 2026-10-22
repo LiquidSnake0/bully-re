@@ -130,7 +130,6 @@ bool
 CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine, const CJugeAction &juge, float t, bool demande)
 {
 	(void)depuisRacine;
-	image++;
 	pourCible.clear();
 	for(SurCible &c : surCible)   // FUN_006615f0
 		if(!c.fait && Temps(t) >= c.entree){

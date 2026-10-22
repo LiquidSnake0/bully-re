@@ -2027,6 +2027,10 @@ main(int argc, char **argv)
 		// Les contrôleurs d'actions avancent (src/core/ActionController.h) ; on journalise ceux du joueur.
 		for(auto &c : controleurs){
 			const CActionNode *avant = c.second.joue;
+			// Le tirage des Opportunity à période (FUN_00465910) : le compteur d'images du jeu (DAT_00c1a99c) et le
+			// mot +0x10c du piéton, que l'outil n'a pas : son numéro le remplace.
+			c.second.image = (uint32)images;
+			c.second.graine = (uint16)c.first;
 			bool d = c.first == SCRIPT_PED_JOUEUR && (demande || !demandes.empty());
 			if(c.second.Avancer(arbres, nil, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f, d) && c.first == SCRIPT_PED_JOUEUR && c.second.joue != avant)
 				printf("%6.2f s  contrôleur du joueur : %s\n", maintenant / 1000.0, arbres.CheminDe(c.second.joue).c_str());
