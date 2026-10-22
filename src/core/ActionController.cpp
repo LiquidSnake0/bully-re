@@ -33,6 +33,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t)
 {
 	joue = n;
 	debut = t;
+	occasions = n ? COpportunite::DuNoeud(b, *n) : std::vector<COpportunite>();
 	float d = n ? Duree(b, *n) : -1.0f;
 	fin = d >= 0.0f ? t + d : -1.0f;
 }
@@ -63,10 +64,61 @@ CActionController::Poser(const CActionBank &b, const CActionNode *a, const CJuge
 	return true;
 }
 
+// n est `a` ou un de ses descendants.
+static bool
+Sous(const CActionNode &a, const CActionNode *n)
+{
+	if(&a == n) return true;
+	for(const CActionNode &e : a.enfants) if(Sous(e, n)) return true;
+	return false;
+}
+
+const CActionNode *
+CActionController::Occasions(const CActionBank &b, const CJugeAction &juge, float t)
+{
+	demandeNoeud = nil;
+	demandePriorite = -1;
+	float temps = Temps(t);
+	for(COpportunite &o : occasions){
+		if(o.arretee || temps < o.entree) continue;
+		bool arret = o.vie >= 0.0f && temps > o.entree + o.vie;   // la durée de vie, comme toute piste
+		if(!arret && !o.prise && TirageOpportunite(o.periode, graine, image)){
+			// Les conditions propres de la piste (+0x3c) : nulles dans les fichiers relevés, non jugées.
+			const CActionNode *visee = o.chemin.empty() ? nil : b.Relatif(o.porteur, o.chemin.c_str());
+			if(visee == nil){
+				if(o.chemin.empty()) o.prise = true;           // sans chemin : prise, sans nœud
+			}else{
+				const CActionNode *d = b.Choisir(visee, juge);  // l'emplacement +0x4c du nœud visé
+				// Limites de l'outil : le moteur garde la pile des nœuds joués (+0x44, +0x48) et monte les références
+				// ('r', GlobalLoco sous TrainingPlayer) ; l'outil ne les a pas. Un nœud visé qui contient déjà le
+				// nœud joué (une remontée dans la pile) ne fait pas passer, ni un nœud hors de l'arbre posé.
+				bool dedans = arbre == nil || Sous(*arbre, d);
+				if(d && dedans && !Sous(*d, joue) && (d != joue || o.soiMeme)){ o.cible = d; o.prise = true; }
+			}
+		}
+		if(!arret){
+			if(!o.prise) arret = o.fermeture > 0.0f && o.fermeture < temps;
+			else arret = o.bascule >= 0.0f && temps >= o.bascule;
+		}
+		if(!arret) continue;
+		o.arretee = true;
+		if(o.prise && o.priorite > demandePriorite){       // FUN_005f3bc0
+			demandePriorite = o.priorite;
+			demandeNoeud = o.cible;
+		}
+	}
+	return demandeNoeud;
+}
+
 bool
 CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine, const CJugeAction &juge, float t, bool demande)
 {
 	(void)depuisRacine;
+	image++;
+	if(joue){
+		const CActionNode *n = Occasions(b, juge, t);
+		if(n){ Jouer(b, n, t); return true; }
+	}
 	bool fini = joue && fin >= 0.0f && t >= fin;
 	if(!fini && !demande) return false;
 	if(joue){

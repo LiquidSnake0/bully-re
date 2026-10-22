@@ -159,6 +159,36 @@ main(void)
 		}
 		struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return -1; } } inconnu;
 		VERIF(b.Juger(*anim, inconnu) == -1 && b.Choisir(attaques, inconnu) == nil);
+		// Les Opportunity dans le contrôleur (FUN_005f7d70, FUN_005f7440, FUN_005f3bc0) : dans TrainingPlayer, la
+		// première Opportunity à bascule tardive (> 0) dont le nœud visé aboutit quand tout passe. Prise tout de suite,
+		// elle fait passer à sa bascule, pas avant ; avec des conditions fausses, elle ne fait rien.
+		{
+			struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return 1; } } toutVrai;
+			struct Trouve { const CActionBank &b; const CJugeAction &j; COpportunite o; const CActionNode *suite = nil;
+				bool Dans(const CActionNode &n){
+					for(const COpportunite &x : COpportunite::DuNoeud(b, n)){
+						if(x.chemin.empty() || x.bascule <= 0.0f || x.entree != 0.0f) continue;
+						const CActionNode *d = b.Choisir(b.Relatif(x.porteur, x.chemin.c_str()), j);
+						if(d && d != x.porteur){ o = x; suite = d; return true; }
+					}
+					for(const CActionNode &e : n.enfants) if(Dans(e)) return true;
+					return false;
+				} } t{b, toutVrai, COpportunite(), nil};
+			const CActionNode *tp = b.Trouver("/Global/TrainingPlayer");
+			VERIF(tp && t.Dans(*tp));
+			if(t.suite){
+				CActionController c;
+				c.Jouer(b, t.o.porteur, 100.0f);
+				VERIF(!c.occasions.empty());
+				VERIF(!c.Avancer(b, nil, toutVrai, 100.0f + t.o.bascule * 0.5f) && c.joue == t.o.porteur);
+				VERIF(c.Avancer(b, nil, toutVrai, 100.0f + t.o.bascule + 0.01f) && c.joue == t.suite);
+				printf("  Opportunity : %s → %s à %.3f s\n", t.o.chemin.c_str(), b.CheminDe(t.suite).c_str(), t.o.bascule);
+				CActionController d;
+				d.Jouer(b, t.o.porteur, 0.0f);
+				VERIF(!d.Avancer(b, nil, sansArme, t.o.bascule * 0.5f) && !d.Avancer(b, nil, sansArme, t.o.bascule + 0.01f) && d.joue == t.o.porteur);
+			}
+		}
+
 		printf("  descente : /Global/TrainingPlayer → %s/%s\n", "Default", pris ? pris->nom.c_str() : "?");
 	}
 	// FUN_0072ad00 / FUN_0072ae00 : AreaTransitionButes (DAT_020c8910) dans Globals.cat ; +0x18 la durée du fondu
