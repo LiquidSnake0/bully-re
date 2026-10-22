@@ -132,16 +132,17 @@ static std::map<uint32, uint32> demandes;
 //   TargetPlaying        +4 : un nom de nœud haché (RollAway…), +8 : 1 ; deux champs, l'enregistrement suivant
 //                        commence après. La cible est celle que PedLockTarget a verrouillée ; vrai si son nœud joué,
 //                        ou un de ses parents, porte ce nom (comme PedMePlaying).
-//   MePlaying            +8 : un nom de nœud haché, +0xc : 1 ; le nœud joué par le piéton lui-même, ou un de ses
+//   MePlaying            +4 : un nom de nœud haché, +8 : 1 ; le nœud joué par le piéton lui-même, ou un de ses
 //                        parents, porte ce nom (FUN_005f46a0, comme PedMePlaying) ;
-//   ConditionFlag        +8 : un nom haché (GROUNDHITHEAVY, ITCHVIRUS…) : le drapeau du dernier coup reçu, que la piste
+//   ConditionFlag        +4 : un nom haché (GROUNDHITHEAVY, ITCHVIRUS…) : le drapeau du dernier coup reçu, que la piste
 //                        Collision de l'attaquant porte en +0x2c (44) et passe à la méthode du coup (slot 15 de CPed,
 //                        FUN_0047b810) ;
-//   HitLocation          +8, +0xc : la zone touchée. L'outil n'a pas les sphères du corps : supposé vrai tant qu'un
+//   HitLocation          +4, +8 : la zone touchée. L'outil n'a pas les sphères du corps : supposé vrai tant qu'un
 //                        coup est en cours pour ce piéton.
 // L'outil n'a pas d'armes : seul « unarmed » est vrai. Une classe non lue rend -1 : la branche n'est pas prise.
 struct CoupRecu { uint32 drapeau = 0; float jusqua = -1.0f; };   // le dernier coup reçu par un piéton (outil)
 static std::map<int, CoupRecu> coups;
+static std::map<int, std::pair<int, uint32>> partenaires;   // le piéton qui nous a fait jouer un nœud (PlayOnTarget), jusqu'à quand (ms)
 struct CJugeOutil : CJugeAction {
 	int ped; float t;
 	CJugeOutil(int p, float t_) : ped(p), t(t_) {}
@@ -151,12 +152,12 @@ struct CJugeOutil : CJugeAction {
 		                    kCible = ActionHash("TargetPlaying"), kMoi = ActionHash("MePlaying"),
 		                    kDrapeau = ActionHash("ConditionFlag"), kZone = ActionHash("HitLocation");
 		if(type == kArme) return f.ChaineCitee((uint32)d + 8) == "unarmed";
-		if(type == kMoi) return arbres.JoueHachage(NoeudJoue(ped), mots[1] & 0x7fffffff);
+		if(type == kMoi) return arbres.JoueHachage(NoeudJoue(ped), mots[0] & 0x7fffffff);
 		if(type == kDrapeau || type == kZone){
 			auto it = coups.find(ped);
 			bool enCours = it != coups.end() && t <= it->second.jusqua;
 			if(type == kZone) return enCours;
-			return enCours && it->second.drapeau == (mots[1] & 0x7fffffff);
+			return enCours && it->second.drapeau == (mots[0] & 0x7fffffff);
 		}
 		if(type == kDemande){
 			if(ped != SCRIPT_PED_JOUEUR) return 0;
@@ -2044,7 +2045,13 @@ main(int argc, char **argv)
 			if(n == nil) printf("%6.2f s  le joueur joue %s : nœud absent de l'arbre global\n", maintenant / 1000.0, e.second.c_str());
 			else {
 				CActionController &c = controleurs[SCRIPT_PED_JOUEUR];
-				if(!c.Entrer(arbres, n, CJugeOutil(SCRIPT_PED_JOUEUR, maintenant / 1000.0f), maintenant / 1000.0f)) c.Jouer(arbres, n, maintenant / 1000.0f);
+				if(!c.Entrer(arbres, n, CJugeOutil(SCRIPT_PED_JOUEUR, maintenant / 1000.0f), maintenant / 1000.0f)){
+					// Une banque dont la descente jugée n'aboutit pas (conditions de visée, de bouton) : la manette de l'outil
+					// prend le premier nœud jouable sans condition parmi ses enfants (HeavyAttacks → son coup de pied).
+					const CActionNode *d = nil;
+					if(n->genre == 'b') for(const CActionNode &e : n->enfants) if((d = arbres.Choisir(&e)) != nil) break;
+					c.Jouer(arbres, d ? d : n, maintenant / 1000.0f);
+				}
 				printf("%6.2f s  le joueur joue %s%s\n", maintenant / 1000.0, chemin.c_str(), c.joue != n ? (" → " + arbres.CheminDe(c.joue)).c_str() : "");
 			}
 			e.second.clear();
@@ -2071,12 +2078,41 @@ main(int argc, char **argv)
 				else if(tousLesControleurs)
 					printf("%6.2f s  contrôleur de %d : %s\n", maintenant / 1000.0, c.first, arbres.CheminDe(c.second.joue).c_str());
 			}
+			// Les coups qui portent (pistes Collision, FUN_005f9e70) : l'outil n'a pas les sphères des os, le coup touche la
+			// cible verrouillée. La cible reçoit le coup (slot 15 de CPed, FUN_0047b810) : son drapeau tient une seconde
+			// (ConditionFlag, HitLocation) et, sans nœud de coup donné, son contrôleur descend dans l'arbre des coups
+			// (+0x4b8 du contrôleur ; dans l'outil, /Global/HitTree). L'attaquant joue le nœud +0x68 de la piste
+			// (FUN_005f4490), s'il en a un.
+			for(const CActionController::Contact &k : c.second.touches){
+				const CScriptPed *p = pietons.Acceder(c.first);
+				if(p == nil || p->verrou < 0) continue;
+				int cible = p->verrou;
+				// Supposé : le corps projeté par une prise (PushFwd/RCV, « FRIENDLYHIT ») ne touche pas celui qui le pousse ;
+				// le moteur l'écarte par la géométrie, l'outil par le partenaire du PlayOnTarget (deux secondes).
+				auto pt = partenaires.find(c.first);
+				if(pt != partenaires.end() && pt->second.first == cible && maintenant <= pt->second.second) continue;
+				coups[cible] = {k.drapeau & 0x7fffffff, maintenant / 1000.0f + 1.0f};
+				CActionController &v = controleurs[cible];
+				// Un piéton à terre (son nœud joué s'appelle On_Ground, ou un parent) : dans le moteur, la réaction passe par
+				// HitTree/BASE/HitTreeBase/…/On_Ground (« si MePlaying… », joué par un Execute des nœuds de coup), dont
+				// l'Opportunity mène à GroundAndWallHits/On_Ground. L'outil ne joue pas les Execute en contrôleur
+				// secondaire : il y entre directement (supposé). Sinon, la racine de HitTree.
+				bool aTerre = arbres.JoueHachage(NoeudJoue(cible), ActionHash("On_Ground"));
+				const CActionNode *arbreCoups = arbres.Trouver(aTerre ? "/Global/HitTree/GroundAndWallHits/On_Ground" : "/Global/HitTree");
+				bool pris = arbreCoups && v.Entrer(arbres, arbreCoups, CJugeOutil(cible, maintenant / 1000.0f), maintenant / 1000.0f);
+				printf("%6.2f s  le coup de %d porte sur %d (%s)%s%s\n", maintenant / 1000.0, c.first, cible, arbres.CheminDe(k.porteur).c_str(),
+				       pris ? " : il joue " : "", pris ? arbres.CheminDe(v.joue).c_str() : "");
+				if(!k.surCoup.empty())
+					if(const CActionNode *n = arbres.Relatif(k.porteur, k.surCoup.c_str()))
+						c.second.Entrer(arbres, n, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f);
+			}
 			// PlayOnTarget : la cible du piéton (FUN_004d5980 ; dans l'outil, celle de PedLockTarget) joue le nœud.
 			for(const CActionNode *n : c.second.pourCible){
 				const CScriptPed *p = pietons.Acceder(c.first);
 				if(p == nil || p->verrou < 0) continue;
 				CActionController &cible = controleurs[p->verrou];
 				if(!cible.Entrer(arbres, n, CJugeOutil(p->verrou, maintenant / 1000.0f), maintenant / 1000.0f)) cible.Jouer(arbres, n, maintenant / 1000.0f);
+				partenaires[p->verrou] = {c.first, maintenant + 2000};
 				printf("%6.2f s  la cible de %d (%d) joue %s\n", maintenant / 1000.0, c.first, p->verrou, arbres.CheminDe(cible.joue).c_str());
 			}
 		}
