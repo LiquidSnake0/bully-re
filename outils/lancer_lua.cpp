@@ -2030,6 +2030,14 @@ main(int argc, char **argv)
 			bool d = c.first == SCRIPT_PED_JOUEUR && (demande || !demandes.empty());
 			if(c.second.Avancer(arbres, nil, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f, d) && c.first == SCRIPT_PED_JOUEUR && c.second.joue != avant)
 				printf("%6.2f s  contrôleur du joueur : %s\n", maintenant / 1000.0, arbres.CheminDe(c.second.joue).c_str());
+			// PlayOnTarget : la cible du piéton (FUN_004d5980 ; dans l'outil, celle de PedLockTarget) joue le nœud.
+			for(const CActionNode *n : c.second.pourCible){
+				const CScriptPed *p = pietons.Acceder(c.first);
+				if(p == nil || p->verrou < 0) continue;
+				CActionController &cible = controleurs[p->verrou];
+				if(!cible.Entrer(arbres, n, CJugeOutil(p->verrou, maintenant / 1000.0f), maintenant / 1000.0f)) cible.Jouer(arbres, n, maintenant / 1000.0f);
+				printf("%6.2f s  la cible de %d (%d) joue %s\n", maintenant / 1000.0, c.first, p->verrou, arbres.CheminDe(cible.joue).c_str());
+			}
 		}
 		for(auto it = demandes.begin(); it != demandes.end(); ) it = maintenant > it->second ? demandes.erase(it) : ++it;
 		for(auto &e : poussees) if(!e.second.empty() && maintenant >= e.first){
