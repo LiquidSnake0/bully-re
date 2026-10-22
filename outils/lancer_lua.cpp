@@ -24,7 +24,7 @@
 // lance celle dont le joueur touche le corona, et celles qui se lancent seules (champ 51) : 1_02 après 1_01.
 // Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
 // de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s]... [--demander N@s]...
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s]... [--demander N@s]... [--sequence @s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -1322,6 +1322,58 @@ PedMePlaying(lua_State *L)
 	return 1;
 }
 
+// L'historique des boutons (HUDButtonHistory) : la leçon de combo de 1_02 pose une séquence (ButtonHistoryAdd…),
+// puis deux fonctions du script, appelées quand le joueur réussit ou rate la séquence. L'outil garde ces deux
+// fonctions ; --sequence@s fait réussir le joueur (la fonction « réussie » est appelée), rien ne la rate de soi-même.
+static int rappelReussi = LUA_NOREF, rappelRate = LUA_NOREF;
+
+static void
+Oublier(lua_State *L, int &ref)
+{
+	if(ref != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, ref);
+	ref = LUA_NOREF;
+}
+
+static int
+ButtonHistorySetCallbackPassed(lua_State *L)
+{
+	Journal("ButtonHistorySetCallbackPassed", L, 1);
+	Oublier(L, rappelReussi);
+	if(lua_isfunction(L, 1)){ lua_pushvalue(L, 1); rappelReussi = luaL_ref(L, LUA_REGISTRYINDEX); }
+	return 0;
+}
+
+static int
+ButtonHistorySetCallbackFailed(lua_State *L)
+{
+	Journal("ButtonHistorySetCallbackFailed", L, 1);
+	Oublier(L, rappelRate);
+	if(lua_isfunction(L, 1)){ lua_pushvalue(L, 1); rappelRate = luaL_ref(L, LUA_REGISTRYINDEX); }
+	return 0;
+}
+
+static int
+ButtonHistoryClearSequence(lua_State *L)
+{
+	Journal("ButtonHistoryClearSequence", L, 1);
+	Oublier(L, rappelReussi);
+	Oublier(L, rappelRate);
+	return 0;
+}
+
+// --sequence@s : le joueur tape la séquence demandée ; la fonction « réussie » du script est appelée.
+static void
+ReussirSequence(lua_State *L)
+{
+	if(rappelReussi == LUA_NOREF){ printf("%6.2f s  le joueur tape une séquence : aucune n'est posée\n", maintenant / 1000.0); return; }
+	int ref = rappelReussi;
+	rappelReussi = LUA_NOREF;
+	lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+	luaL_unref(L, LUA_REGISTRYINDEX, ref);
+	printf("%6.2f s  le joueur réussit la séquence de boutons\n", maintenant / 1000.0);
+	if(lua_pcall(L, 0, 0, 0) != 0){ printf("        rappel de la séquence : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+}
+
 static int
 PlayerSetControl(lua_State *L)
 {
@@ -1747,6 +1799,7 @@ main(int argc, char **argv)
 	std::vector<std::pair<uint32, std::string>> allers;    // --aller NOM[,n]@s ou x,y,z@s : le joueur y est posé à s secondes
 	std::vector<std::pair<uint32, int>> portes;            // --zone N@s : le joueur passe dans la zone N (une porte) à s secondes
 	std::vector<std::pair<uint32, std::string>> poussees;  // --porte NOM@s : le joueur pousse la porte du déclencheur NOM (DT_…) à s secondes
+	std::vector<uint32> sequences;                         // --sequence @s : le joueur réussit la séquence de boutons à s secondes
 	std::vector<std::pair<uint32, uint32>> attentes;      // --demander N@s : une ActionRequest n° N du joueur à s secondes (tenue 0,25 s)
 	std::vector<std::pair<uint32, std::string>> gestes;    // --jouer CHEMIN@s : le joueur joue ce nœud d'action à s secondes (la manette : parer, frapper)
 	std::vector<const char*> pos;
@@ -1766,6 +1819,10 @@ main(int argc, char **argv)
 			std::string e = argv[++i];
 			size_t at = e.rfind('@');
 			gestes.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
+		}
+		else if(strcmp(argv[i], "--sequence") == 0 && i + 1 < argc){
+			std::string e = argv[++i]; size_t at = e.find('@');
+			sequences.push_back((uint32)(atof(e.c_str() + (at == std::string::npos ? 0 : at + 1)) * 1000));
 		}
 		else if(strcmp(argv[i], "--demander") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
@@ -1820,6 +1877,9 @@ main(int argc, char **argv)
 	lua_register(L, "AreaRegisterAreaScript", AreaRegisterAreaScript);
 	lua_register(L, "CameraFade", CameraFade);
 	lua_register(L, "PedSetActionNode", PedSetActionNode);
+	lua_register(L, "ButtonHistorySetCallbackPassed", ButtonHistorySetCallbackPassed);
+	lua_register(L, "ButtonHistorySetCallbackFailed", ButtonHistorySetCallbackFailed);
+	lua_register(L, "ButtonHistoryClearSequence", ButtonHistoryClearSequence);
 	lua_register(L, "PedIsPlaying", PedIsPlaying);
 	lua_register(L, "PedMePlaying", PedMePlaying);
 	lua_register(L, "PlayerIsInAreaObject", PlayerIsInAreaObject);
@@ -1936,6 +1996,7 @@ main(int argc, char **argv)
 			else { controleurs[SCRIPT_PED_JOUEUR].Jouer(arbres, n, maintenant / 1000.0f); printf("%6.2f s  le joueur joue %s\n", maintenant / 1000.0, chemin.c_str()); }
 			e.second.clear();
 		}
+		for(uint32 &q : sequences) if(q != 0xffffffffu && maintenant >= q){ ReussirSequence(L); q = 0xffffffffu; }
 		// La manette : une ActionRequest en attente un quart de seconde, que le contrôleur du joueur juge.
 		bool demande = false;
 		for(auto &e : attentes) if(e.first != 0xffffffffu && maintenant >= e.first){
