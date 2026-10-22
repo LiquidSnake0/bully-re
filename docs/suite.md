@@ -25,10 +25,11 @@ chantier. Un point fini passe en bas, avec son commit.
    Les conditions des nœuds sont jugées (docs/cat.md : `ConditionGroup` par la seconde table de renvois, `WeaponEquiped`,
    `ActionRequest`, `ActionNodePlayTime`, `TargetPlaying`, `LuaCond`) et le contrôleur redescend quand le nœud joué finit ;
    dans `1_02`, la parade, la séquence X, la prise et sa charge passent (`--jouer`, `--demander`, `--sequence`).
-   Suite : les pistes `Opportunity` (ce qui décide vraiment d'un passage à l'image près, au lieu de la règle de
-   l'outil) ; confirmer les comparateurs d'`ActionNodePlayTime` et le +8 d'`ActionRequest` dans les fonctions des
-   classes (registre `FUN_0064b090`) ; la fin de la leçon de prise (`Punch_Hold_Idle`, `PushFwd/RCV`) puis les coups au
-   sol et le combat de Russell ; l'objet de porte (+0x394).
+   Les passages viennent des pistes (docs/cat.md : `Opportunity`, loquet, `Sequence`, `PlayOnTarget`) ; la leçon de
+   prise se termine (le bully joue `PushFwd/RCV`). Suite : la pile des nœuds joués du contrôleur (+0x44 / +0x48) et
+   les références montées (`GlobalLoco` sous `TrainingPlayer`), pour lever les deux garde-fous de l'outil ; les pistes
+   `Collision` (le coup qui touche : le nœud de la cible, champs 104 et 120 d'une prise, `GROUNDHITLIGHT`…) pour les
+   coups au sol de `1_02` (le bully doit jouer `GroundHitHeavy`) puis le combat de Russell ; l'objet de porte (+0x394).
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
    directement au lieu des exports headless. Prérequis : Ghidra 12.1.4 et
@@ -59,6 +60,10 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- Les passages par les pistes (22.10, troisième séance) : chemins relatifs (`CActionBank::Relatif`), `Opportunity`
+  (`FUN_005f7d70`, `FUN_005f7440`, `FUN_005f3bc0`, tirage `FUN_00465910`), `OpportunityRandomLatch` (`FUN_005f7510`,
+  `RandCrt`), `Sequence` (`FUN_005f7030`), `PlayOnTarget` (`FUN_006615f0`) ; comparateurs `FUN_005fb750` et état des
+  boutons `FUN_005fd650` ; la fin de la leçon de prise de `1_02`.
 - Les conditions des nœuds d'action et le contrôleur (22.10, seconde séance) : `ConditionGroup` (seconde table de
   renvois), données des .cat gardées, inclusions `i`, `EvaluerListe` (`FUN_005fb9b0`), `CActionController`,
   `ButtonHistory` (rappels), `lancer_lua --demander` / `--sequence`.

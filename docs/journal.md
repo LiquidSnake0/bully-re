@@ -612,3 +612,21 @@ en échec plutôt que de les masquer.
   Ouvert : les pistes `Opportunity`, les comparateurs d'`ActionNodePlayTime` et le +8 d'`ActionRequest` à
   confirmer dans les classes (`FUN_0064b090`), la fin de la leçon de prise, les coups au sol, le combat de Russell.
 
+
+## 22.10.2026, troisième séance
+
+- **Les passages viennent des pistes.** `Opportunity` (`FUN_005f7d70`) : tirage, nœud visé relatif, descente, prise ;
+  fermeture +0x28, bascule +0x2c ; à l'arrêt (`FUN_005f7440`) la demande de plus forte priorité (`FUN_005f3bc0`, +0x34)
+  fait passer. `OpportunityRandomLatch` tire sa bascule entre +0x4c et +0x50 (`rand()` du CRT). `Sequence` dépose une
+  demande de priorité 0 à la fin du nœud (`FUN_005f7030`). `PlayOnTarget` fait jouer un nœud à la cible
+  (`FUN_006615f0`). La règle de l'outil reste en secours. Relevé : 3 080 `Opportunity` au démarrage, aucune avec des
+  conditions propres.
+- **Les deux suppositions levées** : `ActionNodePlayTime` compare par `FUN_005fb750` (0 ≈, 1 ≉, 2 <, 3 >, 4 ≤, 5 ≥, à
+  1e-5 près) ; `ActionRequest` est `ConditionActionRequestButton` (`FUN_005fd650`) : +8 le mode du bouton (3 lâché, 2
+  bit 0 ou 1, sinon bit 0), +0xc / +0x10 / +0x14 la durée tenue.
+- **`1_02`** : avec `--jouer GIVE@60 --sequence @62 --jouer …/DirectionalPush/PushFwd@64`, le bully joue `PushFwd/RCV`,
+  la leçon de prise se termine et pose la séquence des coups au sol (réussie à 67 s). Reste : les pistes `Collision`
+  pour que le coup au sol touche le bully, puis le combat de Russell.
+- **Garde-fous de l'outil, dits** : pas de pile de nœuds joués ni de références montées ; une `Opportunity` qui vise
+  un nœud contenant déjà le nœud joué, ou hors de l'arbre posé, ne fait pas passer.
+- **Bilan** : 417 fonctions recréées (2,8 % du code), contre 403 ce matin.

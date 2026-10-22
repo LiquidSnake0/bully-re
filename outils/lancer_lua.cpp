@@ -37,6 +37,7 @@
 #include "../src/core/AreaManager.h"
 #include "../src/core/ActionBank.h"
 #include "../src/core/ActionController.h"
+#include "../src/core/ConditionListe.h"
 #include "../src/audio/SpeechEvents.h"
 #include "../src/audio/SpeechBank.h"
 #include "../src/cutscene/CutsceneFiles.h"
@@ -122,8 +123,10 @@ static std::map<uint32, uint32> demandes;
 // Les conditions des nœuds d'action pour un piéton (FUN_005fb9b0 les juge une à une ; la banque fait NOT, OR, False
 // et ConditionGroup). Champs relevés dans les enregistrements (mots[i] = champ +4 * (i + 1) de l'objet) :
 //   WeaponEquiped        +4 : le nom de l'arme (« unarmed », « any », « bat »…), cité par la première table ;
-//   ActionRequest        +4 : le numéro de l'action demandée (0x16, 3, 1…), +8 : 1 ou 2 ;
-//   ActionNodePlayTime   +4 : un temps (s), +8 : un comparateur (2 et 5 relevés : lus < et ≥), +0xc : un nom haché ;
+//   ActionRequest        (ConditionActionRequestButton, FUN_005fd650) +4 : le numéro de l'action, +8 : le mode
+//                        (3 : bouton lâché, 2 : bit 0 ou 1, sinon bit 0), +0xc / +0x10 : un seuil et son comparateur
+//                        sur la durée tenue, +0x14 : si non nul, seule la durée compte ;
+//   ActionNodePlayTime   (FUN_005fb940) +4 : un temps (s), +8 : le comparateur de FUN_005fb750, sur le temps du nœud ;
 //   LuaCond              +0x10 : « mission », +0x14 : le nom de la fonction du script (F_PlayerGroundKicks…) ;
 //   TargetPlaying        +4 : un nom de nœud haché (RollAway…), +8 : 1 ; deux champs, l'enregistrement suivant
 //                        commence après. La cible est celle que PedLockTarget a verrouillée ; vrai si son nœud joué,
@@ -140,18 +143,16 @@ struct CJugeOutil : CJugeAction {
 		if(type == kDemande){
 			if(ped != SCRIPT_PED_JOUEUR) return 0;
 			auto it = demandes.find(mots[0]);
-			return it != demandes.end() && maintenant <= it->second;
+			// La manette de l'outil : une demande en attente pose le bit 0 du bouton ; la durée tenue n'est pas suivie.
+			unsigned char etat = it != demandes.end() && maintenant <= it->second ? 1 : 0;
+			return EtatBoutonCondition(etat, mots[1]);
 		}
 		if(type == kTemps){
 			auto it = controleurs.find(ped);
 			if(it == controleurs.end()) return -1;
 			float seuil; memcpy(&seuil, &mots[0], 4);
 			float v = it->second.Temps(t);
-			switch(mots[1]){
-			case 2: return v < seuil;
-			case 5: return v >= seuil;
-			default: return -1;
-			}
+			return ComparerCondition(v, seuil, mots[1]);
 		}
 		if(type == kCible){
 			const CScriptPed *p = pietons.Acceder(ped);
@@ -2026,9 +2027,21 @@ main(int argc, char **argv)
 		// Les contrôleurs d'actions avancent (src/core/ActionController.h) ; on journalise ceux du joueur.
 		for(auto &c : controleurs){
 			const CActionNode *avant = c.second.joue;
+			// Le tirage des Opportunity à période (FUN_00465910) : le compteur d'images du jeu (DAT_00c1a99c) et le
+			// mot +0x10c du piéton, que l'outil n'a pas : son numéro le remplace.
+			c.second.image = (uint32)images;
+			c.second.graine = (uint16)c.first;
 			bool d = c.first == SCRIPT_PED_JOUEUR && (demande || !demandes.empty());
 			if(c.second.Avancer(arbres, nil, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f, d) && c.first == SCRIPT_PED_JOUEUR && c.second.joue != avant)
 				printf("%6.2f s  contrôleur du joueur : %s\n", maintenant / 1000.0, arbres.CheminDe(c.second.joue).c_str());
+			// PlayOnTarget : la cible du piéton (FUN_004d5980 ; dans l'outil, celle de PedLockTarget) joue le nœud.
+			for(const CActionNode *n : c.second.pourCible){
+				const CScriptPed *p = pietons.Acceder(c.first);
+				if(p == nil || p->verrou < 0) continue;
+				CActionController &cible = controleurs[p->verrou];
+				if(!cible.Entrer(arbres, n, CJugeOutil(p->verrou, maintenant / 1000.0f), maintenant / 1000.0f)) cible.Jouer(arbres, n, maintenant / 1000.0f);
+				printf("%6.2f s  la cible de %d (%d) joue %s\n", maintenant / 1000.0, c.first, p->verrou, arbres.CheminDe(cible.joue).c_str());
+			}
 		}
 		for(auto it = demandes.begin(); it != demandes.end(); ) it = maintenant > it->second ? demandes.erase(it) : ++it;
 		for(auto &e : poussees) if(!e.second.empty() && maintenant >= e.first){

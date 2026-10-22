@@ -64,6 +64,12 @@ public:
 	// 1 vrai (aussi sans condition), 0 faux, -1 si une condition décisive n'est pas lue.
 	int Juger(const CActionNode &n, const CJugeAction &juge) const;
 	int JugerListe(const CActionTreeFile &f, const std::vector<int32> &liste, const CJugeAction &juge, int prof = 0) const;
+	// Les ancêtres d'un nœud, la racine en tête et le nœud en dernier ; vide s'il n'est pas dans l'arbre.
+	std::vector<const CActionNode *> Lignee(const CActionNode *n) const;
+	// FUN_005f59b0 pour un chemin relatif au nœud qui porte une piste (la référence d'une Opportunity, d'un Execute,
+	// d'une Sequence : « ./GroundStomp2 », « ../ », « ../../Attacks ») : « . » est ce nœud, « .. » son parent, un
+	// autre segment l'enfant de ce nom haché. Un chemin qui commence par « / » part de la racine. Nil si un segment manque.
+	const CActionNode *Relatif(const CActionNode *depuis, const char *chemin) const;
 	// Le chemin d'un nœud de l'arbre (« /Global/TrainingPlayer/Default/Default »), pour les journaux ; vide s'il n'y est pas.
 	std::string CheminDe(const CActionNode *n) const;
 	// La descente avec les conditions jugées : un nœud est pris si Juger rend 1.

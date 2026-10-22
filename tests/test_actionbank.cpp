@@ -4,11 +4,22 @@
 //   BULLY_DATA=<racine du jeu> build/tests/test_actionbank
 #include "../src/core/ActionBank.h"
 #include "../src/core/ActionController.h"
+#include "../src/core/Opportunite.h"
+#include "../src/core/ConditionListe.h"
 #include <cstdio>
 #include <cstring>
 
 static int echecs = 0;
 #define VERIF(cond) do{ if(!(cond)){ printf("ECHEC : %s\n", #cond); echecs++; } }while(0)
+
+// La première Opportunity de l'arbre qui vise ce chemin, et son nœud.
+static bool
+ChercherOpportunite(const CActionBank &b, const CActionNode &n, const char *chemin, COpportunite &o)
+{
+	for(const COpportunite &x : COpportunite::DuNoeud(b, n)) if(x.chemin == chemin){ o = x; return true; }
+	for(const CActionNode &e : n.enfants) if(ChercherOpportunite(b, e, chemin, o)) return true;
+	return false;
+}
 
 int
 main(void)
@@ -58,6 +69,48 @@ main(void)
 	// sous /Global/TrainingPlayer/Default. Une branche à conditions n'est pas prise sans réponse.
 	{
 		VERIF(b.TrouverOuCharger("/Global/TrainingPlayer", "Act/TrainingPlayer.act"));
+		// Les chemins relatifs des pistes (FUN_005f59b0 depuis le nœud qui porte la piste) : « ../Locomotion »
+		// (SPAWN de DEFAULT), « ../ », « ../../Attacks », « . », un segment absent.
+		{
+			const CActionNode *feuille = b.Trouver("/Global/TrainingPlayer/Default/Default");
+			const CActionNode *banque = b.Trouver("/Global/TrainingPlayer/Default");
+			VERIF(feuille && banque && b.Lignee(feuille).size() == 5 && b.Lignee(feuille).back() == feuille && b.Lignee(nil).empty());
+			VERIF(b.Relatif(feuille, "../Locomotion") == b.Trouver("/Global/TrainingPlayer/Default/Locomotion"));
+			VERIF(b.Relatif(feuille, "../") == banque && b.Relatif(feuille, ".") == feuille && b.Relatif(feuille, "./") == feuille);
+			VERIF(b.Relatif(feuille, "../../Attacks") == b.Trouver("/Global/TrainingPlayer/Attacks"));
+			VERIF(b.Relatif(feuille, "../Absent") == nil && b.Relatif(feuille, "/Global/TrainingPlayer") == b.Trouver("/Global/TrainingPlayer"));
+		}
+		// Les pistes Opportunity (FUN_005f7d70) : GroundStomp2 se ferme et bascule à 0,367 s ; l'occasion d'attaquer de
+		// DEFAULT vise ../../Attacks avec la priorité 1 ; leur nœud visé se résout depuis le nœud qui les porte.
+		{
+			COpportunite o;
+			const CActionNode *tp = b.Trouver("/Global/TrainingPlayer");
+			VERIF(tp && ChercherOpportunite(b, *tp, "./GroundStomp2", o));
+			VERIF(o.porteur && o.fermeture > 0.36f && o.fermeture < 0.37f && o.bascule > 0.36f && o.bascule < 0.37f && o.priorite == 0 && o.periode == 0 && !o.soiMeme);
+			VERIF(o.porteur && b.Relatif(o.porteur, o.chemin.c_str()) != nil && !o.prise && o.cible == nil);
+			VERIF(tp && ChercherOpportunite(b, *tp, "../../Attacks", o) && o.priorite == 1 && o.fermeture < 0.0f && o.bascule == 0.0f);
+			VERIF(o.porteur && b.Relatif(o.porteur, o.chemin.c_str()) == b.Trouver("/Global/TrainingPlayer/Attacks"));
+		}
+		// FUN_00465910 : une période < 2 passe toujours ; sinon le plus petit bit posé de (graine + image) mod 0xffff + 1.
+		// FUN_005fb750 : les six comparateurs (≈ à 1e-5 près) ; FUN_005fd650 : l'état d'un bouton selon le mode.
+		VERIF(ComparerCondition(1.0f, 1.000001f, 0) && !ComparerCondition(1.0f, 1.1f, 0) && ComparerCondition(1.0f, 1.1f, 1));
+		VERIF(ComparerCondition(0.1f, 0.2f, 2) && !ComparerCondition(0.2f, 0.2f, 2) && ComparerCondition(0.3f, 0.2f, 3));
+		VERIF(ComparerCondition(0.2f, 0.2f, 4) && ComparerCondition(0.2f, 0.2f, 5) && !ComparerCondition(0.1f, 0.2f, 5) && !ComparerCondition(0.1f, 0.2f, 9));
+		VERIF(EtatBoutonCondition(1, 1) && !EtatBoutonCondition(2, 1) && EtatBoutonCondition(2, 2) && EtatBoutonCondition(0, 3) && !EtatBoutonCondition(1, 3));
+		// rand() du CRT : graine 1 → 41, puis 18467, 6334 (les premières valeurs connues de Visual C++).
+		{
+			uint32 g = 1;
+			int r1 = RandCrt(g), r2 = RandCrt(g), r3 = RandCrt(g);
+			VERIF(r1 == 41 && r2 == 18467 && r3 == 6334);
+		}
+		VERIF(TirageOpportunite(0, 0, 7) && TirageOpportunite(1, 5, 9));
+		VERIF(TirageOpportunite(2, 0, 1) && !TirageOpportunite(2, 0, 2) && TirageOpportunite(4, 0, 3) && !TirageOpportunite(4, 0, 5));
+		VERIF(TirageOpportunite(3, 0, 3) && !TirageOpportunite(3, 0, 1));   // 3 : il faut le bit 4, une chance sur quatre
+		{
+			int n = 0;
+			for(uint32 i = 0; i < 4096; i++) n += TirageOpportunite(8, 77, i);
+			VERIF(n == 512);
+		}
 		const CActionNode *arbre = b.Trouver("/Global/TrainingPlayer");
 		const CActionNode *pris = b.Choisir(arbre);
 		VERIF(pris != nil && pris->genre == 'l' && pris == b.Trouver("/Global/TrainingPlayer/Default/Default"));
@@ -118,6 +171,62 @@ main(void)
 		}
 		struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return -1; } } inconnu;
 		VERIF(b.Juger(*anim, inconnu) == -1 && b.Choisir(attaques, inconnu) == nil);
+		// Les Sequence (FUN_005f7030) : à la fin d'un nœud à durée finie, la descente dans le nœud de sa Sequence.
+		{
+			struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return 1; } } toutVrai;
+			struct Trouve { const CActionBank &b; const CJugeAction &j; const CActionNode *n = nil; const CActionNode *suite = nil;
+				bool Dans(const CActionNode &x){
+					if(x.genre != 'b' && CActionController::Duree(b, x) > 0.0f){
+						CActionController c;
+						c.Jouer(b, &x, 0.0f);
+						for(const std::string &ch : c.suites){
+							const CActionNode *d = b.Choisir(b.Relatif(&x, ch.c_str()), j);
+							if(d && d != &x && c.occasions.empty()){ n = &x; suite = d; return true; }
+						}
+					}
+					for(const CActionNode &e : x.enfants) if(Dans(e)) return true;
+					return false;
+				} } t{b, toutVrai, nil, nil};
+			VERIF(t.Dans(*b.Global()) && t.n != nil);
+			if(t.n){
+				CActionController c;
+				c.Jouer(b, t.n, 0.0f);
+				float d = CActionController::Duree(b, *t.n);
+				VERIF(!c.Avancer(b, nil, toutVrai, d * 0.5f) && c.joue == t.n);
+				VERIF(c.Avancer(b, nil, toutVrai, d + 0.01f) && c.joue == t.suite);
+				printf("  Sequence : %s → %s à %.2f s\n", b.CheminDe(t.n).c_str(), b.CheminDe(t.suite).c_str(), d);
+			}
+		}
+		// Les Opportunity dans le contrôleur (FUN_005f7d70, FUN_005f7440, FUN_005f3bc0) : dans TrainingPlayer, la
+		// première Opportunity à bascule tardive (> 0) dont le nœud visé aboutit quand tout passe. Prise tout de suite,
+		// elle fait passer à sa bascule, pas avant ; avec des conditions fausses, elle ne fait rien.
+		{
+			struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return 1; } } toutVrai;
+			struct Trouve { const CActionBank &b; const CJugeAction &j; COpportunite o; const CActionNode *suite = nil;
+				bool Dans(const CActionNode &n){
+					for(const COpportunite &x : COpportunite::DuNoeud(b, n)){
+						if(x.chemin.empty() || x.bascule <= 0.0f || x.entree != 0.0f) continue;
+						const CActionNode *d = b.Choisir(b.Relatif(x.porteur, x.chemin.c_str()), j);
+						if(d && d != x.porteur){ o = x; suite = d; return true; }
+					}
+					for(const CActionNode &e : n.enfants) if(Dans(e)) return true;
+					return false;
+				} } t{b, toutVrai, COpportunite(), nil};
+			const CActionNode *tp = b.Trouver("/Global/TrainingPlayer");
+			VERIF(tp && t.Dans(*tp));
+			if(t.suite){
+				CActionController c;
+				c.Jouer(b, t.o.porteur, 100.0f);
+				VERIF(!c.occasions.empty());
+				VERIF(!c.Avancer(b, nil, toutVrai, 100.0f + t.o.bascule * 0.5f) && c.joue == t.o.porteur);
+				VERIF(c.Avancer(b, nil, toutVrai, 100.0f + t.o.bascule + 0.01f) && c.joue == t.suite);
+				printf("  Opportunity : %s → %s à %.3f s\n", t.o.chemin.c_str(), b.CheminDe(t.suite).c_str(), t.o.bascule);
+				CActionController d;
+				d.Jouer(b, t.o.porteur, 0.0f);
+				VERIF(!d.Avancer(b, nil, sansArme, t.o.bascule * 0.5f) && !d.Avancer(b, nil, sansArme, t.o.bascule + 0.01f) && d.joue == t.o.porteur);
+			}
+		}
+
 		printf("  descente : /Global/TrainingPlayer → %s/%s\n", "Default", pris ? pris->nom.c_str() : "?");
 	}
 	// FUN_0072ad00 / FUN_0072ae00 : AreaTransitionButes (DAT_020c8910) dans Globals.cat ; +0x18 la durée du fondu
@@ -137,6 +246,61 @@ main(void)
 		int n = g.ChargerGlobaux();
 		VERIF(n == 68 && g.EstCharge("Act/HitTree.act") && g.EstCharge("Act/Weapons/EdgarShield.act"));
 		VERIF(g.Trouver("/Global/HitTree/Standing/BlockHits") != nil && g.Trouver("/Global/Player") != nil);
+		// Les conditions propres d'une Opportunity (+0x3c) : dans les 68 arbres du démarrage, aucune n'en porte ; le
+		// contrôleur ne les juge donc pas. Le relevé compte aussi les Opportunity et les loquets.
+		{
+			struct Releve { const CActionBank &b; int occasions = 0, loquets = 0, avecConditions = 0, periodes = 0;
+				void Dans(const CActionNode &x){
+					for(const COpportunite &o : COpportunite::DuNoeud(b, x)){
+						occasions++; loquets += o.loquet; avecConditions += o.conditions != 0; periodes += o.periode > 1;
+					}
+					for(const CActionNode &e : x.enfants) Dans(e);
+				} } r{g, 0, 0, 0, 0};
+			r.Dans(*g.Global());
+			VERIF(r.occasions > 1000 && r.loquets > 0 && r.avecConditions == 0);
+			printf("  %d Opportunity dans les arbres du démarrage (%d loquets, %d à période, %d à conditions propres)\n", r.occasions, r.loquets, r.periodes, r.avecConditions);
+		}
+		// PlayOnTarget (FUN_006615f0) : dans les prises, un nœud fait jouer à la cible le nœud visé, une fois, à son entrée.
+		{
+			struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return 0; } } rien;
+			struct Trouve { const CActionBank &b; const CActionNode *n = nil, *visee = nil; float entree = 0.0f;
+				bool Dans(const CActionNode &x){
+					CActionController c;
+					c.Jouer(b, &x, 0.0f);
+					for(const CActionController::SurCible &sc : c.surCible)
+						if(const CActionNode *v = b.Relatif(&x, sc.chemin.c_str())){ n = &x; visee = v; entree = sc.entree; return true; }
+					for(const CActionNode &e : x.enfants) if(Dans(e)) return true;
+					return false;
+				} } t{g, nil, nil, 0.0f};
+			const CActionNode *prises = g.Trouver("/Global/Actions/Grapples");
+			VERIF(prises && t.Dans(*prises));
+			if(t.n){
+				CActionController c;
+				c.Jouer(g, t.n, 0.0f);
+				c.Avancer(g, nil, rien, t.entree);
+				VERIF(c.pourCible.size() == 1 && c.pourCible[0] == t.visee);
+				c.Avancer(g, nil, rien, t.entree + 0.1f);
+				VERIF(c.pourCible.empty());
+				printf("  PlayOnTarget : %s → la cible joue %s\n", g.CheminDe(t.n).c_str(), g.CheminDe(t.visee).c_str());
+			}
+		}
+		// OpportunityRandomLatch (FUN_005f7510) : le repos de GlobalLoco tire sa bascule entre 2 et 5 s.
+		{
+			COpportunite o;
+			CActionBank gl;
+			gl.TrouverOuCharger("/Global/GlobalLoco", "Act/Globals/GlobalLoco.act");
+			const CActionNode *loco = gl.Trouver("/Global/GlobalLoco");
+			VERIF(loco && ChercherOpportunite(gl, *loco, "./Opps", o) && o.loquet && o.loquetMin == 2.0f && o.loquetMax == 5.0f);
+			if(o.porteur){
+				CActionController c;
+				for(int i = 0; i < 20; i++){
+					c.Jouer(gl, o.porteur, 0.0f);
+					bool vu = false;
+					for(const COpportunite &x : c.occasions) if(x.loquet){ vu = true; VERIF(x.bascule >= 2.0f && x.bascule <= 5.0f); }
+					VERIF(vu);
+				}
+			}
+		}
 		VERIF(g.ChargerGlobaux() == 68 && g.fichiers.size() == 68);   // déjà chargés : rien n'est relu
 		// PedMePlaying : par le nom, le nœud joué ou un de ses parents (FUN_005f46a0 / FUN_005f4f30).
 		VERIF(g.Charger("Act/Globals/GlobalLoco.act"));   // le joueur y renvoie par une référence (Player.cat)
