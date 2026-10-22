@@ -338,6 +338,40 @@ main(void)
 				printf("  Collision : %s → GROUNDHITHEAVY entre 0,083 et 0,217 s\n", tp.CheminDe(coup).c_str());
 			}
 		}
+		// La réaction d'un piéton à terre (docs/cat.md, « Les coups ») : sous GroundAndWallHits/On_Ground, BellyUp prend
+		// GROUNDHITHEAVY si ConditionFlag (+4) est le drapeau du coup, sinon « default ».
+		{
+			struct JugeDrapeau : CJugeAction {
+				uint32 drapeau;
+				explicit JugeDrapeau(uint32 d) : drapeau(d) {}
+				int Juger(const CActionTreeFile &, int32, uint32 type, const uint32 mots[6]) const override {
+					if(type == ActionHash("ConditionFlag")) return (mots[0] & 0x7fffffff) == drapeau;
+					return -1;
+				}
+			};
+			const CActionNode *sol = g.Trouver("/Global/HitTree/GroundAndWallHits/On_Ground");
+			VERIF(sol != nil);
+			if(sol){
+				const CActionNode *lourd = g.Choisir(sol, JugeDrapeau(ActionHash("GROUNDHITHEAVY")));
+				const CActionNode *autre = g.Choisir(sol, JugeDrapeau(ActionHash("GROUNDHITLIGHT")));
+				VERIF(lourd && g.Joue(lourd, "/Global/HitTree/GroundAndWallHits/On_Ground/BellyUp/GroundHitHeavy/GroundHitHeavy", false));
+				VERIF(autre && g.JoueNom(autre, "default") && !g.JoueNom(autre, "GROUNDHITHEAVY"));
+				printf("  à terre : GROUNDHITHEAVY → %s\n", g.CheminDe(lourd).c_str());
+			}
+			// Une Sequence peut sortir de l'arbre posé (FUN_005f7030) : PushFwd/RCV finit, la cible tombe dans HitTree.
+			const CActionNode *rcv = g.Trouver("/Global/Actions/Grapples/Front/Grapples/GrappleMoves/DirectionalPush/PushFwd/RCV");
+			const CActionNode *tuto = g.Trouver("/Global/Actions");
+			VERIF(rcv != nil && tuto != nil);
+			if(rcv && tuto){
+				CActionController c;
+				c.arbre = tuto;
+				c.Jouer(g, rcv, 0.0f);
+				float d = CActionController::Duree(g, *rcv);
+				VERIF(d > 0.5f && d < 1.5f);
+				VERIF(c.Avancer(g, nil, JugeDrapeau(0), d + 0.05f));
+				VERIF(g.JoueNom(c.joue, "OnGroundBounce"));
+			}
+		}
 		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());
 	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");
