@@ -24,7 +24,7 @@
 // lance celle dont le joueur touche le corona, et celles qui se lancent seules (champ 51) : 1_02 après 1_01.
 // Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
 // de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s]... [--demander N@s]... [--sequence @s]...
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s]... [--demander N@s]... [--sequence @s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -252,6 +252,7 @@ static const char *
 NomMission(const CMissionData &m){ return m.nom.empty() ? m.titre.c_str() : m.nom.c_str(); }
 
 static int prochainId = 1;
+static bool tousLesControleurs;                        // LANCER_CONTROLEURS : les passages de tous les contrôleurs
 static CLuaApi api;                                   // la frontière moteur / scripts (LANCER_API, sinon docs/api-lua-tables.tsv)
 static std::map<std::string, int> inconnues;          // globales lues avant d'être posées : nil, comme dans le jeu
 static std::map<std::string, int> appels;
@@ -1855,6 +1856,8 @@ main(int argc, char **argv)
 		else pos.push_back(argv[i]);
 	}
 	if(getenv("LANCER_JOURNAL")) journalRestant = atoi(getenv("LANCER_JOURNAL"));   // lignes de journal (400)
+	// LANCER_CONTROLEURS=1 : journalise aussi les passages des contrôleurs des piétons de script (le bully, Russell).
+	tousLesControleurs = getenv("LANCER_CONTROLEURS") != nil;
 	double secondes = pos.size() > 0 ? atof(pos[0]) : 10.0;
 	const char *fichier = pos.size() > 1 ? pos[1] : "main.lua";
 	const char *fonction = pos.size() > 2 ? pos[2] : "gamemain";
@@ -2032,8 +2035,12 @@ main(int argc, char **argv)
 			c.second.image = (uint32)images;
 			c.second.graine = (uint16)c.first;
 			bool d = c.first == SCRIPT_PED_JOUEUR && (demande || !demandes.empty());
-			if(c.second.Avancer(arbres, nil, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f, d) && c.first == SCRIPT_PED_JOUEUR && c.second.joue != avant)
-				printf("%6.2f s  contrôleur du joueur : %s\n", maintenant / 1000.0, arbres.CheminDe(c.second.joue).c_str());
+			if(c.second.Avancer(arbres, nil, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f, d) && c.second.joue != avant){
+				if(c.first == SCRIPT_PED_JOUEUR)
+					printf("%6.2f s  contrôleur du joueur : %s\n", maintenant / 1000.0, arbres.CheminDe(c.second.joue).c_str());
+				else if(tousLesControleurs)
+					printf("%6.2f s  contrôleur de %d : %s\n", maintenant / 1000.0, c.first, arbres.CheminDe(c.second.joue).c_str());
+			}
 			// PlayOnTarget : la cible du piéton (FUN_004d5980 ; dans l'outil, celle de PedLockTarget) joue le nœud.
 			for(const CActionNode *n : c.second.pourCible){
 				const CScriptPed *p = pietons.Acceder(c.first);
