@@ -44,6 +44,16 @@ CActionController::Descendre(const CActionBank &b, const CActionNode *depuis, co
 }
 
 bool
+CActionController::Entrer(const CActionBank &b, const CActionNode *n, const CJugeAction &juge, float t)
+{
+	if(n == nil) return false;
+	const CActionNode *r = n->genre == 'b' ? b.Choisir(n, juge) : n;
+	if(r == nil) return false;
+	Jouer(b, r, t);
+	return true;
+}
+
+bool
 CActionController::Poser(const CActionBank &b, const CActionNode *a, const CJugeAction &juge, float t)
 {
 	arbre = a;

@@ -20,8 +20,12 @@ public:
 
 	// PedSetActionTree : l'arbre posé, la descente faite tout de suite. Faux si rien n'aboutit (le nœud ne change pas).
 	bool Poser(const CActionBank &b, const CActionNode *a, const CJugeAction &juge, float t);
-	// PedSetActionNode, la manette de l'outil : ce nœud devient le nœud joué.
+	// Ce nœud devient le nœud joué.
 	void Jouer(const CActionBank &b, const CActionNode *n, float t);
+	// PedSetActionNode (FUN_004849a0 joue le nœud par l'emplacement +0x4c, la descente) et la manette de l'outil :
+	// une banque descend jusqu'au nœud qui aboutit (FUN_005f5490), un nœud jouable se joue lui-même. Faux si rien
+	// n'aboutit ; le nœud joué ne change pas alors.
+	bool Entrer(const CActionBank &b, const CActionNode *n, const CJugeAction &juge, float t);
 	// Une image : vrai si le nœud joué a changé. `demande` : une ActionRequest attend.
 	bool Avancer(const CActionBank &b, const CActionNode *depuisRacine, const CJugeAction &juge, float t, bool demande = false);
 	float Temps(float t) const { return t - debut; }   // ce que ActionNodePlayTime mesure

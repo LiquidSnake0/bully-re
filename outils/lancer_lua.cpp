@@ -1263,7 +1263,13 @@ PedSetActionNode(lua_State *L)
 	bool ok = arbres.TrouverOuCharger(noeud, fichier);
 	// Le nœud devient celui que le piéton joue (+0x10 de son contrôleur) ; le moteur l'y met quand le
 	// contrôleur le prend, l'outil tout de suite.
-	if(ok) controleurs[(int)lua_tonumber(L, 1)].Jouer(arbres, arbres.Trouver(noeud), maintenant / 1000.0f);
+	if(ok){
+		int ped = (int)lua_tonumber(L, 1);
+		CActionController &c = controleurs[ped];
+		// Une banque descend ; si rien n'y aboutit (conditions pas lues), le piéton la « joue » quand même, comme avant.
+		if(!c.Entrer(arbres, arbres.Trouver(noeud), CJugeOutil(ped, maintenant / 1000.0f), maintenant / 1000.0f))
+			c.Jouer(arbres, arbres.Trouver(noeud), maintenant / 1000.0f);
+	}
 	if(!ok) printf("        PedSetActionNode : %s absent de %s%s\n", noeud, *fichier ? fichier : "l'arbre global", arbres.EstCharge(fichier) ? "" : " (fichier introuvable)");
 	lua_pushboolean(L, ok);
 	return 1;
@@ -1993,7 +1999,11 @@ main(int argc, char **argv)
 			arbres.TrouverOuCharger(chemin.c_str(), act.c_str());
 			const CActionNode *n = arbres.Trouver(chemin.c_str());
 			if(n == nil) printf("%6.2f s  le joueur joue %s : nœud absent de l'arbre global\n", maintenant / 1000.0, e.second.c_str());
-			else { controleurs[SCRIPT_PED_JOUEUR].Jouer(arbres, n, maintenant / 1000.0f); printf("%6.2f s  le joueur joue %s\n", maintenant / 1000.0, chemin.c_str()); }
+			else {
+				CActionController &c = controleurs[SCRIPT_PED_JOUEUR];
+				if(!c.Entrer(arbres, n, CJugeOutil(SCRIPT_PED_JOUEUR, maintenant / 1000.0f), maintenant / 1000.0f)) c.Jouer(arbres, n, maintenant / 1000.0f);
+				printf("%6.2f s  le joueur joue %s%s\n", maintenant / 1000.0, chemin.c_str(), c.joue != n ? (" → " + arbres.CheminDe(c.joue)).c_str() : "");
+			}
 			e.second.clear();
 		}
 		for(uint32 &q : sequences) if(q != 0xffffffffu && maintenant >= q){ ReussirSequence(L); q = 0xffffffffu; }

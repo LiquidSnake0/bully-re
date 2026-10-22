@@ -112,6 +112,9 @@ main(void)
 			c.Jouer(b, cible, 20.0f);
 			VERIF(c.Avancer(b, nil, sansArme, 20.0f + d + 0.01f) && (c.joue == pris || c.joue != cible));
 			VERIF(c.Temps(c.debut + 0.25f) == 0.25f);
+			// Entrer dans une banque descend (FUN_005f5490) ; dans un nœud jouable, le joue.
+			VERIF(c.Entrer(b, arbre, sansArme, 30.0f) && c.joue == pris);
+			VERIF(c.Entrer(b, cible, sansArme, 31.0f) && c.joue == cible);
 		}
 		struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return -1; } } inconnu;
 		VERIF(b.Juger(*anim, inconnu) == -1 && b.Choisir(attaques, inconnu) == nil);
