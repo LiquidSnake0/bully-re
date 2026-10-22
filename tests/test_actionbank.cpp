@@ -78,6 +78,15 @@ main(void)
 		VERIF(!CActionBank::Butes("PasDeTellesButes", c));
 		printf("  AreaTransitionButes : fondu au noir %.2f s, retour %.2f s\n", CActionBank::ButesReel(t, 24), CActionBank::ButesReel(t, 28));
 	}
+	// FUN_005f6f20 : les arbres globaux du démarrage ; HitTree (la parade que 1_02 attend) en fait partie.
+	{
+		CActionBank g;
+		int n = g.ChargerGlobaux();
+		VERIF(n == 68 && g.EstCharge("Act/HitTree.act") && g.EstCharge("Act/Weapons/EdgarShield.act"));
+		VERIF(g.Trouver("/Global/HitTree/Standing/BlockHits") != nil && g.Trouver("/Global/Player") != nil);
+		VERIF(g.ChargerGlobaux() == 68 && g.fichiers.size() == 68);   // déjà chargés : rien n'est relu
+		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());
+	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;
 }

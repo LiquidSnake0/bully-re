@@ -179,3 +179,34 @@ CActionBank::Choisir(const CActionNode *depuis, Conditions conditions, void *con
 		return nil;
 	}
 }
+
+// PTR_s_Act_Globals_act_00b0a4f0 : la liste que FUN_005f6f20 charge au démarrage, dans cet ordre.
+const char *const CActionBank::globaux[68] = {
+	"Act/Globals.act", "Act/Missions.act", "Act/CameraActions.act", "Act/Player.act", "Act/PlayerAI.act",
+	"Act/Anim/GS_Female_A.act", "Act/AI/AI.act", "Act/Anim/N_Striker_B.act", "Act/Anim/N_Striker_A.act",
+	"Act/Anim/N_Ranged_A.act", "Act/Anim/J_Striker_A.act", "Act/Anim/J_Grappler_A.act",
+	"Act/Anim/J_Melee_A.act", "Act/Anim/G_Striker_A.act", "Act/Anim/G_Grappler_A.act", "Act/Anim/G_Melee_A.act",
+	"Act/Anim/P_Striker_A.act", "Act/Anim/P_Grappler_A.act", "Act/Anim/P_Striker_B.act",
+	"Act/Anim/DO_Grappler_A.act", "Act/Anim/DO_Striker_A.act", "Act/Anim/Authority.act",
+	"Act/Anim/LE_Orderly_A.act", "Act/Anim/TE_Female_A.act", "Act/Anim/CV_Male_A.act", "Act/Anim/GS_Male_A.act",
+	"Act/Anim/GS_Fat_A.act", "Act/Anim/B_Striker_A.act", "Act/Anim/CV_Female_A.act", "Act/Anim/J_Mascot.act",
+	"Act/Anim/CV_OLD.act", "Act/Anim/AN_RAT.act", "Act/AI/AI_Rat.act", "Act/Anim/AN_DOG.act",
+	"Act/AI/AI_Dog.act", "Act/Anim/G_Johnny.act", "Act/Globals/GlobalActions.act", "Act/Globals/SimpleLoco.act",
+	"Act/HitTree.act", "Act/Weapons.act", "Act/Vehicles.act", "Act/WProps.act", "Act/Anim/Ambient.act",
+	"Act/Globals/Cameras.act", "Act/Globals/PlayerFacial.act", "Act/Globals/NPCFacial.act",
+	"Act/Globals/CutScene.act", "Act/Weapons/Basketball.act", "Act/Weapons/Bat.act", "Act/Weapons/BBGun.act",
+	"Act/Weapons/Books.act", "Act/Weapons/FlashLight.act", "Act/Weapons/Gun.act", "Act/Weapons/KickMeSign.act",
+	"Act/Weapons/JBroom.act", "Act/Weapons/NonWeapon.act", "Act/Weapons/Shields.act", "Act/Weapons/Slasher.act",
+	"Act/Weapons/SledgeHammer.act", "Act/Weapons/SlingShot.act", "Act/Weapons/Spraycan.act",
+	"Act/Weapons/SnowShovel.act", "Act/Weapons/Thrown.act", "Act/Weapons/Umbrella.act",
+	"Act/Weapons/WCamera.act", "Act/Weapons/WFireExt.act", "Act/Weapons/WaterPipe.act",
+	"Act/Weapons/EdgarShield.act"
+};
+
+int
+CActionBank::ChargerGlobaux(void)
+{
+	int n = 0;
+	for(const char *act : globaux) n += Charger(act);
+	return n;
+}

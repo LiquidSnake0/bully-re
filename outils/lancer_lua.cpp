@@ -1401,6 +1401,8 @@ ChargerMissions(void)
 	for(const CMissionData &m : banque.missions) jouables += m.Jouable();
 	printf("%zu missions dans la banque (%zu fichiers), %d avec un script\n", banque.missions.size(), banque.banques.size(), jouables);
 	{
+		// FUN_005f6f20 : les arbres globaux sont chargés avant tout script.
+		printf("%d arbres d'actions globaux chargés sous /Global\n", arbres.ChargerGlobaux());
 		CActionTrack t;   // FUN_0072ae00 : AreaTransitionButes → DAT_020c8910
 		if(CActionBank::Butes("AreaTransitionButes", t)){
 			fonduNoirMs = CActionBank::ButesReel(t, 24) * 1000;

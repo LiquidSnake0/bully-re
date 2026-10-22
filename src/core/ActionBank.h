@@ -47,5 +47,9 @@ public:
 	// fichier (Globals.cat pour AreaTransitionButes, TimeCycleButes…) ; FUN_0072ae00 les range au démarrage
 	// (DAT_020c8910 pour AreaTransitionButes). Faux si le fichier ou la piste manque.
 	static bool Butes(const char *nom, CActionTrack &piste, const char *cat = "Globals.cat");
+	// FUN_005f6f20 : au démarrage, les 68 arbres de la liste PTR_s_Act_Globals_act_00b0a4f0 (Globals, Missions,
+	// Player, HitTree, les armes…) chargés sous /Global par FUN_005f6c50. Rend le nombre de fichiers chargés.
+	int ChargerGlobaux(void);
+	static const char *const globaux[68];
 	static float ButesReel(const CActionTrack &piste, uint16 position);   // un attribut de 4 octets lu comme un réel
 };
