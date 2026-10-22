@@ -65,6 +65,12 @@ main(void)
 		VERIF(attaques != nil && !attaques->conditions.empty() && b.Choisir(attaques) == nil);
 		VERIF(b.Choisir(attaques, [](const CActionNode &, void *){ return true; }) != nil);
 		VERIF(b.Choisir(nil) == nil);
+		// Les données du fichier restent chargées : la ConditionGroup de .../Locomotion/animations se lit encore.
+		const CActionNode *anim = b.Trouver("/Global/TrainingPlayer/Default/Locomotion/animations");
+		const CActionTreeFile *f = anim ? b.Fichier(*anim) : nil;
+		std::vector<int32> groupe;
+		VERIF(f != nil && anim->conditions.size() == 1 && f->TypeCondition(anim->conditions[0]) == ActionHash("ConditionGroup")
+		      && f->GroupeDe(anim->conditions[0], groupe) && groupe.size() == 11);
 		printf("  descente : /Global/TrainingPlayer → %s/%s\n", "Default", pris ? pris->nom.c_str() : "?");
 	}
 	// FUN_0072ad00 / FUN_0072ae00 : AreaTransitionButes (DAT_020c8910) dans Globals.cat ; +0x18 la durée du fondu

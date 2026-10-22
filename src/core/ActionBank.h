@@ -9,6 +9,7 @@
 // FUN_005dbe60 le vérifie par le hachage de son nom sans dossier) puis cherche de nouveau.
 #pragma once
 #include "ActionTree.h"
+#include <memory>
 
 class CActionBank
 {
@@ -40,6 +41,14 @@ public:
 	// à un autre fichier que l'on ne suit pas : elle n'aboutit pas. Rend nil si rien n'aboutit.
 	typedef bool (*Conditions)(const CActionNode &n, void *contexte);
 	const CActionNode *Choisir(const CActionNode *depuis, Conditions conditions = nil, void *contexte = nil) const;
+
+	// Les fichiers chargés restent en mémoire, comme le bloc que FUN_005fb3f0 alloue : les conditions et les pistes
+	// d'un nœud ne sont que des décalages dans ses données. Fichier(n) : le fichier d'où vient le nœud, ou nil.
+	struct Source { std::vector<uint8> donnees; CActionTreeFile fichier; };
+	std::vector<std::shared_ptr<Source>> sources;
+	const CActionTreeFile *Fichier(const CActionNode &n) const {
+		return n.source >= 0 && n.source < (int)sources.size() ? &sources[n.source]->fichier : nil;
+	}
 
 	CActionNode racine;                      // DAT_01b649dc : sans nom, son seul enfant est la banque « Global »
 	CActionNode *Global(void){ return &racine.enfants[0]; }

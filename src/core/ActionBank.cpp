@@ -90,6 +90,13 @@ CActionBank::ButesReel(const CActionTrack &piste, uint16 position)
 	return r;
 }
 
+static void
+Marquer(CActionNode &n, int16 source)
+{
+	n.source = source;
+	for(CActionNode &e : n.enfants) Marquer(e, source);
+}
+
 bool
 CActionBank::Charger(const char *act)
 {
@@ -99,9 +106,11 @@ CActionBank::Charger(const char *act)
 	std::string cat = NomCat(act);
 	const CDirectoryEntry *d = CdStream::ms_images[image].Find(cat.c_str());
 	if(d == nil) return false;
-	std::vector<uint8> buf;
-	CActionTreeFile f;
-	if(!LireCat(d, buf) || !f.Load(buf.data(), (uint32)buf.size())) return false;
+	std::shared_ptr<Source> src = std::make_shared<Source>();
+	CActionTreeFile &f = src->fichier;
+	if(!LireCat(d, src->donnees) || !f.Load(src->donnees.data(), (uint32)src->donnees.size())) return false;
+	Marquer(f.racine, (int16)sources.size());
+	sources.push_back(src);
 	// La banque de tête du fichier (« 1_01 », « Player ») devient un enfant de /Global ; une banque du
 	// même nom déjà là reçoit ses enfants (vtable +0x18 de la racine).
 	CActionNode *cible = nil;

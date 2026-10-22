@@ -44,6 +44,7 @@ struct CActionNode {
 	std::vector<int32> pistes;
 	std::string cible;                 // une référence : le chemin du nœud visé
 	std::vector<CActionNode> enfants;
+	int16 source = -1;                 // dans CActionBank : le fichier .cat d'où vient le nœud (ses conditions s'y lisent)
 };
 
 struct CActionRenvoi { uint32 valeur; std::vector<uint32> decalages; };
