@@ -58,6 +58,17 @@ main(void)
 	// sous /Global/TrainingPlayer/Default. Une branche à conditions n'est pas prise sans réponse.
 	{
 		VERIF(b.TrouverOuCharger("/Global/TrainingPlayer", "Act/TrainingPlayer.act"));
+		// Les chemins relatifs des pistes (FUN_005f59b0 depuis le nœud qui porte la piste) : « ../Locomotion »
+		// (SPAWN de DEFAULT), « ../ », « ../../Attacks », « . », un segment absent.
+		{
+			const CActionNode *feuille = b.Trouver("/Global/TrainingPlayer/Default/Default");
+			const CActionNode *banque = b.Trouver("/Global/TrainingPlayer/Default");
+			VERIF(feuille && banque && b.Lignee(feuille).size() == 5 && b.Lignee(feuille).back() == feuille && b.Lignee(nil).empty());
+			VERIF(b.Relatif(feuille, "../Locomotion") == b.Trouver("/Global/TrainingPlayer/Default/Locomotion"));
+			VERIF(b.Relatif(feuille, "../") == banque && b.Relatif(feuille, ".") == feuille && b.Relatif(feuille, "./") == feuille);
+			VERIF(b.Relatif(feuille, "../../Attacks") == b.Trouver("/Global/TrainingPlayer/Attacks"));
+			VERIF(b.Relatif(feuille, "../Absent") == nil && b.Relatif(feuille, "/Global/TrainingPlayer") == b.Trouver("/Global/TrainingPlayer"));
+		}
 		const CActionNode *arbre = b.Trouver("/Global/TrainingPlayer");
 		const CActionNode *pris = b.Choisir(arbre);
 		VERIF(pris != nil && pris->genre == 'l' && pris == b.Trouver("/Global/TrainingPlayer/Default/Default"));

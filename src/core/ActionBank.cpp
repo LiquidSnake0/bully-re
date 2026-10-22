@@ -338,3 +338,36 @@ CActionBank::CheminDe(const CActionNode *n) const
 	}
 	return s;
 }
+
+std::vector<const CActionNode *>
+CActionBank::Lignee(const CActionNode *n) const
+{
+	std::vector<const CActionNode *> pile;
+	if(n == nil || !Chemin(racine, n, pile)) pile.clear();
+	return pile;
+}
+
+const CActionNode *
+CActionBank::Relatif(const CActionNode *depuis, const char *chemin) const
+{
+	if(chemin == nil) return nil;
+	if(*chemin == '/' || *chemin == '\\') return Trouver(chemin);
+	std::vector<const CActionNode *> pile = Lignee(depuis);
+	if(pile.empty()) return nil;
+	const char *p = chemin;
+	while(*p){
+		const char *e = p;
+		while(*e && *e != '/' && *e != '\\') e++;
+		std::string segment(p, e);
+		p = *e ? e + 1 : e;
+		if(segment.empty() || segment == ".") continue;
+		if(segment == ".."){ if(pile.size() > 1) pile.pop_back(); continue; }
+		uint32 h = ActionHash(segment.c_str());
+		const CActionNode *suivant = nil;
+		for(const CActionNode &x : pile.back()->enfants) if(x.hachage == h){ suivant = &x; break; }
+		if(suivant == nil) return nil;
+		if(suivant->nom.empty()) suivant->nom = segment;
+		pile.push_back(suivant);
+	}
+	return pile.back();
+}
