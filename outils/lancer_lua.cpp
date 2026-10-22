@@ -24,7 +24,7 @@
 // lance celle dont le joueur touche le corona, et celles qui se lancent seules (champ 51) : 1_02 après 1_01.
 // Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
 // de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]...
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -97,9 +97,10 @@ static CModelEnum modeles;
 // retirés puis celui de la nouvelle zone chargé avec son main, zone visible et joueur posés à l'arrivée.
 static CAreaManager zones;
 // Le fondu de la caméra (CameraFade, 0x4f1980), réduit à ce que la machine des zones et les scripts en
-// attendent : une durée, un sens, et « fini ». Les durées par défaut du moteur (DAT_020c8910 + 0x18 et
-// + 0x1c) ne sont pas lues : une seconde.
-static const float FONDU_DEFAUT_MS = 1000;
+// attendent : une durée, un sens, et « fini ». Les durées par défaut sont celles d'AreaTransitionButes (DAT_020c8910,
+// lue dans Globals.cat au démarrage) : +0x18 pour le fondu au noir (0,65 s), +0x1c pour le retour (0,5 s) ;
+// CameraFade(-1, sens) les prend (0x5b8ea0), le changement de zone aussi (FUN_00416e30, états 2 et 0xb).
+static float fonduNoirMs = 650, fonduRetourMs = 500;
 // L'arbre d'actions global (src/core/ActionBank.h) : PedSetActionNode(ped, « /Global/1_01/Talking »,
 // « Act/Conv/1_01.act ») cherche le nœud et charge le fichier au besoin (FUN_004849a0) ; le nœud n'est pas
 // joué (pas d'animation ici), mais le script reçoit la vraie réponse : le nœud existe ou non.
@@ -808,7 +809,7 @@ CameraFade(lua_State *L)
 	float ms = (float)luaL_optnumber(L, 1, -1);
 	int sens = (int)luaL_optnumber(L, 2, 0);
 	if(sens != 0 && sens != 1) return 0;
-	if(ms < 0) ms = FONDU_DEFAUT_MS;
+	if(ms < 0) ms = sens == 0 ? fonduNoirMs : fonduRetourMs;
 	LancerFondu(ms, sens == 0);
 	return 0;
 }
@@ -879,6 +880,33 @@ PedIsInAreaXYZ(lua_State *L)
 {
 	appels["PedIsInAreaXYZ"]++;
 	return PaveArg(L, lua_isnumber(L, 1) ? pietons.Acceder((int)lua_tonumber(L, 1)) : nil, 2);
+}
+
+// PlayerIsInAreaObject(id, genre, rayon, marqueur[, …]) (0x5d14f0) : LuaGetEntity(id, genre) puis FUN_005c2810 prend
+// la position de l'entité (genre 2 : un piéton de script, FUN_005c7220 ; 3 : le joueur ; 0 et 1 : un objet, un
+// véhicule, pas encore dans l'outil : faux), et FUN_005c2910(1, …) teste le joueur dans le pavé fermé de demi-côté
+// « rayon » autour d'elle, comme PlayerIsInAreaXYZ. Faux si l'entité n'existe pas.
+static int
+PlayerIsInAreaObject(lua_State *L)
+{
+	Journal("PlayerIsInAreaObject", L, 1);
+	int id = (int)luaL_optnumber(L, 1, -1), genre = (int)luaL_optnumber(L, 2, -1);
+	float r = (float)luaL_optnumber(L, 3, 1);
+	const CScriptPed *e = genre == 2 ? pietons.Acceder(id) : genre == 3 ? pietons.Acceder(SCRIPT_PED_JOUEUR) : nil;
+	const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	lua_pushboolean(L, e != nil && j != nil && PaveContient(j->pos, e->pos, r, r, r, true));
+	return 1;
+}
+
+// PedLockTarget(ped, cible, mode) (0x5cb060) : le verrou de cible du piéton (CScriptPedPool::Verrouiller).
+static int
+PedLockTarget(lua_State *L)
+{
+	Journal("PedLockTarget", L, 1);
+	// Le troisième argument : un nombre, ou un booléen que FUN_004969a0 convertit (FUN_005d81c0 choisit).
+	int mode = lua_isnumber(L, 3) ? (int)lua_tonumber(L, 3) : lua_toboolean(L, 3);
+	pietons.Verrouiller((int)luaL_optnumber(L, 1, -1), (int)luaL_optnumber(L, 2, -1), mode);
+	return 0;
 }
 
 // --aller NOM[,n]@s ou --aller x,y,z@s : à s secondes, le joueur est posé au n-ième point de la
@@ -1185,6 +1213,27 @@ PedSetActionNode(lua_State *L)
 	return 1;
 }
 
+// PedSetActionTree(ped, arbre, fichier) (0x5cac20) : FUN_00473f80 charge le fichier, puis FUN_005dc040 pose l'arbre au
+// contrôleur du piéton, qui y descend (CActionBank::Choisir, FUN_005f5490 / FUN_005f5500) : le premier nœud qui
+// aboutit devient le nœud joué. Les conditions des nœuds ne sont pas encore jugées ici : une branche qui en porte
+// n'est pas prise, et le contrôleur ne redescend pas aux images suivantes.
+static int
+PedSetActionTree(lua_State *L)
+{
+	Journal("PedSetActionTree", L, 1);
+	const CScriptPed *p = PedArg(L, 1);
+	const char *arbre = luaL_optstring(L, 2, ""), *fichier = luaL_optstring(L, 3, "");
+	if(p == nil || *arbre == 0 || *fichier == 0) return 0;
+	if(!arbres.TrouverOuCharger(arbre, fichier)){
+		printf("        PedSetActionTree : %s absent de %s\n", arbre, fichier);
+		return 0;
+	}
+	const CActionNode *n = arbres.Choisir(arbres.Trouver(arbre));
+	if(n) noeudJoue[(int)lua_tonumber(L, 1)] = n;
+	else printf("        PedSetActionTree : rien ne s'ouvre dans %s sans juger ses conditions\n", arbre);
+	return 0;
+}
+
 // PedIsPlaying(ped, chemin[, sous]) (0x5cb830 → FUN_005f3bf0) : le piéton joue ce nœud, ou, avec `sous`, un
 // nœud placé dessous.
 // GetCurrentDay([modulo]) (0x5c0c00) : le jour du calendrier (DAT_020c3640), ou ce jour modulo 5.
@@ -1193,7 +1242,7 @@ GetCurrentDay(lua_State *L)
 {
 	appels["GetCurrentDay"]++;
 	int j = gestionnaire.etat.jour;
-	lua_pushnumber(L, lua_toboolean(L, 1) ? j % 5 : j);
+	lua_pushnumber(L, lua_toboolean(L, 1) ? j % 5 : j);   // 5 écrit en dur dans 0x5c0c00 (DayCond, lui, lit TimeCycleButes)
 	return 1;
 }
 
@@ -1203,6 +1252,16 @@ PedIsPlaying(lua_State *L)
 	Journal("PedIsPlaying", L, 1);
 	auto it = lua_isnumber(L, 1) ? noeudJoue.find((int)lua_tonumber(L, 1)) : noeudJoue.end();
 	lua_pushboolean(L, it != noeudJoue.end() && arbres.Joue(it->second, luaL_optstring(L, 2, ""), lua_toboolean(L, 3) != 0));
+	return 1;
+}
+
+// PedMePlaying(ped, nom[, sous]) (0x5cb910 → FUN_005f46a0) : le nœud joué, ou un de ses parents, porte ce nom.
+static int
+PedMePlaying(lua_State *L)
+{
+	Journal("PedMePlaying", L, 1);
+	auto it = lua_isnumber(L, 1) ? noeudJoue.find((int)lua_tonumber(L, 1)) : noeudJoue.end();
+	lua_pushboolean(L, it != noeudJoue.end() && arbres.JoueNom(it->second, luaL_optstring(L, 2, "")));
 	return 1;
 }
 
@@ -1378,6 +1437,18 @@ ChargerMissions(void)
 	int jouables = 0;
 	for(const CMissionData &m : banque.missions) jouables += m.Jouable();
 	printf("%zu missions dans la banque (%zu fichiers), %d avec un script\n", banque.missions.size(), banque.banques.size(), jouables);
+	{
+		// FUN_005f6f20 : les arbres globaux sont chargés avant tout script.
+		printf("%d arbres d'actions globaux chargés sous /Global\n", arbres.ChargerGlobaux());
+		CActionTrack t;   // FUN_0072ae00 : AreaTransitionButes → DAT_020c8910
+		if(CActionBank::Butes("AreaTransitionButes", t)){
+			fonduNoirMs = CActionBank::ButesReel(t, 24) * 1000;
+			fonduRetourMs = CActionBank::ButesReel(t, 28) * 1000;
+		}
+		// FUN_0072ae00 : TimeCycleButes → DAT_020c88ac ; +0x18 = jours d'un cycle, le modulo de DayCond et de
+		// GetCurrentDay(true).
+		if(CActionBank::Butes("TimeCycleButes", t) && t.Mot(24) > 0) gestionnaire.etat.joursParCycle = (int)t.Mot(24);
+	}
 }
 
 // FUN_006acba0 : le script de la mission puis MissionSetup ; par indice dans la banque.
@@ -1537,7 +1608,7 @@ AvancerZones(lua_State *L)
 	}
 	zones.AvancerImage(fondu.Etat(), !scriptsDeZone, scriptDemande);
 	const CAreaManager::Evenements &e = zones.evenements;
-	if(e.fonduNoir) LancerFondu(FONDU_DEFAUT_MS, true);
+	if(e.fonduNoir) LancerFondu(fonduNoirMs, true);
 	if(e.decharger){
 		// FUN_005dbb20 : les scripts de zone sont retirés (leurs threads avec).
 		for(Script &sc : scripts){
@@ -1565,7 +1636,7 @@ AvancerZones(lua_State *L)
 		j->pos = zones.demande.pos; j->cap = zones.demande.cap;
 		printf("%6.2f s  zones : le joueur est posé en (%.1f, %.1f, %.1f), cap %.0f, zone %d\n", maintenant / 1000.0, j->pos.x, j->pos.y, j->pos.z, j->cap, zones.zoneVisible);
 	}
-	if(e.fonduRetour) LancerFondu(FONDU_DEFAUT_MS, false);
+	if(e.fonduRetour) LancerFondu(fonduRetourMs, false);
 }
 
 // FUN_006ad130, réduit : à chaque image, ce que le gestionnaire fait des missions de la banque.
@@ -1619,6 +1690,7 @@ main(int argc, char **argv)
 	std::vector<std::pair<uint32, std::string>> allers;    // --aller NOM[,n]@s ou x,y,z@s : le joueur y est posé à s secondes
 	std::vector<std::pair<uint32, int>> portes;            // --zone N@s : le joueur passe dans la zone N (une porte) à s secondes
 	std::vector<std::pair<uint32, std::string>> poussees;  // --porte NOM@s : le joueur pousse la porte du déclencheur NOM (DT_…) à s secondes
+	std::vector<std::pair<uint32, std::string>> gestes;    // --jouer CHEMIN@s : le joueur joue ce nœud d'action à s secondes (la manette : parer, frapper)
 	std::vector<const char*> pos;
 	for(int i = 1; i < argc; i++){
 		if(strcmp(argv[i], "--mission") == 0 && i + 1 < argc) aLancer = argv[++i];
@@ -1631,6 +1703,11 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--zone") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
 			portes.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), atoi(e.c_str())});
+		}
+		else if(strcmp(argv[i], "--jouer") == 0 && i + 1 < argc){
+			std::string e = argv[++i];
+			size_t at = e.rfind('@');
+			gestes.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
 		}
 		else if(strcmp(argv[i], "--porte") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
@@ -1681,6 +1758,10 @@ main(int argc, char **argv)
 	lua_register(L, "CameraFade", CameraFade);
 	lua_register(L, "PedSetActionNode", PedSetActionNode);
 	lua_register(L, "PedIsPlaying", PedIsPlaying);
+	lua_register(L, "PedMePlaying", PedMePlaying);
+	lua_register(L, "PlayerIsInAreaObject", PlayerIsInAreaObject);
+	lua_register(L, "PedLockTarget", PedLockTarget);
+	lua_register(L, "PedSetActionTree", PedSetActionTree);
 	lua_register(L, "GetCurrentDay", GetCurrentDay);
 	lua_register(L, "SoundPlayScriptedSpeechEvent", SoundPlayScriptedSpeechEvent);
 	lua_register(L, "SoundSpeechPlaying", SoundSpeechPlaying);
@@ -1778,6 +1859,20 @@ main(int argc, char **argv)
 		for(auto &e : allers) if(!e.second.empty() && maintenant >= e.first){ AllerAuPoint(e.second.c_str()); e.second.clear(); }
 		// Une porte DT_ poussée : FUN_00415160 pose l'objet de porte en cours (+0x394) ; le moteur le fait depuis
 		// l'animation de la porte (FUN_00610ed0, non jouée), l'outil le fait au nom du déclencheur.
+		for(auto &e : gestes) if(!e.second.empty() && maintenant >= e.first){
+			// Ce que la manette ferait faire au contrôleur du joueur (une parade, un coup) : le nœud devient le
+			// nœud joué (+0x10), que PedIsPlaying compare.
+			// CHEMIN:FICHIER.act : le fichier est chargé s'il manque (FUN_004849a0), pour un arbre que le joueur
+			// n'atteint que par une référence (GlobalLoco depuis Player).
+			std::string chemin = e.second, act;
+			size_t dp = chemin.find(':');
+			if(dp != std::string::npos){ act = chemin.substr(dp + 1); chemin = chemin.substr(0, dp); }
+			arbres.TrouverOuCharger(chemin.c_str(), act.c_str());
+			const CActionNode *n = arbres.Trouver(chemin.c_str());
+			if(n == nil) printf("%6.2f s  le joueur joue %s : nœud absent de l'arbre global\n", maintenant / 1000.0, e.second.c_str());
+			else { noeudJoue[SCRIPT_PED_JOUEUR] = n; printf("%6.2f s  le joueur joue %s\n", maintenant / 1000.0, chemin.c_str()); }
+			e.second.clear();
+		}
 		for(auto &e : poussees) if(!e.second.empty() && maintenant >= e.first){
 			int h = donnees.Declencheur(e.second.c_str());
 			if(h < 0) printf("%6.2f s  le joueur pousse la porte %s : aucun déclencheur de ce nom n'est chargé\n", maintenant / 1000.0, e.second.c_str());

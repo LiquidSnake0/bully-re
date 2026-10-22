@@ -41,6 +41,8 @@ struct CScriptPed {
 	CVector cible;
 	float vitesse = 0;
 	int attaque = -1;            // handle de la cible de PedAttack, -1 sinon
+	int verrou = -1;             // PedLockTarget : la cible verrouillée (FUN_00497d20), -1 sinon
+	int verrouMode = 0;          // son troisième argument (le genre de verrouillage)
 	float prochainCoup = 0;      // s avant le prochain coup
 	// Ce qui s'est passé pendant la dernière image (pour le journal de lancer_lua).
 	bool arrive = false, aFrappe = false, vientDeMourir = false;
@@ -68,6 +70,9 @@ public:
 	bool Arreter(int handle);
 	// lua_PedAttack (0x5c9ca0) : l'attaquant prend la cible ; faux si l'un des deux n'existe pas.
 	bool Attaquer(int handle, int cible);
+	// lua_PedLockTarget (0x5cb060) : rien si le piéton n'existe pas ; cible -1 lève le verrou (FUN_004989c0(0)) ;
+	// sinon, si la cible existe, FUN_00497d20 la verrouille avec le mode donné. Vrai si quelque chose a changé.
+	bool Verrouiller(int handle, int cible, int mode);
 	// lua_PedSetHealth : la santé ; à zéro, le piéton meurt et lâche son geste.
 	void Sante(int handle, float sante);
 	// FUN_0047b6b0 puis FUN_004782a0 : un coup de `degats` porté par `attaquant` (-1 : personne). Rien si la

@@ -52,6 +52,46 @@ main(void)
 		VERIF(!b.Joue(talking, "/Global/1_01", false) && !b.Joue(nil, "/Global/1_01", true) && !b.Joue(talking, "/Global/Absent", true));
 		VERIF(!b.Joue(b.Trouver("/Global/1_01"), "/Global/1_01/Talking", true));   // un parent n'est pas « sous » son enfant
 	}
+	// La descente du contrôleur (FUN_005f5490 / FUN_005f5500) : dans /Global/TrainingPlayer, la banque DEFAULT vient
+	// en premier, sans condition, et sa première feuille est DEFAULT : c'est le nœud que l'entraînement de 1_02 attend
+	// sous /Global/TrainingPlayer/Default. Une branche à conditions n'est pas prise sans réponse.
+	{
+		VERIF(b.TrouverOuCharger("/Global/TrainingPlayer", "Act/TrainingPlayer.act"));
+		const CActionNode *arbre = b.Trouver("/Global/TrainingPlayer");
+		const CActionNode *pris = b.Choisir(arbre);
+		VERIF(pris != nil && pris->genre == 'l' && pris == b.Trouver("/Global/TrainingPlayer/Default/Default"));
+		VERIF(b.Joue(pris, "/Global/TrainingPlayer/Default", true) && !b.Joue(pris, "/Global/TrainingPlayer/Default", false));
+		const CActionNode *attaques = b.Trouver("/Global/TrainingPlayer/Attacks");
+		VERIF(attaques != nil && !attaques->conditions.empty() && b.Choisir(attaques) == nil);
+		VERIF(b.Choisir(attaques, [](const CActionNode &, void *){ return true; }) != nil);
+		VERIF(b.Choisir(nil) == nil);
+		printf("  descente : /Global/TrainingPlayer → %s/%s\n", "Default", pris ? pris->nom.c_str() : "?");
+	}
+	// FUN_0072ad00 / FUN_0072ae00 : AreaTransitionButes (DAT_020c8910) dans Globals.cat ; +0x18 la durée du fondu
+	// au noir d'un changement de zone (0,65 s), +0x1c celle du retour (0,5 s), les défauts de CameraFade(-1).
+	{
+		CActionTrack t;
+		VERIF(CActionBank::Butes("AreaTransitionButes", t));
+		VERIF(CActionBank::ButesReel(t, 24) == 0.65f && CActionBank::ButesReel(t, 28) == 0.5f);
+		CActionTrack c;
+		VERIF(CActionBank::Butes("TimeCycleButes", c) && c.Mot(24) == 5);   // un entier : le diviseur de GetCurrentDay(true)
+		VERIF(!CActionBank::Butes("PasDeTellesButes", c));
+		printf("  AreaTransitionButes : fondu au noir %.2f s, retour %.2f s\n", CActionBank::ButesReel(t, 24), CActionBank::ButesReel(t, 28));
+	}
+	// FUN_005f6f20 : les arbres globaux du démarrage ; HitTree (la parade que 1_02 attend) en fait partie.
+	{
+		CActionBank g;
+		int n = g.ChargerGlobaux();
+		VERIF(n == 68 && g.EstCharge("Act/HitTree.act") && g.EstCharge("Act/Weapons/EdgarShield.act"));
+		VERIF(g.Trouver("/Global/HitTree/Standing/BlockHits") != nil && g.Trouver("/Global/Player") != nil);
+		VERIF(g.ChargerGlobaux() == 68 && g.fichiers.size() == 68);   // déjà chargés : rien n'est relu
+		// PedMePlaying : par le nom, le nœud joué ou un de ses parents (FUN_005f46a0 / FUN_005f4f30).
+		VERIF(g.Charger("Act/Globals/GlobalLoco.act"));   // le joueur y renvoie par une référence (Player.cat)
+		const CActionNode *bloc = g.Trouver("/Global/GlobalLoco/Locomotion/Combat/0_BLOCK_0");
+		VERIF(bloc != nil && g.JoueNom(bloc, "0_BLOCK_0") && g.JoueNom(bloc, "combat") && g.JoueNom(bloc, "GlobalLoco"));
+		VERIF(!g.JoueNom(bloc, "BlockHits") && !g.JoueNom(nil, "0_BLOCK_0"));
+		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());
+	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;
 }

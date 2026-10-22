@@ -560,3 +560,27 @@ en échec plutôt que de les masquer.
   contrôleur d'actions qui descend dans l'arbre de `PedSetActionTree` (l'entraînement attend
   `/Global/TrainingPlayer/Default`), `ConditionGroup` (la référence vers le groupe nommé), les constantes
   des fondus, le recul de `FUN_00416750`, l'animation de la porte qui pose +0x394.
+
+## 22.10.2026
+
+- **Le contrôleur d'actions.** `PedSetActionTree` (0x5cac20) pose l'arbre au contrôleur (`FUN_005dc040`), qui y
+  descend : une banque teste ses conditions puis rend le premier enfant qui aboutit (`FUN_005f5490`), un nœud
+  jouable ou une feuille se rend lui-même (`FUN_005f5500`). `CActionBank::Choisir` ; dans `1_02`, le joueur joue
+  `/Global/TrainingPlayer/Default/Default` et l'entraînement passe à la parade.
+- **Les fondus.** `AreaTransitionButes` (`DAT_020c8910`), trouvée dans `Globals.cat` par `FUN_0072ad00` : 0,65 s
+  au noir (+0x18), 0,5 s au retour (+0x1c), les défauts de `CameraFade(-1)` et du changement de zone (au lieu
+  d'une seconde). `TimeCycleButes` est relue de la même façon (5 jours).
+- **Le recul des portes.** `FUN_00416750` sans objet de porte : 2,5 m en arrière le long du regard
+  (`DAT_00900ab0`), cap retourné de π (`DAT_00900160`).
+- **Les arbres globaux.** `FUN_005f6f20` charge 68 fichiers au démarrage (liste 0xb0a4f0) : `HitTree`, que la
+  leçon de parade attend, en fait partie.
+- **`lancer_lua --jouer`** joue un nœud pour le joueur (la manette) ; **`PedMePlaying`** compare le nom au nœud joué
+  et à ses parents (`FUN_005f46a0`). Avec `--jouer /Global/HitTree/Standing/BlockHits@42 --jouer
+  /Global/GlobalLoco/Locomotion/Combat/0_BLOCK_0:Act/Globals/GlobalLoco.act@45`, la leçon passe et
+  l'entraînement revient à `/Global/TrainingPlayer/Default`.
+- **`PlayerIsInAreaObject`** (0x5d14f0) et **`PedLockTarget`** (0x5cb060) réels, appelés à chaque image par `1_02`.
+- `tests/test_surface` passe (37 tests sur 37) : le plantage du 21.10 venait de la façon de le lancer, pas du chargeur.
+- **Bilan du jour** : dix commits ; 403 fonctions recréées (2,7 % du code), contre 389. Ouvert : juger les
+  conditions des nœuds d'action (garder les données des .cat), la résolution de `ConditionGroup` (le +4 n'est pas
+  donné par la seconde table de renvois telle qu'on la lit), redescendre quand le nœud joué finit.
+

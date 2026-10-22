@@ -114,6 +114,18 @@ CScriptPedPool::Attaquer(int h, int cible)
 }
 
 bool
+CScriptPedPool::Verrouiller(int h, int cible, int mode)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return false;
+	if(cible == -1){ p->verrou = -1; p->verrouMode = 0; return true; }
+	if(Acceder(cible) == nil) return false;
+	p->verrou = cible;
+	p->verrouMode = mode;
+	return true;
+}
+
+bool
 CScriptPedPool::Blesser(int cible, float degats, int attaquant)
 {
 	CScriptPed *c = Acceder(cible);

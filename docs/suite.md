@@ -21,8 +21,10 @@ chantier. Un point fini passe en bas, avec son commit.
    les scripts de zone (`MainMap.lua`, `SchoolHallways.lua`) sont chargés pour de vrai. Les fichiers
    des cinématiques sont lus et `lancer_lua` les joue (docs/cinematiques.md : `1-1-1` dure 61,7 s
    dans `MissionSetup` de `1_01`, `--sans-cinematiques` pour les sauter). Les conditions `MissionCond`,
-   `TimeCond`, `ConditionFalse` sont lues : `1_02` s'enchaîne après `1_01`. Les portes `DT_` passent (`--porte`). Suite : (l'objet de porte, +0x394) ; jouer les nœuds d'action des piétons (le contrôleur qui descend dans l'arbre posé par
-   `PedSetActionTree`, ce qu'attend l'entraînement de `1_02`).
+   `TimeCond`, `ConditionFalse` sont lues : `1_02` s'enchaîne après `1_01`. Les portes `DT_` passent (`--porte`). Le contrôleur descend dans l'arbre de `PedSetActionTree` (docs/cat.md) et la leçon de parade de `1_02` passe avec `--jouer`.
+   Suite : juger les conditions des nœuds d'action (`ActionRequest`, `WeaponEquiped`, `ConditionGroup`…), ce qui demande de garder les
+   données des .cat ; `ConditionGroup` : trouver comment son +4 est rebranché au chargement (la seconde table de renvois ne
+   le donne pas directement) ; redescendre dans l'arbre quand le nœud joué finit ; l'objet de porte (+0x394).
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
    directement au lieu des exports headless. Prérequis : Ghidra 12.1.4 et
@@ -53,6 +55,11 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- Le contrôleur d'actions (`FUN_005dc040`, `FUN_005f5490`, `FUN_005f5500`) : `CActionBank::Choisir`, `PedSetActionTree` ;
+  les 68 arbres globaux (`FUN_005f6f20`) ; `PedMePlaying` (`FUN_005f46a0`) ; `lancer_lua --jouer` ; les fondus
+  d'`AreaTransitionButes` (0,65 s / 0,5 s) et `TimeCycleButes` lues dans `Globals.cat` (`FUN_0072ad00`) ; le recul des
+  portes (`FUN_00416750`, 2,5 m, π) ; `PlayerIsInAreaObject`, `PedLockTarget` ; `tests/test_actionbank`,
+  `tests/test_portes`, `tests/test_scriptpeds`.
 - `DayCond` (`FUN_006a8b30`, `TimeCycleButes` = 5) et `CurrentMission` / `CurrentClassMission` (`FUN_006aa630`,
   `FUN_006a9ed0`) ; `GetCurrentDay` réel ; `tests/test_missions` ; docs/missions.md.
 - `PedIsPlaying` (`FUN_005f3bf0`, `FUN_005f4f80`) : `CActionBank::Joue`, `tests/test_actionbank` ; docs/cat.md.

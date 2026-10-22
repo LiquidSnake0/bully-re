@@ -98,7 +98,7 @@ outside the repository.
 
 ## Status
 
-**2.6 % of `bully.exe`'s code recreated** (389 of 20,819 functions), 5.8 %
+**2.7 % of `bully.exe`'s code recreated** (403 of 20,819 functions), 5.9 %
 understood (code, docs, names). Breakdown in [docs/avancement.md](docs/avancement.md),
 regenerated on every commit by `tools/avancement.py`.
 
@@ -130,7 +130,10 @@ on a new game, **`1_02` follows on its own** after `1_01` (mission node conditio
 read: `MissionCond`, `TimeCond`, `DayCond`, `NOT`, `OR`), its narration is preloaded and
 lasts as long as the real samples in `Speech.bin`, the player leaves the school
 through a `DT_` door, and the mission runs up to the training fight with Russell.
-The tool plays the player (`--entrer`, `--aller`, `--zone`, `--porte`); everything
+Since 22.10 the player's action controller descends into the tree that `PedSetActionTree` sets
+(the 68 global action trees are loaded at start-up, as the engine does), so the training starts,
+and with `--jouer` (block, then `0_BLOCK_0`) the blocking lesson goes through.
+The tool plays the player (`--entrer`, `--aller`, `--zone`, `--porte`, `--jouer`); everything
 else answers like the engine does, or says it is a stub. See `docs/lua.md`, `docs/missions.md`,
 `docs/zones.md`, `docs/cinematiques.md` (in French).
 

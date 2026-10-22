@@ -25,7 +25,7 @@ posséder le jeu (Steam ou disque).
 
 ## Avancement
 
-**2,6 % du code de `bully.exe` recréé** (389 fonctions sur 20 819), 5,8 % compris
+**2,7 % du code de `bully.exe` recréé** (403 fonctions sur 20 819), 5,9 % compris
 (code, documentation, noms). Le détail par sous-système est dans
 [docs/avancement.md](docs/avancement.md), régénéré à chaque commit par
 `tools/avancement.py`.
@@ -40,7 +40,10 @@ piétons qu'elle crée et fait marcher. Depuis le 21.10, à la nouvelle partie, 
 seule** après `1_01` (les conditions des nœuds de mission lues : `MissionCond`, `TimeCond`, `DayCond`,
 `NOT`, `OR`), sa narration se précharge et dure le temps de ses vrais échantillons (`Speech.bin`), le
 joueur sort de l'école par une porte `DT_` et la mission va jusqu'au combat d'entraînement contre Russell.
-L'outil joue le joueur (`--entrer`, `--aller`, `--zone`, `--porte`) ; tout le reste répond comme le
+Depuis le 22.10, le contrôleur d'actions du joueur descend dans l'arbre que pose `PedSetActionTree` (les
+68 arbres globaux sont chargés au démarrage, comme le moteur) : l'entraînement démarre, et avec `--jouer`
+(la parade, puis `0_BLOCK_0`) la leçon de parade passe.
+L'outil joue le joueur (`--entrer`, `--aller`, `--zone`, `--porte`, `--jouer`) ; tout le reste répond comme le
 moteur, ou dit qu'il est un bouchon. Voir `docs/lua.md`, `docs/missions.md`, `docs/zones.md`,
 `docs/cinematiques.md`.
 

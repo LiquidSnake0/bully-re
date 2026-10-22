@@ -339,6 +339,22 @@ Code : `src/core/ActionTree` (CActionTreeFile, ActionHash) ; test :
 que joue le contrôleur d'actions du piéton (+0x10, `FUN_005f3bf0`) ; avec `sous`, `FUN_005f4f80` remonte
 les parents du nœud joué (emplacement +0x34) jusqu'à le trouver. `CActionBank::Joue` le refait,
 `tests/test_actionbank` le vérifie sur `/Global/1_01/Talking`. Dans `lancer_lua`, le nœud joué est celui
-que `PedSetActionNode` a posé ; un arbre posé par `PedSetActionTree` n'est pas encore joué, donc rien
-ne choisit son premier nœud : `1_02` attend toujours que le joueur joue
-`/Global/TrainingPlayer/Default` (le contrôleur y descend seul dans le jeu).
+que `PedSetActionNode` a posé, ou celui où descend le contrôleur dans l'arbre que pose `PedSetActionTree`.
+
+## La descente du contrôleur : PedSetActionTree (22.10.2026)
+
+`PedSetActionTree(ped, arbre, fichier)` (0x5cac20) charge le fichier (`FUN_00473f80`) puis `FUN_005dc040` pose
+l'arbre au contrôleur, qui y descend par l'emplacement +0x4c de chaque nœud : une banque (`FUN_005f5490`) teste
+ses conditions s'il en a (`FUN_005fb9b0`, emplacement +0x50), puis rend le premier de ses enfants, dans l'ordre,
+dont la descente aboutit ; un nœud jouable ou une feuille (`FUN_005f5500`) se rend lui-même si ses conditions
+passent. Dans `/Global/TrainingPlayer`, la banque `DEFAULT` vient en premier, sans condition, et sa feuille
+`DEFAULT` est le nœud joué : `PedIsPlaying(0, "/Global/TrainingPlayer/Default", true)` devient vrai et
+l'entraînement de `1_02` démarre. `CActionBank::Choisir` le refait ; les conditions des nœuds ne sont pas encore
+jugées (une branche qui en porte n'est pas prise), et les références (`i`, `r`) ne sont pas suivies.
+
+`PedMePlaying(ped, nom)` (0x5cb910 → 0x5f4840 → `FUN_005f46a0`) compare le **nom** haché, pas le chemin, au nœud
+joué puis à ses parents (`FUN_005f4f30`) : `CActionBank::JoueNom`. Au démarrage, `FUN_005f6f20` charge les 68
+fichiers de la liste 0xb0a4f0 (Globals, Missions, Player, AI, HitTree, les styles de combat, les armes) :
+`CActionBank::ChargerGlobaux`. Les réglages « Butes » (`AreaTransitionButes`, `TimeCycleButes`…) sont des pistes de
+`Globals.cat` trouvées par le hachage de leur nom (`FUN_0072ad00`) et rangées par `FUN_0072ae00` :
+`CActionBank::Butes`.

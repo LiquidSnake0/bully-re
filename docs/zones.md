@@ -167,8 +167,8 @@ Neuf zones gardent le chemin du retour (`FUN_0042e570` : 0xf, 0x1a, 0x1c, 0x1d, 
 0x2e) : y entrer par une porte `DT_` fait d'abord `FUN_00416750`, qui range la zone visible, une position
 et un cap (+0x8a0, +0x8ac, +0x8b0, recalculés d'après l'objet de la porte) et pose +0x86f ; la porte
 `DT_` suivante ramène à cette réserve au lieu de sa liste, puis `AreaCancelStoredTransition` la vide.
-`CAreaManager::PousserPorte` et `PasserUnePorte` le refont (la réserve garde la position et le cap du
-joueur tels quels, sans le recul calculé d'après la porte) ; `tests/test_portes` passe la porte d'entrée
+`CAreaManager::PousserPorte` et `PasserUnePorte` le refont (sans objet de porte, la réserve est le joueur reculé de 2,5 m le long de
+son regard, `DAT_00900ab0`, et retourné de π, `DAT_00900160` ; avec un objet, le moteur part de sa boîte) ; `tests/test_portes` passe la porte d'entrée
 de l'école, trouve les 6 sorties du hall vers la cour (`DT_ischool_FrontDoorL`…) et fait l'aller-retour
 par `DT_ischool_Classroom` (zone 15). `lancer_lua --porte DT_NOM@s` pose +0x394 à la place de
 l'animation de la porte (non jouée) : dans `1_02`, `--porte DT_ischool_FrontDoorL@40` ramène le joueur
