@@ -1,4 +1,5 @@
 #include "ActionBank.h"
+#include "ConditionListe.h"
 #include "CdStream.h"
 #include "FileMgr.h"
 #include <cstdlib>
@@ -240,4 +241,53 @@ CActionBank::JoueNom(const CActionNode *courant, const char *nom) const
 	if(!Chemin(racine, courant, pile)) return courant->hachage == h;
 	for(const CActionNode *n : pile) if(n->hachage == h) return true;
 	return false;
+}
+
+static const uint32 kNot = ActionHash("NOT");                         // ConditionNOT (FUN_00639470)
+static const uint32 kOr = ActionHash("OR");                           // ConditionOR (FUN_00639490)
+static const uint32 kFalse = ActionHash("False");                     // ConditionFalse
+static const uint32 kGroupe = ActionHash("ConditionGroup");
+
+int
+CActionBank::JugerListe(const CActionTreeFile &f, const std::vector<int32> &liste, const CJugeAction &juge, int prof) const
+{
+	if(prof > 8) return -1;
+	auto genre = [&](int i){ uint32 t = f.TypeCondition(liste[i]); return t == kNot ? 1 : t == kOr ? 2 : 0; };
+	return EvaluerListe((int)liste.size(), [&](int i){
+		uint32 type, mots[6];
+		if(!f.Condition(liste[i], type, mots)) return -1;
+		if(type == kNot || type == kOr) return 1;
+		if(type == kFalse) return 0;
+		if(type == kGroupe){
+			std::vector<int32> groupe;
+			return f.GroupeDe(liste[i], groupe) ? JugerListe(f, groupe, juge, prof + 1) : -1;
+		}
+		return juge.Juger(f, liste[i], type, mots);
+	}, genre);
+}
+
+int
+CActionBank::Juger(const CActionNode &n, const CJugeAction &juge) const
+{
+	if(n.conditions.empty()) return 1;
+	const CActionTreeFile *f = Fichier(n);
+	return f ? JugerListe(*f, n.conditions, juge) : -1;
+}
+
+const CActionNode *
+CActionBank::Choisir(const CActionNode *depuis, const CJugeAction &juge) const
+{
+	if(depuis == nil || Juger(*depuis, juge) != 1) return nil;
+	switch(depuis->genre){
+	case 'n': case 'l':
+		return depuis;                       // FUN_005f5500
+	case 'b':
+		for(const CActionNode &e : depuis->enfants){   // FUN_005f5490 : le premier enfant qui aboutit
+			const CActionNode *r = Choisir(&e, juge);
+			if(r) return r;
+		}
+		return nil;
+	default:
+		return nil;
+	}
 }

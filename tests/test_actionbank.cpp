@@ -71,6 +71,27 @@ main(void)
 		std::vector<int32> groupe;
 		VERIF(f != nil && anim->conditions.size() == 1 && f->TypeCondition(anim->conditions[0]) == ActionHash("ConditionGroup")
 		      && f->GroupeDe(anim->conditions[0], groupe) && groupe.size() == 11);
+		// Les conditions jugées : sans arme (WeaponEquiped « unarmed » vrai, les autres armes fausses), rien demandé
+		// (ActionRequest faux), le reste faux. Le groupe d'animations (six armes en OR : bat, twobyfour, polo, cricket,
+		// W_Crutch, leadpipe) est faux à mains nues ; les attaques s'ouvrent (WeaponEquiped « unarmed ») mais aucune
+		// branche n'aboutit sans demande.
+		struct : CJugeAction {
+			int Juger(const CActionTreeFile &f, int32 d, uint32 type, const uint32 *) const override {
+				if(type == ActionHash("WeaponEquiped")) return f.ChaineCitee((uint32)d + 8) == "unarmed";
+				return 0;
+			}
+		} sansArme;
+		VERIF(anim && b.Juger(*anim, sansArme) == 0);
+		struct : CJugeAction {
+			int Juger(const CActionTreeFile &f, int32 d, uint32 type, const uint32 *) const override {
+				return type == ActionHash("WeaponEquiped") && f.ChaineCitee((uint32)d + 8) == "leadpipe";
+			}
+		} tuyau;
+		VERIF(anim && b.Juger(*anim, tuyau) == 1);   // le dernier OR du groupe
+		VERIF(b.Juger(*attaques, sansArme) == 1 && b.Choisir(attaques, sansArme) == nil);
+		VERIF(b.Choisir(arbre, sansArme) == pris);
+		struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return -1; } } inconnu;
+		VERIF(b.Juger(*anim, inconnu) == -1 && b.Choisir(attaques, inconnu) == nil);
 		printf("  descente : /Global/TrainingPlayer → %s/%s\n", "Default", pris ? pris->nom.c_str() : "?");
 	}
 	// FUN_0072ad00 / FUN_0072ae00 : AreaTransitionButes (DAT_020c8910) dans Globals.cat ; +0x18 la durée du fondu

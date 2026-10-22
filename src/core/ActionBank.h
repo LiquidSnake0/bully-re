@@ -11,6 +11,14 @@
 #include "ActionTree.h"
 #include <memory>
 
+// Ce qu'une condition de nœud d'action vaut pour un piéton : la classe (type, HashString de son nom) et ses mots
+// (mots[i] = champ +4 * (i + 1) de l'objet, voir CActionTreeFile::Condition) ; 1 vrai, 0 faux, -1 classe pas lue.
+// NOT, OR, False et ConditionGroup sont jugés par la banque elle-même.
+struct CJugeAction {
+	virtual int Juger(const CActionTreeFile &f, int32 decalage, uint32 type, const uint32 mots[6]) const = 0;
+	virtual ~CJugeAction(void) {}
+};
+
 class CActionBank
 {
 public:
@@ -49,6 +57,14 @@ public:
 	const CActionTreeFile *Fichier(const CActionNode &n) const {
 		return n.source >= 0 && n.source < (int)sources.size() ? &sources[n.source]->fichier : nil;
 	}
+
+	// FUN_005fb9b0 sur les conditions d'un nœud : la liste (ConditionListe.h), un NOT ou un OR par sa place, False
+	// toujours faux, une ConditionGroup par son groupe (la seconde table de renvois), le reste par `juge`.
+	// 1 vrai (aussi sans condition), 0 faux, -1 si une condition décisive n'est pas lue.
+	int Juger(const CActionNode &n, const CJugeAction &juge) const;
+	int JugerListe(const CActionTreeFile &f, const std::vector<int32> &liste, const CJugeAction &juge, int prof = 0) const;
+	// La descente avec les conditions jugées : un nœud est pris si Juger rend 1.
+	const CActionNode *Choisir(const CActionNode *depuis, const CJugeAction &juge) const;
 
 	CActionNode racine;                      // DAT_01b649dc : sans nom, son seul enfant est la banque « Global »
 	CActionNode *Global(void){ return &racine.enfants[0]; }
