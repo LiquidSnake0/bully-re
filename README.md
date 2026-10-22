@@ -135,7 +135,7 @@ Since 22.10 the player's action controller descends into the tree that `PedSetAc
 and with `--jouer` (block, then `0_BLOCK_0`) the blocking lesson goes through. Since the second session of 22.10
 the action nodes' conditions are judged (`ConditionGroup`, `WeaponEquiped`, `ActionRequest`, `ActionNodePlayTime`,
 `TargetPlaying`, `LuaCond`) and each pedestrian has an action controller that steps back into its tree when the
-played node ends: the button-sequence lesson, the grapple and its charge go through (`--demander`, `--sequence`).
+played node ends: the button-sequence lesson, the grapple and its charge go through (`--demander`, `--sequence`). Since the third session of 22.10 the passes come from the tracks themselves, as in the engine: `Opportunity` (and its random latch), `Sequence` and `PlayOnTarget`, with their priority rule; the pushed bully plays `PushFwd/RCV` and the grapple lesson ends.
 The tool plays the player (`--entrer`, `--aller`, `--zone`, `--porte`, `--jouer`, `--demander`, `--sequence`); everything
 else answers like the engine does, or says it is a stub. See `docs/lua.md`, `docs/missions.md`,
 `docs/zones.md`, `docs/cinematiques.md` (in French).

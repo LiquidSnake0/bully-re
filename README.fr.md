@@ -42,7 +42,7 @@ seule** après `1_01` (les conditions des nœuds de mission lues : `MissionCond`
 joueur sort de l'école par une porte `DT_` et la mission va jusqu'au combat d'entraînement contre Russell.
 Depuis le 22.10, le contrôleur d'actions du joueur descend dans l'arbre que pose `PedSetActionTree` (les
 68 arbres globaux sont chargés au démarrage, comme le moteur) : l'entraînement démarre, et avec `--jouer`
-(la parade, puis `0_BLOCK_0`) la leçon de parade passe. Depuis la seconde séance du 22.10, les conditions des nœuds sont jugées (`ConditionGroup`, `WeaponEquiped`, `ActionRequest`, `ActionNodePlayTime`, `TargetPlaying`, `LuaCond`) et chaque piéton a un contrôleur d'actions qui redescend dans son arbre quand le nœud joué finit : la séquence de boutons, la prise et sa charge passent (`--demander`, `--sequence`).
+(la parade, puis `0_BLOCK_0`) la leçon de parade passe. Depuis la seconde séance du 22.10, les conditions des nœuds sont jugées (`ConditionGroup`, `WeaponEquiped`, `ActionRequest`, `ActionNodePlayTime`, `TargetPlaying`, `LuaCond`) et chaque piéton a un contrôleur d'actions qui redescend dans son arbre quand le nœud joué finit : la séquence de boutons, la prise et sa charge passent (`--demander`, `--sequence`). Depuis la troisième séance du 22.10, les passages viennent des pistes elles-mêmes, comme dans le moteur : `Opportunity` (et son loquet aléatoire), `Sequence` et `PlayOnTarget`, avec leur règle de priorité ; le bully poussé joue `PushFwd/RCV` et la leçon de prise se termine.
 L'outil joue le joueur (`--entrer`, `--aller`, `--zone`, `--porte`, `--jouer`, `--demander`, `--sequence`) ; tout le reste répond comme le
 moteur, ou dit qu'il est un bouchon. Voir `docs/lua.md`, `docs/missions.md`, `docs/zones.md`,
 `docs/cinematiques.md`.
