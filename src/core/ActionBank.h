@@ -43,4 +43,9 @@ public:
 	std::vector<std::string> fichiers;       // les .cat chargés, dans l'ordre
 	std::vector<uint32> hachages;            // HashString de chaque nom de fichier sans dossier ni extension
 	static std::string NomCat(const char *act);   // « Act/Conv/1_01.act » → « 1_01.cat »
+	// FUN_0072ad00 : une piste « Butes » (réglages du jeu) trouvée par le HashString de son nom parmi les pistes d'un
+	// fichier (Globals.cat pour AreaTransitionButes, TimeCycleButes…) ; FUN_0072ae00 les range au démarrage
+	// (DAT_020c8910 pour AreaTransitionButes). Faux si le fichier ou la piste manque.
+	static bool Butes(const char *nom, CActionTrack &piste, const char *cat = "Globals.cat");
+	static float ButesReel(const CActionTrack &piste, uint16 position);   // un attribut de 4 octets lu comme un réel
 };

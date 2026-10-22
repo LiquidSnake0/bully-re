@@ -97,9 +97,10 @@ static CModelEnum modeles;
 // retirés puis celui de la nouvelle zone chargé avec son main, zone visible et joueur posés à l'arrivée.
 static CAreaManager zones;
 // Le fondu de la caméra (CameraFade, 0x4f1980), réduit à ce que la machine des zones et les scripts en
-// attendent : une durée, un sens, et « fini ». Les durées par défaut du moteur (DAT_020c8910 + 0x18 et
-// + 0x1c) ne sont pas lues : une seconde.
-static const float FONDU_DEFAUT_MS = 1000;
+// attendent : une durée, un sens, et « fini ». Les durées par défaut sont celles d'AreaTransitionButes (DAT_020c8910,
+// lue dans Globals.cat au démarrage) : +0x18 pour le fondu au noir (0,65 s), +0x1c pour le retour (0,5 s) ;
+// CameraFade(-1, sens) les prend (0x5b8ea0), le changement de zone aussi (FUN_00416e30, états 2 et 0xb).
+static float fonduNoirMs = 650, fonduRetourMs = 500;
 // L'arbre d'actions global (src/core/ActionBank.h) : PedSetActionNode(ped, « /Global/1_01/Talking »,
 // « Act/Conv/1_01.act ») cherche le nœud et charge le fichier au besoin (FUN_004849a0) ; le nœud n'est pas
 // joué (pas d'animation ici), mais le script reçoit la vraie réponse : le nœud existe ou non.
@@ -808,7 +809,7 @@ CameraFade(lua_State *L)
 	float ms = (float)luaL_optnumber(L, 1, -1);
 	int sens = (int)luaL_optnumber(L, 2, 0);
 	if(sens != 0 && sens != 1) return 0;
-	if(ms < 0) ms = FONDU_DEFAUT_MS;
+	if(ms < 0) ms = sens == 0 ? fonduNoirMs : fonduRetourMs;
 	LancerFondu(ms, sens == 0);
 	return 0;
 }
@@ -1399,6 +1400,13 @@ ChargerMissions(void)
 	int jouables = 0;
 	for(const CMissionData &m : banque.missions) jouables += m.Jouable();
 	printf("%zu missions dans la banque (%zu fichiers), %d avec un script\n", banque.missions.size(), banque.banques.size(), jouables);
+	{
+		CActionTrack t;   // FUN_0072ae00 : AreaTransitionButes → DAT_020c8910
+		if(CActionBank::Butes("AreaTransitionButes", t)){
+			fonduNoirMs = CActionBank::ButesReel(t, 24) * 1000;
+			fonduRetourMs = CActionBank::ButesReel(t, 28) * 1000;
+		}
+	}
 }
 
 // FUN_006acba0 : le script de la mission puis MissionSetup ; par indice dans la banque.
@@ -1558,7 +1566,7 @@ AvancerZones(lua_State *L)
 	}
 	zones.AvancerImage(fondu.Etat(), !scriptsDeZone, scriptDemande);
 	const CAreaManager::Evenements &e = zones.evenements;
-	if(e.fonduNoir) LancerFondu(FONDU_DEFAUT_MS, true);
+	if(e.fonduNoir) LancerFondu(fonduNoirMs, true);
 	if(e.decharger){
 		// FUN_005dbb20 : les scripts de zone sont retirés (leurs threads avec).
 		for(Script &sc : scripts){
@@ -1586,7 +1594,7 @@ AvancerZones(lua_State *L)
 		j->pos = zones.demande.pos; j->cap = zones.demande.cap;
 		printf("%6.2f s  zones : le joueur est posé en (%.1f, %.1f, %.1f), cap %.0f, zone %d\n", maintenant / 1000.0, j->pos.x, j->pos.y, j->pos.z, j->cap, zones.zoneVisible);
 	}
-	if(e.fonduRetour) LancerFondu(FONDU_DEFAUT_MS, false);
+	if(e.fonduRetour) LancerFondu(fonduRetourMs, false);
 }
 
 // FUN_006ad130, réduit : à chaque image, ce que le gestionnaire fait des missions de la banque.
