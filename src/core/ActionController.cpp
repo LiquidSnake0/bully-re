@@ -11,6 +11,24 @@ Reel(const CActionTrack &p, uint16 position, float defaut)
 	return r;
 }
 
+// AnimationTrack, mise à jour FUN_0060ae00 : en mode 0 (position 32), la piste finit quand le temps joué dépasse la
+// fin : la position 44 si elle est positive et ne dépasse pas la durée de l'animation, sinon cette durée (HXD +0xc).
+// Le temps part de la position 40 et avance à la vitesse 48 (la stat 0x14 du piéton n'est pas suivie). Les modes 1
+// et 2 (boucle) ne finissent pas d'eux-mêmes. Rend l'instant de fin dans le nœud, ou -1.
+static float
+FinAnimation(const CActionBank &b, const CActionTrack &p)
+{
+	static const uint32 kAnimation = ActionHash("Animation");
+	if(p.type != kAnimation || p.Mot(32) != 0) return -1.0f;
+	float duree = b.DureeAnimation(p.Mot(24));
+	if(duree <= 0.0f) return -1.0f;
+	float fin = Reel(p, 44, -1.0f), debut = Reel(p, 40, 0.0f), vitesse = Reel(p, 48, 1.0f);
+	if(fin < 0.0f || duree < fin) fin = duree;
+	if(vitesse <= 0.0f) vitesse = 1.0f;
+	float reste = (fin - debut) / vitesse;
+	return Reel(p, 12, 0.0f) + (reste > 0.0f ? reste : 0.0f);
+}
+
 float
 CActionController::Duree(const CActionBank &b, const CActionNode &n)
 {
@@ -21,8 +39,7 @@ CActionController::Duree(const CActionBank &b, const CActionNode &n)
 		CActionTrack p;
 		if(!f->Piste(dp, p)) continue;
 		float vie = Reel(p, 16, -1.0f);
-		if(vie < 0.0f) continue;
-		float bout = Reel(p, 12, 0.0f) + vie;
+		float bout = vie >= 0.0f ? Reel(p, 12, 0.0f) + vie : FinAnimation(b, p);
 		if(bout > d) d = bout;
 	}
 	return d;

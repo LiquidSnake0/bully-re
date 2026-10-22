@@ -196,6 +196,7 @@ l'objet :
 | 36 | couche du lecteur (0 à 6) |
 | 40 | instant de départ (s) |
 | 44 | instant de fin (s) ; −1 ou au-delà : la durée du HXD |
+| | La fin de la piste (mise à jour `FUN_0060ae00`, 22.10.2026) : en mode 0, la piste s'arrête quand le temps joué, parti de 40 et avancé à la vitesse 48, dépasse 44 (ou la durée de l'animation, HXD +0xc) ; les modes 1 et 2 ne finissent pas d'eux-mêmes. Le contrôleur de l'outil finit un nœud au plus tard de ses pistes qui finissent (durée de vie 16, ou fin d'une animation en mode 0), avec les durées de MAINPED.HXD |
 | 48 | vitesse ; multipliée par la stat 0x14 du piéton / 100 |
 | 52 | fondu (s) ; 0 : sans fondu ; −1 : celui du HXD |
 | 56 | passé à `FUN_006bd320` à l'arrêt |

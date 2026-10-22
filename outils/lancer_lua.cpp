@@ -37,6 +37,7 @@
 #include "../src/core/AreaManager.h"
 #include "../src/core/ActionBank.h"
 #include "../src/core/ActionController.h"
+#include "../src/anim/Hxd.h"
 #include "../src/core/ConditionListe.h"
 #include "../src/audio/SpeechEvents.h"
 #include "../src/audio/SpeechBank.h"
@@ -1566,6 +1567,18 @@ ChargerMissions(void)
 	{
 		// FUN_005f6f20 : les arbres globaux sont chargés avant tout script.
 		printf("%d arbres d'actions globaux chargés sous /Global\n", arbres.ChargerGlobaux());
+		// Les durées des animations des piétons (MAINPED.HXD, docs/hxd.md) : une piste Animation en mode 0 finit avec
+		// son animation (FUN_0060ae00), ce qui finit le nœud et fait jouer ses Sequence.
+		{
+			const int32 MAX = 4 << 20;
+			uint8 *h = (uint8*)malloc(MAX);
+			int32 k = CFileMgr::LoadFile("Anim\\MAINPED.HXD", h, MAX, "rb");
+			CHxdFile mainped;
+			if(k > 0 && mainped.Load(h, (uint32)k))
+				for(const CHxdAnim &a : mainped.anims) arbres.dureesAnimations[a.hachage & 0x7fffffff] = a.duree;
+			printf("%d durées d'animations lues dans MAINPED.HXD\n", (int)arbres.dureesAnimations.size());
+			free(h);
+		}
 		CActionTrack t;   // FUN_0072ae00 : AreaTransitionButes → DAT_020c8910
 		if(CActionBank::Butes("AreaTransitionButes", t)){
 			fonduNoirMs = CActionBank::ButesReel(t, 24) * 1000;
