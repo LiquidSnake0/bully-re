@@ -246,6 +246,20 @@ main(void)
 		int n = g.ChargerGlobaux();
 		VERIF(n == 68 && g.EstCharge("Act/HitTree.act") && g.EstCharge("Act/Weapons/EdgarShield.act"));
 		VERIF(g.Trouver("/Global/HitTree/Standing/BlockHits") != nil && g.Trouver("/Global/Player") != nil);
+		// Les conditions propres d'une Opportunity (+0x3c) : dans les 68 arbres du démarrage, aucune n'en porte ; le
+		// contrôleur ne les juge donc pas. Le relevé compte aussi les Opportunity et les loquets.
+		{
+			struct Releve { const CActionBank &b; int occasions = 0, loquets = 0, avecConditions = 0, periodes = 0;
+				void Dans(const CActionNode &x){
+					for(const COpportunite &o : COpportunite::DuNoeud(b, x)){
+						occasions++; loquets += o.loquet; avecConditions += o.conditions != 0; periodes += o.periode > 1;
+					}
+					for(const CActionNode &e : x.enfants) Dans(e);
+				} } r{g, 0, 0, 0, 0};
+			r.Dans(*g.Global());
+			VERIF(r.occasions > 1000 && r.loquets > 0 && r.avecConditions == 0);
+			printf("  %d Opportunity dans les arbres du démarrage (%d loquets, %d à période, %d à conditions propres)\n", r.occasions, r.loquets, r.periodes, r.avecConditions);
+		}
 		// PlayOnTarget (FUN_006615f0) : dans les prises, un nœud fait jouer à la cible le nœud visé, une fois, à son entrée.
 		{
 			struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return 0; } } rien;
