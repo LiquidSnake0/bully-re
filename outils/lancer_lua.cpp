@@ -132,15 +132,32 @@ static std::map<uint32, uint32> demandes;
 //   TargetPlaying        +4 : un nom de nœud haché (RollAway…), +8 : 1 ; deux champs, l'enregistrement suivant
 //                        commence après. La cible est celle que PedLockTarget a verrouillée ; vrai si son nœud joué,
 //                        ou un de ses parents, porte ce nom (comme PedMePlaying).
+//   MePlaying            +8 : un nom de nœud haché, +0xc : 1 ; le nœud joué par le piéton lui-même, ou un de ses
+//                        parents, porte ce nom (FUN_005f46a0, comme PedMePlaying) ;
+//   ConditionFlag        +8 : un nom haché (GROUNDHITHEAVY, ITCHVIRUS…) : le drapeau du dernier coup reçu, que la piste
+//                        Collision de l'attaquant porte en +0x2c (44) et passe à la méthode du coup (slot 15 de CPed,
+//                        FUN_0047b810) ;
+//   HitLocation          +8, +0xc : la zone touchée. L'outil n'a pas les sphères du corps : supposé vrai tant qu'un
+//                        coup est en cours pour ce piéton.
 // L'outil n'a pas d'armes : seul « unarmed » est vrai. Une classe non lue rend -1 : la branche n'est pas prise.
+struct CoupRecu { uint32 drapeau = 0; float jusqua = -1.0f; };   // le dernier coup reçu par un piéton (outil)
+static std::map<int, CoupRecu> coups;
 struct CJugeOutil : CJugeAction {
 	int ped; float t;
 	CJugeOutil(int p, float t_) : ped(p), t(t_) {}
 	int Juger(const CActionTreeFile &f, int32 d, uint32 type, const uint32 mots[6]) const override {
 		static const uint32 kArme = ActionHash("WeaponEquiped"), kDemande = ActionHash("ActionRequest"),
 		                    kTemps = ActionHash("ActionNodePlayTime"), kLua = ActionHash("LuaCond"),
-		                    kCible = ActionHash("TargetPlaying");
+		                    kCible = ActionHash("TargetPlaying"), kMoi = ActionHash("MePlaying"),
+		                    kDrapeau = ActionHash("ConditionFlag"), kZone = ActionHash("HitLocation");
 		if(type == kArme) return f.ChaineCitee((uint32)d + 8) == "unarmed";
+		if(type == kMoi) return arbres.JoueHachage(NoeudJoue(ped), mots[1] & 0x7fffffff);
+		if(type == kDrapeau || type == kZone){
+			auto it = coups.find(ped);
+			bool enCours = it != coups.end() && t <= it->second.jusqua;
+			if(type == kZone) return enCours;
+			return enCours && it->second.drapeau == (mots[1] & 0x7fffffff);
+		}
 		if(type == kDemande){
 			if(ped != SCRIPT_PED_JOUEUR) return 0;
 			auto it = demandes.find(mots[0]);
