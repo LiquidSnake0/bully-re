@@ -39,11 +39,12 @@ uint32 ActionHash(const char *s);      // HashString : majuscules, h = h * 0x83 
 struct CActionNode {
 	char genre = 'b';                  // 'b' banque, 'n' nœud jouable, 'l' feuille, 'i' / 'r' référence
 	uint32 hachage = 0;                // le nom haché (toujours rempli)
-	std::string nom;                   // le nom en clair quand le fichier le donne
+	mutable std::string nom;           // le nom en clair quand le fichier le donne, ou appris d'un chemin (CActionBank::Trouver)
 	std::vector<int32> conditions;     // décalages des enregistrements dans les données
 	std::vector<int32> pistes;
 	std::string cible;                 // une référence : le chemin du nœud visé
 	std::vector<CActionNode> enfants;
+	int16 source = -1;                 // dans CActionBank : le fichier .cat d'où vient le nœud (ses conditions s'y lisent)
 };
 
 struct CActionRenvoi { uint32 valeur; std::vector<uint32> decalages; };
@@ -76,6 +77,17 @@ public:
 	// construit l'objet sur place, à +4 (FUN_0063a170 pour MissionCond, FUN_0063a270 pour TimeCond) :
 	// le champ +k de l'objet est le mot +4+k de l'enregistrement. mots[i] = champ +4 * (i + 1).
 	bool Condition(int32 decalage, uint32 &type, uint32 mots[6]) const;
+	// La seconde table de renvois : sa valeur est le décalage, après la fin de l'arbre (finArbre), d'une liste de
+	// conditions écrite comme celle d'un nœud (un octet n, puis n mots : des décalages dans les données). Le champ
+	// +4 d'une ConditionGroup (le mot +8 de son enregistrement) y renvoie : c'est le groupe à évaluer. -1 si aucun
+	// renvoi ne cite ce décalage des données.
+	int32 Renvoi2(uint32 decalage) const;
+	bool Groupe(uint32 valeur, std::vector<int32> &liste) const;
+	// Le groupe d'une condition ConditionGroup (ou TargetConditionGroup) placée à ce décalage des données.
+	bool GroupeDe(int32 condition, std::vector<int32> &liste) const {
+		int32 v = Renvoi2((uint32)condition + 8);
+		return v >= 0 && Groupe((uint32)v, liste);
+	}
 	// Lit la piste à ce décalage des données (le tampon doit être encore là).
 	bool Piste(int32 decalage, CActionTrack &t) const;
 	// La chaîne citée par l'attribut placé à ce décalage des données, s'il en cite une.

@@ -2,6 +2,8 @@
 //   BULLY_DATA=<racine du jeu> build/tests/test_missions [--liste]
 #include "../src/core/MissionBank.h"
 #include "../src/core/ActionTree.h"
+#include "../src/core/ConditionListe.h"
+#include <vector>
 #include <cstdio>
 #include <cstring>
 #include <map>
@@ -167,6 +169,21 @@ main(int argc, char **argv)
 	for(const CMissionData &x : b.missions) if(x.banque == "Tutorials.cat" && !x.Jouable()) tutorielsSansScript++;
 	VERIF(tutorielsSansScript == 116);
 
+	// EvaluerListe, les règles de FUN_005fb9b0 sur des listes écrites à la main : 'v' vrai, 'f' faux, '?' inconnu,
+	// 'N' NOT, 'O' OR.
+	{
+		auto liste = [](const char *l){
+			int n = (int)strlen(l);
+			return EvaluerListe(n, [&](int i){ return l[i] == 'v' || l[i] == 'N' || l[i] == 'O' ? 1 : l[i] == 'f' ? 0 : -1; },
+			                    [&](int i){ return l[i] == 'N' ? 1 : l[i] == 'O' ? 2 : 0; });
+		};
+		VERIF(liste("") == 1 && liste("v") == 1 && liste("f") == 0 && liste("vv") == 1 && liste("vf") == 0);
+		VERIF(liste("Nf") == 1 && liste("Nv") == 0);                     // NOT : le contraire de la suivante
+		VERIF(liste("fOv") == 1 && liste("fOf") == 0 && liste("vOf") == 1);   // OR : la suivante décide après un faux
+		VERIF(liste("vO?") == -1 && liste("?") == -1 && liste("fO?") == -1);  // la suivante d'un OR est jugée même après un vrai
+		VERIF(liste("vOf") == 1 && liste("vOfv") == 1);                       // … mais sa valeur ne compte pas
+		VERIF(liste("vOfv") == 1 && liste("fOvf") == 0);
+	}
 	printf("test_missions : %zu missions dans %zu fichiers, %d lançables ; %s\n", b.missions.size(), b.banques.size(), jouables,
 	       echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;

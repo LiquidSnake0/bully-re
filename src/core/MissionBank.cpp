@@ -1,4 +1,5 @@
 #include "MissionBank.h"
+#include "ConditionListe.h"
 #include "ActionTree.h"
 #include "CdStream.h"
 #include "FileMgr.h"
@@ -183,23 +184,5 @@ CMissionBank::Activable(int index, const CEtatMissions &etat, const char **class
 	const CMissionData &m = missions[index];
 	if((int)m.conds.size() != m.conditions) return -1;
 	const std::vector<CMissionCondition> &l = m.conds;
-	bool resultat = true, saute = false;
-	int precedent = 0;
-	for(size_t i = 0; i < l.size(); i++){
-		if(!saute){
-			int v = Evaluer(l[i], etat, classe);
-			if(v < 0) return -1;
-			if(precedent == 0) resultat = v != 0;
-			else if(precedent == 1) resultat = v == 0;
-			else saute = true;
-		}
-		int genre = l[i].Genre();
-		precedent = genre;
-		if(saute && genre != 0){ saute = false; continue; }
-		if(resultat) continue;
-		if(i + 1 >= l.size()) break;
-		if(l[i + 1].Genre() != 2) break;
-		i++;                                         // le OR qui suit un faux est sauté
-	}
-	return resultat;
+	return EvaluerListe((int)l.size(), [&](int i){ return Evaluer(l[i], etat, classe); }, [&](int i){ return l[i].Genre(); });
 }

@@ -3,6 +3,7 @@
 // de Player.act (FUN_004849a0), deux fichiers sous la même racine.
 //   BULLY_DATA=<racine du jeu> build/tests/test_actionbank
 #include "../src/core/ActionBank.h"
+#include "../src/core/ActionController.h"
 #include <cstdio>
 #include <cstring>
 
@@ -24,7 +25,7 @@ main(void)
 	// Les nœuds que 1_01.lua demande : /Global/1_01/Talking (une banque), ShortIdle, PunchHands, WaveToSec
 	// (des feuilles à une piste), Gates/BarUpHold.
 	const CActionNode *talking = b.Trouver("/Global/1_01/Talking");
-	VERIF(talking != nil && talking->genre == 'b' && talking->hachage == ActionHash("Talking") && talking->nom.empty() && talking->enfants.size() == 1);
+	VERIF(talking != nil && talking->genre == 'b' && talking->hachage == ActionHash("Talking") && talking->nom == "Talking" && talking->enfants.size() == 1);
 	const CActionNode *idle = b.Trouver("/Global/1_01/ShortIdle");
 	VERIF(idle != nil && idle->genre == 'l' && idle->pistes.size() == 1);
 	VERIF(b.Trouver("/Global/1_01/PunchHands") != nil && b.Trouver("/Global/1_01/WaveToSec") != nil);
@@ -65,6 +66,58 @@ main(void)
 		VERIF(attaques != nil && !attaques->conditions.empty() && b.Choisir(attaques) == nil);
 		VERIF(b.Choisir(attaques, [](const CActionNode &, void *){ return true; }) != nil);
 		VERIF(b.Choisir(nil) == nil);
+		// Les données du fichier restent chargées : la ConditionGroup de .../Locomotion/animations se lit encore.
+		const CActionNode *anim = b.Trouver("/Global/TrainingPlayer/Default/Locomotion/animations");
+		const CActionTreeFile *f = anim ? b.Fichier(*anim) : nil;
+		std::vector<int32> groupe;
+		VERIF(f != nil && anim->conditions.size() == 1 && f->TypeCondition(anim->conditions[0]) == ActionHash("ConditionGroup")
+		      && f->GroupeDe(anim->conditions[0], groupe) && groupe.size() == 11);
+		// Les conditions jugées : sans arme (WeaponEquiped « unarmed » vrai, les autres armes fausses), rien demandé
+		// (ActionRequest faux), le reste faux. Le groupe d'animations (six armes en OR : bat, twobyfour, polo, cricket,
+		// W_Crutch, leadpipe) est faux à mains nues ; les attaques s'ouvrent (WeaponEquiped « unarmed ») mais aucune
+		// branche n'aboutit sans demande.
+		struct : CJugeAction {
+			int Juger(const CActionTreeFile &f, int32 d, uint32 type, const uint32 *) const override {
+				if(type == ActionHash("WeaponEquiped")) return f.ChaineCitee((uint32)d + 8) == "unarmed";
+				return 0;
+			}
+		} sansArme;
+		VERIF(anim && b.Juger(*anim, sansArme) == 0);
+		struct : CJugeAction {
+			int Juger(const CActionTreeFile &f, int32 d, uint32 type, const uint32 *) const override {
+				return type == ActionHash("WeaponEquiped") && f.ChaineCitee((uint32)d + 8) == "leadpipe";
+			}
+		} tuyau;
+		VERIF(anim && b.Juger(*anim, tuyau) == 1);   // le dernier OR du groupe
+		VERIF(b.Juger(*attaques, sansArme) == 1 && b.Choisir(attaques, sansArme) == nil);
+		VERIF(b.Choisir(arbre, sansArme) == pris);
+		// Le contrôleur : posé sur TrainingPlayer, il joue Default/Default ; un nœud joué à durée finie (la parade de
+		// HitTree) se termine, et le contrôleur redescend dans l'arbre posé.
+		CActionController c;
+		VERIF(c.Poser(b, arbre, sansArme, 10.0f) && c.joue == pris);
+		VERIF(b.CheminDe(pris) == "/Global/TrainingPlayer/Default/Default");   // noms hachés appris des chemins demandés
+		// Le premier nœud de TrainingPlayer dont une piste a une durée de vie finie (un coup, une provocation).
+		const CActionNode *cible = nil; float d = -1.0f;
+		std::vector<const CActionNode *> pile(1, arbre);
+		while(!pile.empty() && cible == nil){
+			const CActionNode *x = pile.back(); pile.pop_back();
+			if(x != pris && (d = CActionController::Duree(b, *x)) > 0.0f){ cible = x; break; }
+			for(const CActionNode &e : x->enfants) pile.push_back(&e);
+		}
+		printf("  contrôleur : %s dure %.2f s\n", cible ? cible->nom.c_str() : "?", d);
+		VERIF(cible != nil && d > 0.0f);
+		if(cible){
+			c.Jouer(b, cible, 20.0f);
+			VERIF(!c.Avancer(b, nil, sansArme, 20.0f + d * 0.5f) || c.joue != pris);
+			c.Jouer(b, cible, 20.0f);
+			VERIF(c.Avancer(b, nil, sansArme, 20.0f + d + 0.01f) && (c.joue == pris || c.joue != cible));
+			VERIF(c.Temps(c.debut + 0.25f) == 0.25f);
+			// Entrer dans une banque descend (FUN_005f5490) ; dans un nœud jouable, le joue.
+			VERIF(c.Entrer(b, arbre, sansArme, 30.0f) && c.joue == pris);
+			VERIF(c.Entrer(b, cible, sansArme, 31.0f) && c.joue == cible);
+		}
+		struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return -1; } } inconnu;
+		VERIF(b.Juger(*anim, inconnu) == -1 && b.Choisir(attaques, inconnu) == nil);
 		printf("  descente : /Global/TrainingPlayer → %s/%s\n", "Default", pris ? pris->nom.c_str() : "?");
 	}
 	// FUN_0072ad00 / FUN_0072ae00 : AreaTransitionButes (DAT_020c8910) dans Globals.cat ; +0x18 la durée du fondu
@@ -90,6 +143,10 @@ main(void)
 		const CActionNode *bloc = g.Trouver("/Global/GlobalLoco/Locomotion/Combat/0_BLOCK_0");
 		VERIF(bloc != nil && g.JoueNom(bloc, "0_BLOCK_0") && g.JoueNom(bloc, "combat") && g.JoueNom(bloc, "GlobalLoco"));
 		VERIF(!g.JoueNom(bloc, "BlockHits") && !g.JoueNom(nil, "0_BLOCK_0"));
+		VERIF(g.JoueHachage(bloc, ActionHash("Combat")) && !g.JoueHachage(bloc, ActionHash("RollAway")));
+		// Les inclusions : GlobalActions inclut Grapples.act sous « actions », comme les scripts le désignent.
+		VERIF(g.Trouver("/Global/Actions/Grapples/Front/Grapples/GrappleAttempt/GrappleSuccess/GIVE") != nil);
+		VERIF(g.Trouver("/Global/Actions/Grapples/Front/Grapples/GrappleMoves/GrappleStrikes/HitC/Charge") != nil);
 		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());
 	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");

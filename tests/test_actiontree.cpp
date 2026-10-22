@@ -27,7 +27,7 @@ main(void)
 	if(im < 0){ printf("test_actiontree : ECHEC\n"); return 1; }
 	const CdImage &img = CdStream::ms_images[im];
 	int fichiers = 0, lus = 0, justes = 0; long noeuds[4] = {0, 0, 0, 0}; long pistes = 0, typees = 0, animations = 0;
-	bool punch = false, sitDown = false;
+	bool punch = false, sitDown = false; long groupes = 0, groupesLus = 0;
 	CActionTreeFile rat, poi;
 	for(int32 e = 0; e < img.m_numEntries; e++){
 		const CDirectoryEntry &d = img.m_entries[e];
@@ -57,6 +57,18 @@ main(void)
 					}
 				}
 			}
+			// La seconde table de renvois : chaque valeur est une liste de conditions après la fin de l'arbre.
+			for(const CActionRenvoi &r : f.renvois2){ std::vector<int32> l; groupes++; groupesLus += f.Groupe(r.valeur, l); }
+			if(strcasecmp(d.name, "TrainingPlayer.cat") == 0){
+				// /TrainingPlayer/Default/Locomotion/animations : une ConditionGroup de 11 conditions,
+				// WeaponEquiped Or WeaponEquiped… (cinq Or entre six WeaponEquiped).
+				const CActionNode *a = Trouver(f.racine, ActionHash("animations"));
+				std::vector<int32> l;
+				VERIF(a && a->conditions.size() == 1 && f.TypeCondition(a->conditions[0]) == ActionHash("ConditionGroup") && f.GroupeDe(a->conditions[0], l));
+				int armes = 0, ou = 0;
+				for(int32 c : l){ armes += f.TypeCondition(c) == ActionHash("WeaponEquiped"); ou += f.TypeCondition(c) == ActionHash("Or"); }
+				VERIF(l.size() == 11 && armes == 6 && ou == 5);
+			}
 			if(strcasecmp(d.name, "AI_Rat.cat") == 0) rat = f;
 			if(strcasecmp(d.name, "AI_POI.cat") == 0){
 				poi = f;
@@ -74,6 +86,8 @@ main(void)
 	VERIF(fichiers == 479 && lus == 479 && justes == 479);
 	printf("%ld pistes, %ld typées, dont %ld Animation\n", pistes, typees, animations);
 	VERIF(pistes == 51001 && typees == 51001 && animations == 8166);
+	printf("%ld listes de conditions dans les secondes tables, %ld lues\n", groupes, groupesLus);
+	VERIF(groupes == 3220 && groupesLus == 3220);
 	VERIF(punch);      // une piste Animation joue C_PLAYER\PUNCH_SLOP_1
 	VERIF(sitDown);    // AI_POI : une séquence ./SitDown
 	// AI_Rat : la banque AI_Rat (nom haché), deux feuilles dont RatLoco.

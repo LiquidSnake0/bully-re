@@ -147,3 +147,27 @@ CActionTreeFile::ChaineCitee(uint32 decalage) const
 		for(uint32 d : r.decalages) if(d == decalage) return Chaine(r.valeur);
 	return std::string();
 }
+
+int32
+CActionTreeFile::Renvoi2(uint32 decalage) const
+{
+	for(const CActionRenvoi &r : renvois2)
+		for(uint32 d : r.decalages) if(d == decalage) return (int32)r.valeur;
+	return -1;
+}
+
+bool
+CActionTreeFile::Groupe(uint32 valeur, std::vector<int32> &liste) const
+{
+	liste.clear();
+	uint32 at = finArbre + valeur;
+	if(at >= finEntete) return false;
+	uint8 k = b[at];
+	if(at + 1 + 4u * k > finEntete) return false;
+	for(uint8 i = 0; i < k; i++){
+		int32 d; memcpy(&d, b + at + 1 + 4 * i, 4);
+		if(d < 0 || (uint32)d >= chaines - finEntete) return false;
+		liste.push_back(d);
+	}
+	return true;
+}

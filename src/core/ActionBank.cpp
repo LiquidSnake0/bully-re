@@ -1,8 +1,10 @@
 #include "ActionBank.h"
+#include "ConditionListe.h"
 #include "CdStream.h"
 #include "FileMgr.h"
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 
 CActionBank::CActionBank(void)
 {
@@ -90,6 +92,37 @@ CActionBank::ButesReel(const CActionTrack &piste, uint16 position)
 	return r;
 }
 
+
+static void
+Marquer(CActionNode &n, int16 source)
+{
+	n.source = source;
+	for(CActionNode &e : n.enfants) Marquer(e, source);
+}
+
+// Une inclusion ('i') insère à sa place l'arbre d'un autre fichier : « actions » de GlobalActions inclut Grapples.act,
+// RisingAttacks.act…, et les scripts désignent ensuite /Global/Actions/Grapples/Front/… . Le nœud 'i' porte le nom du
+// fichier et son dossier ; sa banque de tête (« Grapples ») prend la place, avec ses données gardées comme les autres.
+// Une référence ('r') reste un lien vers un autre arbre (GlobalLoco), que la descente ne suit pas.
+bool
+CActionBank::Inclure(CActionNode &n, int prof)
+{
+	if(prof > 8) return false;
+	for(CActionNode &e : n.enfants){
+		if(e.genre == 'i'){
+			int32 image = ImageAct();
+			const CDirectoryEntry *d = image < 0 ? nil : CdStream::ms_images[image].Find(NomCat(e.nom.c_str()).c_str());
+			std::shared_ptr<Source> src = std::make_shared<Source>();
+			if(d == nil || !LireCat(d, src->donnees) || !src->fichier.Load(src->donnees.data(), (uint32)src->donnees.size())) continue;
+			Marquer(src->fichier.racine, (int16)sources.size());
+			sources.push_back(src);
+			e = std::move(src->fichier.racine);
+			Inclure(e, prof + 1);
+		}else Inclure(e, prof);
+	}
+	return true;
+}
+
 bool
 CActionBank::Charger(const char *act)
 {
@@ -99,9 +132,12 @@ CActionBank::Charger(const char *act)
 	std::string cat = NomCat(act);
 	const CDirectoryEntry *d = CdStream::ms_images[image].Find(cat.c_str());
 	if(d == nil) return false;
-	std::vector<uint8> buf;
-	CActionTreeFile f;
-	if(!LireCat(d, buf) || !f.Load(buf.data(), (uint32)buf.size())) return false;
+	std::shared_ptr<Source> src = std::make_shared<Source>();
+	CActionTreeFile &f = src->fichier;
+	if(!LireCat(d, src->donnees) || !f.Load(src->donnees.data(), (uint32)src->donnees.size())) return false;
+	Marquer(f.racine, (int16)sources.size());
+	sources.push_back(src);
+	Inclure(f.racine);
 	// La banque de tête du fichier (« 1_01 », « Player ») devient un enfant de /Global ; une banque du
 	// même nom déjà là reçoit ses enfants (vtable +0x18 de la racine).
 	CActionNode *cible = nil;
@@ -131,6 +167,7 @@ CActionBank::Trouver(const char *chemin) const
 		const CActionNode *courant = pile.back(), *suivant = nil;
 		for(const CActionNode &x : courant->enfants) if(x.hachage == h){ suivant = &x; break; }
 		if(suivant == nil) return nil;
+		if(suivant->nom.empty()) suivant->nom = segment;   // un nom haché, appris du chemin qui le désigne (journaux)
 		pile.push_back(suivant);
 	}
 	return pile.back();
@@ -226,9 +263,78 @@ bool
 CActionBank::JoueNom(const CActionNode *courant, const char *nom) const
 {
 	if(courant == nil || nom == nil) return false;
-	uint32 h = ActionHash(nom);
+	return JoueHachage(courant, ActionHash(nom));
+}
+
+bool
+CActionBank::JoueHachage(const CActionNode *courant, uint32 h) const
+{
+	if(courant == nil) return false;
 	std::vector<const CActionNode *> pile;
 	if(!Chemin(racine, courant, pile)) return courant->hachage == h;
 	for(const CActionNode *n : pile) if(n->hachage == h) return true;
 	return false;
+}
+
+static const uint32 kNot = ActionHash("NOT");                         // ConditionNOT (FUN_00639470)
+static const uint32 kOr = ActionHash("OR");                           // ConditionOR (FUN_00639490)
+static const uint32 kFalse = ActionHash("False");                     // ConditionFalse
+static const uint32 kGroupe = ActionHash("ConditionGroup");
+
+int
+CActionBank::JugerListe(const CActionTreeFile &f, const std::vector<int32> &liste, const CJugeAction &juge, int prof) const
+{
+	if(prof > 8) return -1;
+	auto genre = [&](int i){ uint32 t = f.TypeCondition(liste[i]); return t == kNot ? 1 : t == kOr ? 2 : 0; };
+	return EvaluerListe((int)liste.size(), [&](int i){
+		uint32 type, mots[6];
+		if(!f.Condition(liste[i], type, mots)) return -1;
+		if(type == kNot || type == kOr) return 1;
+		if(type == kFalse) return 0;
+		if(type == kGroupe){
+			std::vector<int32> groupe;
+			return f.GroupeDe(liste[i], groupe) ? JugerListe(f, groupe, juge, prof + 1) : -1;
+		}
+		return juge.Juger(f, liste[i], type, mots);
+	}, genre);
+}
+
+int
+CActionBank::Juger(const CActionNode &n, const CJugeAction &juge) const
+{
+	if(n.conditions.empty()) return 1;
+	const CActionTreeFile *f = Fichier(n);
+	return f ? JugerListe(*f, n.conditions, juge) : -1;
+}
+
+const CActionNode *
+CActionBank::Choisir(const CActionNode *depuis, const CJugeAction &juge) const
+{
+	if(depuis == nil || Juger(*depuis, juge) != 1) return nil;
+	switch(depuis->genre){
+	case 'n': case 'l':
+		return depuis;                       // FUN_005f5500
+	case 'b':
+		for(const CActionNode &e : depuis->enfants){   // FUN_005f5490 : le premier enfant qui aboutit
+			const CActionNode *r = Choisir(&e, juge);
+			if(r) return r;
+		}
+		return nil;
+	default:
+		return nil;
+	}
+}
+
+std::string
+CActionBank::CheminDe(const CActionNode *n) const
+{
+	std::vector<const CActionNode *> pile;
+	if(n == nil || !Chemin(racine, n, pile)) return std::string();
+	std::string s;
+	for(size_t i = 1; i < pile.size(); i++){
+		char h[12];
+		snprintf(h, sizeof(h), "#%08x", pile[i]->hachage);
+		s += "/" + (pile[i]->nom.empty() ? std::string(h) : pile[i]->nom);
+	}
+	return s;
 }

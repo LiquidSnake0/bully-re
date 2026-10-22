@@ -132,8 +132,11 @@ lasts as long as the real samples in `Speech.bin`, the player leaves the school
 through a `DT_` door, and the mission runs up to the training fight with Russell.
 Since 22.10 the player's action controller descends into the tree that `PedSetActionTree` sets
 (the 68 global action trees are loaded at start-up, as the engine does), so the training starts,
-and with `--jouer` (block, then `0_BLOCK_0`) the blocking lesson goes through.
-The tool plays the player (`--entrer`, `--aller`, `--zone`, `--porte`, `--jouer`); everything
+and with `--jouer` (block, then `0_BLOCK_0`) the blocking lesson goes through. Since the second session of 22.10
+the action nodes' conditions are judged (`ConditionGroup`, `WeaponEquiped`, `ActionRequest`, `ActionNodePlayTime`,
+`TargetPlaying`, `LuaCond`) and each pedestrian has an action controller that steps back into its tree when the
+played node ends: the button-sequence lesson, the grapple and its charge go through (`--demander`, `--sequence`).
+The tool plays the player (`--entrer`, `--aller`, `--zone`, `--porte`, `--jouer`, `--demander`, `--sequence`); everything
 else answers like the engine does, or says it is a stub. See `docs/lua.md`, `docs/missions.md`,
 `docs/zones.md`, `docs/cinematiques.md` (in French).
 

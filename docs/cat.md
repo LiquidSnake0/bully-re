@@ -60,6 +60,47 @@ classe, que le moteur cherche dans un registre de fabriques
 (`FUN_0061a4f0`) : `Not`, `Or`, `ConditionGroup`, `HavePOIOfType`,
 `IsSocializing`, `pedType`, `RangeToTarget`, `WeaponModelRequest`…
 
+## Les groupes de conditions (22.10.2026)
+
+La seconde table de renvois ne cite pas des chaînes : sa valeur est un décalage **après la fin de l'arbre**
+(mot +0xc de l'en-tête), là où le fichier range des **listes de conditions** écrites comme celle d'un nœud
+(un octet n, puis n mots : des décalages dans les données). Le champ +4 d'une `ConditionGroup` (le mot +8
+de son enregistrement, l'objet étant construit à +4) y renvoie : c'est le groupe, évalué comme une liste
+(`NOT` / `OR` compris). Les 3 220 valeurs des secondes tables des 479 fichiers se lisent toutes ainsi.
+Exemple, `/TrainingPlayer/Default/Locomotion/animations` : `ConditionGroup(WeaponEquiped Or WeaponEquiped
+Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même façon. `CActionTreeFile::Groupe`,
+`GroupeDe` ; `tools/cat.py` affiche le groupe entre parenthèses.
+
+## Les conditions jugées et le contrôleur de l'outil (22.10.2026)
+
+- **Les données restent chargées** : `CActionBank` garde chaque fichier (`sources`), et chaque nœud sait d'où il
+  vient (`CActionNode::source`) ; ses conditions se lisent après la greffe sous `/Global`.
+- **Les inclusions** `i` sont remplacées par l'arbre de leur fichier (`CActionBank::Inclure`) : la banque
+  `actions` de `GlobalActions` reçoit `Grapples`, `RisingAttacks`, `PropAttacks`… ; les références `r` restent
+  des liens (`GlobalLoco` depuis `TrainingPlayer`), que la descente ne suit pas.
+- **La liste de conditions** de `FUN_005fb9b0` (`src/core/ConditionListe.h`, `EvaluerListe`) sert aux missions, aux
+  nœuds et aux groupes : `NOT` inverse la suivante ; après un faux, un `OR` laisse la suivante décider ; après un
+  vrai, la suivante est encore jugée mais ne compte pas ; le premier faux sans `OR` derrière rend la liste fausse.
+  `CActionBank::Juger` fait `NOT`, `OR`, `False` et `ConditionGroup`, et confie le reste à un `CJugeAction`.
+- **Champs relevés** (mots de l'enregistrement après le type ; l'objet est construit à +4) :
+
+| Classe | Champs |
+|---|---|
+| `ConditionGroup`, `TargetConditionGroup` | +4 : renvoi de la seconde table vers le groupe |
+| `WeaponEquiped` | +4 : le nom de l'arme, cité par la première table (`unarmed`, `any`, `bat`, `leadpipe`…) |
+| `ActionRequest` | +4 : le numéro de l'action (0x16, 3, 1…), +8 : 1 ou 2 |
+| `ActionNodePlayTime` | +4 : un temps (s), +8 : un comparateur (2 et 5 relevés, lus `<` et `≥`) ; deux champs |
+| `TargetPlaying` | +4 : un nom de nœud haché (`RollAway`…), +8 : 1 ; deux champs |
+| `LuaCond` | +0x10 : `mission`, +0x14 : la fonction du script (`F_PlayerGroundKicks`, `F_FinalAttacks`…) |
+
+  Les comparateurs et le sens exact de +8 restent à confirmer dans les fonctions des classes (le registre
+  `FUN_0064b090` les construit depuis une table sur la pile, pas lue).
+- **Le contrôleur de l'outil** (`src/core/ActionController.h`) : l'arbre posé, le nœud joué, son départ et sa fin
+  (le plus tard des entrée +12 + durée de vie +16 des pistes). Entrer dans un nœud (`PedSetActionNode`, l'emplacement
+  +0x4c que `FUN_004849a0` appelle) descend dans une banque. Quand le nœud joué finit, ou qu'une `ActionRequest`
+  attend, un enfant qui aboutit le remplace, sinon le contrôleur redescend depuis l'arbre posé. C'est une règle de
+  l'outil, en attendant les pistes `Opportunity` qui décident vraiment des passages.
+
 ## Le chemin d'un nœud (18.10.2026)
 
 Les scripts désignent un nœud par un chemin, `PedSetActionNode(ped, "/Global/1_01/Talking",

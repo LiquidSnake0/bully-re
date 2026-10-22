@@ -9,6 +9,15 @@
 // FUN_005dbe60 le vérifie par le hachage de son nom sans dossier) puis cherche de nouveau.
 #pragma once
 #include "ActionTree.h"
+#include <memory>
+
+// Ce qu'une condition de nœud d'action vaut pour un piéton : la classe (type, HashString de son nom) et ses mots
+// (mots[i] = champ +4 * (i + 1) de l'objet, voir CActionTreeFile::Condition) ; 1 vrai, 0 faux, -1 classe pas lue.
+// NOT, OR, False et ConditionGroup sont jugés par la banque elle-même.
+struct CJugeAction {
+	virtual int Juger(const CActionTreeFile &f, int32 decalage, uint32 type, const uint32 mots[6]) const = 0;
+	virtual ~CJugeAction(void) {}
+};
 
 class CActionBank
 {
@@ -32,6 +41,7 @@ public:
 	// le nœud joué s'appelle ainsi, ou un de ses parents (FUN_005f4f30, toujours demandé par 0x5f4840). `sous`
 	// regarde aussi les contrôleurs secondaires (+0x2c), que l'outil n'a pas.
 	bool JoueNom(const CActionNode *courant, const char *nom) const;
+	bool JoueHachage(const CActionNode *courant, uint32 h) const;   // la même chose, le nom déjà haché (TargetPlaying)
 	// La descente du contrôleur dans un arbre posé par PedSetActionTree (FUN_005dc040, puis l'emplacement +0x4c de
 	// chaque nœud) : une banque (FUN_005f5490) teste ses conditions (FUN_005fb9b0, s'il en a : emplacement +0x50),
 	// puis rend le premier de ses enfants, dans l'ordre, dont la descente aboutit ; un nœud jouable ou une feuille
@@ -41,11 +51,30 @@ public:
 	typedef bool (*Conditions)(const CActionNode &n, void *contexte);
 	const CActionNode *Choisir(const CActionNode *depuis, Conditions conditions = nil, void *contexte = nil) const;
 
+	// Les fichiers chargés restent en mémoire, comme le bloc que FUN_005fb3f0 alloue : les conditions et les pistes
+	// d'un nœud ne sont que des décalages dans ses données. Fichier(n) : le fichier d'où vient le nœud, ou nil.
+	struct Source { std::vector<uint8> donnees; CActionTreeFile fichier; };
+	std::vector<std::shared_ptr<Source>> sources;
+	const CActionTreeFile *Fichier(const CActionNode &n) const {
+		return n.source >= 0 && n.source < (int)sources.size() ? &sources[n.source]->fichier : nil;
+	}
+
+	// FUN_005fb9b0 sur les conditions d'un nœud : la liste (ConditionListe.h), un NOT ou un OR par sa place, False
+	// toujours faux, une ConditionGroup par son groupe (la seconde table de renvois), le reste par `juge`.
+	// 1 vrai (aussi sans condition), 0 faux, -1 si une condition décisive n'est pas lue.
+	int Juger(const CActionNode &n, const CJugeAction &juge) const;
+	int JugerListe(const CActionTreeFile &f, const std::vector<int32> &liste, const CJugeAction &juge, int prof = 0) const;
+	// Le chemin d'un nœud de l'arbre (« /Global/TrainingPlayer/Default/Default »), pour les journaux ; vide s'il n'y est pas.
+	std::string CheminDe(const CActionNode *n) const;
+	// La descente avec les conditions jugées : un nœud est pris si Juger rend 1.
+	const CActionNode *Choisir(const CActionNode *depuis, const CJugeAction &juge) const;
+
 	CActionNode racine;                      // DAT_01b649dc : sans nom, son seul enfant est la banque « Global »
 	CActionNode *Global(void){ return &racine.enfants[0]; }
 	const CActionNode *Global(void) const { return &racine.enfants[0]; }
 	std::vector<std::string> fichiers;       // les .cat chargés, dans l'ordre
 	std::vector<uint32> hachages;            // HashString de chaque nom de fichier sans dossier ni extension
+	bool Inclure(CActionNode &n, int prof = 0);    // les inclusions 'i' remplacées par l'arbre de leur fichier
 	static std::string NomCat(const char *act);   // « Act/Conv/1_01.act » → « 1_01.cat »
 	// FUN_0072ad00 : une piste « Butes » (réglages du jeu) trouvée par le HashString de son nom parmi les pistes d'un
 	// fichier (Globals.cat pour AreaTransitionButes, TimeCycleButes…) ; FUN_0072ae00 les range au démarrage
