@@ -1,6 +1,9 @@
 #include "AreaManager.h"
+#include <cmath>
 #include <cstring>
 #include <vector>
+
+static const float RECUL_PORTE = 2.5f;   // DAT_00900ab0 (un double)
 
 // FUN_00415ed0 : tout à zéro, le compte à rebours à 14 images.
 CAreaManager::CAreaManager(void)
@@ -81,9 +84,14 @@ CAreaManager::PasserUnePorte(const CDatPools &d, const CVector &pos, float cap)
 				return (int)i;
 			}
 			if(ZoneAvecRetour(liste->zone)){
-				// FUN_00416750 : le moteur recule le point d'un pas et le tourne face à la porte quand elle a
-				// un objet ; ici, la position et le cap du joueur tels quels.
-				retour.pos = pos; retour.cap = cap; retour.zone = zoneVisible;
+				// FUN_00416750, sans objet de porte (+0x1c du déclencheur nul, le cas de l'outil) : le joueur recule
+				// de 2,5 m (DAT_00900ab0) le long de son regard (FUN_00415350 : (-sin cap, cos cap, 0) sans matrice,
+				// normalisé par FUN_00414cc0) et repart dos à la porte, cap moins π (DAT_00900160). Avec un objet,
+				// le moteur part du centre de sa boîte (non joué ici).
+				const float rad = cap * 3.14159265f / 180.0f;
+				retour.pos = CVector(pos.x + sinf(rad) * RECUL_PORTE, pos.y - cosf(rad) * RECUL_PORTE, pos.z);
+				retour.cap = fmodf(cap + 180.0f, 360.0f);
+				retour.zone = zoneVisible;
 				retourEnReserve = true;
 			}
 		}

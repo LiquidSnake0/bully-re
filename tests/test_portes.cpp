@@ -3,6 +3,7 @@
 // portes de l'école ; le joueur dans le déclencheur SV_BioSchool (zone 6) est demandé au point
 // SV_BioSchool, en zone 2 ; une porte DT_ n'est pas passée sans son objet.
 //   BULLY_DATA=<racine du jeu> build/tests/test_portes
+#include <cmath>
 #include "../src/core/AreaManager.h"
 #include <cstdio>
 #include <cstring>
@@ -101,10 +102,12 @@ main(void)
 		if(!p.parObjet || !tl || !CAreaManager::ZoneAvecRetour(tl->zone)) continue;
 		z3.zoneVisible = 0;
 		z3.PousserPorte(p.declencheur);
-		VERIF(z3.PasserUnePorte(d, CVector(1, 2, 3), 90) >= 0 && z3.retourEnReserve && z3.retour.zone == 0 && z3.retour.cap == 90 && z3.demande.zone == tl->zone);
+		VERIF(z3.PasserUnePorte(d, CVector(1, 2, 3), 90) >= 0 && z3.retourEnReserve && z3.retour.zone == 0 && z3.retour.cap == 270 && z3.demande.zone == tl->zone);
+		// FUN_00416750 : 2,5 m en arrière le long du regard (cap 90° : regard vers -x), dos à la porte.
+		VERIF(fabsf(z3.retour.pos.x - 3.5f) < 1e-4f && fabsf(z3.retour.pos.y - 2) < 1e-4f && z3.retour.pos.z == 3);
 		for(int k = 0; k < 200 && z3.EnChargement(); k++){ z3.AvancerImage(FONDU_NOIR, true, true); if(z3.etat == AREA_PRET) z3.SignalerPret(); }
 		z3.PousserPorte(p.declencheur);
-		VERIF(z3.PasserUnePorte(d, CVector(5, 5, 5)) >= 0 && !z3.retourEnReserve && z3.demande.zone == 0 && z3.demande.pos.x == 1 && z3.demande.cap == 90);
+		VERIF(z3.PasserUnePorte(d, CVector(5, 5, 5)) >= 0 && !z3.retourEnReserve && z3.demande.zone == 0 && fabsf(z3.demande.pos.x - 3.5f) < 1e-4f && z3.demande.cap == 270);
 		const CTriggerZone *tz = d.ZoneParHandle(p.declencheur);
 		printf("  %s : déclencheur en zone %d → zone %d, retour gardé\n", tz ? tz->nom.c_str() : "?", tz ? tz->zone : -1, tl->zone);
 		break;
