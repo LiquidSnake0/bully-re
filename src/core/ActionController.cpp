@@ -34,6 +34,16 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t)
 	joue = n;
 	debut = t;
 	occasions = n ? COpportunite::DuNoeud(b, *n) : std::vector<COpportunite>();
+	suites.clear();
+	if(n){
+		static const uint32 kSequence = ActionHash("Sequence");
+		if(const CActionTreeFile *f = b.Fichier(*n))
+			for(int32 dp : n->pistes){
+				CActionTrack p;
+				if(f->Piste(dp, p) && p.type == kSequence)
+					if(const CActionAttribut *a = p.Champ(32)) suites.push_back(f->ChaineCitee(a->decalage));
+			}
+	}
 	for(COpportunite &o : occasions)   // FUN_005f7510 : la bascule d'un loquet tirée au lancement
 		if(o.loquet) o.bascule = (float)RandCrt(hasard) / 32767.0f * (o.loquetMax - o.loquetMin) + o.loquetMin;
 	float d = n ? Duree(b, *n) : -1.0f;
@@ -122,6 +132,11 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(n){ Jouer(b, n, t); return true; }
 	}
 	bool fini = joue && fin >= 0.0f && t >= fin;
+	if(fini)   // FUN_005f7030 : les Sequence à la fin du nœud
+		for(const std::string &chemin : suites){
+			const CActionNode *d = b.Choisir(b.Relatif(joue, chemin.c_str()), juge);
+			if(d && (arbre == nil || Sous(*arbre, d))){ Jouer(b, d, t); return true; }
+		}
 	if(!fini && !demande) return false;
 	if(joue){
 		for(const CActionNode &e : joue->enfants){

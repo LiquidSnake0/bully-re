@@ -6,6 +6,8 @@
 // Les passages viennent des pistes Opportunity du nœud joué (src/core/Opportunite.h, FUN_005f7d70 / FUN_005f7440 /
 // FUN_005f3bc0) : chaque image, chacune tente sa chance ; une piste prise qui s'arrête dépose une demande, et la plus
 // forte priorité l'emporte (à priorité égale, la première déposée).
+// Quand le nœud joué finit, ses pistes Sequence s'arrêtent (table 0x93…, arrêt FUN_005f7030) : chacune descend dans
+// son nœud visé et dépose une demande de priorité 0 (FUN_005f3bc0) ; la première qui aboutit l'emporte.
 // Règle de l'outil en secours, faute des pistes Sequence et des autres passages pas encore lus : quand le nœud joué
 //   est fini (toutes ses pistes à durée finie terminées) ou qu'une demande (ActionRequest) attend sans qu'une
 //   Opportunity ait fait passer, un enfant du nœud joué qui aboutit le remplace, sinon le contrôleur redescend depuis
@@ -22,6 +24,7 @@ public:
 	float debut = 0.0f;               // l'instant où le nœud joué a commencé
 	float fin = -1.0f;                // l'instant où il se termine (-1 : jamais, il attend)
 	std::vector<COpportunite> occasions;   // les pistes Opportunity du nœud joué, vivantes
+	std::vector<std::string> suites;       // les chemins de ses pistes Sequence, dans l'ordre
 	uint16 graine = 0;                // le mot +0x10c du piéton, pour le tirage (FUN_00465910)
 	uint32 image = 0;                 // le compteur d'images (DAT_00c1a99c), avancé par Avancer
 	uint32 hasard = 1;                // la graine du rand() du CRT (OpportunityRandomLatch)

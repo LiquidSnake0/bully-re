@@ -165,6 +165,32 @@ main(void)
 		}
 		struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return -1; } } inconnu;
 		VERIF(b.Juger(*anim, inconnu) == -1 && b.Choisir(attaques, inconnu) == nil);
+		// Les Sequence (FUN_005f7030) : à la fin d'un nœud à durée finie, la descente dans le nœud de sa Sequence.
+		{
+			struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return 1; } } toutVrai;
+			struct Trouve { const CActionBank &b; const CJugeAction &j; const CActionNode *n = nil; const CActionNode *suite = nil;
+				bool Dans(const CActionNode &x){
+					if(x.genre != 'b' && CActionController::Duree(b, x) > 0.0f){
+						CActionController c;
+						c.Jouer(b, &x, 0.0f);
+						for(const std::string &ch : c.suites){
+							const CActionNode *d = b.Choisir(b.Relatif(&x, ch.c_str()), j);
+							if(d && d != &x && c.occasions.empty()){ n = &x; suite = d; return true; }
+						}
+					}
+					for(const CActionNode &e : x.enfants) if(Dans(e)) return true;
+					return false;
+				} } t{b, toutVrai, nil, nil};
+			VERIF(t.Dans(*b.Global()) && t.n != nil);
+			if(t.n){
+				CActionController c;
+				c.Jouer(b, t.n, 0.0f);
+				float d = CActionController::Duree(b, *t.n);
+				VERIF(!c.Avancer(b, nil, toutVrai, d * 0.5f) && c.joue == t.n);
+				VERIF(c.Avancer(b, nil, toutVrai, d + 0.01f) && c.joue == t.suite);
+				printf("  Sequence : %s → %s à %.2f s\n", b.CheminDe(t.n).c_str(), b.CheminDe(t.suite).c_str(), d);
+			}
+		}
 		// Les Opportunity dans le contrôleur (FUN_005f7d70, FUN_005f7440, FUN_005f3bc0) : dans TrainingPlayer, la
 		// première Opportunity à bascule tardive (> 0) dont le nœud visé aboutit quand tout passe. Prise tout de suite,
 		// elle fait passer à sa bascule, pas avant ; avec des conditions fausses, elle ne fait rien.
