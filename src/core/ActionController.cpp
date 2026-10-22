@@ -35,13 +35,17 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t)
 	debut = t;
 	occasions = n ? COpportunite::DuNoeud(b, *n) : std::vector<COpportunite>();
 	suites.clear();
+	surCible.clear();
 	if(n){
-		static const uint32 kSequence = ActionHash("Sequence");
+		static const uint32 kSequence = ActionHash("Sequence"), kSurCible = ActionHash("PlayOnTarget");
 		if(const CActionTreeFile *f = b.Fichier(*n))
 			for(int32 dp : n->pistes){
 				CActionTrack p;
-				if(f->Piste(dp, p) && p.type == kSequence)
-					if(const CActionAttribut *a = p.Champ(32)) suites.push_back(f->ChaineCitee(a->decalage));
+				if(!f->Piste(dp, p)) continue;
+				const CActionAttribut *a = p.Champ(32);
+				if(a == nil) continue;
+				if(p.type == kSequence) suites.push_back(f->ChaineCitee(a->decalage));
+				else if(p.type == kSurCible) surCible.push_back({Reel(p, 12, 0.0f), f->ChaineCitee(a->decalage), false});
 			}
 	}
 	for(COpportunite &o : occasions)   // FUN_005f7510 : la bascule d'un loquet tirée au lancement
@@ -127,6 +131,12 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 {
 	(void)depuisRacine;
 	image++;
+	pourCible.clear();
+	for(SurCible &c : surCible)   // FUN_006615f0
+		if(!c.fait && Temps(t) >= c.entree){
+			c.fait = true;
+			if(const CActionNode *n = b.Relatif(joue, c.chemin.c_str())) pourCible.push_back(n);
+		}
 	if(joue){
 		const CActionNode *n = Occasions(b, juge, t);
 		if(n){ Jouer(b, n, t); return true; }

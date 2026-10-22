@@ -246,6 +246,30 @@ main(void)
 		int n = g.ChargerGlobaux();
 		VERIF(n == 68 && g.EstCharge("Act/HitTree.act") && g.EstCharge("Act/Weapons/EdgarShield.act"));
 		VERIF(g.Trouver("/Global/HitTree/Standing/BlockHits") != nil && g.Trouver("/Global/Player") != nil);
+		// PlayOnTarget (FUN_006615f0) : dans les prises, un nœud fait jouer à la cible le nœud visé, une fois, à son entrée.
+		{
+			struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return 0; } } rien;
+			struct Trouve { const CActionBank &b; const CActionNode *n = nil, *visee = nil; float entree = 0.0f;
+				bool Dans(const CActionNode &x){
+					CActionController c;
+					c.Jouer(b, &x, 0.0f);
+					for(const CActionController::SurCible &sc : c.surCible)
+						if(const CActionNode *v = b.Relatif(&x, sc.chemin.c_str())){ n = &x; visee = v; entree = sc.entree; return true; }
+					for(const CActionNode &e : x.enfants) if(Dans(e)) return true;
+					return false;
+				} } t{g, nil, nil, 0.0f};
+			const CActionNode *prises = g.Trouver("/Global/Actions/Grapples");
+			VERIF(prises && t.Dans(*prises));
+			if(t.n){
+				CActionController c;
+				c.Jouer(g, t.n, 0.0f);
+				c.Avancer(g, nil, rien, t.entree);
+				VERIF(c.pourCible.size() == 1 && c.pourCible[0] == t.visee);
+				c.Avancer(g, nil, rien, t.entree + 0.1f);
+				VERIF(c.pourCible.empty());
+				printf("  PlayOnTarget : %s → la cible joue %s\n", g.CheminDe(t.n).c_str(), g.CheminDe(t.visee).c_str());
+			}
+		}
 		// OpportunityRandomLatch (FUN_005f7510) : le repos de GlobalLoco tire sa bascule entre 2 et 5 s.
 		{
 			COpportunite o;

@@ -25,6 +25,11 @@ public:
 	float fin = -1.0f;                // l'instant où il se termine (-1 : jamais, il attend)
 	std::vector<COpportunite> occasions;   // les pistes Opportunity du nœud joué, vivantes
 	std::vector<std::string> suites;       // les chemins de ses pistes Sequence, dans l'ordre
+	// Ses pistes PlayOnTarget (ExecuteOnTargetTrack, mise à jour FUN_006615f0) : à leur instant d'entrée, le nœud
+	// visé (chemin relatif) est joué par la cible du piéton (FUN_004d5980, un piéton : FUN_005f4500), une seule fois.
+	struct SurCible { float entree; std::string chemin; bool fait; };
+	std::vector<SurCible> surCible;
+	std::vector<const CActionNode *> pourCible;   // les nœuds à faire jouer à la cible, rendus par Avancer (vidés à chaque image)
 	uint16 graine = 0;                // le mot +0x10c du piéton, pour le tirage (FUN_00465910)
 	uint32 image = 0;                 // le compteur d'images (DAT_00c1a99c), avancé par Avancer
 	uint32 hasard = 1;                // la graine du rand() du CRT (OpportunityRandomLatch)
