@@ -98,7 +98,7 @@ outside the repository.
 
 ## Status
 
-**2.8 % of `bully.exe`'s code recreated** (417 of 20,819 functions), 6.0 %
+**2.9 % of `bully.exe`'s code recreated** (423 of 20,819 functions), 6.5 %
 understood (code, docs, names). Breakdown in [docs/avancement.md](docs/avancement.md),
 regenerated on every commit by `tools/avancement.py`.
 
@@ -135,7 +135,7 @@ Since 22.10 the player's action controller descends into the tree that `PedSetAc
 and with `--jouer` (block, then `0_BLOCK_0`) the blocking lesson goes through. Since the second session of 22.10
 the action nodes' conditions are judged (`ConditionGroup`, `WeaponEquiped`, `ActionRequest`, `ActionNodePlayTime`,
 `TargetPlaying`, `LuaCond`) and each pedestrian has an action controller that steps back into its tree when the
-played node ends: the button-sequence lesson, the grapple and its charge go through (`--demander`, `--sequence`). Since the third session of 22.10 the passes come from the tracks themselves, as in the engine: `Opportunity` (and its random latch), `Sequence` and `PlayOnTarget`, with their priority rule; the pushed bully plays `PushFwd/RCV` and the grapple lesson ends.
+played node ends: the button-sequence lesson, the grapple and its charge go through (`--demander`, `--sequence`). Since the third session of 22.10 the passes come from the tracks themselves, as in the engine: `Opportunity` (and its random latch), `Sequence` and `PlayOnTarget`, with their priority rule; the pushed bully plays `PushFwd/RCV` and the grapple lesson ends. Since the fourth session of 22.10 hits land: `Collision` tracks (the hit reaches the locked target, as the tool has no bones), the target's reaction through the hit tree (`ConditionFlag`, `MePlaying`), a `Sequence` that leaves the set tree, and animation ends read from `MAINPED.HXD`; once pushed, the bully falls, and the heavy ground kick makes him play `GroundHitHeavy`: the ground-strike lesson goes through and `1_02` shows its fight objective.
 The tool plays the player (`--entrer`, `--aller`, `--zone`, `--porte`, `--jouer`, `--demander`, `--sequence`); everything
 else answers like the engine does, or says it is a stub. See `docs/lua.md`, `docs/missions.md`,
 `docs/zones.md`, `docs/cinematiques.md` (in French).

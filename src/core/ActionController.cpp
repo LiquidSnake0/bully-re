@@ -11,6 +11,24 @@ Reel(const CActionTrack &p, uint16 position, float defaut)
 	return r;
 }
 
+// AnimationTrack, mise à jour FUN_0060ae00 : en mode 0 (position 32), la piste finit quand le temps joué dépasse la
+// fin : la position 44 si elle est positive et ne dépasse pas la durée de l'animation, sinon cette durée (HXD +0xc).
+// Le temps part de la position 40 et avance à la vitesse 48 (la stat 0x14 du piéton n'est pas suivie). Les modes 1
+// et 2 (boucle) ne finissent pas d'eux-mêmes. Rend l'instant de fin dans le nœud, ou -1.
+static float
+FinAnimation(const CActionBank &b, const CActionTrack &p)
+{
+	static const uint32 kAnimation = ActionHash("Animation");
+	if(p.type != kAnimation || p.Mot(32) != 0) return -1.0f;
+	float duree = b.DureeAnimation(p.Mot(24));
+	if(duree <= 0.0f) return -1.0f;
+	float fin = Reel(p, 44, -1.0f), debut = Reel(p, 40, 0.0f), vitesse = Reel(p, 48, 1.0f);
+	if(fin < 0.0f || duree < fin) fin = duree;
+	if(vitesse <= 0.0f) vitesse = 1.0f;
+	float reste = (fin - debut) / vitesse;
+	return Reel(p, 12, 0.0f) + (reste > 0.0f ? reste : 0.0f);
+}
+
 float
 CActionController::Duree(const CActionBank &b, const CActionNode &n)
 {
@@ -21,11 +39,38 @@ CActionController::Duree(const CActionBank &b, const CActionNode &n)
 		CActionTrack p;
 		if(!f->Piste(dp, p)) continue;
 		float vie = Reel(p, 16, -1.0f);
-		if(vie < 0.0f) continue;
-		float bout = Reel(p, 12, 0.0f) + vie;
+		float bout = vie >= 0.0f ? Reel(p, 12, 0.0f) + vie : FinAnimation(b, p);
 		if(bout > d) d = bout;
 	}
 	return d;
+}
+
+// Les pistes Collision d'un nœud (entree : l'instant où il a été lancé dans le nœud joué), et celles des nœuds que ses
+// pistes Execute font jouer : la descente sans juge, comme le fait l'outil pour un nœud sans contexte (une feuille à
+// conditions n'est pas prise ; sous HeavyAttacks/…/Collision, c'est « ped »).
+void
+CActionController::Contacts(const CActionBank &b, const CActionNode &n, float entree, int prof)
+{
+	static const uint32 kCollision = ActionHash("Collision"), kExecute = ActionHash("Execute");
+	const CActionTreeFile *f = b.Fichier(n);
+	if(f == nil || prof > 4) return;
+	for(int32 dp : n.pistes){
+		CActionTrack p;
+		if(!f->Piste(dp, p)) continue;
+		if(p.type == kCollision){
+			const CActionAttribut *dr = p.Champ(44), *sur = p.Champ(104);
+			Contact c{&n, entree + Reel(p, 24, 0.0f), entree + Reel(p, 28, -1.0f),
+			          dr ? ActionHash(f->ChaineCitee(dr->decalage).c_str()) : 0u, Reel(p, 52, 0.0f),
+			          sur ? f->ChaineCitee(sur->decalage) : std::string(), false};
+			contacts.push_back(c);
+		}else if(p.type == kExecute){
+			const CActionAttribut *a = p.Champ(32);
+			if(a == nil) continue;
+			const CActionNode *v = b.Relatif(&n, f->ChaineCitee(a->decalage).c_str());
+			const CActionNode *d = v ? b.Choisir(v) : nil;
+			if(d) Contacts(b, *d, entree + Reel(p, 12, 0.0f), prof + 1);
+		}
+	}
 }
 
 void
@@ -36,6 +81,8 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t)
 	occasions = n ? COpportunite::DuNoeud(b, *n) : std::vector<COpportunite>();
 	suites.clear();
 	surCible.clear();
+	contacts.clear();
+	if(n) Contacts(b, *n, 0.0f, 0);
 	if(n){
 		static const uint32 kSequence = ActionHash("Sequence"), kSurCible = ActionHash("PlayOnTarget");
 		if(const CActionTreeFile *f = b.Fichier(*n))
@@ -131,6 +178,9 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 {
 	(void)depuisRacine;
 	pourCible.clear();
+	touches.clear();
+	for(Contact &c : contacts)    // FUN_005f9e70 : la fenêtre du coup
+		if(!c.fait && Temps(t) >= c.debut && (c.fin < 0.0f || Temps(t) <= c.fin)){ c.fait = true; touches.push_back(c); }
 	for(SurCible &c : surCible)   // FUN_006615f0
 		if(!c.fait && Temps(t) >= c.entree){
 			c.fait = true;
@@ -141,10 +191,12 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(n){ Jouer(b, n, t); return true; }
 	}
 	bool fini = joue && fin >= 0.0f && t >= fin;
-	if(fini)   // FUN_005f7030 : les Sequence à la fin du nœud
+	// FUN_005f7030 : les Sequence à la fin du nœud. Le nœud visé (FUN_005f4e30) peut être hors de l'arbre posé : la
+	// poussée de la prise (PushFwd/RCV) envoie la cible dans HitTree/Standing/PostHit/BellyUp/OnGroundBounce.
+	if(fini)
 		for(const std::string &chemin : suites){
 			const CActionNode *d = b.Choisir(b.Relatif(joue, chemin.c_str()), juge);
-			if(d && (arbre == nil || Sous(*arbre, d))){ Jouer(b, d, t); return true; }
+			if(d){ Jouer(b, d, t); return true; }
 		}
 	if(!fini && !demande) return false;
 	if(joue){

@@ -115,14 +115,40 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
 - **`OpportunityRandomLatch`** (lancement `FUN_005f7510`, mise à jour `FUN_005f7f80`) : la même, mais la bascule
   (+0x54) est tirée au lancement entre +0x4c et +0x50 par le `rand()` du CRT (`RAND_MAX` 32767, `0x900ce8`).
 - **`Sequence`** (arrêt `FUN_005f7030`) : à la fin du nœud, la descente dans le nœud visé dépose une demande de
-  priorité 0 ; la mise à jour (`FUN_00609b30`) ne finit jamais d'elle-même.
+  priorité 0 ; la mise à jour (`FUN_00609b30`) ne finit jamais d'elle-même. Le nœud visé (`FUN_005f4e30`) n'est
+  pas limité à l'arbre posé : la poussée de la prise (`PushFwd/RCV`) envoie la cible dans
+  `HitTree/Standing/PostHit/BellyUp/OnGroundBounce`, puis `BellyUp/On_Ground` (22.10.2026, quatrième séance).
 - **`PlayOnTarget`** (`ExecuteOnTargetTrack`, mise à jour `FUN_006615f0`) : à son entrée, la cible du piéton
   (`FUN_004d5980`, un piéton : `(+0x108 & 7) == 3`) joue le nœud visé (`FUN_005f4500`), une fois.
 - **Ce que l'outil n'a pas** : la pile des nœuds joués du contrôleur (+0x44, +0x48 : les parents jouables restent
   actifs) et les références montées (`GlobalLoco` sous `TrainingPlayer`). D'où deux garde-fous dits : une
   `Opportunity` qui vise un nœud contenant déjà le nœud joué (une remontée dans la pile) ou un nœud hors de l'arbre
-  posé ne fait pas passer. Une demande sans nœud (piste sans chemin) ne fait rien. Supposé : la priorité de départ
+  posé ne fait pas passer (une `Sequence`, si). Une demande sans nœud (piste sans chemin) ne fait rien. Supposé : la priorité de départ
   d'une image est −1 (la plus faible priorité relevée est 0).
+
+## Les coups : Collision et la réaction de la cible (22.10.2026, quatrième séance)
+
+- **`CollisionTrack`** (table 0x92decc ; fabrique `FUN_0064a6a0`, entrée « Collision » de la table de `FUN_00650150` à
+  0x6507c8 ; lancement `FUN_005f9480`, mise à jour `FUN_005f9e70`, arrêt `FUN_005f8240`). Champs relevés :
+  +0x18 (24) et +0x1c (28) la fenêtre du coup dans le temps du nœud ; +0x20 (32) le son (`'KickHeavy'`) ;
+  +0x2c (44) le **drapeau du coup** (`'GROUNDHITHEAVY'`, `'FRIENDLYHIT'`), passé à la cible ; +0x34 (52) les dégâts ;
+  +0x68 (104) un nœud de l'attaquant, joué si le coup porte sur un piéton (`FUN_005f4490`, ou `FUN_005f3e20` selon
+  l'octet +0x217) ; +0x78 (120) un second chemin, non suivi. Dans la fenêtre, le moteur teste les sphères des os de
+  l'attaquant contre les piétons proches (`FUN_005f9cf0`) ; l'outil n'a pas les os : le coup touche la cible verrouillée.
+- **Le coup reçu** : la méthode du slot 15 de `CPed` (`FUN_0047b810`, 19 paramètres : dégâts, attaquant, position,
+  nœud de coup, drapeau…). Sans nœud de coup donné, le contrôleur de la cible joue son nœud de coup (+0x4b8 du
+  contrôleur, descente +0x4c puis `FUN_005f4960`) ; dans l'outil, `/Global/HitTree`.
+- **Conditions de la réaction** (enregistrements lus dans HitTree.cat) : `ConditionFlag` (+4 un nom haché : vrai si
+  c'est le drapeau du coup reçu), `MePlaying` (+4 un nom de nœud, +8 = 1 : le nœud joué par le piéton lui-même ou un
+  parent), `HitLocation` (+4, +8 la zone touchée ; l'outil, sans sphères, la suppose vraie pendant un coup).
+- **Un piéton à terre** : `HitTree/BASE/HitTreeBase/…/On_Ground` (« si MePlaying… ») porte l'Opportunity qui mène à
+  `GroundAndWallHits/On_Ground` ; là, `BellyUp/GROUNDHITHEAVY` est pris si `ConditionFlag` = GROUNDHITHEAVY. Le moteur
+  y arrive par un `Execute` des nœuds de coup (contrôleur secondaire) ; l'outil, qui ne joue pas les `Execute` en
+  contrôleur secondaire, y entre directement quand la cible joue un nœud `On_Ground` (supposé).
+- **Les `Execute`** : le contrôleur de l'outil relève les pistes `Collision` du nœud qu'un `Execute` fait jouer
+  (`HeavyAttacks/…/GroundKick` → `./Collision` → la feuille `ped`) ; le reste d'un nœud exécuté n'est pas joué.
+- **Supposé, dit** : le corps projeté par une prise (`PushFwd/RCV`, `FRIENDLYHIT`) ne touche pas celui qui le pousse
+  (l'outil écarte le partenaire du `PlayOnTarget` pendant deux secondes) ; le drapeau du coup tient une seconde.
 
 ## Le chemin d'un nœud (18.10.2026)
 
@@ -194,6 +220,7 @@ l'objet :
 | 36 | couche du lecteur (0 à 6) |
 | 40 | instant de départ (s) |
 | 44 | instant de fin (s) ; −1 ou au-delà : la durée du HXD |
+| | La fin de la piste (mise à jour `FUN_0060ae00`, 22.10.2026) : en mode 0, la piste s'arrête quand le temps joué, parti de 40 et avancé à la vitesse 48, dépasse 44 (ou la durée de l'animation, HXD +0xc) ; les modes 1 et 2 ne finissent pas d'eux-mêmes. Le contrôleur de l'outil finit un nœud au plus tard de ses pistes qui finissent (durée de vie 16, ou fin d'une animation en mode 0), avec les durées de MAINPED.HXD |
 | 48 | vitesse ; multipliée par la stat 0x14 du piéton / 100 |
 | 52 | fondu (s) ; 0 : sans fondu ; −1 : celui du HXD |
 | 56 | passé à `FUN_006bd320` à l'arrêt |

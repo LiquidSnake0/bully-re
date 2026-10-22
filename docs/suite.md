@@ -26,10 +26,14 @@ chantier. Un point fini passe en bas, avec son commit.
    `ActionRequest`, `ActionNodePlayTime`, `TargetPlaying`, `LuaCond`) et le contrôleur redescend quand le nœud joué finit ;
    dans `1_02`, la parade, la séquence X, la prise et sa charge passent (`--jouer`, `--demander`, `--sequence`).
    Les passages viennent des pistes (docs/cat.md : `Opportunity`, loquet, `Sequence`, `PlayOnTarget`) ; la leçon de
-   prise se termine (le bully joue `PushFwd/RCV`). Suite : la pile des nœuds joués du contrôleur (+0x44 / +0x48) et
-   les références montées (`GlobalLoco` sous `TrainingPlayer`), pour lever les deux garde-fous de l'outil ; les pistes
-   `Collision` (le coup qui touche : le nœud de la cible, champs 104 et 120 d'une prise, `GROUNDHITLIGHT`…) pour les
-   coups au sol de `1_02` (le bully doit jouer `GroundHitHeavy`) puis le combat de Russell ; l'objet de porte (+0x394).
+   prise se termine (le bully joue `PushFwd/RCV`). Les coups portent (docs/cat.md, « Les coups ») : pistes `Collision`,
+   réaction par `HitTree` (`ConditionFlag`, `MePlaying`), `Sequence` hors de l'arbre posé, fin des animations
+   (`MAINPED.HXD`) ; la leçon des coups au sol passe (`GroundHitHeavy`) et `1_02` affiche `1_02_FightMsg`.
+   Suite : le combat qui suit `1_02_FightMsg` (les bullies, `T_MonitorBullyHealth`, `F_HealthTutorial`, puis Russell :
+   `F_SetupRussellFight`) ; les coups des piétons de l'IA (leur arbre `AI_FightTutorial`), les dégâts et la santé
+   (`PedGetHealth`, `PedSetMinHealth`) ; jouer les `Execute` dans un contrôleur secondaire (la vraie route vers
+   `GroundAndWallHits`) ; la pile des nœuds joués (+0x44 / +0x48) et les références montées (`GlobalLoco`) pour lever
+   les garde-fous ; l'objet de porte (+0x394).
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
    directement au lieu des exports headless. Prérequis : Ghidra 12.1.4 et

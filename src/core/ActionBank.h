@@ -8,6 +8,7 @@
 // appelle) cherche le nœud, et s'il manque charge le fichier donné (s'il ne l'est pas déjà,
 // FUN_005dbe60 le vérifie par le hachage de son nom sans dossier) puis cherche de nouveau.
 #pragma once
+#include <map>
 #include "ActionTree.h"
 #include <memory>
 
@@ -91,4 +92,10 @@ public:
 	int ChargerGlobaux(void);
 	static const char *const globaux[68];
 	static float ButesReel(const CActionTrack &piste, uint16 position);   // un attribut de 4 octets lu comme un réel
+
+	// Les durées des animations (CHxdAnim::duree, l'enregistrement HXD +0xc que FUN_0060ae00 lit par
+	// FUN_006b1df0), par HashString(« GROUPE\NOM ») : ce que cite la position 24 d'une piste Animation. Rangées par
+	// l'appelant depuis MAINPED.HXD ; -1 pour une animation inconnue.
+	std::map<uint32, float> dureesAnimations;
+	float DureeAnimation(uint32 h) const { auto it = dureesAnimations.find(h & 0x7fffffff); return it == dureesAnimations.end() ? -1.0f : it->second; }
 };
