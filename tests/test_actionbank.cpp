@@ -3,6 +3,7 @@
 // de Player.act (FUN_004849a0), deux fichiers sous la même racine.
 //   BULLY_DATA=<racine du jeu> build/tests/test_actionbank
 #include "../src/core/ActionBank.h"
+#include "../src/core/ActionController.h"
 #include <cstdio>
 #include <cstring>
 
@@ -90,6 +91,27 @@ main(void)
 		VERIF(anim && b.Juger(*anim, tuyau) == 1);   // le dernier OR du groupe
 		VERIF(b.Juger(*attaques, sansArme) == 1 && b.Choisir(attaques, sansArme) == nil);
 		VERIF(b.Choisir(arbre, sansArme) == pris);
+		// Le contrôleur : posé sur TrainingPlayer, il joue Default/Default ; un nœud joué à durée finie (la parade de
+		// HitTree) se termine, et le contrôleur redescend dans l'arbre posé.
+		CActionController c;
+		VERIF(c.Poser(b, arbre, sansArme, 10.0f) && c.joue == pris);
+		// Le premier nœud de TrainingPlayer dont une piste a une durée de vie finie (un coup, une provocation).
+		const CActionNode *cible = nil; float d = -1.0f;
+		std::vector<const CActionNode *> pile(1, arbre);
+		while(!pile.empty() && cible == nil){
+			const CActionNode *x = pile.back(); pile.pop_back();
+			if(x != pris && (d = CActionController::Duree(b, *x)) > 0.0f){ cible = x; break; }
+			for(const CActionNode &e : x->enfants) pile.push_back(&e);
+		}
+		printf("  contrôleur : %s dure %.2f s\n", cible ? cible->nom.c_str() : "?", d);
+		VERIF(cible != nil && d > 0.0f);
+		if(cible){
+			c.Jouer(b, cible, 20.0f);
+			VERIF(!c.Avancer(b, nil, sansArme, 20.0f + d * 0.5f) || c.joue != pris);
+			c.Jouer(b, cible, 20.0f);
+			VERIF(c.Avancer(b, nil, sansArme, 20.0f + d + 0.01f) && (c.joue == pris || c.joue != cible));
+			VERIF(c.Temps(c.debut + 0.25f) == 0.25f);
+		}
 		struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return -1; } } inconnu;
 		VERIF(b.Juger(*anim, inconnu) == -1 && b.Choisir(attaques, inconnu) == nil);
 		printf("  descente : /Global/TrainingPlayer → %s/%s\n", "Default", pris ? pris->nom.c_str() : "?");
