@@ -28,6 +28,10 @@ public:
 	// chemin ; avec `sous`, FUN_005f4f80 remonte aussi ses parents (emplacement +0x34) jusqu'à le trouver.
 	// Faux si le chemin ne se résout pas ou si rien n'est joué.
 	bool Joue(const CActionNode *courant, const char *chemin, bool sous) const;
+	// PedMePlaying(ped, nom, sous) (0x5cb910 → 0x5f4840 → FUN_005f46a0) : par le nom seul (HashString), pas le chemin :
+	// le nœud joué s'appelle ainsi, ou un de ses parents (FUN_005f4f30, toujours demandé par 0x5f4840). `sous`
+	// regarde aussi les contrôleurs secondaires (+0x2c), que l'outil n'a pas.
+	bool JoueNom(const CActionNode *courant, const char *nom) const;
 	// La descente du contrôleur dans un arbre posé par PedSetActionTree (FUN_005dc040, puis l'emplacement +0x4c de
 	// chaque nœud) : une banque (FUN_005f5490) teste ses conditions (FUN_005fb9b0, s'il en a : emplacement +0x50),
 	// puis rend le premier de ses enfants, dans l'ordre, dont la descente aboutit ; un nœud jouable ou une feuille

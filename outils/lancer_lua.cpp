@@ -24,7 +24,7 @@
 // lance celle dont le joueur touche le corona, et celles qui se lancent seules (champ 51) : 1_02 après 1_01.
 // Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
 // de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN@s]...
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -1228,6 +1228,16 @@ PedIsPlaying(lua_State *L)
 	return 1;
 }
 
+// PedMePlaying(ped, nom[, sous]) (0x5cb910 → FUN_005f46a0) : le nœud joué, ou un de ses parents, porte ce nom.
+static int
+PedMePlaying(lua_State *L)
+{
+	Journal("PedMePlaying", L, 1);
+	auto it = lua_isnumber(L, 1) ? noeudJoue.find((int)lua_tonumber(L, 1)) : noeudJoue.end();
+	lua_pushboolean(L, it != noeudJoue.end() && arbres.JoueNom(it->second, luaL_optstring(L, 2, "")));
+	return 1;
+}
+
 static int
 PlayerSetControl(lua_State *L)
 {
@@ -1721,6 +1731,7 @@ main(int argc, char **argv)
 	lua_register(L, "CameraFade", CameraFade);
 	lua_register(L, "PedSetActionNode", PedSetActionNode);
 	lua_register(L, "PedIsPlaying", PedIsPlaying);
+	lua_register(L, "PedMePlaying", PedMePlaying);
 	lua_register(L, "PedSetActionTree", PedSetActionTree);
 	lua_register(L, "GetCurrentDay", GetCurrentDay);
 	lua_register(L, "SoundPlayScriptedSpeechEvent", SoundPlayScriptedSpeechEvent);
@@ -1822,9 +1833,15 @@ main(int argc, char **argv)
 		for(auto &e : gestes) if(!e.second.empty() && maintenant >= e.first){
 			// Ce que la manette ferait faire au contrôleur du joueur (une parade, un coup) : le nœud devient le
 			// nœud joué (+0x10), que PedIsPlaying compare.
-			const CActionNode *n = arbres.Trouver(e.second.c_str());
+			// CHEMIN:FICHIER.act : le fichier est chargé s'il manque (FUN_004849a0), pour un arbre que le joueur
+			// n'atteint que par une référence (GlobalLoco depuis Player).
+			std::string chemin = e.second, act;
+			size_t dp = chemin.find(':');
+			if(dp != std::string::npos){ act = chemin.substr(dp + 1); chemin = chemin.substr(0, dp); }
+			arbres.TrouverOuCharger(chemin.c_str(), act.c_str());
+			const CActionNode *n = arbres.Trouver(chemin.c_str());
 			if(n == nil) printf("%6.2f s  le joueur joue %s : nœud absent de l'arbre global\n", maintenant / 1000.0, e.second.c_str());
-			else { noeudJoue[SCRIPT_PED_JOUEUR] = n; printf("%6.2f s  le joueur joue %s\n", maintenant / 1000.0, e.second.c_str()); }
+			else { noeudJoue[SCRIPT_PED_JOUEUR] = n; printf("%6.2f s  le joueur joue %s\n", maintenant / 1000.0, chemin.c_str()); }
 			e.second.clear();
 		}
 		for(auto &e : poussees) if(!e.second.empty() && maintenant >= e.first){

@@ -210,3 +210,25 @@ CActionBank::ChargerGlobaux(void)
 	for(const char *act : globaux) n += Charger(act);
 	return n;
 }
+
+// Le chemin de la racine jusqu'à `cible` (compris), dans `pile` ; faux si `cible` n'est pas sous `n`.
+static bool
+Chemin(const CActionNode &n, const CActionNode *cible, std::vector<const CActionNode *> &pile)
+{
+	pile.push_back(&n);
+	if(&n == cible) return true;
+	for(const CActionNode &e : n.enfants) if(Chemin(e, cible, pile)) return true;
+	pile.pop_back();
+	return false;
+}
+
+bool
+CActionBank::JoueNom(const CActionNode *courant, const char *nom) const
+{
+	if(courant == nil || nom == nil) return false;
+	uint32 h = ActionHash(nom);
+	std::vector<const CActionNode *> pile;
+	if(!Chemin(racine, courant, pile)) return courant->hachage == h;
+	for(const CActionNode *n : pile) if(n->hachage == h) return true;
+	return false;
+}
