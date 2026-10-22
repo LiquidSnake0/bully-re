@@ -882,6 +882,22 @@ PedIsInAreaXYZ(lua_State *L)
 	return PaveArg(L, lua_isnumber(L, 1) ? pietons.Acceder((int)lua_tonumber(L, 1)) : nil, 2);
 }
 
+// PlayerIsInAreaObject(id, genre, rayon, marqueur[, …]) (0x5d14f0) : LuaGetEntity(id, genre) puis FUN_005c2810 prend
+// la position de l'entité (genre 2 : un piéton de script, FUN_005c7220 ; 3 : le joueur ; 0 et 1 : un objet, un
+// véhicule, pas encore dans l'outil : faux), et FUN_005c2910(1, …) teste le joueur dans le pavé fermé de demi-côté
+// « rayon » autour d'elle, comme PlayerIsInAreaXYZ. Faux si l'entité n'existe pas.
+static int
+PlayerIsInAreaObject(lua_State *L)
+{
+	Journal("PlayerIsInAreaObject", L, 1);
+	int id = (int)luaL_optnumber(L, 1, -1), genre = (int)luaL_optnumber(L, 2, -1);
+	float r = (float)luaL_optnumber(L, 3, 1);
+	const CScriptPed *e = genre == 2 ? pietons.Acceder(id) : genre == 3 ? pietons.Acceder(SCRIPT_PED_JOUEUR) : nil;
+	const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	lua_pushboolean(L, e != nil && j != nil && PaveContient(j->pos, e->pos, r, r, r, true));
+	return 1;
+}
+
 // --aller NOM[,n]@s ou --aller x,y,z@s : à s secondes, le joueur est posé au n-ième point de la
 // liste NOM (1 par défaut), ou aux coordonnées, comme s'il y avait marché.
 static void
@@ -1732,6 +1748,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedSetActionNode", PedSetActionNode);
 	lua_register(L, "PedIsPlaying", PedIsPlaying);
 	lua_register(L, "PedMePlaying", PedMePlaying);
+	lua_register(L, "PlayerIsInAreaObject", PlayerIsInAreaObject);
 	lua_register(L, "PedSetActionTree", PedSetActionTree);
 	lua_register(L, "GetCurrentDay", GetCurrentDay);
 	lua_register(L, "SoundPlayScriptedSpeechEvent", SoundPlayScriptedSpeechEvent);
