@@ -115,13 +115,15 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
 - **`OpportunityRandomLatch`** (lancement `FUN_005f7510`, mise à jour `FUN_005f7f80`) : la même, mais la bascule
   (+0x54) est tirée au lancement entre +0x4c et +0x50 par le `rand()` du CRT (`RAND_MAX` 32767, `0x900ce8`).
 - **`Sequence`** (arrêt `FUN_005f7030`) : à la fin du nœud, la descente dans le nœud visé dépose une demande de
-  priorité 0 ; la mise à jour (`FUN_00609b30`) ne finit jamais d'elle-même.
+  priorité 0 ; la mise à jour (`FUN_00609b30`) ne finit jamais d'elle-même. Le nœud visé (`FUN_005f4e30`) n'est
+  pas limité à l'arbre posé : la poussée de la prise (`PushFwd/RCV`) envoie la cible dans
+  `HitTree/Standing/PostHit/BellyUp/OnGroundBounce`, puis `BellyUp/On_Ground` (22.10.2026, quatrième séance).
 - **`PlayOnTarget`** (`ExecuteOnTargetTrack`, mise à jour `FUN_006615f0`) : à son entrée, la cible du piéton
   (`FUN_004d5980`, un piéton : `(+0x108 & 7) == 3`) joue le nœud visé (`FUN_005f4500`), une fois.
 - **Ce que l'outil n'a pas** : la pile des nœuds joués du contrôleur (+0x44, +0x48 : les parents jouables restent
   actifs) et les références montées (`GlobalLoco` sous `TrainingPlayer`). D'où deux garde-fous dits : une
   `Opportunity` qui vise un nœud contenant déjà le nœud joué (une remontée dans la pile) ou un nœud hors de l'arbre
-  posé ne fait pas passer. Une demande sans nœud (piste sans chemin) ne fait rien. Supposé : la priorité de départ
+  posé ne fait pas passer (une `Sequence`, si). Une demande sans nœud (piste sans chemin) ne fait rien. Supposé : la priorité de départ
   d'une image est −1 (la plus faible priorité relevée est 0).
 
 ## Le chemin d'un nœud (18.10.2026)

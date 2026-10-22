@@ -141,10 +141,12 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(n){ Jouer(b, n, t); return true; }
 	}
 	bool fini = joue && fin >= 0.0f && t >= fin;
-	if(fini)   // FUN_005f7030 : les Sequence à la fin du nœud
+	// FUN_005f7030 : les Sequence à la fin du nœud. Le nœud visé (FUN_005f4e30) peut être hors de l'arbre posé : la
+	// poussée de la prise (PushFwd/RCV) envoie la cible dans HitTree/Standing/PostHit/BellyUp/OnGroundBounce.
+	if(fini)
 		for(const std::string &chemin : suites){
 			const CActionNode *d = b.Choisir(b.Relatif(joue, chemin.c_str()), juge);
-			if(d && (arbre == nil || Sous(*arbre, d))){ Jouer(b, d, t); return true; }
+			if(d){ Jouer(b, d, t); return true; }
 		}
 	if(!fini && !demande) return false;
 	if(joue){
