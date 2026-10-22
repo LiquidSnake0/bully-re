@@ -60,6 +60,17 @@ classe, que le moteur cherche dans un registre de fabriques
 (`FUN_0061a4f0`) : `Not`, `Or`, `ConditionGroup`, `HavePOIOfType`,
 `IsSocializing`, `pedType`, `RangeToTarget`, `WeaponModelRequest`…
 
+## Les groupes de conditions (22.10.2026)
+
+La seconde table de renvois ne cite pas des chaînes : sa valeur est un décalage **après la fin de l'arbre**
+(mot +0xc de l'en-tête), là où le fichier range des **listes de conditions** écrites comme celle d'un nœud
+(un octet n, puis n mots : des décalages dans les données). Le champ +4 d'une `ConditionGroup` (le mot +8
+de son enregistrement, l'objet étant construit à +4) y renvoie : c'est le groupe, évalué comme une liste
+(`NOT` / `OR` compris). Les 3 220 valeurs des secondes tables des 479 fichiers se lisent toutes ainsi.
+Exemple, `/TrainingPlayer/Default/Locomotion/animations` : `ConditionGroup(WeaponEquiped Or WeaponEquiped
+Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même façon. `CActionTreeFile::Groupe`,
+`GroupeDe` ; `tools/cat.py` affiche le groupe entre parenthèses.
+
 ## Le chemin d'un nœud (18.10.2026)
 
 Les scripts désignent un nœud par un chemin, `PedSetActionNode(ped, "/Global/1_01/Talking",

@@ -106,10 +106,19 @@ class Cat:
             t.append((so, list(struct.unpack_from("<%dI" % k, self.b, p)))); p += 4 * k
         return t, p
 
-    def condition(self, off):
-        """Un enregistrement de condition : son type (hachage du nom de classe)."""
+    def condition(self, off, prof=0):
+        """Un enregistrement de condition : son type (hachage du nom de classe) ; une ConditionGroup montre son groupe,
+        la liste que la seconde table de renvois cite pour son champ +4 (mot +8 de l'enregistrement)."""
         v = struct.unpack_from("<I", self.b, self.h[1] + off)[0]
-        return self.nom_hache(v & 0x7fffffff)
+        nom = self.nom_hache(v & 0x7fffffff)
+        if nom.endswith("ConditionGroup") and prof < 4:
+            for val, ds in getattr(self, "renvois2", []):
+                if off + 8 in ds:
+                    at = self.h[3] + val
+                    n = self.b[at]
+                    offs = struct.unpack_from("<%di" % n, self.b, at + 1)
+                    return nom + "(" + " ".join(self.condition(o, prof + 1) for o in offs) + ")"
+        return nom
 
     def champs(self, at, prof=0):
         """Les attributs d'une piste, héritage compris : position -> (octets, décalage dans les données)."""
