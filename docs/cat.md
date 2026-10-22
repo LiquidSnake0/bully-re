@@ -126,6 +126,30 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
   posé ne fait pas passer (une `Sequence`, si). Une demande sans nœud (piste sans chemin) ne fait rien. Supposé : la priorité de départ
   d'une image est −1 (la plus faible priorité relevée est 0).
 
+## Les coups : Collision et la réaction de la cible (22.10.2026, quatrième séance)
+
+- **`CollisionTrack`** (table 0x92decc ; fabrique `FUN_0064a6a0`, entrée « Collision » de la table de `FUN_00650150` à
+  0x6507c8 ; lancement `FUN_005f9480`, mise à jour `FUN_005f9e70`, arrêt `FUN_005f8240`). Champs relevés :
+  +0x18 (24) et +0x1c (28) la fenêtre du coup dans le temps du nœud ; +0x20 (32) le son (`'KickHeavy'`) ;
+  +0x2c (44) le **drapeau du coup** (`'GROUNDHITHEAVY'`, `'FRIENDLYHIT'`), passé à la cible ; +0x34 (52) les dégâts ;
+  +0x68 (104) un nœud de l'attaquant, joué si le coup porte sur un piéton (`FUN_005f4490`, ou `FUN_005f3e20` selon
+  l'octet +0x217) ; +0x78 (120) un second chemin, non suivi. Dans la fenêtre, le moteur teste les sphères des os de
+  l'attaquant contre les piétons proches (`FUN_005f9cf0`) ; l'outil n'a pas les os : le coup touche la cible verrouillée.
+- **Le coup reçu** : la méthode du slot 15 de `CPed` (`FUN_0047b810`, 19 paramètres : dégâts, attaquant, position,
+  nœud de coup, drapeau…). Sans nœud de coup donné, le contrôleur de la cible joue son nœud de coup (+0x4b8 du
+  contrôleur, descente +0x4c puis `FUN_005f4960`) ; dans l'outil, `/Global/HitTree`.
+- **Conditions de la réaction** (enregistrements lus dans HitTree.cat) : `ConditionFlag` (+4 un nom haché : vrai si
+  c'est le drapeau du coup reçu), `MePlaying` (+4 un nom de nœud, +8 = 1 : le nœud joué par le piéton lui-même ou un
+  parent), `HitLocation` (+4, +8 la zone touchée ; l'outil, sans sphères, la suppose vraie pendant un coup).
+- **Un piéton à terre** : `HitTree/BASE/HitTreeBase/…/On_Ground` (« si MePlaying… ») porte l'Opportunity qui mène à
+  `GroundAndWallHits/On_Ground` ; là, `BellyUp/GROUNDHITHEAVY` est pris si `ConditionFlag` = GROUNDHITHEAVY. Le moteur
+  y arrive par un `Execute` des nœuds de coup (contrôleur secondaire) ; l'outil, qui ne joue pas les `Execute` en
+  contrôleur secondaire, y entre directement quand la cible joue un nœud `On_Ground` (supposé).
+- **Les `Execute`** : le contrôleur de l'outil relève les pistes `Collision` du nœud qu'un `Execute` fait jouer
+  (`HeavyAttacks/…/GroundKick` → `./Collision` → la feuille `ped`) ; le reste d'un nœud exécuté n'est pas joué.
+- **Supposé, dit** : le corps projeté par une prise (`PushFwd/RCV`, `FRIENDLYHIT`) ne touche pas celui qui le pousse
+  (l'outil écarte le partenaire du `PlayOnTarget` pendant deux secondes) ; le drapeau du coup tient une seconde.
+
 ## Le chemin d'un nœud (18.10.2026)
 
 Les scripts désignent un nœud par un chemin, `PedSetActionNode(ped, "/Global/1_01/Talking",
