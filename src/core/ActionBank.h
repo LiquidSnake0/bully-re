@@ -63,6 +63,8 @@ public:
 	// 1 vrai (aussi sans condition), 0 faux, -1 si une condition décisive n'est pas lue.
 	int Juger(const CActionNode &n, const CJugeAction &juge) const;
 	int JugerListe(const CActionTreeFile &f, const std::vector<int32> &liste, const CJugeAction &juge, int prof = 0) const;
+	// Le chemin d'un nœud de l'arbre (« /Global/TrainingPlayer/Default/Default »), pour les journaux ; vide s'il n'y est pas.
+	std::string CheminDe(const CActionNode *n) const;
 	// La descente avec les conditions jugées : un nœud est pris si Juger rend 1.
 	const CActionNode *Choisir(const CActionNode *depuis, const CJugeAction &juge) const;
 

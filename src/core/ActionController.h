@@ -4,9 +4,9 @@
 // une banque, FUN_005f5500 pour un nœud jouable) ; une piste vit dans son nœud de son instant d'entrée (+12) pendant
 // sa durée de vie (+16, -1 : sans limite) ; le nœud joué se compare par PedIsPlaying (FUN_005f3bf0).
 // Règle de l'outil, en attendant les pistes Opportunity qui décident vraiment des passages : à chaque image,
-//   1. un enfant du nœud joué qui aboutit (conditions jugées) le remplace : on descend ;
-//   2. un nœud dont toutes les pistes à durée finie sont finies est terminé : on redescend depuis l'arbre posé ;
-//   3. une demande (ActionRequest) en attente relance aussi la descente depuis l'arbre posé.
+//   quand le nœud joué est fini (toutes ses pistes à durée finie terminées) ou qu'une demande (ActionRequest)
+//   attend, un enfant du nœud joué qui aboutit (conditions jugées) le remplace : la suite d'un coup, d'une
+//   séquence ; sinon le contrôleur redescend depuis l'arbre posé. Un nœud sans fin attend une demande.
 #pragma once
 #include "ActionBank.h"
 

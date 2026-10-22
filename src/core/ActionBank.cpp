@@ -4,6 +4,7 @@
 #include "FileMgr.h"
 #include <cstdlib>
 #include <cstring>
+#include <cstdio>
 
 CActionBank::CActionBank(void)
 {
@@ -290,4 +291,18 @@ CActionBank::Choisir(const CActionNode *depuis, const CJugeAction &juge) const
 	default:
 		return nil;
 	}
+}
+
+std::string
+CActionBank::CheminDe(const CActionNode *n) const
+{
+	std::vector<const CActionNode *> pile;
+	if(n == nil || !Chemin(racine, n, pile)) return std::string();
+	std::string s;
+	for(size_t i = 1; i < pile.size(); i++){
+		char h[12];
+		snprintf(h, sizeof(h), "#%08x", pile[i]->hachage);
+		s += "/" + (pile[i]->nom.empty() ? std::string(h) : pile[i]->nom);
+	}
+	return s;
 }

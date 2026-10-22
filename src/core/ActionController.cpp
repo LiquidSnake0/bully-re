@@ -57,14 +57,15 @@ bool
 CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine, const CJugeAction &juge, float t, bool demande)
 {
 	(void)depuisRacine;
+	bool fini = joue && fin >= 0.0f && t >= fin;
+	if(!fini && !demande) return false;
 	if(joue){
 		for(const CActionNode &e : joue->enfants){
 			const CActionNode *n = Descendre(b, &e, juge);
 			if(n && n != joue){ Jouer(b, n, t); return true; }
 		}
 	}
-	bool fini = joue && fin >= 0.0f && t >= fin;
-	if((fini || demande) && arbre){
+	if(arbre){
 		const CActionNode *n = Descendre(b, arbre, juge);
 		if(n && (n != joue || fini)){ Jouer(b, n, t); return true; }
 	}

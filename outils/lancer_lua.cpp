@@ -24,7 +24,7 @@
 // lance celle dont le joueur touche le corona, et celles qui se lancent seules (champ 51) : 1_02 après 1_01.
 // Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
 // de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s]...
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s]... [--demander N@s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -36,6 +36,7 @@
 #include "../src/core/DatPools.h"
 #include "../src/core/AreaManager.h"
 #include "../src/core/ActionBank.h"
+#include "../src/core/ActionController.h"
 #include "../src/audio/SpeechEvents.h"
 #include "../src/audio/SpeechBank.h"
 #include "../src/cutscene/CutsceneFiles.h"
@@ -105,7 +106,62 @@ static float fonduNoirMs = 650, fonduRetourMs = 500;
 // « Act/Conv/1_01.act ») cherche le nœud et charge le fichier au besoin (FUN_004849a0) ; le nœud n'est pas
 // joué (pas d'animation ici), mais le script reçoit la vraie réponse : le nœud existe ou non.
 static CActionBank arbres;
-static std::map<int, const CActionNode *> noeudJoue;   // par piéton : le nœud posé par PedSetActionNode
+// Par piéton, son contrôleur d'actions (src/core/ActionController.h) : l'arbre posé par PedSetActionTree, le nœud
+// joué (+0x10) que PedSetActionNode pose, que PedIsPlaying compare, et qui avance à chaque image.
+static std::map<int, CActionController> controleurs;
+static const CActionNode *
+NoeudJoue(int ped)
+{
+	auto it = controleurs.find(ped);
+	return it == controleurs.end() ? nil : it->second.joue;
+}
+static lua_State *etatLua = nil;        // pour LuaCond : la fonction du script de mission appelée par le contrôleur
+// --demander N@s : une ActionRequest du joueur (la manette) en attente jusqu'à cet instant (ms).
+static std::map<uint32, uint32> demandes;
+
+// Les conditions des nœuds d'action pour un piéton (FUN_005fb9b0 les juge une à une ; la banque fait NOT, OR, False
+// et ConditionGroup). Champs relevés dans les enregistrements (mots[i] = champ +4 * (i + 1) de l'objet) :
+//   WeaponEquiped        +4 : le nom de l'arme (« unarmed », « any », « bat »…), cité par la première table ;
+//   ActionRequest        +4 : le numéro de l'action demandée (0x16, 3, 1…), +8 : 1 ou 2 ;
+//   ActionNodePlayTime   +4 : un temps (s), +8 : un comparateur (2 et 5 relevés : lus < et ≥), +0xc : un nom haché ;
+//   LuaCond              +0x10 : « mission », +0x14 : le nom de la fonction du script (F_PlayerGroundKicks…).
+// L'outil n'a pas d'armes : seul « unarmed » est vrai. Une classe non lue rend -1 : la branche n'est pas prise.
+struct CJugeOutil : CJugeAction {
+	int ped; float t;
+	CJugeOutil(int p, float t_) : ped(p), t(t_) {}
+	int Juger(const CActionTreeFile &f, int32 d, uint32 type, const uint32 mots[6]) const override {
+		static const uint32 kArme = ActionHash("WeaponEquiped"), kDemande = ActionHash("ActionRequest"),
+		                    kTemps = ActionHash("ActionNodePlayTime"), kLua = ActionHash("LuaCond");
+		if(type == kArme) return f.ChaineCitee((uint32)d + 8) == "unarmed";
+		if(type == kDemande){
+			if(ped != SCRIPT_PED_JOUEUR) return 0;
+			auto it = demandes.find(mots[0]);
+			return it != demandes.end() && maintenant <= it->second;
+		}
+		if(type == kTemps){
+			auto it = controleurs.find(ped);
+			if(it == controleurs.end()) return -1;
+			float seuil; memcpy(&seuil, &mots[0], 4);
+			float v = it->second.Temps(t);
+			switch(mots[1]){
+			case 2: return v < seuil;
+			case 5: return v >= seuil;
+			default: return -1;
+			}
+		}
+		if(type == kLua){
+			std::string fonction = f.ChaineCitee((uint32)d + 0x14);
+			if(etatLua == nil || fonction.empty()) return -1;
+			lua_getglobal(etatLua, fonction.c_str());
+			if(!lua_isfunction(etatLua, -1)){ lua_pop(etatLua, 1); return 0; }
+			if(lua_pcall(etatLua, 0, 1, 0) != 0){ lua_pop(etatLua, 1); return -1; }
+			int r = lua_toboolean(etatLua, -1);
+			lua_pop(etatLua, 1);
+			return r;
+		}
+		return -1;
+	}
+};
 // PlayerSetControl(0 / 1) (0x5d12f0) : le joueur rendu au script ou au joueur ; aucun script ne le relit.
 static int controleJoueur = 1;
 // La parole scriptée (src/audio/SpeechEvents.h, docs/son.md) : une seule ligne à la fois, comme le moteur
@@ -1207,7 +1263,7 @@ PedSetActionNode(lua_State *L)
 	bool ok = arbres.TrouverOuCharger(noeud, fichier);
 	// Le nœud devient celui que le piéton joue (+0x10 de son contrôleur) ; le moteur l'y met quand le
 	// contrôleur le prend, l'outil tout de suite.
-	if(ok) noeudJoue[(int)lua_tonumber(L, 1)] = arbres.Trouver(noeud);
+	if(ok) controleurs[(int)lua_tonumber(L, 1)].Jouer(arbres, arbres.Trouver(noeud), maintenant / 1000.0f);
 	if(!ok) printf("        PedSetActionNode : %s absent de %s%s\n", noeud, *fichier ? fichier : "l'arbre global", arbres.EstCharge(fichier) ? "" : " (fichier introuvable)");
 	lua_pushboolean(L, ok);
 	return 1;
@@ -1228,9 +1284,10 @@ PedSetActionTree(lua_State *L)
 		printf("        PedSetActionTree : %s absent de %s\n", arbre, fichier);
 		return 0;
 	}
-	const CActionNode *n = arbres.Choisir(arbres.Trouver(arbre));
-	if(n) noeudJoue[(int)lua_tonumber(L, 1)] = n;
-	else printf("        PedSetActionTree : rien ne s'ouvre dans %s sans juger ses conditions\n", arbre);
+	int ped = (int)lua_tonumber(L, 1);
+	CActionController &c = controleurs[ped];
+	if(!c.Poser(arbres, arbres.Trouver(arbre), CJugeOutil(ped, maintenant / 1000.0f), maintenant / 1000.0f))
+		printf("        PedSetActionTree : rien n'aboutit dans %s (conditions jugées)\n", arbre);
 	return 0;
 }
 
@@ -1250,8 +1307,8 @@ static int
 PedIsPlaying(lua_State *L)
 {
 	Journal("PedIsPlaying", L, 1);
-	auto it = lua_isnumber(L, 1) ? noeudJoue.find((int)lua_tonumber(L, 1)) : noeudJoue.end();
-	lua_pushboolean(L, it != noeudJoue.end() && arbres.Joue(it->second, luaL_optstring(L, 2, ""), lua_toboolean(L, 3) != 0));
+	const CActionNode *n = lua_isnumber(L, 1) ? NoeudJoue((int)lua_tonumber(L, 1)) : nil;
+	lua_pushboolean(L, n && arbres.Joue(n, luaL_optstring(L, 2, ""), lua_toboolean(L, 3) != 0));
 	return 1;
 }
 
@@ -1260,8 +1317,8 @@ static int
 PedMePlaying(lua_State *L)
 {
 	Journal("PedMePlaying", L, 1);
-	auto it = lua_isnumber(L, 1) ? noeudJoue.find((int)lua_tonumber(L, 1)) : noeudJoue.end();
-	lua_pushboolean(L, it != noeudJoue.end() && arbres.JoueNom(it->second, luaL_optstring(L, 2, "")));
+	const CActionNode *n = lua_isnumber(L, 1) ? NoeudJoue((int)lua_tonumber(L, 1)) : nil;
+	lua_pushboolean(L, n && arbres.JoueNom(n, luaL_optstring(L, 2, "")));
 	return 1;
 }
 
@@ -1690,6 +1747,7 @@ main(int argc, char **argv)
 	std::vector<std::pair<uint32, std::string>> allers;    // --aller NOM[,n]@s ou x,y,z@s : le joueur y est posé à s secondes
 	std::vector<std::pair<uint32, int>> portes;            // --zone N@s : le joueur passe dans la zone N (une porte) à s secondes
 	std::vector<std::pair<uint32, std::string>> poussees;  // --porte NOM@s : le joueur pousse la porte du déclencheur NOM (DT_…) à s secondes
+	std::vector<std::pair<uint32, uint32>> attentes;      // --demander N@s : une ActionRequest n° N du joueur à s secondes (tenue 0,25 s)
 	std::vector<std::pair<uint32, std::string>> gestes;    // --jouer CHEMIN@s : le joueur joue ce nœud d'action à s secondes (la manette : parer, frapper)
 	std::vector<const char*> pos;
 	for(int i = 1; i < argc; i++){
@@ -1708,6 +1766,10 @@ main(int argc, char **argv)
 			std::string e = argv[++i];
 			size_t at = e.rfind('@');
 			gestes.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
+		}
+		else if(strcmp(argv[i], "--demander") == 0 && i + 1 < argc){
+			std::string e = argv[++i]; size_t at = e.find('@');
+			attentes.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), (uint32)strtoul(e.c_str(), nil, 0)});
 		}
 		else if(strcmp(argv[i], "--porte") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
@@ -1728,6 +1790,7 @@ main(int argc, char **argv)
 
 	// CreateLuaState (0x5db260) : bibliothèques, API, puis util.lua dans _G.
 	lua_State *L = lua_open();
+	etatLua = L;
 	luaopen_base(L); luaopen_table(L); luaopen_math(L); luaopen_debug(L);
 	lua_settop(L, 0);
 	lua_register(L, "ImportScript", ImportScript);
@@ -1870,9 +1933,24 @@ main(int argc, char **argv)
 			arbres.TrouverOuCharger(chemin.c_str(), act.c_str());
 			const CActionNode *n = arbres.Trouver(chemin.c_str());
 			if(n == nil) printf("%6.2f s  le joueur joue %s : nœud absent de l'arbre global\n", maintenant / 1000.0, e.second.c_str());
-			else { noeudJoue[SCRIPT_PED_JOUEUR] = n; printf("%6.2f s  le joueur joue %s\n", maintenant / 1000.0, chemin.c_str()); }
+			else { controleurs[SCRIPT_PED_JOUEUR].Jouer(arbres, n, maintenant / 1000.0f); printf("%6.2f s  le joueur joue %s\n", maintenant / 1000.0, chemin.c_str()); }
 			e.second.clear();
 		}
+		// La manette : une ActionRequest en attente un quart de seconde, que le contrôleur du joueur juge.
+		bool demande = false;
+		for(auto &e : attentes) if(e.first != 0xffffffffu && maintenant >= e.first){
+			demandes[e.second] = maintenant + 250;
+			printf("%6.2f s  le joueur demande l'action %u\n", maintenant / 1000.0, e.second);
+			e.first = 0xffffffffu; demande = true;
+		}
+		// Les contrôleurs d'actions avancent (src/core/ActionController.h) ; on journalise ceux du joueur.
+		for(auto &c : controleurs){
+			const CActionNode *avant = c.second.joue;
+			bool d = c.first == SCRIPT_PED_JOUEUR && (demande || !demandes.empty());
+			if(c.second.Avancer(arbres, nil, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f, d) && c.first == SCRIPT_PED_JOUEUR && c.second.joue != avant)
+				printf("%6.2f s  contrôleur du joueur : %s\n", maintenant / 1000.0, arbres.CheminDe(c.second.joue).c_str());
+		}
+		for(auto it = demandes.begin(); it != demandes.end(); ) it = maintenant > it->second ? demandes.erase(it) : ++it;
 		for(auto &e : poussees) if(!e.second.empty() && maintenant >= e.first){
 			int h = donnees.Declencheur(e.second.c_str());
 			if(h < 0) printf("%6.2f s  le joueur pousse la porte %s : aucun déclencheur de ce nom n'est chargé\n", maintenant / 1000.0, e.second.c_str());
