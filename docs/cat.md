@@ -96,11 +96,33 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
   Le comparateur des conditions à seuil (`FUN_005fb750`, 22.10) : 0 `≈`, 1 `≉`, 2 `<`, 3 `>`, 4 `<` ou `≈`, 5 `>` ou
   `≈`, `≈` étant `|a − b| ≤ 1e-5` (`FUN_00432910`, `DAT_008ff230`) ; `ComparerCondition`, `EtatBoutonCondition`
   (`src/core/ConditionListe.h`).
-- **Le contrôleur de l'outil** (`src/core/ActionController.h`) : l'arbre posé, le nœud joué, son départ et sa fin
-  (le plus tard des entrée +12 + durée de vie +16 des pistes). Entrer dans un nœud (`PedSetActionNode`, l'emplacement
-  +0x4c que `FUN_004849a0` appelle) descend dans une banque. Quand le nœud joué finit, ou qu'une `ActionRequest`
-  attend, un enfant qui aboutit le remplace, sinon le contrôleur redescend depuis l'arbre posé. C'est une règle de
-  l'outil, en attendant les pistes `Opportunity` qui décident vraiment des passages.
+- **Le contrôleur** (`src/core/ActionController.h`) : l'arbre posé, le nœud joué, son départ et sa fin (le plus tard
+  des entrée +12 + durée de vie +16 des pistes). Entrer dans un nœud (`PedSetActionNode`, l'emplacement +0x4c que
+  `FUN_004849a0` appelle) descend dans une banque. Les passages viennent des pistes (section suivante) ; la règle de
+  l'outil (un enfant qui aboutit, sinon la descente depuis l'arbre posé) ne sert plus qu'en secours.
+
+## Les passages : Opportunity, Sequence, PlayOnTarget (22.10.2026, troisième séance)
+
+- **`Opportunity`** (table 0x938074, mise à jour `FUN_005f7d70`, arrêt `FUN_005f7440`) : chaque image, une piste pas
+  encore prise tente sa chance : le tirage si sa période (+0x38) dépasse 1 (`FUN_00465910` : le plus petit bit posé de
+  (mot +0x10c du piéton + compteur d'images `DAT_00c1a99c`) mod 0xffff + 1 doit atteindre la période, une chance sur
+  la puissance de deux au-dessus), ses conditions propres (+0x3c, aucune dans les 68 arbres du démarrage), puis le
+  nœud visé (+0x20, relatif au nœud qui porte la piste) et la descente dans ce nœud (+0x4c) : prise si elle aboutit à
+  un autre nœud que le nœud joué, ou au même quand l'octet +0x30 le permet ; sans chemin, prise sans nœud. Pas prise,
+  elle s'arrête quand le temps du nœud dépasse +0x28 (s'il est positif) ; prise, quand il atteint +0x2c (s'il est ≥ 0).
+  À l'arrêt, une piste prise dépose sa demande au contrôleur (`FUN_005f3bc0`) : la priorité +0x34 la plus forte
+  l'emporte, à égalité la première déposée. Relevé : 3 080 `Opportunity` dans les arbres du démarrage, 225 à période.
+- **`OpportunityRandomLatch`** (lancement `FUN_005f7510`, mise à jour `FUN_005f7f80`) : la même, mais la bascule
+  (+0x54) est tirée au lancement entre +0x4c et +0x50 par le `rand()` du CRT (`RAND_MAX` 32767, `0x900ce8`).
+- **`Sequence`** (arrêt `FUN_005f7030`) : à la fin du nœud, la descente dans le nœud visé dépose une demande de
+  priorité 0 ; la mise à jour (`FUN_00609b30`) ne finit jamais d'elle-même.
+- **`PlayOnTarget`** (`ExecuteOnTargetTrack`, mise à jour `FUN_006615f0`) : à son entrée, la cible du piéton
+  (`FUN_004d5980`, un piéton : `(+0x108 & 7) == 3`) joue le nœud visé (`FUN_005f4500`), une fois.
+- **Ce que l'outil n'a pas** : la pile des nœuds joués du contrôleur (+0x44, +0x48 : les parents jouables restent
+  actifs) et les références montées (`GlobalLoco` sous `TrainingPlayer`). D'où deux garde-fous dits : une
+  `Opportunity` qui vise un nœud contenant déjà le nœud joué (une remontée dans la pile) ou un nœud hors de l'arbre
+  posé ne fait pas passer. Une demande sans nœud (piste sans chemin) ne fait rien. Supposé : la priorité de départ
+  d'une image est −1 (la plus faible priorité relevée est 0).
 
 ## Le chemin d'un nœud (18.10.2026)
 
