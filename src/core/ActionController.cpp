@@ -34,6 +34,8 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t)
 	joue = n;
 	debut = t;
 	occasions = n ? COpportunite::DuNoeud(b, *n) : std::vector<COpportunite>();
+	for(COpportunite &o : occasions)   // FUN_005f7510 : la bascule d'un loquet tirée au lancement
+		if(o.loquet) o.bascule = (float)RandCrt(hasard) / 32767.0f * (o.loquetMax - o.loquetMin) + o.loquetMin;
 	float d = n ? Duree(b, *n) : -1.0f;
 	fin = d >= 0.0f ? t + d : -1.0f;
 }

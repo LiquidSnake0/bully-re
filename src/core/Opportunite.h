@@ -11,6 +11,8 @@
 //   +0x38 (56) une période : au-delà de 1, la piste ne tente sa chance qu'au tirage de FUN_00465910 ;
 //   +0x3c (60) ses propres conditions (FUN_005fb9b0), nulles dans les fichiers relevés ;
 //   +0x44, +0x48 (en mémoire) le nœud retenu et l'octet « prise ».
+// OpportunityRandomLatch (table 0x9380a4 ; lancement FUN_005f7510, mise à jour FUN_005f7f80) fait la même chose, mais
+// sa bascule (+0x54) est tirée au lancement entre +0x4c (76) et +0x50 (80) : rand() / RAND_MAX, comme le CRT.
 // Chaque image, une piste pas encore prise tente sa chance (tirage, conditions), cherche le nœud visé et y descend
 // (l'emplacement +0x4c du nœud, comme PedSetActionNode) : si la descente aboutit à un autre nœud que le nœud joué
 // (ou au même quand +0x30 le permet), elle est prise. Une piste sans chemin est prise sans nœud. À l'arrêt
@@ -18,6 +20,9 @@
 // forte priorité l'emporte.
 #pragma once
 #include "ActionBank.h"
+
+// rand() du CRT de Visual C++ (graine × 214013 + 2531011, bits 16 à 30) : de 0 à 32767 (RAND_MAX).
+int RandCrt(uint32 &graine);
 
 // FUN_00465910 : le tirage d'une période pour un piéton. graine : le mot +0x10c du piéton ; image : le compteur
 // d'images DAT_00c1a99c (CTimer, FUN_0045b810). u = (graine + image) mod 0xffff + 1 ; vrai si le plus petit bit posé
@@ -35,6 +40,8 @@ struct COpportunite {
 	int32 priorite = 0;                 // +0x34
 	uint32 periode = 0;                 // +0x38
 	uint32 conditions = 0;              // +0x3c
+	bool loquet = false;                // OpportunityRandomLatch
+	float loquetMin = 0.0f, loquetMax = 0.0f;   // +0x4c, +0x50 : la bascule tirée entre les deux (+0x54)
 	bool prise = false;                 // +0x48
 	const CActionNode *cible = nil;     // +0x44
 	bool arretee = false;

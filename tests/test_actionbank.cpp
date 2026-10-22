@@ -91,6 +91,12 @@ main(void)
 			VERIF(o.porteur && b.Relatif(o.porteur, o.chemin.c_str()) == b.Trouver("/Global/TrainingPlayer/Attacks"));
 		}
 		// FUN_00465910 : une période < 2 passe toujours ; sinon le plus petit bit posé de (graine + image) mod 0xffff + 1.
+		// rand() du CRT : graine 1 → 41, puis 18467, 6334 (les premières valeurs connues de Visual C++).
+		{
+			uint32 g = 1;
+			int r1 = RandCrt(g), r2 = RandCrt(g), r3 = RandCrt(g);
+			VERIF(r1 == 41 && r2 == 18467 && r3 == 6334);
+		}
 		VERIF(TirageOpportunite(0, 0, 7) && TirageOpportunite(1, 5, 9));
 		VERIF(TirageOpportunite(2, 0, 1) && !TirageOpportunite(2, 0, 2) && TirageOpportunite(4, 0, 3) && !TirageOpportunite(4, 0, 5));
 		VERIF(TirageOpportunite(3, 0, 3) && !TirageOpportunite(3, 0, 1));   // 3 : il faut le bit 4, une chance sur quatre
@@ -208,6 +214,23 @@ main(void)
 		int n = g.ChargerGlobaux();
 		VERIF(n == 68 && g.EstCharge("Act/HitTree.act") && g.EstCharge("Act/Weapons/EdgarShield.act"));
 		VERIF(g.Trouver("/Global/HitTree/Standing/BlockHits") != nil && g.Trouver("/Global/Player") != nil);
+		// OpportunityRandomLatch (FUN_005f7510) : le repos de GlobalLoco tire sa bascule entre 2 et 5 s.
+		{
+			COpportunite o;
+			CActionBank gl;
+			gl.TrouverOuCharger("/Global/GlobalLoco", "Act/Globals/GlobalLoco.act");
+			const CActionNode *loco = gl.Trouver("/Global/GlobalLoco");
+			VERIF(loco && ChercherOpportunite(gl, *loco, "./Opps", o) && o.loquet && o.loquetMin == 2.0f && o.loquetMax == 5.0f);
+			if(o.porteur){
+				CActionController c;
+				for(int i = 0; i < 20; i++){
+					c.Jouer(gl, o.porteur, 0.0f);
+					bool vu = false;
+					for(const COpportunite &x : c.occasions) if(x.loquet){ vu = true; VERIF(x.bascule >= 2.0f && x.bascule <= 5.0f); }
+					VERIF(vu);
+				}
+			}
+		}
 		VERIF(g.ChargerGlobaux() == 68 && g.fichiers.size() == 68);   // déjà chargés : rien n'est relu
 		// PedMePlaying : par le nom, le nœud joué ou un de ses parents (FUN_005f46a0 / FUN_005f4f30).
 		VERIF(g.Charger("Act/Globals/GlobalLoco.act"));   // le joueur y renvoie par une référence (Player.cat)

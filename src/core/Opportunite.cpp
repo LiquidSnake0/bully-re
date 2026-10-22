@@ -1,6 +1,13 @@
 #include "Opportunite.h"
 #include <cstring>
 
+int
+RandCrt(uint32 &graine)
+{
+	graine = graine * 214013u + 2531011u;
+	return (int)((graine >> 16) & 0x7fff);
+}
+
 bool
 TirageOpportunite(uint32 periode, uint16 graine, uint32 image)
 {
@@ -23,9 +30,12 @@ Reel(const CActionTrack &p, uint16 position, float defaut)
 bool
 COpportunite::Lire(const CActionTreeFile &f, const CActionNode &porteur, const CActionTrack &p, COpportunite &o)
 {
-	static const uint32 kOpportunity = ActionHash("Opportunity");
-	if(p.type != kOpportunity) return false;
+	static const uint32 kOpportunity = ActionHash("Opportunity"), kLoquet = ActionHash("OpportunityRandomLatch");
+	if(p.type != kOpportunity && p.type != kLoquet) return false;
 	o = COpportunite();
+	o.loquet = p.type == kLoquet;
+	o.loquetMin = Reel(p, 76, 0.0f);
+	o.loquetMax = Reel(p, 80, 0.0f);
 	o.porteur = &porteur;
 	if(const CActionAttribut *a = p.Champ(32)) o.chemin = f.ChaineCitee(a->decalage);
 	o.entree = Reel(p, 12, 0.0f);
