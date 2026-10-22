@@ -124,14 +124,18 @@ static std::map<uint32, uint32> demandes;
 //   WeaponEquiped        +4 : le nom de l'arme (« unarmed », « any », « bat »…), cité par la première table ;
 //   ActionRequest        +4 : le numéro de l'action demandée (0x16, 3, 1…), +8 : 1 ou 2 ;
 //   ActionNodePlayTime   +4 : un temps (s), +8 : un comparateur (2 et 5 relevés : lus < et ≥), +0xc : un nom haché ;
-//   LuaCond              +0x10 : « mission », +0x14 : le nom de la fonction du script (F_PlayerGroundKicks…).
+//   LuaCond              +0x10 : « mission », +0x14 : le nom de la fonction du script (F_PlayerGroundKicks…) ;
+//   TargetPlaying        +4 : un nom de nœud haché (RollAway…), +8 : 1 ; deux champs, l'enregistrement suivant
+//                        commence après. La cible est celle que PedLockTarget a verrouillée ; vrai si son nœud joué,
+//                        ou un de ses parents, porte ce nom (comme PedMePlaying).
 // L'outil n'a pas d'armes : seul « unarmed » est vrai. Une classe non lue rend -1 : la branche n'est pas prise.
 struct CJugeOutil : CJugeAction {
 	int ped; float t;
 	CJugeOutil(int p, float t_) : ped(p), t(t_) {}
 	int Juger(const CActionTreeFile &f, int32 d, uint32 type, const uint32 mots[6]) const override {
 		static const uint32 kArme = ActionHash("WeaponEquiped"), kDemande = ActionHash("ActionRequest"),
-		                    kTemps = ActionHash("ActionNodePlayTime"), kLua = ActionHash("LuaCond");
+		                    kTemps = ActionHash("ActionNodePlayTime"), kLua = ActionHash("LuaCond"),
+		                    kCible = ActionHash("TargetPlaying");
 		if(type == kArme) return f.ChaineCitee((uint32)d + 8) == "unarmed";
 		if(type == kDemande){
 			if(ped != SCRIPT_PED_JOUEUR) return 0;
@@ -148,6 +152,11 @@ struct CJugeOutil : CJugeAction {
 			case 5: return v >= seuil;
 			default: return -1;
 			}
+		}
+		if(type == kCible){
+			const CScriptPed *p = pietons.Acceder(ped);
+			if(p == nil || p->verrou < 0) return 0;
+			return arbres.JoueHachage(NoeudJoue(p->verrou), mots[0] & 0x7fffffff);
 		}
 		if(type == kLua){
 			std::string fonction = f.ChaineCitee((uint32)d + 0x14);

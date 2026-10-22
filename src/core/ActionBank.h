@@ -41,6 +41,7 @@ public:
 	// le nœud joué s'appelle ainsi, ou un de ses parents (FUN_005f4f30, toujours demandé par 0x5f4840). `sous`
 	// regarde aussi les contrôleurs secondaires (+0x2c), que l'outil n'a pas.
 	bool JoueNom(const CActionNode *courant, const char *nom) const;
+	bool JoueHachage(const CActionNode *courant, uint32 h) const;   // la même chose, le nom déjà haché (TargetPlaying)
 	// La descente du contrôleur dans un arbre posé par PedSetActionTree (FUN_005dc040, puis l'emplacement +0x4c de
 	// chaque nœud) : une banque (FUN_005f5490) teste ses conditions (FUN_005fb9b0, s'il en a : emplacement +0x50),
 	// puis rend le premier de ses enfants, dans l'ordre, dont la descente aboutit ; un nœud jouable ou une feuille

@@ -263,7 +263,13 @@ bool
 CActionBank::JoueNom(const CActionNode *courant, const char *nom) const
 {
 	if(courant == nil || nom == nil) return false;
-	uint32 h = ActionHash(nom);
+	return JoueHachage(courant, ActionHash(nom));
+}
+
+bool
+CActionBank::JoueHachage(const CActionNode *courant, uint32 h) const
+{
+	if(courant == nil) return false;
 	std::vector<const CActionNode *> pile;
 	if(!Chemin(racine, courant, pile)) return courant->hachage == h;
 	for(const CActionNode *n : pile) if(n->hachage == h) return true;
