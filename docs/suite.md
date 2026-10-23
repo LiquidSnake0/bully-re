@@ -33,14 +33,16 @@ chantier. Un point fini passe en bas, avec son commit.
    contrôleur (pas de contrôleur secondaire), `DamageHandle`, `SetHealth`, `SetPedFlags`, `SetTargetAsGrappleTarget`,
    les piétons ont leur entrée de `pedstats.dat` ; dans `1_02`, le bully se relève, onze jabs le mènent à 5 points et
    la mission affiche `1_02_HumiliateHim` (82,1 s).
-   Suite : l'humiliation de `1_02` (la victime tombe dans `Humiliate_Me/Fail`) : lire `HumiliationGroupIs` (+0xd44 du
-   piéton, aucune écriture directe : chercher la copie qui le pose), puis les conditions de `RCV` (`AnimationGroupLoaded`,
-   `IsSpeechPreloaded`, `TargetRelativePosition`), pour que `5-8_IndianBurn` (ou `NoogieSpit`) se joue, que
-   `HumiliateFlee` ôte les 500 points et que le bully joue `HitTree/KnockOuts` ; puis `F_SetupRussellFight`
-   (`F_DoCutscene`, l'état `passed`) : `1_02` réussie. Ensuite : juger `PedFlags` (résoudre les chemins à cinq `..` des
-   références montées, `ExecuteNodes/StanceTransition/Give`) ; les coups des piétons de l'IA (leur arbre
-   `AI_FightTutorial`, à la place du geste `PedAttack` de l'outil) ; la pile des nœuds joués (+0x44 / +0x48) ;
-   l'objet de porte (+0x394).
+   L'humiliation se joue (docs/cat.md, « L'humiliation ») : le groupe d'humiliation (+0xd44), les conditions propres des
+   `Opportunity`, les groupes d'animations, la parole retenue, `TargetRelativePosition`, `FaceTarget`,
+   `SeekEntityPosition`, `PedFlags` jugée : **`1_02` se termine réussie à 119,13 s** (la vraie `5-8_NoogieSpit`, puis
+   `F_SetupRussellFight`).
+   Suite : les arbres de l'IA (`PedSetAITree`, `AI_FightTutorial` : le nœud `CombatActions` lancé par `spawn`, un second
+   contrôleur ; les conditions `OBJECTIVE`, `AcquireTarget`, `JoinCombatZone`, `IsTargetOutOfReach` ; la piste
+   `ManageTargets`, que l'outil lance aujourd'hui à chaque image du geste `PedAttack`) à la place du geste `PedAttack` ;
+   la locomotion des arbres (`Locomotion`, la fuite après `HumiliateFlee`, pour que les `FRIENDLYHIT` de la chute ne
+   touchent plus le joueur) ; la pile du contexte (+0x44 / +0x48, la clé `DAT_00b0a604` des références montées à
+   plusieurs endroits, `FUN_005f6290`) ; les `SpeechTrack` sans tenue ; puis la mission suivante, `1_03`.
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
    directement au lieu des exports headless. Prérequis : Ghidra 12.1.4 et
@@ -71,6 +73,13 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- L'humiliation de `1_02` (23.10, soir ; 9985800) : le groupe d'humiliation (+0x200 du composant social en +0xb44,
+  `FUN_0048e790`, `FUN_0048f5d0`, `FUN_004925d0`, `FUN_00492950`, `ManageTargets` `FUN_00627420`), `HumiliationGroupIs` ;
+  les conditions propres des `Opportunity` (le champ 60 par la seconde table de renvois), `ActionNodePlayTimePast` ;
+  `CAnimGroups` et `AnimationGroupLoaded` ; `SpeechTrack` / `SpeechStartTrack` / `IsSpeechPreloaded` ;
+  `TargetRelativePosition`, `FaceTarget`, `SeekEntityPosition`, `spawn` ; un `Execute` ne retient pas son nœud,
+  `PedFlags` jugée (9128f8f) ; l'objet de porte (+0x394) posé par `ActivateDoor`, `PropAttemptDoorTransition` et
+  `PropAnimation` `OPEN` (docs/zones.md). **`1_02` se termine réussie à 119,13 s.**
 - Les coups blessent (23.10) : `Execute` dans le contrôleur (`FUN_005f7070`, `FUN_005f3e20`), le relevé du coup
   (+0x408) et `FUN_0047b810`, `DamageHandle` (`FUN_0060fc70`), `SetHealth` (`FUN_00627500`), `SetPedFlags`
   (`FUN_0060f8e0`), `SetTargetAsGrappleTarget` (`FUN_0062a580`), `HitAnimation`, l'arrêt des `Opportunity`
