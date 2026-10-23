@@ -1471,12 +1471,24 @@ PedStop(lua_State *L)
 	return 0;
 }
 
-// PedAttack(attaquant, cible, style) (0x5c9ca0) : le style (3 dans 1_01) n'est pas joué.
+// PedAttack(attaquant, cible, style, devant, …) (0x5c9ca0) : un AttackPedObjective (FUN_00470c10 : type 7, la cible, le
+// style) dans la file des objectifs de l'attaquant. Un troisième argument nombre est le style (3 dans 1_01 et 1_02) et le
+// quatrième, un booléen (faux par défaut), le met devant (FUN_00471320) plutôt qu'au bout (FUN_00471240) ; sinon les
+// troisième et quatrième, deux booléens, donnent le style par FUN_004969a0 (faux, vrai : 0 ; faux, faux : 1 ; vrai, vrai : 2 ;
+// vrai, faux : 3). Le cinquième (un booléen) va en +0x1404, non suivi.
 static int
 PedAttack(lua_State *L)
 {
 	Journal("PedAttack", L, 1);
-	if(lua_isnumber(L, 1) && lua_isnumber(L, 2)) pietons.Attaquer((int)lua_tonumber(L, 1), (int)lua_tonumber(L, 2));
+	if(!lua_isnumber(L, 1) || !lua_isnumber(L, 2)) return 0;
+	int32 style = 0; bool devant = false;
+	if(lua_isnumber(L, 3)){ style = (int32)lua_tonumber(L, 3); devant = lua_toboolean(L, 4) != 0; }
+	else {
+		// FUN_005d8fa0(L, n, 1) : un booléen (ou un nombre) est lu, autre chose (nil compris) vaut le défaut, vrai.
+		bool a = lua_isboolean(L, 3) ? lua_toboolean(L, 3) != 0 : true, b = lua_isboolean(L, 4) || lua_isnumber(L, 4) ? lua_toboolean(L, 4) != 0 : true;
+		style = !a ? (b ? 0 : 1) : (b ? 2 : 3);
+	}
+	pietons.Attaquer((int)lua_tonumber(L, 1), (int)lua_tonumber(L, 2), style, devant);
 	return 0;
 }
 

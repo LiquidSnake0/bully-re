@@ -102,7 +102,7 @@ CScriptPedPool::Arreter(int h)
 }
 
 bool
-CScriptPedPool::Attaquer(int h, int cible)
+CScriptPedPool::Attaquer(int h, int cible, int32 style, bool devant)
 {
 	CScriptPed *p = Acceder(h);
 	const CScriptPed *c = Acceder(cible);
@@ -110,7 +110,41 @@ CScriptPedPool::Attaquer(int h, int cible)
 	p->attaque = cible;
 	p->enMarche = false;
 	p->prochainCoup = 0;
+	CObjectifPieton o;
+	o.type = OBJECTIF_ATTAQUER_PIETON; o.cible = cible; o.style = style;
+	PousserObjectif(h, o, devant);
 	return true;
+}
+
+// Deux objectifs qui reviennent au même pour la file : deux attaques (type 7) de la même cible (+0x14).
+static bool
+MemeObjectif(const CObjectifPieton &a, const CObjectifPieton &b)
+{
+	return a.type == OBJECTIF_ATTAQUER_PIETON && b.type == OBJECTIF_ATTAQUER_PIETON && a.cible == b.cible;
+}
+
+bool
+CScriptPedPool::PousserObjectif(int h, const CObjectifPieton &o, bool devant)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return false;
+	int &n = p->nombreObjectifs;
+	if(n != 0 && MemeObjectif(o, p->objectifs[devant ? 0 : n - 1])) return true;
+	if(n >= SCRIPT_PED_OBJECTIFS) return false;
+	if(devant){
+		for(int i = n; i > 0; i--) p->objectifs[i] = p->objectifs[i - 1];
+		p->objectifs[0] = o;
+	}else
+		p->objectifs[n] = o;
+	n++;
+	return true;
+}
+
+const CObjectifPieton *
+CScriptPedPool::ObjectifCourant(int h) const
+{
+	const CScriptPed *p = Acceder(h);
+	return p && p->nombreObjectifs > 0 ? &p->objectifs[0] : nil;
 }
 
 bool
