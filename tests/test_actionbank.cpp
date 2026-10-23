@@ -453,6 +453,27 @@ main(void)
 				VERIF(releve);
 			}
 		}
+		// Les pistes de parole (FUN_006195a0, FUN_00619950) : l'attente d'une humiliation (Humiliate_Me/…/Success/Load)
+		// retient sa ligne (HUMILIATION_ANIM, la ligne de la piste, tenue 2) ; RCV la lâche par SpeechStartTrack.
+		{
+			const CActionNode *charge = g.Trouver("/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init/Humiliate_Me/5-8_NoogieSpit/Success/Load");
+			const CActionNode *rcv = g.Trouver("/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init/Humiliate_Me/5-8_NoogieSpit/Success/RCV");
+			VERIF(charge != nil && rcv != nil);
+			if(charge && rcv){
+				CActionController c;
+				c.Jouer(g, charge, 0.0f);
+				c.Avancer(g, nil, CJugeAction_Rien(), 0.0f);
+				bool tenue = false;
+				for(const CActionController::Parole &p : c.parolesLancees)
+					tenue = tenue || (p.evenement == 165 && p.ligne >= 0 && p.tenue == 2);
+				VERIF(tenue);
+				c.parolesLancees.clear();
+				c.Jouer(g, rcv, 1.0f);
+				for(int i = 0; i <= 30; i++) c.Avancer(g, nil, CJugeAction_Rien(), 1.0f + i / 30.0f);
+				VERIF(c.departsLances == 1);
+				printf("  parole : Load retient HUMILIATION_ANIM, RCV la lâche (SpeechStartTrack)\n");
+			}
+		}
 		// L'humiliation : SetTargetAsGrappleTarget (FUN_0062a580) envoie le piéton dans ../WaitForVictim et sa cible dans
 		// ../Humiliate_Me ; la fuite d'une victime de mission (HumiliateFlee, IsMissionSpecific) lui ôte 500 points
 		// (SetHealth, FUN_00627500) et son Opportunity sans bascule (-1) ne dépose sa demande qu'à la fin du nœud

@@ -119,6 +119,12 @@ static std::map<int, CActionController> controleurs;
 // (LoadAnimationGroup) et que la condition AnimationGroupLoaded demande ; une demande est servie à l'image suivante.
 static CAnimGroups groupesAnim;
 static uint32 imageCourante = 0;      // le compteur d'images de la boucle (pour les demandes de groupes)
+// Les lignes que les pistes SpeechTrack des arbres retiennent (la tenue +0x28 : cinq places en 0x1b655d0, le rappel
+// 0x619550) : préchargées à l'image suivante (l'outil n'a pas de diffusion), jouées quand une piste SpeechStartTrack
+// du piéton les lâche, ou à l'échéance selon la tenue (1 : jouée, 2 : annulée). Une nouvelle ligne retenue par le même
+// piéton annule l'ancienne (FUN_005a5880).
+struct ParoleTenue { int ped, evenement, ligne, tenue; uint32 image, echeance; };
+static std::vector<ParoleTenue> parolesTenues;
 static const CActionNode *
 NoeudJoue(int ped)
 {
@@ -171,7 +177,7 @@ struct CJugeOutil : CJugeAction {
 		                    kHumiliation = ActionHash("IsHealthAtHumiliationLevel"), kMission = ActionHash("IsMissionSpecific"),
 		                    kTaille = ActionHash("CharacterSize"), kDrapeaux = ActionHash("PedFlags"),
 		                    kGroupeHumiliation = ActionHash("HumiliationGroupIs"), kTempsPasse = ActionHash("ActionNodePlayTimePast"),
-		                    kGroupeAnim = ActionHash("AnimationGroupLoaded");
+		                    kGroupeAnim = ActionHash("AnimationGroupLoaded"), kParolePrete = ActionHash("IsSpeechPreloaded");
 		if(type == kArme) return f.ChaineCitee((uint32)d + 8) == "unarmed";
 		const CScriptPed *moi = pietons.Acceder(ped);
 		float seuil; memcpy(&seuil, &mots[0], 4);
@@ -201,6 +207,15 @@ struct CJugeOutil : CJugeAction {
 			if(groupesAnim.EstCharge(nom.c_str())) return 1;
 			if((mots[1] & 0xff) != 0 && groupesAnim.Demander(nom.c_str(), imageCourante))
 				printf("%6.2f s  le piéton %d demande le groupe d'animations %s\n", t, ped, nom.c_str());
+			return 0;
+		}
+		// IsSpeechPreloaded (FUN_00602620) : +4 l'événement, +8 la ligne (-1 : toutes), l'octet +0xc : pour ce piéton
+		// seulement. Vrai si l'une des deux places de préchargement du son (0xcf458c, FUN_005a0cc0) tient cette ligne,
+		// prête : dans l'outil, une ligne retenue par une piste SpeechTrack à une image antérieure.
+		if(type == kParolePrete){
+			for(const ParoleTenue &r : parolesTenues)
+				if(r.evenement == (int)mots[0] && (mots[1] == 0xffffffffu || r.ligne == (int)mots[1])
+				   && ((mots[2] & 0xff) == 0 || r.ped == ped) && r.image < imageCourante) return 1;
 			return 0;
 		}
 		// HumiliationGroupIs (FUN_006039b0) : le groupe d'humiliation du piéton (+0xd44, posé par FUN_0048f5d0) égal à +4.
@@ -2393,6 +2408,25 @@ main(int argc, char **argv)
 			if(CScriptPed *p = pietons.Acceder(c.first))
 				for(const CActionController::Drapeau &d : c.second.drapeauxPoses) if(d.numero < SCRIPT_PED_DRAPEAUX) p->drapeaux[d.numero] = d.valeur;
 			c.second.drapeauxPoses.clear();
+			// SpeechTrack (FUN_006195a0) : une ligne à tenir est retenue ; les autres ne sont pas jouées par l'outil (une
+			// seule ligne à la fois, que les scripts attendent). SpeechStartTrack (FUN_00619950) lâche les lignes du piéton.
+			for(const CActionController::Parole &e : c.second.parolesLancees){
+				if(e.tenue == 0 || e.evenement < 0 || e.evenement >= NUM_SPEECH_EVENTS) continue;
+				for(auto it = parolesTenues.begin(); it != parolesTenues.end(); )
+					it = it->ped == c.first ? parolesTenues.erase(it) : it + 1;
+				parolesTenues.push_back({c.first, e.evenement, e.ligne, e.tenue, imageCourante, maintenant + 12000});
+				printf("%6.2f s  le piéton %d retient %s ligne %d\n", maintenant / 1000.0, c.first, kSpeechEvents[e.evenement], e.ligne);
+			}
+			c.second.parolesLancees.clear();
+			for(; c.second.departsLances > 0; c.second.departsLances--)
+				for(auto it = parolesTenues.begin(); it != parolesTenues.end(); ){
+					if(it->ped != c.first){ ++it; continue; }
+					parole.enCours = true; parole.ped = it->ped; parole.evenement = it->evenement;
+					parole.ligne = it->ligne < 0 ? 0 : it->ligne; parole.id++;
+					parole.fin = maintenant + DureeParole(parole.ped, parole.evenement, parole.ligne);
+					printf("%6.2f s  parole : le piéton %d dit %s ligne %d (lâchée par SpeechStartTrack)\n", maintenant / 1000.0, it->ped, kSpeechEvents[it->evenement], it->ligne);
+					it = parolesTenues.erase(it);
+				}
 			// SetHealth (FUN_00627500) : poser (FUN_00478190, pas sous la santé minimale), rendre (FUN_00474b70, jusqu'au
 			// maximum), ôter (FUN_004782a0, sans les invulnérabilités, ni sous 0 ni sous la santé minimale).
 			for(const CActionController::Sante &e : c.second.santesLancees){
@@ -2441,6 +2475,17 @@ main(int argc, char **argv)
 			const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
 			printf("%6.2f s  le joueur passe une porte vers la zone %d%s\n", maintenant / 1000.0, e.second, zones.Demander(j->pos, j->cap, e.second, nil, false) ? "" : " : refusé, un changement est en cours");
 			e.second = -1;
+		}
+		// L'échéance d'une ligne retenue (le rappel 0x619550) : la tenue 1 la joue, la tenue 2 l'annule.
+		for(auto it = parolesTenues.begin(); it != parolesTenues.end(); ){
+			if(maintenant < it->echeance){ ++it; continue; }
+			printf("%6.2f s  parole : %s ligne %d retenue par le piéton %d, échue : %s\n", maintenant / 1000.0, kSpeechEvents[it->evenement],
+			       it->ligne, it->ped, it->tenue == 2 ? "annulée" : "jouée");
+			if(it->tenue != 2){
+				parole.enCours = true; parole.ped = it->ped; parole.evenement = it->evenement; parole.ligne = it->ligne < 0 ? 0 : it->ligne;
+				parole.id++; parole.fin = maintenant + DureeParole(parole.ped, parole.evenement, parole.ligne);
+			}
+			it = parolesTenues.erase(it);
 		}
 		if(prechargement.attente){
 			bool annulee = false;

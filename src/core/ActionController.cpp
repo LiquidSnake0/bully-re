@@ -56,7 +56,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 {
 	static const uint32 kCollision = ActionHash("Collision"), kExecute = ActionHash("Execute"), kDegats = ActionHash("DamageHandle"),
 	                    kSante = ActionHash("SetHealth"), kPriseCible = ActionHash("SetTargetAsGrappleTarget"),
-	                    kDrapeau = ActionHash("SetPedFlags");
+	                    kDrapeau = ActionHash("SetPedFlags"), kParole = ActionHash("SpeechTrack"),
+	                    kDepart = ActionHash("SpeechStartTrack");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -88,6 +89,13 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			const CActionAttribut *v = p.Champ(24);
 			float e = Reel(p, 12, 0.0f);
 			drapeaux.push_back({e < 0.0f ? -1.0f : a, p.Mot(28), v && v->taille >= 1 ? (int32)v->valeur[0] : 0, false});
+		}else if(p.type == kParole){
+			const CActionAttribut *l = p.Champ(28);
+			float e = Reel(p, 12, 0.0f);
+			paroles.push_back({e < 0.0f ? -1.0f : a, (int32)p.Mot(24), l && l->taille >= 1 && l->valeur[0] ? (int32)p.Mot(32) : -1,
+			                   (int32)p.Mot(40), false});
+		}else if(p.type == kDepart){
+			departs.push_back({a, false});
 		}else if(p.type == kSante){
 			const CActionAttribut *o0 = p.Champ(24), *o1 = p.Champ(25), *o2 = p.Champ(26);
 			auto oct = [](const CActionAttribut *x){ return x && x->taille >= 1 && x->valeur[0] != 0; };
@@ -121,6 +129,10 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	for(Drapeau &d : drapeaux)    // FUN_005f3fb0 à l'arrêt du nœud : les entrées négatives se lancent
 		if(!d.fait && d.entree < 0.0f){ d.fait = true; drapeauxPoses.push_back(d); }
 	drapeaux.clear();
+	for(Parole &d : paroles)
+		if(!d.fait && d.entree < 0.0f){ d.fait = true; parolesLancees.push_back(d); }
+	paroles.clear();
+	departs.clear();
 	joue = n;
 	debut = t;
 	occasions = n ? COpportunite::DuNoeud(b, *n) : std::vector<COpportunite>();
@@ -250,6 +262,10 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; blessures.push_back(d); }
 	for(Drapeau &d : drapeaux)    // FUN_0060f8e0
 		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; drapeauxPoses.push_back(d); }
+	for(Parole &d : paroles)      // FUN_006195a0
+		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; parolesLancees.push_back(d); }
+	for(Depart &d : departs)      // FUN_00619950
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; departsLances++; }
 	for(Sante &d : santes)        // FUN_00627500
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; santesLancees.push_back(d); }
 	for(PriseCible &d : prisesCible)   // FUN_0062a580
