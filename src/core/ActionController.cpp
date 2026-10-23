@@ -54,7 +54,8 @@ CActionController::Duree(const CActionBank &b, const CActionNode &n)
 void
 CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entree, int prof, const CJugeAction *juge)
 {
-	static const uint32 kCollision = ActionHash("Collision"), kExecute = ActionHash("Execute"), kDegats = ActionHash("DamageHandle");
+	static const uint32 kCollision = ActionHash("Collision"), kExecute = ActionHash("Execute"), kDegats = ActionHash("DamageHandle"),
+	                    kSante = ActionHash("SetHealth"), kPriseCible = ActionHash("SetTargetAsGrappleTarget");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -76,6 +77,17 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			contacts.push_back(c);
 		}else if(p.type == kDegats){
 			{ const CActionAttribut *fx = p.Champ(28); degats.push_back({&n, a, Reel(p, 24, 0.0f), fx && fx->taille >= 1 && fx->valeur[0] != 0, false}); }
+		}else if(p.type == kSante){
+			const CActionAttribut *o0 = p.Champ(24), *o1 = p.Champ(25), *o2 = p.Champ(26);
+			auto oct = [](const CActionAttribut *x){ return x && x->taille >= 1 && x->valeur[0] != 0; };
+			int mode = oct(o0) ? 0 : oct(o1) ? 1 : oct(o2) ? 2 : -1;
+			if(mode >= 0) santes.push_back({a, mode, Reel(p, 28, 0.0f), false});
+		}else if(p.type == kPriseCible){
+			const CActionAttribut *c1 = p.Champ(36), *c2 = p.Champ(52), *e1 = p.Champ(25), *e2 = p.Champ(26);
+			auto oct = [](const CActionAttribut *x){ return x && x->taille >= 1 && x->valeur[0] != 0; };
+			prisesCible.push_back({a, c1 ? f->ChaineCitee(c1->decalage) : std::string(), c2 ? f->ChaineCitee(c2->decalage) : std::string(),
+			                       oct(e1), oct(e2), false});
+			prisesCible.back().porteur = &n;
 		}else if(p.type == kSequence && prof > 0){
 			// La Sequence d'un nœud exécuté (HitBaseStanding : ../../PostHit/Standing) s'arrête avec le nœud joué
 			// (FUN_005f7030) : son chemin, relatif au nœud exécuté, devient absolu pour Avancer.
@@ -103,6 +115,8 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	contacts.clear();
 	degats.clear();
 	suitesExecutees.clear();
+	santes.clear();
+	prisesCible.clear();
 	if(n) Pistes(b, *n, 0.0f, 0, juge);
 	if(n){
 		static const uint32 kSequence = ActionHash("Sequence"), kSurCible = ActionHash("PlayOnTarget");
@@ -178,8 +192,13 @@ CActionController::Occasions(const CActionBank &b, const CJugeAction &juge, floa
 				// nœud joué (une remontée dans la pile) ne fait pas passer, ni un nœud hors de l'arbre posé, sauf s'il
 				// est dans le même arbre global que le nœud qui porte la piste : un piéton entré dans /Global/HitTree
 				// (un coup reçu, une Sequence) y suit ses Opportunity (BellyUp/On_Ground → ../BellyUpGetUp).
+				// Un chemin qui remonte jusqu'à /Global (autant de « .. » que de niveaux sous /Global) vise un autre arbre
+				// global en connaissance de cause (HumiliateFlee/…/RunStart → HitTree/KnockOuts/Rear/Rear) : il passe aussi.
 				std::vector<const CActionNode *> lignee = b.Lignee(o.porteur);
-				bool dedans = arbre == nil || Sous(*arbre, d) || (d && lignee.size() > 2 && Sous(*lignee[2], d));
+				size_t montees = 0;
+				for(size_t k = 0; o.chemin.compare(k, 2, "..") == 0; k += 3) montees++;
+				bool versGlobal = lignee.size() > 2 && montees + 2 >= lignee.size();
+				bool dedans = arbre == nil || Sous(*arbre, d) || versGlobal || (d && lignee.size() > 2 && Sous(*lignee[2], d));
 				if(d && dedans && !Sous(*d, joue) && (d != joue || o.soiMeme)){ o.cible = d; o.prise = true; }
 			}
 		}
@@ -204,8 +223,19 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 	pourCible.clear();
 	touches.clear();
 	blessures.clear();
+	santesLancees.clear();
+	prises.clear();
 	for(Blessure &d : degats)     // FUN_0060fc70 : au lancement de la piste
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; blessures.push_back(d); }
+	for(Sante &d : santes)        // FUN_00627500
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; santesLancees.push_back(d); }
+	for(PriseCible &d : prisesCible)   // FUN_0062a580
+		if(!d.fait && Temps(t) >= d.entree){
+			d.fait = true;
+			const CActionNode *a = d.soi.empty() ? nil : b.Relatif(d.porteur, d.soi.c_str());
+			const CActionNode *c = d.cible.empty() ? nil : b.Relatif(d.porteur, d.cible.c_str());
+			if(a || c) prises.push_back({a, c, d.executerSoi, d.executerCible});
+		}
 	for(Contact &c : contacts)    // FUN_005f9e70 : la fenêtre du coup
 		if(!c.fait && Temps(t) >= c.debut && (c.fin < 0.0f || Temps(t) <= c.fin)){ c.fait = true; touches.push_back(c); }
 	for(SurCible &c : surCible)   // FUN_006615f0
@@ -221,6 +251,18 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 	// FUN_005f7030 : les Sequence à la fin du nœud. Le nœud visé (FUN_005f4e30) peut être hors de l'arbre posé : la
 	// poussée de la prise (PushFwd/RCV) envoie la cible dans HitTree/Standing/PostHit/BellyUp/OnGroundBounce.
 	if(fini){
+		// FUN_005f7440 : à la fin du nœud, ses pistes s'arrêtent ; une Opportunity prise et pas encore arrêtée (bascule
+		// -1 : elle attend la fin) dépose sa demande, la plus forte priorité l'emportant (FUN_005f3bc0). Supposé : à
+		// priorité égale, les Sequence (priorité 0) passent avant.
+		const CActionNode *fin = nil;
+		int32 meilleure = 0;
+		for(COpportunite &o : occasions)
+			if(o.prise && !o.arretee){
+				o.arretee = true;
+				if(o.cible && (fin == nil ? o.priorite >= 0 : o.priorite > meilleure)){ fin = o.cible; meilleure = o.priorite; }
+			}
+		bool avantSuites = fin && meilleure > 0;
+		if(avantSuites){ Jouer(b, fin, t, &juge); return true; }
 		for(const std::string &chemin : suites){
 			const CActionNode *d = b.Choisir(b.Relatif(joue, chemin.c_str()), juge);
 			if(d){ Jouer(b, d, t, &juge); return true; }
@@ -229,6 +271,7 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 			const CActionNode *d = b.Choisir(v, juge);
 			if(d){ Jouer(b, d, t, &juge); return true; }
 		}
+		if(fin){ Jouer(b, fin, t, &juge); return true; }
 	}
 	if(!fini && !demande) return false;
 	if(joue){

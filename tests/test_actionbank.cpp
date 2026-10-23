@@ -432,6 +432,41 @@ main(void)
 				VERIF(releve);
 			}
 		}
+		// L'humiliation : SetTargetAsGrappleTarget (FUN_0062a580) envoie le piéton dans ../WaitForVictim et sa cible dans
+		// ../Humiliate_Me ; la fuite d'une victime de mission (HumiliateFlee, IsMissionSpecific) lui ôte 500 points
+		// (SetHealth, FUN_00627500) et son Opportunity sans bascule (-1) ne dépose sa demande qu'à la fin du nœud
+		// (FUN_005f7440).
+		{
+			const CActionNode *init = g.Trouver("/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init");
+			const CActionNode *attente = g.Trouver("/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init/WaitForVictim");
+			const CActionNode *victime = g.Trouver("/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init/Humiliate_Me");
+			VERIF(init && attente && victime);
+			if(init && attente && victime){
+				CActionController c;
+				VERIF(c.Entrer(g, init, CJugeAction_Rien(), 0.0f) && c.prisesCible.size() == 1);
+				c.Avancer(g, nil, CJugeAction_Rien(), 0.01f);
+				VERIF(c.prises.size() == 1 && c.prises[0].soi == attente && c.prises[0].cible == victime);
+			}
+			struct JugeMission : CJugeAction {
+				int Juger(const CActionTreeFile &, int32, uint32 type, const uint32 *) const override {
+					return type == ActionHash("IsMissionSpecific") ? 1 : 0;
+				}
+			};
+			const CActionNode *fuite = g.Trouver("/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init/HumiliateFlee");
+			VERIF(fuite != nil);
+			if(fuite){
+				const CActionNode *n = g.Choisir(fuite, JugeMission());
+				VERIF(n && n->genre == 'n');
+				if(n){
+					CActionController c;
+					c.Jouer(g, n, 0.0f);
+					VERIF(c.santes.size() == 1 && c.santes[0].mode == 2 && c.santes[0].valeur == 500.0f);
+					c.Avancer(g, nil, JugeMission(), 0.01f);
+					VERIF(c.santesLancees.size() == 1);
+					printf("  HumiliateFlee (victime de mission) : %s, SetHealth ôte %g\n", g.CheminDe(n).c_str(), c.santes[0].valeur);
+				}
+			}
+		}
 		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());
 	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");

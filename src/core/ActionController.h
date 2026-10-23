@@ -49,6 +49,20 @@ public:
 	struct Blessure { const CActionNode *porteur; float entree; float facteur; bool effet; bool fait; };
 	std::vector<Blessure> degats;
 	std::vector<Blessure> blessures;              // celles qui se lancent à cette image, rendues par Avancer
+	// Ses pistes SetHealth (SetHealthTrack, table 0x9350b0 ; lancement FUN_00627500) : la valeur +0x1c (28) pose la
+	// santé (octet +0x18, FUN_00478190 : jamais sous la santé minimale), la rend (+0x19, FUN_00474b70 : jusqu'au
+	// maximum) ou l'ôte (+0x1a, FUN_004782a0 : sans les invulnérabilités).
+	struct Sante { float entree; int mode; float valeur; bool fait; };   // mode 0 poser, 1 rendre, 2 ôter
+	std::vector<Sante> santes;
+	std::vector<Sante> santesLancees;             // celles qui se lancent à cette image, rendues par Avancer
+	// Ses pistes SetTargetAsGrappleTarget (table 0x… ; lancement FUN_0062a580) : le piéton et sa cible deviennent
+	// partenaires de prise (PedSetGrappleTarget, +0x1500 = l'octet +0x18), le piéton descend dans le nœud +0x24 (36) et
+	// la cible dans le nœud +0x34 (52), relatifs au nœud qui porte la piste ; chacun le joue (FUN_005f4490), ou en
+	// exécute les pistes si l'octet +0x19 / +0x1a est posé (FUN_005f3e20).
+	struct PriseCible { float entree; std::string soi, cible; bool executerSoi, executerCible, fait; const CActionNode *porteur = nil; };
+	std::vector<PriseCible> prisesCible;
+	struct Prise { const CActionNode *soi, *cible; bool executerSoi, executerCible; };
+	std::vector<Prise> prises;                    // celles qui se lancent à cette image, rendues par Avancer
 	uint16 graine = 0;                // le mot +0x10c du piéton, pour le tirage (FUN_00465910) ; posé par l'appelant
 	uint32 image = 0;                 // le compteur d'images du jeu (DAT_00c1a99c, CTimer), tenu par l'appelant
 	uint32 hasard = 1;                // la graine du rand() du CRT (OpportunityRandomLatch)
