@@ -31,8 +31,11 @@ struct CScriptPed {
 	CVector pos;
 	float cap = 0;               // degrés, 0 vers +x comme les lacets des .dat
 	int32 script = -1;           // l'objet script qui l'a créé, -1 pour le joueur ou un piéton rendu ambiant
-	float sante = 100;           // +0x1cb8
+	float sante = 100;           // +0x1cb8 ; le constructeur de CPed (FUN_0047ffe0) la pose à 100, comme +0x1cbc
+	float santeMax = 100;        // +0x1ca4, PedSetMaxHealth (0x5c8de0), PedGetMaxHealth (0x5c8d80)
 	float santeMin = 0;          // +0x1ca8, PedSetMinHealth (0x5c8ef0)
+	float regeneration = 0;      // +0x1cac : la colonne G de pedstats.dat (taux de régénération, n/100)
+	int32 stats[64] = {};        // +0x1900 : les 64 colonnes B à BM de son entrée de pedstats.dat (GameGetPedStat)
 	bool invulnerable = false;   // +0x138c, PedSetInvulnerable (0x5c9160), PlayerSetInvulnerable (0x5d1810)
 	bool invulnerableAuJoueur = false;   // +0x1364, PedSetInvulnerableToPlayer (0x5c9200)
 	bool mort = false;
@@ -75,6 +78,15 @@ public:
 	bool Verrouiller(int handle, int cible, int mode);
 	// lua_PedSetHealth : la santé ; à zéro, le piéton meurt et lâche son geste.
 	void Sante(int handle, float sante);
+	// FUN_00478e30 (lua_PedSetStatsType, et la création avec l'entrée du modèle, modelinfo +0x54) : les 64 colonnes de
+	// l'entrée de pedstats.dat copiées en +0x1900, la santé maximale = colonne F (entrée +0x2c), la santé = le maximum,
+	// la santé minimale à 0, la régénération = colonne G (+0x30). Le reste (vision, armes, vitesse) n'est pas suivi.
+	bool PoserStats(int handle, const int32 colonnes[64]);
+	// GameGetPedStat (FUN_00476f10) : la colonne n ; le cas des modèles uniques de la colonne 6 n'est pas suivi.
+	int32 Stat(int handle, int n) const;
+	// GameSetPedStat (FUN_00476fa0) : la colonne n ; 4 (santé maximale) ramène la santé sous le nouveau maximum,
+	// 5 pose la régénération. Les autres cas (2, 3, 0x10, 0x16, 0x17 : vision, vitesse) ne sont pas suivis.
+	bool PoserStat(int handle, int n, int32 valeur);
 	// FUN_0047b6b0 puis FUN_004782a0 : un coup de `degats` porté par `attaquant` (-1 : personne). Rien si la
 	// cible est invulnérable (+0x138c), ou si l'attaquant est le joueur (type 13) et la cible invulnérable
 	// au joueur (+0x1364) ; sinon la santé baisse, jamais sous 0 ni sous la santé minimale (+0x1ca8).
@@ -82,7 +94,10 @@ public:
 	bool Blesser(int cible, float degats, int attaquant);
 	// lua_PedMakeAmbient (0x5ca850) : rendu à la population, plus ramassé par son script.
 	bool RendreAmbiant(int handle);
-	// Une image de dt secondes : marches, poursuites et coups ; pose les drapeaux d'événements.
+	// Une image de dt secondes : marches, poursuites et coups ; pose les drapeaux d'événements. La régénération
+	// (FUN_00472ff0, à chaque image depuis FUN_004812d0) : entre 0 et le maximum, la santé gagne
+	// régénération / 100 × 0,02 × CTimer::ms_fTimeStep, le pas valant 1 pour 20 ms (FUN_0045b810) : régénération / 100
+	// points par seconde, sans dépasser le maximum.
 	void Avancer(float dt);
 private:
 	CScriptPed peds[SCRIPT_PED_POOL_SIZE];
