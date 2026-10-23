@@ -199,17 +199,80 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
 | `IsHealthAtHumiliationLevel` | `FUN_00601a90` | santé / maximum sous la colonne BM / 100 (le bully de 1_02 : 15 %) ; la voie de la peur n'est pas suivie |
 | `IsMissionSpecific` | `FUN_005ffb70` | l'octet +0x1570 vaut 2 : un piéton créé par un script (`FUN_0046dea0(modèle, 2)`) |
 | `CharacterSize` | `FUN_00601460` | +0x74 du modelinfo, la colonne SIZE de l'IDE rangée dans Small, Medium, Large, Fat, Huge (`FUN_00488a20`) |
-| `PedFlags` | `FUN_005fd700` | le drapeau +4 non nul (non jugée par l'outil, voir plus bas) |
-| `HumiliationGroupIs` | `FUN_006039b0` | +0xd44 du piéton égal à +4 (non jugée : aucune écriture directe de +0xd44, deux lectures, 0x490f23 et 0x6039b7) |
+| `PedFlags` | `FUN_005fd700` | le drapeau +4 non nul (jugée depuis le 23.10 au soir, voir « L'humiliation ») |
+| `HumiliationGroupIs` | `FUN_006039b0` | +0xd44 du piéton égal à +4 (le groupe d'humiliation, voir « L'humiliation ») |
 
 - **Garde-fous de l'outil desserrés** : une `Opportunity` hors de l'arbre posé passe si le nœud visé est dans l'arbre
   global de son porteur (un piéton tombé dans `HitTree` s'en relève : `BellyUp/On_Ground` → `../BellyUpGetUp`), ou si
   son chemin remonte jusqu'à `/Global` (`HumiliateFlee/…/RunStart` → `HitTree/KnockOuts/Rear/Rear`).
-- **Ce qui reste supposé ou non lu** : `PedFlags` n'est pas jugée (la charge de la prise prendrait `NOT PedFlags` vers
-  `ExecuteNodes/StanceTransition/Give`, un chemin à cinq `..` qui ne se résout pas sans les références montées) ;
-  `HumiliationGroupIs`, `AnimationGroupLoaded`, `IsSpeechPreloaded`, `TargetRelativePosition` ne le sont pas : dans
-  `Humiliate_Me`, le bully tombe dans la branche `Fail` ; l'effet de coup, le cas de `FUN_004255b0` (la cible tombe d'un
-  coup du joueur) et `FUN_00426560` (qui change les facteurs +0x1cd4 / +0x1cfc) ne sont pas suivis.
+- **Ce qui reste supposé ou non lu** : l'effet de coup, le cas de `FUN_004255b0` (la cible tombe d'un coup du joueur)
+  et ce qui change les facteurs +0x1cd4 / +0x1cfc ne sont pas suivis. (`PedFlags`, `HumiliationGroupIs`,
+  `AnimationGroupLoaded`, `IsSpeechPreloaded` et `TargetRelativePosition`, non lues ce jour-là, le sont depuis le soir :
+  section suivante.)
+
+## L'humiliation (23.10.2026, soir)
+
+- **Le groupe d'humiliation** (+0xd44 du piéton). Ce n'est pas un champ du piéton écrit directement : c'est le +0x200
+  du **composant social** du piéton, placé en +0xb44 (son piéton en +4 ; l'assembleur passe `ecx = piéton + 0xb44`).
+  Le constructeur de ce composant (`FUN_0048e790`, appelé par celui de `CPed`) le pose à -1. `FUN_0048f5d0` le pose (si
+  le piéton a son objet animé +0x114 ; l'ancien groupe, s'il est autre, est d'abord libéré par `FUN_0048dc60`, que
+  `PedStopSocializing` appelle aussi), et le nom du groupe d'animations est pris dans la table de 22 noms de 32 octets
+  de 0x9113d0 (`HUMIL_5-8_A` pour 0 … `HUMIL_6-1V6-1` pour 21). `FUN_004925d0` le choisit : par la taille de la victime
+  (`CharacterSize`), le groupe qu'un autre piéton de la même taille a déjà (`FUN_00490ef0`, le pool du dernier au
+  premier), sinon un tirage `rand()` / 32767 : Small 8 / 9, Fat 3 / 4 (seuil 0,5), Medium 0 / 1 / 2, Large 5 / 6 / 7,
+  Huge 10 / 11 / 12 (seuils 0,33 et 0,66) ; sans l'octet du premier argument, 17, 20 ou 14 pour le joueur, 13 à 21 par les
+  deux tailles pour un autre humiliateur. `FUN_00492950` donne un groupe à une victime qui n'en a pas (-1 ou au-delà de
+  12) quand sa santé passe sous la moitié de son maximum (le double 0,5 de 0x8ff1f8), au lancement d'une piste
+  **`ManageTargets`** (`FUN_00627420`) dont la cible est le joueur : dans `1_02`, celle de `CombatLoco` dans
+  `AI_FightTutorial`. `CScriptPedPool::ChoisirGroupeHumiliation`, `SurveillerHumiliation`, `tests/test_scriptpeds`.
+- **Les branches de `Humiliate_Me`** (`tools/cat.py --mots`) : `CharacterSize` puis `HumiliationGroupIs`. Un Medium
+  (rang 1) joue `5-8_NoogieSpit` (groupe 0, ou sans groupe : les deux `NOT` passent), `5-8_HitSelf` (1) ou
+  `5-8_IndianBurn` (2) ; chaque branche a `Success/Load` (l'attente du chargement) puis `RCV`.
+- **Les conditions propres d'une `Opportunity`** (+0x3c). Le champ 60 du fichier vaut 0, mais la seconde table de
+  renvois le cite, comme le +4 d'une `ConditionGroup` : il renvoie à une liste de conditions après la fin de l'arbre.
+  951 des 3 080 `Opportunity` des arbres du démarrage en ont (la supposition « nulles » venait du mot lu, pas du
+  renvoi). `FUN_005f7d70` les juge avant de chercher le nœud visé ; faute de les passer, la piste n'est pas prise et sa
+  fermeture se juge comme d'habitude. Exemples : l'attente d'une humiliation (`LoadWait/LoadSpawn`) n'abandonne vers
+  `../../ABORT` qu'après 6 s (`ActionNodePlayTime` 6, comparateur 5) ; `WaitForVictim` passe à `EmergencyAnim` après 5 s ;
+  un piéton à terre se relève sur `ActionNodePlayTimePast`. `tools/cat.py --pistes` les affiche (« [si …] »).
+- **`ActionNodePlayTimePast`** (`FUN_005fbfc0`) : le temps du nœud atteint le seuil +0x50 de l'objet +0x10 du contexte,
+  -1 par défaut (0x9009ac, `FUN_005f3ab0`), posé par une piste `Damage` dont le +0x1c est positif (`FUN_00609400`) ;
+  aucune des pistes relevées n'en a : vraie dans l'outil.
+- **`AnimationGroupLoaded`** (`FUN_006024d0`) : +4 le nom du groupe (cité), +8 un octet. Faux sans piéton ou pour un
+  groupe inconnu (`FUN_0042e200` cherche par le nom, sans la casse, dans les descripteurs de 0x3c octets) ; vrai si le
+  groupe est prêt (+0x34) ; sinon, l'octet posé, le groupe est demandé au streaming (`FUN_00531ed0`). `LoadAnimationGroup`
+  (0x5c08a0) demande puis charge tout (`LoadAllRequestedModels`) ; `HasAnimGroupLoaded` (0x5bf6e0) répond l'octet +4 de
+  l'entrée de streaming. `CAnimGroups` (`src/anim/AnimGroups`, les 550 `.agr` de `Stream/World.img`), `tests/test_animgroups`.
+- **La parole retenue** : `SpeechTrack` (0x932ed8, lancement `FUN_006195a0`) porte l'événement +0x18, la ligne +0x20 si
+  l'octet +0x1c, la tenue +0x28 ; une tenue non nulle retient la ligne dans une des cinq places de 0x1b655d0 (le rappel
+  0x619550 la garde jusqu'à l'échéance, 12 s si la cible du piéton est le joueur, puis la joue (1) ou l'annule (2)) ;
+  `SpeechStartTrack` (`FUN_00619950`) la lâche. `IsSpeechPreloaded` (`FUN_00602620`) cherche l'événement, la ligne (-1 :
+  toutes) et, si l'octet +0xc, le piéton dans les deux places de préchargement du son (0xcf458c, `FUN_005a0cc0` : état 2
+  et données prêtes). L'outil ne joue pas les `SpeechTrack` sans tenue (une seule ligne à la fois).
+- **`TargetRelativePosition`** (`FUN_005feed0`) : la cible de genre +0x14 (`FUN_00477ab0` : 0 la cible verrouillée,
+  1 le partenaire de prise +0x155c, 7 +0x544…) à au plus +4 mètres, dans la direction +8 (radians depuis l'avant, vers la
+  droite ; à gauche l'angle est 2π moins l'angle) à +0xc près ; l'octet +0x10 en fait aussi des partenaires de prise.
+  Pour `RCV` : 1 m, droit devant, π/4.
+- **`FaceTarget`** (0x934b00, mise à jour `FUN_00620dc0`) : vers la cible de genre +0x20, décalée de +0x28 degrés.
+  **`SeekEntityPosition`** (0x933634, `FUN_0062a720` / `FUN_0062a940`) : vers la cible de genre +0x1c (le point de
+  `FUN_0061d530` : sa position, sans os) jusqu'à moins de +0x28 m (0,75 dans `WaitForVictim`). Dans le jeu, la seconde
+  passe par la recherche de chemin (`FUN_004a4eb0`) ; l'outil va tout droit, à sa vitesse de course. Une piste **`spawn`**
+  fait jouer un nœud à côté (un second contrôleur, `FUN_005f8860`) : l'outil n'en garde que ces deux pistes.
+  `SetTargetAsGrappleTarget` fait des deux piétons des partenaires de prise (`PedSetGrappleTarget` 0x474360, +0x155c).
+- **Un `Execute` ne retient pas son nœud** : sa mise à jour (`FUN_005f70f0`) rend +0x31, posé seulement pour une durée
+  de vie positive ; seules les pistes du nœud exécuté le font. Un nœud qui n'a que des `Execute` et des `Sequence`, sans
+  piste exécutée, finit tout de suite. C'est le cas de la charge d'une prise sans le drapeau 70
+  (`HitC/Charge/GIVE/#542875ee`, « `Not PedFlags` ») : son `Execute` vise `GrappleMoves/ExecuteNodes/StanceTransition/Give`,
+  qui n'existe pas (`ExecuteNodes` est sous `GrappleStrikes`), et elle passe aussitôt à `../Give`. La régression notée
+  le 23.10 venait de là, pas d'un chemin à résoudre : `PedFlags` est jugée.
+- **La pile du contexte** (+0x44 / +0x48) : une piste qui vise un nœud (`NodeReferenceTrack`) a sa référence en +0x18,
+  résolue d'avance (+0xc = le nœud, `FUN_005f4e30`). Quand un `Execute` ajoute des pistes (`FUN_005f3e20`), celles de la
+  classe vérifiée par l'emplacement 0 sont résolues de nouveau avec, en `DAT_00b0a604`, le haut de cette pile : la clé
+  qui choisit le parent d'une référence montée à plusieurs endroits (`FUN_005f6290`, `ActionNodeMultiParentReference`).
+  Non suivi : l'outil résout depuis le nœud qui porte la piste.
+- **Ce qui reste supposé** : les arbres de l'IA ne sont pas joués (`ManageTargets` se lance dans l'outil à chaque image
+  où le geste `PedAttack` vise le joueur) ; le piéton qui fuit (`HumiliateFlee`, `Locomotion`) ne bouge pas, et les
+  collisions `FRIENDLYHIT` de sa chute (`KnockOuts/Rear/Rear`, 0 dégât) touchent le joueur resté à côté.
 
 ## Le chemin d'un nœud (18.10.2026)
 
