@@ -18,5 +18,8 @@ public:
 	int32 Index(const char *nom) const;
 	size_t Nombre(void) const { return parNom.size(); }
 	std::map<std::string, int32> parNom;   // nom en majuscules → indice
+	// La colonne STAT d'une entrée peds (docs/idb.md) : le nom de l'entrée de pedstats.dat que le modelinfo garde en
+	// +0x54 et que FUN_00478e30 copie dans le piéton à sa création. Indice du modèle → nom (STAT_…).
+	std::map<int32, std::string> statDuPieton;
 	int32 doublons = 0;                    // un même nom sous deux indices : le premier gagne
 };

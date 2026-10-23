@@ -23,7 +23,7 @@ Noter(const char *nom, int32 id)
 	if(!gEnCours->parNom.insert({Majuscules(nom), id}).second) gEnCours->doublons++;
 }
 
-static int32 Ped(const CPedIdeEntry &e){ Noter(e.model, e.id); return 0; }
+static int32 Ped(const CPedIdeEntry &e){ Noter(e.model, e.id); if(e.stat[0]) gEnCours->statDuPieton.insert({e.id, e.stat}); return 0; }
 static int32 Obj(const CObjIdeEntry &e){ Noter(e.model, e.id); return 0; }
 static int32 Car(const CCarIdeEntry &e){ Noter(e.model, e.id); return 0; }
 static int32 Weap(const CWeapIdeEntry &e){ Noter(e.model, e.id); return 0; }

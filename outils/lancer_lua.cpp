@@ -43,6 +43,9 @@
 #include "../src/audio/SpeechBank.h"
 #include "../src/cutscene/CutsceneFiles.h"
 #include "../src/peds/ScriptPedPool.h"
+#include "../src/peds/PedStats.h"
+#include "../src/core/ModelInfo.h"
+#include "../tests/hote/Chemins.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -1041,12 +1044,63 @@ PedArg(lua_State *L, int arg)
 	return lua_isnumber(L, arg) ? pietons.Acceder((int)lua_tonumber(L, arg)) : nil;
 }
 
-// FUN_005cf6b0 : la création commune, notée à l'objet script courant.
+// pedstats.dat (docs/pedstats.md) : les entrées lues par CPedStats::ParseLine (0x499d80), chacune sous son nom.
+// Le moteur les lit par CPedStats::Initialise (0x49a0a0) et FUN_00478e30 copie dans le piéton créé celle que le
+// modelinfo de son modèle garde en +0x54 (la colonne STAT de son entrée peds, CModelEnum::statDuPieton).
+static std::map<std::string, CPedStat> statsParNom;
+// Ce que ParseLine demande pour ses colonnes textuelles : le vrai index de modèle (FUN_0051c1e0) ; les classes, armes
+// et missions ne servent pas à l'outil, un haché tient leur place.
+uint32 HashString(const char *s){ return ActionHash(s); }
+int32 GetModelIndexByName(const char *n){ return strcmp(n, "none") == 0 ? -1 : modeles.Index(n); }
+int32 GetCharacterClassId(const char *n){ return (int32)(ActionHash(n) & 0xff); }
+int32 GetWeaponIdByName(const char *n){ return strcmp(n, "unarmed") == 0 ? 0 : (int32)(ActionHash(n) & 0xff); }
+int32 GetMissionIdByName(const char *n){ return (int32)(ActionHash(n) & 0xffff); }
+// CPedStats::Initialise n'est pas appelé (l'outil lit le fichier lui-même, ChargerPedStats) : ses appuis restent vides.
+uint8 CFileLoader::ms_lineBuffer[0x15e];
+char *CFileLoader::LoadLine(int32){ return nil; }
+void CMemoryHeap::Push(int){}
+void CMemoryHeap::Pop(void){}
+
+static void
+ChargerPedStats(void)
+{
+	char chemin[512];
+	CheminHote("Config/Dat/PEDSTATS.DAT", chemin, sizeof(chemin));
+	FILE *f = fopen(chemin, "rb");
+	if(f == nil){ printf("pedstats.dat introuvable : les piétons gardent 100 points de vie\n"); return; }
+	char ligne[0x15e];
+	while(fgets(ligne, sizeof(ligne), f)){
+		// FUN_00429ac0 (LoadLine) : fin de ligne coupée, contrôles et virgules changés en espaces, blancs de tête sautés.
+		for(char *c = ligne; *c; c++){ if(*c == '\n'){ *c = 0; break; } if(*c < ' ' || *c == ',') *c = ' '; }
+		char *l = ligne;
+		while(*l && *l < '!') l++;
+		if(*l == 0 || *l == '#') continue;
+		CPedStat e;
+		memset(&e, 0, sizeof(e));
+		CPedStats::ParseLine(&e, l);
+		statsParNom[e.m_name] = e;
+	}
+	fclose(f);
+	printf("%zu entrées de pedstats.dat\n", statsParNom.size());
+}
+
+// FUN_005cf6b0 : la création commune, notée à l'objet script courant ; le piéton reçoit l'entrée de pedstats.dat
+// de son modèle (FUN_00478e30).
 static int
 CreerPed(lua_State *L, const char *quoi, int32 modele, const CVector &pos, float cap)
 {
 	int h = pietons.Creer(modele, pos, cap, scriptCourant);
 	if(h < 0) printf("        %s : le pool des piétons est plein (%d)\n", quoi, SCRIPT_PED_POOL_SIZE);
+	else{
+		auto st = modeles.statDuPieton.find(modele);
+		auto e = st == modeles.statDuPieton.end() ? statsParNom.end() : statsParNom.find(st->second);
+		if(e != statsParNom.end()){
+			pietons.PoserStats(h, e->second.m_fields);
+			const CScriptPed *p = pietons.Acceder(h);
+			printf("%6.2f s  piéton %d (modèle %d) : %s, %.0f points de vie, régénération %.0f, seuil d'humiliation %d\n",
+			       maintenant / 1000.0, h, modele, e->first.c_str(), p->santeMax, p->regeneration, p->stats[63]);
+		}
+	}
 	lua_pushnumber(L, h);
 	return 1;
 }
@@ -1204,6 +1258,41 @@ PedSetMinHealth(lua_State *L)
 {
 	Journal("PedSetMinHealth", L, 1);
 	if(CScriptPed *p = PietonArg(L, 1)) p->santeMin = (float)luaL_checknumber(L, 2);
+	return 0;
+}
+
+// PedGetMaxHealth(ped) (0x5c8d80) et PedSetMaxHealth(ped, pv) (0x5c8de0) : +0x1ca4 ; GameGetPedStat(ped, n)
+// (0x5d4ca0, FUN_00476f10) et GameSetPedStat(ped, n, v) (0x5d4d10, FUN_00476fa0) : la colonne n en +0x1900.
+static int
+PedGetMaxHealth(lua_State *L)
+{
+	appels["PedGetMaxHealth"]++;
+	const CScriptPed *p = PedArg(L, 1);
+	lua_pushnumber(L, p ? p->santeMax : 0);
+	return 1;
+}
+
+static int
+PedSetMaxHealth(lua_State *L)
+{
+	Journal("PedSetMaxHealth", L, 1);
+	if(CScriptPed *p = PietonArg(L, 1)) p->santeMax = (float)luaL_checknumber(L, 2);
+	return 0;
+}
+
+static int
+GameGetPedStat(lua_State *L)
+{
+	appels["GameGetPedStat"]++;
+	lua_pushnumber(L, lua_isnumber(L, 1) ? pietons.Stat((int)lua_tonumber(L, 1), (int)luaL_checknumber(L, 2)) : 0);
+	return 1;
+}
+
+static int
+GameSetPedStat(lua_State *L)
+{
+	Journal("GameSetPedStat", L, 1);
+	if(lua_isnumber(L, 1)) pietons.PoserStat((int)lua_tonumber(L, 1), (int)luaL_checknumber(L, 2), (int32)luaL_checknumber(L, 3));
 	return 0;
 }
 
@@ -1980,6 +2069,10 @@ main(int argc, char **argv)
 	lua_register(L, "PedSetInvulnerableToPlayer", PedSetInvulnerableToPlayer);
 	lua_register(L, "PlayerSetInvulnerable", PlayerSetInvulnerable);
 	lua_register(L, "PedSetMinHealth", PedSetMinHealth);
+	lua_register(L, "PedGetMaxHealth", PedGetMaxHealth);
+	lua_register(L, "PedSetMaxHealth", PedSetMaxHealth);
+	lua_register(L, "GameGetPedStat", GameGetPedStat);
+	lua_register(L, "GameSetPedStat", GameSetPedStat);
 	lua_register(L, "PedCreateXYZ", PedCreateXYZ);
 	lua_register(L, "PedDelete", PedDelete);
 	lua_register(L, "PedIsValid", PedIsValid);
@@ -2006,6 +2099,7 @@ main(int argc, char **argv)
 	PoserEnumeration(L, "POI", IndexPoi);
 	if(modeles.Charger()) printf("%zu noms de modèles dans Objects/ide.img\n", modeles.Nombre());
 	else printf("Objects\\ide.img introuvable : MODELENUM répondra -1\n");
+	ChargerPedStats();
 	ChargerMissions();
 	ChargerApi();
 	lua_newtable(L);
