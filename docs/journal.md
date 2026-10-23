@@ -707,3 +707,28 @@ en échec plutôt que de les masquer.
   de conditions non lues) ; la locomotion des arbres (le bully ne fuit pas, les `FRIENDLYHIT` de sa chute touchent le
   joueur, 0 dégât).
 - **Bilan** : 475 fonctions recréées (3,4 % du code), contre 451 (3,2 %) cet après-midi ; 18 commits.
+
+## 23.10.2026 (nuit)
+
+- **L'arbre de l'IA est joué** : `PedSetAITree` (0x5caac0 → `FUN_00484290`) pose l'arbre au contrôleur de l'IA du
+  composant d'actions (+0x2e0 : le contrôleur +0x290, son contexte +0x358), que `FUN_00484490` fait avancer à chaque image
+  et redescendre quand il ne joue rien. `PedAttack` met un `AttackPedObjective` (type 7) dans la file des objectifs
+  (+0x5f0). Dix-huit conditions lues, par la table d'enregistrement `FUN_0064b090` et l'emplacement 1 des tables
+  virtuelles (`Objective`, `AcquireTarget`, `JoinCombatZone`, `InCombatZone`, `Interval`, `WeightedRandom`,
+  `ActionNodeRequest` = l'intention +0x254, `OpeningBranchChildHasChild`, `TargetConditionGroup`…). `LuaCond` lit le
+  résultat du script par `lua_tonumber` : `0.0` est faux (l'outil le croyait vrai).
+- **Les pistes de l'IA** : `ManageTargets` (sa mise à jour `FUN_00627420`, pas son lancement, donne le groupe
+  d'humiliation : la supposition d'hier tombe), `CombatLoco` (la zone de combat, `PedJoinCombatZone`, les rayons
+  d'`AIButes`), `ActionNodeRequest`, `spawn` (un contrôleur propre, qui reboucle), `ClearCurrentObjective`,
+  `FleeObjective`. **L'octet +8 d'une piste retient son nœud** (`FUN_005f4230`) : un nœud qu'aucune piste ne retient finit
+  tout de suite ; c'est ce qui rend la main au joueur après `GV/END`.
+- **Dans `1_02`** : le bully entre dans `CombatLoco` à 30,06 s, se tient à 1,5 m, son `CombatActions` boucle
+  (`ControlNode`, `PostHit/OnGround`, `PostHit/Hit`) ; le groupe 0 lui vient de `ManageTargets` à 76,20 s ;
+  `HumiliateFlee` lui retire son objectif d'attaque et le fait fuir ; retourné, il tombe sans toucher le joueur (les coups
+  ne portent que de face, supposé). Le succès d'hier reposait en partie sur ce coup parasite, qui sortait le joueur de
+  `GV/END` : c'est maintenant la vraie règle de fin. **`1_02` se termine réussie à 119,03 s** ; `1_01` est inchangée.
+- **Ce qui bloque encore** : l'intention `Short` ne fait pas jouer `Offense/Short` à l'arbre d'actions (`Fight_Tutorial`
+  passe par les `ActionOpps` des références montées : la pile du contexte, `FUN_005f4e40`, `FUN_005f6290`, dont la clé
+  reste à comprendre) ; la course de `RunStart` (l'intention de mouvement que la piste `Locomotion` exécute, que rien ne
+  pose pour l'objectif 22 dans `AI_FightTutorial`).
+- **Bilan** : 513 fonctions recréées (3,5 % du code), contre 475 (3,4 %) ce soir ; 1 265 comprises (7,7 %) ; 14 commits.
