@@ -176,6 +176,20 @@ main(void)
 		for(int i = 3; i < SCRIPT_PED_OBJECTIFS; i++) VERIF(q.PousserObjectif(a, autre, false));
 		VERIF(!q.PousserObjectif(a, autre, false) && q.Acceder(a)->nombreObjectifs == SCRIPT_PED_OBJECTIFS);   // 20 places
 	}
+	// PedJoinCombatZone (FUN_00487a70) : la zone 0 du joueur n'a qu'une place (AIButes +0x18) ; l'essai ne prend rien.
+	{
+		CScriptPedPool q;
+		int a = q.Creer(146, CVector(0, 0, 0), 0, 1), b = q.Creer(85, CVector(1, 0, 0), 0, 1);
+		VERIF(q.JoindreZoneCombat(a, SCRIPT_PED_JOUEUR, 0, true) && q.Acceder(a)->zoneCombat == -1 && q.Acceder(a)->verrou == -1);
+		VERIF(q.JoindreZoneCombat(a, SCRIPT_PED_JOUEUR, 0, false) && q.Acceder(a)->zoneCombat == 0 && q.Acceder(a)->verrou == SCRIPT_PED_JOUEUR);
+		VERIF(q.JoindreZoneCombat(a, SCRIPT_PED_JOUEUR, 0, true));                       // déjà dedans
+		VERIF(!q.JoindreZoneCombat(b, SCRIPT_PED_JOUEUR, 0, true) && q.JoindreZoneCombat(b, SCRIPT_PED_JOUEUR, 1, false));
+		q.Acceder(b)->masqueZones[2] = false;                                            // PedSetCombatZoneMask
+		VERIF(!q.JoindreZoneCombat(b, SCRIPT_PED_JOUEUR, 2, true));
+		VERIF(q.JoindreZoneCombat(a, SCRIPT_PED_JOUEUR, 1, false) && q.Acceder(a)->zoneCombat == 1);   // il quitte la zone 0
+		VERIF(q.Acceder(SCRIPT_PED_JOUEUR)->combattants[0].empty() && q.Acceder(SCRIPT_PED_JOUEUR)->combattants[1].size() == 2);
+		VERIF(q.Supprimer(a) && q.Acceder(SCRIPT_PED_JOUEUR)->combattants[1].size() == 1);
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }

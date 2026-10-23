@@ -9,6 +9,7 @@
 // scripts avancent et voient les piétons bouger, arriver et mourir.
 #pragma once
 #include "../common.h"
+#include <vector>
 
 enum { SCRIPT_PED_POOL_SIZE = 24, SCRIPT_PED_JOUEUR = 0 };
 // Les drapeaux de +0x1314 (CScriptPed::drapeaux) : jusqu'à 123 dans les arbres d'actions relevés.
@@ -66,6 +67,17 @@ struct CScriptPed {
 	int cibleDePrise = -1;       // +0x155c, PedSetGrappleTarget (0x474360) : le partenaire de prise, -1 sinon
 	CObjectifPieton objectifs[SCRIPT_PED_OBJECTIFS];   // +0x5f8, la file des objectifs
 	int nombreObjectifs = 0;     // +0x648
+	// Le composant de combat (+0x668, son piéton en +0) : la zone de combat où le piéton s'est placé autour de sa cible
+	// (+0x66c, -1 aucune), le masque des trois zones qu'il peut prendre (+0x700, PedSetCombatZoneMask 0x5cd0c0 →
+	// FUN_00486110 ; vrai par défaut, supposé). Comme cible : la capacité de chaque zone (+0x670, PedSetNumCombatants
+	// 0x5cb7d0 ; PedRestoreNumCombatants 0x5cb9c0 remet AIButes +0x18, +0x1c, +0x20 : 1, 2, 4) et ses combattants
+	// (+0x67c + 0x2c × zone : le nombre, puis les piétons).
+	bool arbreIA = false;        // +0x4b4 du composant +0x2e0 : un arbre de l'IA posé (PedSetAITree) ; l'outil ne joue
+	                             // alors plus le geste de PedAttack, c'est l'arbre qui mène le piéton
+	int zoneCombat = -1;
+	bool masqueZones[3] = {true, true, true};
+	int32 capaciteZones[3] = {1, 2, 4};
+	std::vector<int> combattants[3];
 	int cibleObjectif = -1;      // +0x540 (+0x184 du composant de visée en +0x3bc) : la cible d'un objectif d'attaque, que la
 	                             // condition Objective pose quand elle passe (FUN_0048c330)
 	bool mort = false;
@@ -155,6 +167,13 @@ public:
 	// d'une piste ManageTargets (FUN_00627420) quand la cible du piéton est le joueur qui l'appelle. Rend le groupe posé,
 	// -1 si rien.
 	int SurveillerHumiliation(int victime, int taille, int tailleJoueur, float tirage);
+	// PedJoinCombatZone (FUN_00487a70, ecx = le composant de combat de l'attaquant) : prendre la zone `zone` (0, 1, 2)
+	// autour de `cible`. Refusé si la zone est masquée (une zone hors de 0 à 2 passe). Sauf `essai` (l'octet du dernier
+	// argument : la condition JoinCombatZone ne fait que tester), la cible devient celle de l'attaquant (FUN_004989c0).
+	// Vrai si l'attaquant y est déjà, ou si la zone a moins de combattants que sa capacité : alors, sauf `essai`, il
+	// quitte sa zone d'avant et y entre (FUN_004878e0, FUN_00486c70, +0x66c). Le remplacement d'un combattant moins bien
+	// placé (FUN_004863c0) et l'arme à distance (FUN_00486a90, seule la zone 2) ne sont pas suivis.
+	bool JoindreZoneCombat(int handle, int cible, int zone, bool essai);
 	// lua_PedMakeAmbient (0x5ca850) : rendu à la population, plus ramassé par son script.
 	bool RendreAmbiant(int handle);
 	// Une image de dt secondes : marches, poursuites et coups ; pose les drapeaux d'événements. La régénération

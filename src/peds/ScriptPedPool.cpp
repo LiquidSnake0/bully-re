@@ -35,11 +35,21 @@ CScriptPedPool::Creer(int32 modele, const CVector &pos, float cap, int32 script)
 	return -1;
 }
 
+// Un piéton qui disparaît quitte les zones de combat où il se tenait (supposé : le destructeur de CPed le fait).
+static void
+QuitterZones(CScriptPed *peds, int h)
+{
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++)
+		for(std::vector<int> &z : peds[i].combattants)
+			for(size_t k = 0; k < z.size(); ) if(z[k] == h) z.erase(z.begin() + k); else k++;
+}
+
 bool
 CScriptPedPool::Supprimer(int h)
 {
 	if(h == SCRIPT_PED_JOUEUR || !Valide(h)) return false;
 	peds[h] = CScriptPed();
+	QuitterZones(peds, h);
 	return true;
 }
 
@@ -66,7 +76,7 @@ CScriptPedPool::SupprimerDuScript(int32 script)
 {
 	int n = 0;
 	for(int i = 1; i < SCRIPT_PED_POOL_SIZE; i++)
-		if(peds[i].vivant && peds[i].script == script){ peds[i] = CScriptPed(); n++; }
+		if(peds[i].vivant && peds[i].script == script){ peds[i] = CScriptPed(); QuitterZones(peds, i); n++; }
 	return n;
 }
 
@@ -137,6 +147,26 @@ CScriptPedPool::PousserObjectif(int h, const CObjectifPieton &o, bool devant)
 	}else
 		p->objectifs[n] = o;
 	n++;
+	return true;
+}
+
+bool
+CScriptPedPool::JoindreZoneCombat(int h, int cible, int zone, bool essai)
+{
+	CScriptPed *p = Acceder(h), *c = Acceder(cible);
+	if(p == nil || c == nil || h == cible) return false;
+	if(zone >= 0 && zone <= 2 && !p->masqueZones[zone]) return false;
+	if(!essai && p->verrou != cible) Verrouiller(h, cible, 0);
+	if(zone < 0 || zone > 2) return false;
+	std::vector<int> &z = c->combattants[zone];
+	for(int x : z) if(x == h) return true;
+	if((int)z.size() >= c->capaciteZones[zone]) return false;
+	if(essai) return true;
+	for(int k = 0; k < 3; k++)
+		for(size_t i = 0; i < c->combattants[k].size(); )
+			if(c->combattants[k][i] == h) c->combattants[k].erase(c->combattants[k].begin() + i); else i++;
+	z.push_back(h);
+	p->zoneCombat = zone;
 	return true;
 }
 
@@ -254,7 +284,7 @@ CScriptPedPool::Avancer(float dt)
 			p.sante += p.regeneration / 100.0f * dt;
 			if(p.sante > p.santeMax) p.sante = p.santeMax;
 		}
-		if(p.attaque >= 0){
+		if(p.attaque >= 0 && !p.arbreIA){
 			CScriptPed *c = Acceder(p.attaque);
 			if(c == nil || c->mort){ p.attaque = -1; continue; }
 			// La poursuite se fait à la course ; à portée, un coup toutes les SCRIPT_PED_CADENCE s.
