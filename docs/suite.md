@@ -29,11 +29,18 @@ chantier. Un point fini passe en bas, avec son commit.
    prise se termine (le bully joue `PushFwd/RCV`). Les coups portent (docs/cat.md, « Les coups ») : pistes `Collision`,
    réaction par `HitTree` (`ConditionFlag`, `MePlaying`), `Sequence` hors de l'arbre posé, fin des animations
    (`MAINPED.HXD`) ; la leçon des coups au sol passe (`GroundHitHeavy`) et `1_02` affiche `1_02_FightMsg`.
-   Suite : le combat qui suit `1_02_FightMsg` (les bullies, `T_MonitorBullyHealth`, `F_HealthTutorial`, puis Russell :
-   `F_SetupRussellFight`) ; les coups des piétons de l'IA (leur arbre `AI_FightTutorial`), les dégâts et la santé
-   (`PedGetHealth`, `PedSetMinHealth`) ; jouer les `Execute` dans un contrôleur secondaire (la vraie route vers
-   `GroundAndWallHits`) ; la pile des nœuds joués (+0x44 / +0x48) et les références montées (`GlobalLoco`) pour lever
-   les garde-fous ; l'objet de porte (+0x394).
+   Les coups blessent (docs/cat.md, « Les dégâts, la santé et l'humiliation ») : un `Execute` ajoute ses pistes au
+   contrôleur (pas de contrôleur secondaire), `DamageHandle`, `SetHealth`, `SetPedFlags`, `SetTargetAsGrappleTarget`,
+   les piétons ont leur entrée de `pedstats.dat` ; dans `1_02`, le bully se relève, onze jabs le mènent à 5 points et
+   la mission affiche `1_02_HumiliateHim` (82,1 s).
+   Suite : l'humiliation de `1_02` (la victime tombe dans `Humiliate_Me/Fail`) : lire `HumiliationGroupIs` (+0xd44 du
+   piéton, aucune écriture directe : chercher la copie qui le pose), puis les conditions de `RCV` (`AnimationGroupLoaded`,
+   `IsSpeechPreloaded`, `TargetRelativePosition`), pour que `5-8_IndianBurn` (ou `NoogieSpit`) se joue, que
+   `HumiliateFlee` ôte les 500 points et que le bully joue `HitTree/KnockOuts` ; puis `F_SetupRussellFight`
+   (`F_DoCutscene`, l'état `passed`) : `1_02` réussie. Ensuite : juger `PedFlags` (résoudre les chemins à cinq `..` des
+   références montées, `ExecuteNodes/StanceTransition/Give`) ; les coups des piétons de l'IA (leur arbre
+   `AI_FightTutorial`, à la place du geste `PedAttack` de l'outil) ; la pile des nœuds joués (+0x44 / +0x48) ;
+   l'objet de porte (+0x394).
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
    directement au lieu des exports headless. Prérequis : Ghidra 12.1.4 et
@@ -64,6 +71,11 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- Les coups blessent (23.10) : `Execute` dans le contrôleur (`FUN_005f7070`, `FUN_005f3e20`), le relevé du coup
+  (+0x408) et `FUN_0047b810`, `DamageHandle` (`FUN_0060fc70`), `SetHealth` (`FUN_00627500`), `SetPedFlags`
+  (`FUN_0060f8e0`), `SetTargetAsGrappleTarget` (`FUN_0062a580`), `HitAnimation`, l'arrêt des `Opportunity`
+  (`FUN_005f7440`) ; pedstats.dat dans les piétons (`FUN_00478e30`, `FUN_00472ff0`) ; onze conditions (`HitTime`,
+  `stat`, `Health`, `IsHealthAtHumiliationLevel`, `CharacterSize`…) ; `1_02` jusqu'à `1_02_HumiliateHim`.
 - Les passages par les pistes (22.10, troisième séance) : chemins relatifs (`CActionBank::Relatif`), `Opportunity`
   (`FUN_005f7d70`, `FUN_005f7440`, `FUN_005f3bc0`, tirage `FUN_00465910`), `OpportunityRandomLatch` (`FUN_005f7510`,
   `RandCrt`), `Sequence` (`FUN_005f7030`), `PlayOnTarget` (`FUN_006615f0`) ; comparateurs `FUN_005fb750` et état des

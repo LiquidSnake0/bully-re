@@ -372,6 +372,120 @@ main(void)
 				VERIF(g.JoueNom(c.joue, "OnGroundBounce"));
 			}
 		}
+		// Les pistes d'un nœud exécuté rejoignent celles du contrôleur (FUN_005f7070, FUN_005f3e20) : un coup reçu debout
+		// (HEADJAB) fait jouer une feuille de HitTree qui exécute ../HitBase, dont la piste DamageHandle (facteur 1) et
+		// l'Opportunity vers KnockOuts arrivent au contrôleur ; la DamageHandle se lance à l'entrée (FUN_0060fc70).
+		{
+			struct JugeCoup : CJugeAction {
+				int Juger(const CActionTreeFile &, int32, uint32 type, const uint32 mots[6]) const override {
+					if(type == ActionHash("ConditionFlag")) return (mots[0] & 0x7fffffff) == ActionHash("HEADJAB");
+					if(type == ActionHash("HitLocation") || type == ActionHash("HitTime") || type == ActionHash("stat")) return 1;
+					if(type == ActionHash("MePlaying") || type == ActionHash("IsPlayer") || type == ActionHash("PedFightingSystem")) return 0;
+					return -1;
+				}
+			};
+			const CActionNode *coups = g.Trouver("/Global/HitTree");
+			VERIF(coups != nil);
+			if(coups){
+				CActionController c;
+				JugeCoup juge;
+				VERIF(c.Entrer(g, coups, juge, 0.0f));
+				printf("  coup reçu debout (HEADJAB) : %s, la DamageHandle et l'Opportunity de ../HitBase (exécuté)\n", g.CheminDe(c.joue).c_str());
+				const CActionNode *base = g.Trouver("/Global/HitTree/Standing/Base/HitBase");
+				VERIF(base != nil && c.degats.size() == 1 && c.degats[0].porteur == base && c.degats[0].facteur == 1.0f && c.degats[0].effet);
+				bool ko = false;
+				for(const COpportunite &o : c.occasions) if(o.porteur == base && o.chemin == "../../../KnockOuts") ko = true;
+				VERIF(ko);
+				VERIF(c.blessures.empty());
+				c.Avancer(g, nil, juge, 0.01f);
+				VERIF(c.blessures.size() == 1);
+				c.Avancer(g, nil, juge, 0.02f);
+				VERIF(c.blessures.empty());   // une fois, au lancement
+				// La feuille finit avec sa HitAnimation (FUN_00617040 → FUN_0060ae00) ; la Sequence du nœud exécuté
+				// (HitBaseStanding : ../../PostHit/Standing) est gardée pour la fin.
+				// (les durées de MAINPED.HXD ne sont pas chargées ici : celle de l'animation de la feuille est posée à 0,8 s)
+				if(const CActionTreeFile *f = g.Fichier(*c.joue))
+					for(int32 dp : c.joue->pistes){
+						CActionTrack p;
+						if(f->Piste(dp, p) && p.type == ActionHash("HitAnimation")) g.dureesAnimations[p.Mot(24) & 0x7fffffff] = 0.8f;
+					}
+				float d = CActionController::Duree(g, *c.joue);
+				VERIF(fabsf(d - 0.8f) < 1e-4f && !c.suitesExecutees.empty());
+				printf("    sa HitAnimation finit à %.2f s, %zu Sequence venue d'un nœud exécuté\n", d, c.suitesExecutees.size());
+			}
+		}
+		// Une Opportunity hors de l'arbre posé mais dans l'arbre global de son porteur fait passer : un piéton tombé dans
+		// HitTree/Standing/PostHit/BellyUp/On_Ground se relève (../BellyUpGetUp) même si son arbre est Fight_Tutorial.
+		{
+			const CActionNode *sol = g.Trouver("/Global/HitTree/Standing/PostHit/BellyUp/On_Ground");
+			const CActionNode *ailleurs = g.Trouver("/Global/Actions");
+			VERIF(sol != nil && ailleurs != nil);
+			if(sol && ailleurs){
+				CActionController c;
+				c.arbre = ailleurs;
+				c.Jouer(g, sol, 0.0f);
+				bool releve = false;
+				for(int i = 1; i < 10 && !releve; i++){
+					c.Avancer(g, nil, CJugeAction_Rien(), i / 30.0f);
+					releve = g.JoueNom(c.joue, "BellyUpGetUp");
+				}
+				VERIF(releve);
+			}
+		}
+		// L'humiliation : SetTargetAsGrappleTarget (FUN_0062a580) envoie le piéton dans ../WaitForVictim et sa cible dans
+		// ../Humiliate_Me ; la fuite d'une victime de mission (HumiliateFlee, IsMissionSpecific) lui ôte 500 points
+		// (SetHealth, FUN_00627500) et son Opportunity sans bascule (-1) ne dépose sa demande qu'à la fin du nœud
+		// (FUN_005f7440).
+		{
+			const CActionNode *init = g.Trouver("/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init");
+			const CActionNode *attente = g.Trouver("/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init/WaitForVictim");
+			const CActionNode *victime = g.Trouver("/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init/Humiliate_Me");
+			VERIF(init && attente && victime);
+			if(init && attente && victime){
+				CActionController c;
+				VERIF(c.Entrer(g, init, CJugeAction_Rien(), 0.0f) && c.prisesCible.size() == 1);
+				c.Avancer(g, nil, CJugeAction_Rien(), 0.01f);
+				VERIF(c.prises.size() == 1 && c.prises[0].soi == attente && c.prises[0].cible == victime);
+			}
+			struct JugeMission : CJugeAction {
+				int Juger(const CActionTreeFile &, int32, uint32 type, const uint32 *) const override {
+					return type == ActionHash("IsMissionSpecific") ? 1 : 0;
+				}
+			};
+			const CActionNode *fuite = g.Trouver("/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init/HumiliateFlee");
+			VERIF(fuite != nil);
+			if(fuite){
+				const CActionNode *n = g.Choisir(fuite, JugeMission());
+				VERIF(n && n->genre == 'n');
+				if(n){
+					CActionController c;
+					c.Jouer(g, n, 0.0f);
+					VERIF(c.santes.size() == 1 && c.santes[0].mode == 2 && c.santes[0].valeur == 500.0f);
+					c.Avancer(g, nil, JugeMission(), 0.01f);
+					VERIF(c.santesLancees.size() == 1);
+					printf("  HumiliateFlee (victime de mission) : %s, SetHealth ôte %g\n", g.CheminDe(n).c_str(), c.santes[0].valeur);
+				}
+			}
+		}
+		// SetPedFlags (FUN_0060f8e0) : WaitForVictim pose le drapeau 123 à son entrée et le remet à 0 à son arrêt (entrée -1,
+		// lancée par FUN_005f3fb0 quand le nœud change).
+		{
+			const CActionNode *give = g.Trouver("/Global/Actions/Grapples/Front/Grapples/GrappleMoves/GrappleStrikes/HitC/Charge/GIVE");
+			const CActionNode *attente = g.Trouver("/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init/WaitForVictim");
+			if(attente){
+				CActionController c;
+				c.Jouer(g, attente, 0.0f);
+				c.Avancer(g, nil, CJugeAction_Rien(), 0.01f);
+				bool debut = false;
+				for(const CActionController::Drapeau &d : c.drapeauxPoses) if(d.numero == 123 && d.valeur == 1) debut = true;
+				size_t avant = debut ? 1 : 0;
+				c.drapeauxPoses.clear();
+				c.Jouer(g, give, 0.02f);                          // le nœud change : SetPedFlags 123 à 0 (entrée -1) se lance
+				bool fin = false;
+				for(const CActionController::Drapeau &d : c.drapeauxPoses) if(d.numero == 123 && d.valeur == 0) fin = true;
+				VERIF(avant >= 1 && fin);
+			}
+		}
 		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());
 	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");

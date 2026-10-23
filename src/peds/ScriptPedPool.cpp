@@ -130,8 +130,8 @@ CScriptPedPool::Blesser(int cible, float degats, int attaquant)
 {
 	CScriptPed *c = Acceder(cible);
 	if(c == nil || c->mort) return false;
-	if(c->invulnerable) return false;
-	if(attaquant == SCRIPT_PED_JOUEUR && c->invulnerableAuJoueur) return false;
+	if(c->drapeaux[DRAPEAU_INTOUCHABLE] || c->drapeaux[DRAPEAU_INVULNERABLE]) return false;
+	if(attaquant == SCRIPT_PED_JOUEUR && c->drapeaux[DRAPEAU_INVULNERABLE_JOUEUR]) return false;
 	float s = c->sante - degats;
 	if(s < 0) s = 0;
 	if(s < c->santeMin) s = c->santeMin;
@@ -146,6 +146,39 @@ CScriptPedPool::Sante(int h, float sante)
 	if(p == nil) return;
 	p->sante = sante;
 	if(sante <= 0 && !p->mort){ p->mort = true; p->vientDeMourir = true; p->enMarche = false; p->attaque = -1; }
+}
+
+bool
+CScriptPedPool::PoserStats(int h, const int32 colonnes[64])
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return false;
+	for(int i = 0; i < 64; i++) p->stats[i] = colonnes[i];
+	p->santeMax = (float)colonnes[4];
+	p->santeMin = 0;
+	p->regeneration = (float)colonnes[5];
+	p->sante = p->santeMax;
+	return true;
+}
+
+int32
+CScriptPedPool::Stat(int h, int n) const
+{
+	const CScriptPed *p = Acceder(h);
+	return p && n >= 0 && n < 64 ? p->stats[n] : 0;
+}
+
+bool
+CScriptPedPool::PoserStat(int h, int n, int32 v)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil || n < 0 || n >= 64) return false;
+	p->stats[n] = v;
+	if(n == 4){
+		p->santeMax = (float)v;
+		if(p->santeMax < p->sante) p->sante = p->santeMax;
+	}else if(n == 5) p->regeneration = (float)v;
+	return true;
 }
 
 bool
@@ -183,6 +216,10 @@ CScriptPedPool::Avancer(float dt)
 	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
 		CScriptPed &p = peds[i];
 		if(!p.vivant || p.mort) continue;
+		if(p.sante > 0 && p.sante < p.santeMax){   // FUN_00472ff0
+			p.sante += p.regeneration / 100.0f * dt;
+			if(p.sante > p.santeMax) p.sante = p.santeMax;
+		}
 		if(p.attaque >= 0){
 			CScriptPed *c = Acceder(p.attaque);
 			if(c == nil || c->mort){ p.attaque = -1; continue; }

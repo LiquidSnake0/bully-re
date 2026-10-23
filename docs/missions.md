@@ -230,11 +230,11 @@ comme `PlayerGetPedIndex` le dit, `tests/test_scriptpeds`) : `PedCreatePoint`,
 libéré à la fin de la mission (le moteur le note à l'objet script, `FUN_005d94d0`).
 
 Un coup passe par `FUN_0047b6b0` puis `FUN_004782a0` (`CScriptPedPool::Blesser`) : rien si la cible
-est invulnérable (+0x138c : `PedSetInvulnerable`, 0x5c9160, et `PlayerSetInvulnerable`, 0x5d1810, pour
-le joueur), ou si l'attaquant est le joueur (type 13) et la cible invulnérable au joueur (+0x1364,
-`PedSetInvulnerableToPlayer`, 0x5c9200) ; sinon la santé (+0x1cb8) baisse sans passer sous 0 ni sous
-la santé minimale (+0x1ca8, `PedSetMinHealth`, 0x5c8ef0). Dans `1_02`, Russell frappe le joueur rendu
-invulnérable pour l'entraînement, et le joueur garde ses 150 points de vie.
+a le drapeau 12 (+0x1344) ou est invulnérable (le drapeau 30, +0x138c : `PedSetInvulnerable`, 0x5c9160, et
+`PlayerSetInvulnerable`, 0x5d1810, pour le joueur), ou si l'attaquant est le joueur (type 13) et la cible
+invulnérable au joueur (le drapeau 20, +0x1364, `PedSetInvulnerableToPlayer`, 0x5c9200) ; sinon la santé (+0x1cb8) baisse sans passer sous 0 ni sous
+la santé minimale (+0x1ca8, `PedSetMinHealth`, 0x5c8ef0). Dans `1_02`, le bully de l'entraînement (`GN_Bully05`) frappe
+le joueur rendu invulnérable, et le joueur garde ses 150 points de vie.
 
 Les piétons ont un geste à la fois, joué image par image (`CScriptPedPool::Avancer`) :
 `PedMoveToPoint(ped, allure, liste, n)` et `PedMoveToXYZ(ped, allure, x, y, z)` font
@@ -304,6 +304,38 @@ et ce que `util.lua` pose ; tout autre nom vaut nil. `src/core/LuaApi` lit
 `docs/api-lua-tables.tsv` et `IndexGlobal` ne bouchonne plus que ces noms-là
 (`tests/test_luaapi`). Sur cette partie, trois globales de script sont lues avant
 d'être posées, et valent nil comme il faut : `gMissionSuccess`, `misObj`, `F_StoreSweep`.
+
+## `1_02` après `1_02_FightMsg` (23.10.2026)
+
+Lu dans `1_02.lur` (`tools/lur.py`) : quand la leçon des coups au sol réussit, `F_MonitorTraining1` (stade 7) affiche
+`1_02_FightMsg`, pose la santé minimale du bully (`GN_Bully05`, modèle 146) à 5 (`PedSetMinHealth`), sa colonne 8 à
+100 (`GameSetPedStat`), `bCreateCrowd`, et passe la main à `F_MonitorTraining2`. Jusque-là, `T_MonitorBullyHealth`
+remontait sa santé à la moitié de sa santé de départ quand elle passait dessous. `F_MonitorTraining2` attend que
+`PedGetHealth(bully) == 5` : objectif `1_02_HumiliateHim`, `TutorialStart("HUMILIATEX")` ; puis que le joueur joue une
+humiliation (`…/Humiliate_Me/5-8_IndianBurn`, `5-8_HitSelf`, `5-8_NoogieSpit` ou `…/WaitForVictim/EmergencyAnim`) :
+`PlayerSetControl(0)`, santé minimale à -1 ; il attend la fin de l'humiliation, une santé nulle, que le bully joue
+`/Global/HitTree/KnockOuts`, fond au noir et appelle `F_SetupRussellFight`, qui joue la cinématique (`F_DoCutscene`)
+et pose l'état `passed`. `F_HealthTutorial` répond 0 ou 1 selon `bBullyNISLaunched`.
+
+Avec l'outil (docs/cat.md, « Les dégâts, la santé et l'humiliation ») :
+
+    G=/Global/Actions/Grapples/Front/Grapples
+    build/outils/lancer_lua 95 --mission 1_02 --sans-cinematiques --porte DT_ischool_FrontDoorL@3 --entrer _GARYTRIGGER@6 \
+      --jouer /Global/HitTree/Standing/BlockHits@42 --jouer /Global/GlobalLoco/Locomotion/Combat/0_BLOCK_0:Act/Globals/GlobalLoco.act@45 \
+      --demander 0@46 --sequence @48 --sequence @51 --sequence @53 --jouer $G/GrappleAttempt/GrappleSuccess/GIVE@54 \
+      --sequence @56 --jouer $G/GrappleMoves/GrappleStrikes/HitC/Charge@57 --jouer $G/GrappleAttempt/GrappleSuccess/GIVE@60 \
+      --sequence @62 --sequence @63 --jouer $G/GrappleMoves/DirectionalPush/PushFwd@64 --sequence @66 \
+      --jouer /Global/TrainingPlayer/Attacks/GroundAttacks/GroundAttacks/Strikes/HeavyAttacks@67 \
+      --jouer /Global/TrainingPlayer/Attacks/Strikes/LightAttacks@72,73,74,75,76,77,78,79,80,81,82 \
+      --jouer /Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init:Act/Player.act@84
+
+(`LANCER_JOURNAL=300000` pour voir les objectifs : le journal s'arrête à 400 lignes.) Le coup de pied au sol de 67 s
+ôte 8 points (95 → 87) et `1_02_FightMsg` s'affiche à 67,2 s ; le bully se relève (`BellyUpGetUp`, 67,9 s) et revient
+à `Fight_Tutorial` ; chaque jab (`JAB`, 8 points) le fait réagir debout (`Standing/Melee`, qui exécute `Base/HitBase` :
+sa `DamageHandle` porte les dégâts) ; au onzième, il est à 5 points : **`1_02_HumiliateHim` à 82,1 s**,
+`TutorialStart("HUMILIATEX")` à 83,2 s. À 84 s, l'humiliation commence (`SetTargetAsGrappleTarget`) : le joueur joue
+`WaitForVictim` et le bully descend dans `Humiliate_Me`, mais tombe dans la branche `Fail` (`HumiliationGroupIs` n'est
+pas lue) et fait jouer `FAIL_PLAYER` au joueur, que le script n'attend pas : `1_02` s'arrête là.
 
 ## Suite
 

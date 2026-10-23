@@ -147,8 +147,69 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
   contrôleur secondaire, y entre directement quand la cible joue un nœud `On_Ground` (supposé).
 - **Les `Execute`** : le contrôleur de l'outil relève les pistes `Collision` du nœud qu'un `Execute` fait jouer
   (`HeavyAttacks/…/GroundKick` → `./Collision` → la feuille `ped`) ; le reste d'un nœud exécuté n'est pas joué.
+  (Levé le 23.10 : voir la section suivante, un `Execute` n'a pas de contrôleur à part.)
 - **Supposé, dit** : le corps projeté par une prise (`PushFwd/RCV`, `FRIENDLYHIT`) ne touche pas celui qui le pousse
   (l'outil écarte le partenaire du `PlayOnTarget` pendant deux secondes) ; le drapeau du coup tient une seconde.
+
+## Les dégâts, la santé et l'humiliation (23.10.2026)
+
+- **Un `Execute` n'a pas de contrôleur à part.** Son lancement (`FUN_005f7070`, table `ExecuteTrack` 0x937fe4) fait
+  descendre le nœud visé (+0x4c, avec le contexte du piéton, donc jugé) puis `FUN_005f3e20` ajoute les pistes du nœud
+  obtenu à la liste du contrôleur, celle du nœud joué ; `FUN_005f3fb0` lance chaque piste quand le temps du nœud atteint
+  son entrée (+12), les entrées négatives à l'arrêt du nœud. Une durée de vie positive (+0x10) fait arrêter ces pistes
+  avec l'`Execute` (`FUN_005f7150`). L'outil garde, des nœuds exécutés, les `Opportunity`, `Collision`, `DamageHandle`,
+  `SetHealth`, `SetPedFlags`, la `Sequence` (gardée pour la fin du nœud joué) et leur fin (la fin du nœud joué est la
+  plus tardive de toutes). Ainsi une feuille de coup reçu (`Standing/Melee/…`) exécute `Base/HitBase`, dont la
+  `DamageHandle` porte les dégâts et l'`Opportunity` mène à `KnockOuts`.
+- **Le relevé du coup** (+0x408 du contrôleur, `PedGetLastHitWeapon` 0x474a90 le rend ; contexte +0x10) : +0x40c
+  l'attaquant, +0x434 le temps depuis le coup (remis à 0 par `FUN_00472b70`, l'ancienne valeur passant en +0x438, puis
+  augmenté du pas à chaque image par `FUN_004850b0` tant qu'il ne vaut pas -1), +0x440 les dégâts, +0x46c le drapeau
+  haché. La méthode du coup (`FUN_0047b810`) calcule les dégâts : ceux de la piste `Collision` (+0x34 ; +0x50 pour un
+  objet), multipliés pour un coup du joueur sans arme par `PlayerButes` +0xac / +0xb0 / +0xb4 selon son état physique
+  (`DAT_00c1af4c`, `PlayerGetPhysicalState` ; 1, 1, 1 dans `Globals.cat`), puis arrondis au-dessus après le facteur
+  +0x1cd4 de l'attaquant (`FUN_0085dbc0`) et au-dessous après le facteur +0x1cfc de la cible (`FUN_0085d540`), à 1
+  depuis le constructeur `FUN_0047ffe0`.
+- **`DamageHandle`** (`HandleDamageTrack` 0x9313e4, lancement `FUN_0060fc70`) : le piéton subit les dégâts du relevé
+  multipliés par +0x18 (24), portés par l'attaquant du relevé, par `FUN_0047b7f0` → `FUN_0047b6b0` → `FUN_004782a0`
+  (invulnérabilités, santé minimale) ; l'octet +0x1c (28) ajoute un effet de coup (`FUN_0059b750`). Facteurs relevés :
+  0 en parade, 0,1 et 0,2 contre un mur, 1 (`Base/HitBase`), 0,35 pour le joueur (`IsPlayer`), 2 et 2,5 au lance-pierre.
+- **`SetHealth`** (`SetHealthTrack` 0x9350b0, lancement `FUN_00627500`) : la valeur +0x1c pose la santé (+0x18,
+  `FUN_00478190`, pas sous la santé minimale), la rend (+0x19, `FUN_00474b70`, jusqu'au maximum) ou l'ôte (+0x1a,
+  `FUN_004782a0`, sans les invulnérabilités). `HumiliateFlee` d'une victime de mission ôte 500.
+- **`SetPedFlags`** (`PedFlagsTrack` 0x931380, lancement `FUN_0060f8e0`) : le drapeau +0x1c du piéton (+0x1314 + 4n)
+  reçoit l'octet +0x18. Trois drapeaux servent aux coups (`FUN_0047b6b0`) : 12 (+0x1344) et 30 (+0x138c,
+  `PedSetInvulnerable`) écartent tout coup, 20 (+0x1364, `PedSetInvulnerableToPlayer`) ceux du joueur.
+- **`SetTargetAsGrappleTarget`** (lancement `FUN_0062a580`) : le piéton et sa cible deviennent partenaires
+  (`PedSetGrappleTarget`, +0x1500 = l'octet +0x18), le piéton descend dans le nœud +0x24 (36), la cible dans +0x34 (52),
+  chacun le joue (`FUN_005f4490`) sauf si l'octet +0x19 / +0x1a demande de n'en exécuter que les pistes.
+- **`HitAnimation`** (0x934cb8, une `AnimationTrack`) : sa mise à jour `FUN_00617040` passe d'abord par `FUN_0060ae00`,
+  la même fin qu'une `Animation` (vitesse 1, faute du champ 48).
+- **L'arrêt d'une `Opportunity`** (`FUN_005f7440`) : quand le nœud s'arrête, une piste prise et pas encore arrêtée
+  (bascule -1) dépose sa demande ; la plus forte priorité l'emporte (`FUN_005f3bc0`).
+- **Conditions lues** :
+
+| Classe | Fonction | Ce qu'elle juge |
+|---|---|---|
+| `HitTime` | `FUN_005fc400` | +0x434 (ou +0x438 si l'octet +0xc) du relevé comparé à +4 par +8 (`Standing/Melee` : ≤ 0, l'instant du coup) |
+| `stat` | 0x5ffff0 (hors de l'index) | la colonne +0xc du piéton (`GameGetPedStat`) ≥ +4 si l'octet +8 est nul ; l'octet +9 ajoute un `MePlaying` |
+| `IsPlayer` | `FUN_005ffe40` | le type du piéton (+0x1310) vaut 13 |
+| `PedFightingSystem` | `FUN_005fd740` | +4 égal à +0x16dc (`PedSetFightingSystem` 0x5ca590) |
+| `Health`, `PercentageHealth` | `FUN_005fd8f0`, `FUN_005fd930` | la santé (sur le maximum +0x1ca4) comparée à +4 par +8 |
+| `DamagePending` | `FUN_005fbf00` | les dégâts du relevé comparés à +4 par +8 |
+| `IsHealthAtHumiliationLevel` | `FUN_00601a90` | santé / maximum sous la colonne BM / 100 (le bully de 1_02 : 15 %) ; la voie de la peur n'est pas suivie |
+| `IsMissionSpecific` | `FUN_005ffb70` | l'octet +0x1570 vaut 2 : un piéton créé par un script (`FUN_0046dea0(modèle, 2)`) |
+| `CharacterSize` | `FUN_00601460` | +0x74 du modelinfo, la colonne SIZE de l'IDE rangée dans Small, Medium, Large, Fat, Huge (`FUN_00488a20`) |
+| `PedFlags` | `FUN_005fd700` | le drapeau +4 non nul (non jugée par l'outil, voir plus bas) |
+| `HumiliationGroupIs` | `FUN_006039b0` | +0xd44 du piéton égal à +4 (non jugée : aucune écriture directe de +0xd44, deux lectures, 0x490f23 et 0x6039b7) |
+
+- **Garde-fous de l'outil desserrés** : une `Opportunity` hors de l'arbre posé passe si le nœud visé est dans l'arbre
+  global de son porteur (un piéton tombé dans `HitTree` s'en relève : `BellyUp/On_Ground` → `../BellyUpGetUp`), ou si
+  son chemin remonte jusqu'à `/Global` (`HumiliateFlee/…/RunStart` → `HitTree/KnockOuts/Rear/Rear`).
+- **Ce qui reste supposé ou non lu** : `PedFlags` n'est pas jugée (la charge de la prise prendrait `NOT PedFlags` vers
+  `ExecuteNodes/StanceTransition/Give`, un chemin à cinq `..` qui ne se résout pas sans les références montées) ;
+  `HumiliationGroupIs`, `AnimationGroupLoaded`, `IsSpeechPreloaded`, `TargetRelativePosition` ne le sont pas : dans
+  `Humiliate_Me`, le bully tombe dans la branche `Fail` ; l'effet de coup, le cas de `FUN_004255b0` (la cible tombe d'un
+  coup du joueur) et `FUN_00426560` (qui change les facteurs +0x1cd4 / +0x1cfc) ne sont pas suivis.
 
 ## Le chemin d'un nœud (18.10.2026)
 

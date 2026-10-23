@@ -650,3 +650,31 @@ en échec plutôt que de les masquer.
 - **Supposé, dit** : la route directe vers `GroundAndWallHits` (le moteur passe par un `Execute` de `HitTreeBase`) ; le
   corps projeté ne touche pas celui qui le pousse ; le drapeau du coup tient une seconde ; `HitLocation`.
 - **Bilan** : 423 fonctions recréées (2,9 % du code), contre 417 ce matin.
+
+## 23.10.2026
+
+- **Un `Execute` n'a pas de contrôleur à part** : son lancement (`FUN_005f7070`) fait descendre le nœud visé, jugé, et
+  `FUN_005f3e20` ajoute ses pistes à la liste du contrôleur ; l'outil en garde les `Opportunity`, `Collision`,
+  `DamageHandle`, `SetHealth`, `SetPedFlags`, la `Sequence` et la fin. La supposition du 22.10 (un contrôleur
+  secondaire) est levée.
+- **Les coups blessent** : le relevé du coup (+0x408 : attaquant +0x40c, temps +0x434 / +0x438, dégâts +0x440,
+  drapeau +0x46c) et les dégâts de `FUN_0047b810` (piste +0x34, `PlayerButes` +0xac pour le joueur, arrondis aux
+  facteurs +0x1cd4 / +0x1cfc) ; la `DamageHandle` d'un nœud de coup (`Base/HitBase`, facteur 1) les porte par
+  `FUN_0047b6b0` → `FUN_004782a0`. `SetHealth`, `SetPedFlags` (les drapeaux de +0x1314 ; les invulnérabilités en sont),
+  `SetTargetAsGrappleTarget`, `HitAnimation`, l'arrêt d'une `Opportunity` à la fin du nœud.
+- **pedstats.dat dans les piétons** (`FUN_00478e30`) : santé maximale (F), régénération (G, `FUN_00472ff0`), les 64
+  colonnes ; `GameGetPedStat`, `GameSetPedStat`, `PedGetMaxHealth`, `PedSetMaxHealth`, `PedSetFightingSystem` réels ;
+  les colonnes STAT et SIZE des entrées peds. Le bully de l'entraînement est `GN_Bully05` (146, `STAT_B_STRIKER_A`) :
+  95 points, seuil d'humiliation 15 %.
+- **Conditions jugées** : `HitTime`, `stat` (0x5ffff0, hors de l'index), `IsPlayer`, `PedFightingSystem`, `Health`,
+  `PercentageHealth`, `DamagePending`, `IsHealthAtHumiliationLevel`, `IsMissionSpecific`, `CharacterSize`. Garde-fous
+  desserrés : une `Opportunity` reste dans l'arbre global de son porteur, ou remonte jusqu'à `/Global`.
+- **`1_02`** : le coup de pied au sol de 67 s ôte 8 points, `1_02_FightMsg` (67,2 s) ; le bully se relève (67,9 s) ;
+  onze jabs (`--jouer …/LightAttacks@72,73,…,82`, la nouvelle forme à plusieurs instants) le mènent de 87 à 5 points :
+  **`1_02_HumiliateHim` à 82,1 s**, `TutorialStart("HUMILIATEX")` à 83,2 s. À 84 s, l'humiliation commence
+  (`SetTargetAsGrappleTarget` : `WaitForVictim` pour le joueur, `Humiliate_Me` pour le bully), mais le bully tombe dans
+  `Humiliate_Me/Fail`.
+- **Ce qui bloque, dit** : `HumiliationGroupIs` (+0xd44, aucune écriture directe dans le binaire), les conditions de
+  `RCV` (`AnimationGroupLoaded`, `IsSpeechPreloaded`, `TargetRelativePosition`) ; `PedFlags` non jugée (un chemin à
+  cinq `..` vers `ExecuteNodes/StanceTransition/Give` ne se résout pas sans les références montées).
+- **Bilan** : 451 fonctions recréées (3,2 % du code), contre 423 (2,9 %) ce matin.

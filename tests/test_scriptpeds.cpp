@@ -2,6 +2,7 @@
 // libérés repris, le ramassage par objet script ; puis les gestes : marche, sprint, arrêt, bagarre
 // et mort. Aucun fichier du jeu.
 //   build/tests/test_scriptpeds
+#include <cmath>
 #include "../src/peds/ScriptPedPool.h"
 #include <cstdio>
 
@@ -98,16 +99,38 @@ main(void)
 		int a = q.Creer(85, CVector(0, 0, 0), 0, 1), b = q.Creer(99, CVector(1, 0, 0), 0, 1);
 		CScriptPed *pa = q.Acceder(a), *pj = q.Acceder(SCRIPT_PED_JOUEUR);
 		VERIF(q.Blesser(a, 30, b) && pa->sante == 70);
-		pa->invulnerable = true;
+		pa->drapeaux[DRAPEAU_INVULNERABLE] = 1;
 		VERIF(!q.Blesser(a, 30, b) && pa->sante == 70);
-		pa->invulnerable = false; pa->invulnerableAuJoueur = true;
+		pa->drapeaux[DRAPEAU_INVULNERABLE] = 0; pa->drapeaux[DRAPEAU_INVULNERABLE_JOUEUR] = 1;
 		VERIF(!q.Blesser(a, 30, SCRIPT_PED_JOUEUR) && q.Blesser(a, 30, b) && pa->sante == 40);
 		pa->santeMin = 75;                                    // plus bas que la santé actuelle : elle remonte au plancher
 		VERIF(q.Blesser(a, 10, b) && pa->sante == 75 && !pa->mort);
 		pa->santeMin = 0;
 		VERIF(q.Blesser(a, 500, b) && pa->sante == 0 && pa->mort);
-		pj->invulnerable = true;
+		pj->drapeaux[DRAPEAU_INVULNERABLE] = 1;
 		VERIF(!q.Blesser(SCRIPT_PED_JOUEUR, 10, b) && pj->sante == 100);
+		pa->santeMin = 0; pa->mort = false; pa->sante = 50; pa->drapeaux[DRAPEAU_INVULNERABLE_JOUEUR] = 0;
+		pa->drapeaux[DRAPEAU_INTOUCHABLE] = 1;                // le drapeau 12 (+0x1344) : aucun coup
+		VERIF(!q.Blesser(a, 10, b) && pa->sante == 50);
+	}
+	// FUN_00478e30, FUN_00476fa0, FUN_00472ff0 : les colonnes de pedstats.dat, la santé maximale et la régénération.
+	{
+		CScriptPedPool q;
+		int a = q.Creer(146, CVector(0, 0, 0), 0, 1);
+		CScriptPed *pa = q.Acceder(a);
+		VERIF(pa->sante == 100 && pa->santeMax == 100);        // le constructeur de CPed : 100 et 100
+		int32 col[64] = {};
+		col[4] = 120; col[5] = 50; col[63] = 20;               // F santé maximale, G régénération, BM seuil d'humiliation
+		VERIF(q.PoserStats(a, col) && pa->sante == 120 && pa->santeMax == 120 && pa->santeMin == 0 && q.Stat(a, 63) == 20);
+		VERIF(q.Blesser(a, 20, -1) && pa->sante == 100);
+		for(int i = 0; i < 30; i++) q.Avancer(1.0f / 30);    // une seconde : + 50 / 100 point
+		VERIF(fabsf(pa->sante - 100.5f) < 1e-3f);
+		VERIF(q.PoserStat(a, 4, 90) && pa->santeMax == 90 && pa->sante == 90);   // le maximum baisse, la santé suit
+		for(int i = 0; i < 30; i++) q.Avancer(1.0f / 30);    // au maximum : plus rien
+		VERIF(pa->sante == 90);
+		q.Sante(a, 0);
+		for(int i = 0; i < 30; i++) q.Avancer(1.0f / 30);    // à zéro : rien non plus
+		VERIF(pa->sante == 0);
 	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
