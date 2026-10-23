@@ -11,6 +11,8 @@
 #include "../common.h"
 
 enum { SCRIPT_PED_POOL_SIZE = 24, SCRIPT_PED_JOUEUR = 0 };
+// Les drapeaux de +0x1314 (CScriptPed::drapeaux) : jusqu'à 123 dans les arbres d'actions relevés.
+enum { SCRIPT_PED_DRAPEAUX = 128, DRAPEAU_INTOUCHABLE = 12, DRAPEAU_INVULNERABLE_JOUEUR = 20, DRAPEAU_INVULNERABLE = 30 };
 
 // Le deuxième argument de PedMoveToPoint / PedMoveToXYZ dans les scripts : 0 et 1 dans LibPed
 // et les missions pour marcher, 2 pour courir, 3 pour sprinter (1_01 : `PedMoveToPoint(k, 3, …)`
@@ -37,8 +39,12 @@ struct CScriptPed {
 	float regeneration = 0;      // +0x1cac : la colonne G de pedstats.dat (taux de régénération, n/100)
 	int32 stats[64] = {};        // +0x1900 : les 64 colonnes B à BM de son entrée de pedstats.dat (GameGetPedStat)
 	int32 systemeCombat = 0;     // +0x16dc, PedSetFightingSystem (0x5ca590) ; 0 à la création (FUN_00474f50)
-	bool invulnerable = false;   // +0x138c, PedSetInvulnerable (0x5c9160), PlayerSetInvulnerable (0x5d1810)
-	bool invulnerableAuJoueur = false;   // +0x1364, PedSetInvulnerableToPlayer (0x5c9200)
+	// +0x1314 : les drapeaux du piéton, un mot chacun (le drapeau n en +0x1314 + 4n) ; les pistes SetPedFlags les posent
+	// (PedFlagsTrack 0x931380, lancement FUN_0060f8e0 : le drapeau +0x1c reçoit l'octet +0x18), la condition PedFlags
+	// les lit (FUN_005fd700). Trois servent aux coups (FUN_0047b6b0) : 12 (+0x1344) et 30 (+0x138c, PedSetInvulnerable
+	// 0x5c9160, PlayerSetInvulnerable 0x5d1810) écartent tout coup, 20 (+0x1364, PedSetInvulnerableToPlayer 0x5c9200)
+	// ceux du joueur.
+	int32 drapeaux[SCRIPT_PED_DRAPEAUX] = {};
 	bool mort = false;
 	// Le geste en cours.
 	bool enMarche = false;       // va vers `cible` à `vitesse`
@@ -89,8 +95,9 @@ public:
 	// 5 pose la régénération. Les autres cas (2, 3, 0x10, 0x16, 0x17 : vision, vitesse) ne sont pas suivis.
 	bool PoserStat(int handle, int n, int32 valeur);
 	// FUN_0047b6b0 puis FUN_004782a0 : un coup de `degats` porté par `attaquant` (-1 : personne). Rien si la
-	// cible est invulnérable (+0x138c), ou si l'attaquant est le joueur (type 13) et la cible invulnérable
-	// au joueur (+0x1364) ; sinon la santé baisse, jamais sous 0 ni sous la santé minimale (+0x1ca8).
+	// cible a le drapeau 12 (+0x1344) ou est invulnérable (30, +0x138c), ou si l'attaquant est le joueur (type 13) et
+	// la cible invulnérable au joueur (20, +0x1364) ; sinon la santé baisse, jamais sous 0 ni sous la santé minimale
+	// (+0x1ca8).
 	// Renvoie vrai si le coup a porté.
 	bool Blesser(int cible, float degats, int attaquant);
 	// lua_PedMakeAmbient (0x5ca850) : rendu à la population, plus ramassé par son script.

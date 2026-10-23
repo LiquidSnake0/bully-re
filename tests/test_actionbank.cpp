@@ -467,6 +467,25 @@ main(void)
 				}
 			}
 		}
+		// SetPedFlags (FUN_0060f8e0) : WaitForVictim pose le drapeau 123 à son entrée et le remet à 0 à son arrêt (entrée -1,
+		// lancée par FUN_005f3fb0 quand le nœud change).
+		{
+			const CActionNode *give = g.Trouver("/Global/Actions/Grapples/Front/Grapples/GrappleMoves/GrappleStrikes/HitC/Charge/GIVE");
+			const CActionNode *attente = g.Trouver("/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init/WaitForVictim");
+			if(attente){
+				CActionController c;
+				c.Jouer(g, attente, 0.0f);
+				c.Avancer(g, nil, CJugeAction_Rien(), 0.01f);
+				bool debut = false;
+				for(const CActionController::Drapeau &d : c.drapeauxPoses) if(d.numero == 123 && d.valeur == 1) debut = true;
+				size_t avant = debut ? 1 : 0;
+				c.drapeauxPoses.clear();
+				c.Jouer(g, give, 0.02f);                          // le nœud change : SetPedFlags 123 à 0 (entrée -1) se lance
+				bool fin = false;
+				for(const CActionController::Drapeau &d : c.drapeauxPoses) if(d.numero == 123 && d.valeur == 0) fin = true;
+				VERIF(avant >= 1 && fin);
+			}
+		}
 		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());
 	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");

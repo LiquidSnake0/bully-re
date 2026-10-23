@@ -130,8 +130,8 @@ CScriptPedPool::Blesser(int cible, float degats, int attaquant)
 {
 	CScriptPed *c = Acceder(cible);
 	if(c == nil || c->mort) return false;
-	if(c->invulnerable) return false;
-	if(attaquant == SCRIPT_PED_JOUEUR && c->invulnerableAuJoueur) return false;
+	if(c->drapeaux[DRAPEAU_INTOUCHABLE] || c->drapeaux[DRAPEAU_INVULNERABLE]) return false;
+	if(attaquant == SCRIPT_PED_JOUEUR && c->drapeaux[DRAPEAU_INVULNERABLE_JOUEUR]) return false;
 	float s = c->sante - degats;
 	if(s < 0) s = 0;
 	if(s < c->santeMin) s = c->santeMin;

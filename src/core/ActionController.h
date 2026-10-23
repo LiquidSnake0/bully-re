@@ -61,6 +61,13 @@ public:
 	// exécute les pistes si l'octet +0x19 / +0x1a est posé (FUN_005f3e20).
 	struct PriseCible { float entree; std::string soi, cible; bool executerSoi, executerCible, fait; const CActionNode *porteur = nil; };
 	std::vector<PriseCible> prisesCible;
+	// Ses pistes SetPedFlags (PedFlagsTrack 0x931380, lancement FUN_0060f8e0) : le drapeau +0x1c (28) du piéton reçoit
+	// l'octet +0x18 (24). Une entrée négative (-1) se lance quand le nœud s'arrête (FUN_005f3fb0 avec son troisième
+	// argument). Les lancées s'accumulent dans `drapeauxPoses`, que l'appelant applique et vide.
+	struct Drapeau { float entree; uint32 numero; int32 valeur; bool fait; };
+	std::vector<Drapeau> drapeaux;
+	std::vector<Drapeau> drapeauxPoses;
+	float finExecutees = -1.0f;   // la fin la plus tardive des pistes venues des nœuds exécutés (-1 : aucune)
 	struct Prise { const CActionNode *soi, *cible; bool executerSoi, executerCible; };
 	std::vector<Prise> prises;                    // celles qui se lancent à cette image, rendues par Avancer
 	uint16 graine = 0;                // le mot +0x10c du piéton, pour le tirage (FUN_00465910) ; posé par l'appelant

@@ -164,7 +164,7 @@ struct CJugeOutil : CJugeAction {
 		                    kSysteme = ActionHash("PedFightingSystem"), kSante = ActionHash("Health"),
 		                    kPourcent = ActionHash("PercentageHealth"), kEnAttente = ActionHash("DamagePending"),
 		                    kHumiliation = ActionHash("IsHealthAtHumiliationLevel"), kMission = ActionHash("IsMissionSpecific"),
-		                    kTaille = ActionHash("CharacterSize");
+		                    kTaille = ActionHash("CharacterSize"), kDrapeaux = ActionHash("PedFlags");
 		if(type == kArme) return f.ChaineCitee((uint32)d + 8) == "unarmed";
 		const CScriptPed *moi = pietons.Acceder(ped);
 		float seuil; memcpy(&seuil, &mots[0], 4);
@@ -174,6 +174,10 @@ struct CJugeOutil : CJugeAction {
 		// piéton créé par un script (FUN_005cf6b0 → FUN_0046dea0(modèle, 2)) ; PedMakeAmbient le change (FUN_004770a0).
 		// Dans l'outil : un piéton noté à un objet script.
 		if(type == kMission) return moi && ped != SCRIPT_PED_JOUEUR && moi->script >= 0;
+		// PedFlags (FUN_005fd700) : le drapeau +4 du piéton (+0x1314 + 4n) non nul. Pas encore jugée : les drapeaux de
+		// posture (70 dans la prise, posé par ExecuteNodes/StanceTransition/Give) ne sont pas tous suivis, et la juger
+		// envoie la charge de la prise de 1_02 dans une transition de posture qui ne finit pas (« NOT PedFlags »).
+		if(type == kDrapeaux) return -1;
 		// CharacterSize (FUN_00601460) : la taille du modèle (+0x74 du modelinfo, colonne SIZE de l'IDE) égale à +4.
 		if(type == kTaille){
 			if(moi == nil) return -1;
@@ -1290,7 +1294,7 @@ static int
 PedSetInvulnerable(lua_State *L)
 {
 	Journal("PedSetInvulnerable", L, 1);
-	if(CScriptPed *p = PietonArg(L, 1)) p->invulnerable = lua_toboolean(L, 2) != 0;
+	if(CScriptPed *p = PietonArg(L, 1)) p->drapeaux[DRAPEAU_INVULNERABLE] = lua_toboolean(L, 2) != 0;
 	return 0;
 }
 
@@ -1298,7 +1302,7 @@ static int
 PedSetInvulnerableToPlayer(lua_State *L)
 {
 	Journal("PedSetInvulnerableToPlayer", L, 1);
-	if(CScriptPed *p = PietonArg(L, 1)) p->invulnerableAuJoueur = lua_toboolean(L, 2) != 0;
+	if(CScriptPed *p = PietonArg(L, 1)) p->drapeaux[DRAPEAU_INVULNERABLE_JOUEUR] = lua_toboolean(L, 2) != 0;
 	return 0;
 }
 
@@ -1306,7 +1310,7 @@ static int
 PlayerSetInvulnerable(lua_State *L)
 {
 	Journal("PlayerSetInvulnerable", L, 1);
-	pietons.Acceder(SCRIPT_PED_JOUEUR)->invulnerable = lua_toboolean(L, 1) != 0;
+	pietons.Acceder(SCRIPT_PED_JOUEUR)->drapeaux[DRAPEAU_INVULNERABLE] = lua_toboolean(L, 1) != 0;
 	return 0;
 }
 
@@ -2300,6 +2304,10 @@ main(int argc, char **argv)
 				printf("%6.2f s  %d subit %.0f × %g (%s) : %s, %.0f → %.0f points de vie\n", maintenant / 1000.0, c.first,
 				       r->second.degats, b.facteur, arbres.CheminDe(b.porteur).c_str(), porte ? "porté" : "rien", avant, p ? p->sante : 0.0f);
 			}
+			// SetPedFlags (FUN_0060f8e0) : le drapeau du piéton (+0x1314 + 4n).
+			if(CScriptPed *p = pietons.Acceder(c.first))
+				for(const CActionController::Drapeau &d : c.second.drapeauxPoses) if(d.numero < SCRIPT_PED_DRAPEAUX) p->drapeaux[d.numero] = d.valeur;
+			c.second.drapeauxPoses.clear();
 			// SetHealth (FUN_00627500) : poser (FUN_00478190, pas sous la santé minimale), rendre (FUN_00474b70, jusqu'au
 			// maximum), ôter (FUN_004782a0, sans les invulnérabilités, ni sous 0 ni sous la santé minimale).
 			for(const CActionController::Sante &e : c.second.santesLancees){

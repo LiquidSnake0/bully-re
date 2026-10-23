@@ -99,16 +99,19 @@ main(void)
 		int a = q.Creer(85, CVector(0, 0, 0), 0, 1), b = q.Creer(99, CVector(1, 0, 0), 0, 1);
 		CScriptPed *pa = q.Acceder(a), *pj = q.Acceder(SCRIPT_PED_JOUEUR);
 		VERIF(q.Blesser(a, 30, b) && pa->sante == 70);
-		pa->invulnerable = true;
+		pa->drapeaux[DRAPEAU_INVULNERABLE] = 1;
 		VERIF(!q.Blesser(a, 30, b) && pa->sante == 70);
-		pa->invulnerable = false; pa->invulnerableAuJoueur = true;
+		pa->drapeaux[DRAPEAU_INVULNERABLE] = 0; pa->drapeaux[DRAPEAU_INVULNERABLE_JOUEUR] = 1;
 		VERIF(!q.Blesser(a, 30, SCRIPT_PED_JOUEUR) && q.Blesser(a, 30, b) && pa->sante == 40);
 		pa->santeMin = 75;                                    // plus bas que la santé actuelle : elle remonte au plancher
 		VERIF(q.Blesser(a, 10, b) && pa->sante == 75 && !pa->mort);
 		pa->santeMin = 0;
 		VERIF(q.Blesser(a, 500, b) && pa->sante == 0 && pa->mort);
-		pj->invulnerable = true;
+		pj->drapeaux[DRAPEAU_INVULNERABLE] = 1;
 		VERIF(!q.Blesser(SCRIPT_PED_JOUEUR, 10, b) && pj->sante == 100);
+		pa->santeMin = 0; pa->mort = false; pa->sante = 50; pa->drapeaux[DRAPEAU_INVULNERABLE_JOUEUR] = 0;
+		pa->drapeaux[DRAPEAU_INTOUCHABLE] = 1;                // le drapeau 12 (+0x1344) : aucun coup
+		VERIF(!q.Blesser(a, 10, b) && pa->sante == 50);
 	}
 	// FUN_00478e30, FUN_00476fa0, FUN_00472ff0 : les colonnes de pedstats.dat, la santé maximale et la régénération.
 	{

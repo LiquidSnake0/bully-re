@@ -55,7 +55,8 @@ void
 CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entree, int prof, const CJugeAction *juge)
 {
 	static const uint32 kCollision = ActionHash("Collision"), kExecute = ActionHash("Execute"), kDegats = ActionHash("DamageHandle"),
-	                    kSante = ActionHash("SetHealth"), kPriseCible = ActionHash("SetTargetAsGrappleTarget");
+	                    kSante = ActionHash("SetHealth"), kPriseCible = ActionHash("SetTargetAsGrappleTarget"),
+	                    kDrapeau = ActionHash("SetPedFlags");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -69,6 +70,12 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 		if(!f->Piste(dp, p)) continue;
 		float a = Reel(p, 12, 0.0f);
 		if(a < entree) a = entree;
+		if(prof > 0){
+			// Les pistes ajoutées comptent pour la fin du nœud joué comme les siennes (FUN_005f3e20 : une seule liste).
+			float vie = Reel(p, 16, -1.0f), finAnim = FinAnimation(b, p);
+			float bout = vie >= 0.0f ? a + vie : finAnim >= 0.0f ? entree + finAnim : -1.0f;
+			if(bout > finExecutees) finExecutees = bout;
+		}
 		if(p.type == kCollision){
 			const CActionAttribut *dr = p.Champ(44), *sur = p.Champ(104);
 			Contact c{&n, entree + Reel(p, 24, 0.0f), entree + Reel(p, 28, -1.0f),
@@ -77,6 +84,10 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			contacts.push_back(c);
 		}else if(p.type == kDegats){
 			{ const CActionAttribut *fx = p.Champ(28); degats.push_back({&n, a, Reel(p, 24, 0.0f), fx && fx->taille >= 1 && fx->valeur[0] != 0, false}); }
+		}else if(p.type == kDrapeau){
+			const CActionAttribut *v = p.Champ(24);
+			float e = Reel(p, 12, 0.0f);
+			drapeaux.push_back({e < 0.0f ? -1.0f : a, p.Mot(28), v && v->taille >= 1 ? (int32)v->valeur[0] : 0, false});
 		}else if(p.type == kSante){
 			const CActionAttribut *o0 = p.Champ(24), *o1 = p.Champ(25), *o2 = p.Champ(26);
 			auto oct = [](const CActionAttribut *x){ return x && x->taille >= 1 && x->valeur[0] != 0; };
@@ -107,6 +118,9 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 void
 CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, const CJugeAction *juge)
 {
+	for(Drapeau &d : drapeaux)    // FUN_005f3fb0 à l'arrêt du nœud : les entrées négatives se lancent
+		if(!d.fait && d.entree < 0.0f){ d.fait = true; drapeauxPoses.push_back(d); }
+	drapeaux.clear();
 	joue = n;
 	debut = t;
 	occasions = n ? COpportunite::DuNoeud(b, *n) : std::vector<COpportunite>();
@@ -117,6 +131,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	suitesExecutees.clear();
 	santes.clear();
 	prisesCible.clear();
+	finExecutees = -1.0f;
 	if(n) Pistes(b, *n, 0.0f, 0, juge);
 	if(n){
 		static const uint32 kSequence = ActionHash("Sequence"), kSurCible = ActionHash("PlayOnTarget");
@@ -133,6 +148,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	for(COpportunite &o : occasions)   // FUN_005f7510 : la bascule d'un loquet tirée au lancement
 		if(o.loquet) o.bascule = (float)RandCrt(hasard) / 32767.0f * (o.loquetMax - o.loquetMin) + o.loquetMin;
 	float d = n ? Duree(b, *n) : -1.0f;
+	if(finExecutees > d) d = finExecutees;
 	fin = d >= 0.0f ? t + d : -1.0f;
 }
 
@@ -227,6 +243,8 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 	prises.clear();
 	for(Blessure &d : degats)     // FUN_0060fc70 : au lancement de la piste
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; blessures.push_back(d); }
+	for(Drapeau &d : drapeaux)    // FUN_0060f8e0
+		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; drapeauxPoses.push_back(d); }
 	for(Sante &d : santes)        // FUN_00627500
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; santesLancees.push_back(d); }
 	for(PriseCible &d : prisesCible)   // FUN_0062a580
