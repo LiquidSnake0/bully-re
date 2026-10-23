@@ -318,7 +318,11 @@ struct CJugeOutil : CJugeAction {
 			lua_getglobal(etatLua, fonction.c_str());
 			if(!lua_isfunction(etatLua, -1)){ lua_pop(etatLua, 1); return 0; }
 			if(lua_pcall(etatLua, 0, 1, 0) != 0){ lua_pop(etatLua, 1); return -1; }
-			int r = lua_toboolean(etatLua, -1);
+			// FUN_006a74d0 → FUN_005d80a0 : le résultat est lu par lua_tonumber (0x73b0d0 : un nombre, ou une chaîne
+			// convertible, sinon 0), tronqué en entier (0x85c6f0), et la condition est vraie s'il est positif. Les
+			// fonctions des scripts rendent 1.0 ou 0.0 (F_CanBullyAttack, F_PlayerGroundKicks…) : 0.0 est faux, et un
+			// booléen, faute d'être un nombre, l'est aussi.
+			int r = (int)lua_tonumber(etatLua, -1) > 0;
 			lua_pop(etatLua, 1);
 			return r;
 		}
