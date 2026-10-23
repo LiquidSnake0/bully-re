@@ -197,9 +197,14 @@ CActionController::Occasions(const CActionBank &b, const CJugeAction &juge, floa
 		if(o.arretee || temps < o.entree) continue;
 		bool arret = o.vie >= 0.0f && temps > o.entree + o.vie;   // la durée de vie, comme toute piste
 		if(!arret && !o.prise && TirageOpportunite(o.periode, graine, image)){
-			// Les conditions propres de la piste (+0x3c) : nulles dans les fichiers relevés, non jugées.
+			// Les conditions propres de la piste (+0x3c), jugées d'abord (FUN_005fb9b0) : faute de les passer, rien.
+			// Sinon la piste n'est pas prise à cette image, et sa fermeture se juge comme d'habitude.
+			const CActionTreeFile *fp = o.listeConditions.empty() ? nil : b.Fichier(*o.porteur);
+			bool permise = fp == nil || b.JugerListe(*fp, o.listeConditions, juge) == 1;
 			const CActionNode *visee = o.chemin.empty() ? nil : b.Relatif(o.porteur, o.chemin.c_str());
-			if(visee == nil){
+			if(!permise)
+				;
+			else if(visee == nil){
 				if(o.chemin.empty()) o.prise = true;           // sans chemin : prise, sans nœud
 			}else{
 				const CActionNode *d = b.Choisir(visee, juge);  // l'emplacement +0x4c du nœud visé

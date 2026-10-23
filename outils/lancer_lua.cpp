@@ -165,7 +165,7 @@ struct CJugeOutil : CJugeAction {
 		                    kPourcent = ActionHash("PercentageHealth"), kEnAttente = ActionHash("DamagePending"),
 		                    kHumiliation = ActionHash("IsHealthAtHumiliationLevel"), kMission = ActionHash("IsMissionSpecific"),
 		                    kTaille = ActionHash("CharacterSize"), kDrapeaux = ActionHash("PedFlags"),
-		                    kGroupeHumiliation = ActionHash("HumiliationGroupIs");
+		                    kGroupeHumiliation = ActionHash("HumiliationGroupIs"), kTempsPasse = ActionHash("ActionNodePlayTimePast");
 		if(type == kArme) return f.ChaineCitee((uint32)d + 8) == "unarmed";
 		const CScriptPed *moi = pietons.Acceder(ped);
 		float seuil; memcpy(&seuil, &mots[0], 4);
@@ -179,6 +179,13 @@ struct CJugeOutil : CJugeAction {
 		// posture (70 dans la prise, posé par ExecuteNodes/StanceTransition/Give) ne sont pas tous suivis, et la juger
 		// envoie la charge de la prise de 1_02 dans une transition de posture qui ne finit pas (« NOT PedFlags »).
 		if(type == kDrapeaux) return -1;
+		// ActionNodePlayTimePast (FUN_005fbfc0) : le temps du nœud joué a atteint le seuil +0x50 de l'objet +0x10 du contexte,
+		// -1 par défaut (0x9009ac, FUN_005f3ab0), que seule une piste Damage à +0x1c positif pose (FUN_00609400). L'outil
+		// ne lit pas les pistes Damage (aucune des arbres relevés n'a de seuil positif) : le seuil reste -1, c'est vrai.
+		if(type == kTempsPasse){
+			auto it = controleurs.find(ped);
+			return it == controleurs.end() ? -1 : it->second.Temps(t) >= -1.0f;
+		}
 		// HumiliationGroupIs (FUN_006039b0) : le groupe d'humiliation du piéton (+0xd44, posé par FUN_0048f5d0) égal à +4.
 		if(type == kGroupeHumiliation) return moi ? moi->groupeHumiliation == (int32)mots[0] : -1;
 		// CharacterSize (FUN_00601460) : la taille du modèle (+0x74 du modelinfo, colonne SIZE de l'IDE) égale à +4.

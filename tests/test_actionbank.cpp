@@ -249,19 +249,36 @@ main(void)
 		int n = g.ChargerGlobaux();
 		VERIF(n == 68 && g.EstCharge("Act/HitTree.act") && g.EstCharge("Act/Weapons/EdgarShield.act"));
 		VERIF(g.Trouver("/Global/HitTree/Standing/BlockHits") != nil && g.Trouver("/Global/Player") != nil);
-		// Les conditions propres d'une Opportunity (+0x3c) : dans les 68 arbres du démarrage, aucune n'en porte ; le
-		// contrôleur ne les juge donc pas. Le relevé compte aussi les Opportunity et les loquets.
+		// Les conditions propres d'une Opportunity (+0x3c) : le mot du fichier vaut 0, mais la seconde table de renvois le
+		// cite et renvoie à une liste de conditions, comme pour une ConditionGroup. Le relevé compte aussi les Opportunity
+		// et les loquets.
 		{
-			struct Releve { const CActionBank &b; int occasions = 0, loquets = 0, avecConditions = 0, periodes = 0;
+			struct Releve { const CActionBank &b; int occasions = 0, loquets = 0, avecConditions = 0, periodes = 0, conditionsLues = 0;
 				void Dans(const CActionNode &x){
 					for(const COpportunite &o : COpportunite::DuNoeud(b, x)){
-						occasions++; loquets += o.loquet; avecConditions += o.conditions != 0; periodes += o.periode > 1;
+						occasions++; loquets += o.loquet; avecConditions += !o.listeConditions.empty(); periodes += o.periode > 1;
+						bool lues = !o.listeConditions.empty();
+						for(int32 d : o.listeConditions) lues = lues && b.Fichier(x)->TypeCondition(d) != 0;
+						conditionsLues += lues;
 					}
 					for(const CActionNode &e : x.enfants) Dans(e);
-				} } r{g, 0, 0, 0, 0};
+				} } r{g, 0, 0, 0, 0, 0};
 			r.Dans(*g.Global());
-			VERIF(r.occasions > 1000 && r.loquets > 0 && r.avecConditions == 0);
+			VERIF(r.occasions > 1000 && r.loquets > 0 && r.avecConditions > 0 && r.conditionsLues == r.avecConditions);
 			printf("  %d Opportunity dans les arbres du démarrage (%d loquets, %d à période, %d à conditions propres)\n", r.occasions, r.loquets, r.periodes, r.avecConditions);
+			// L'attente du chargement d'une humiliation (Humiliate_Init/LoadWait/LoadSpawn) n'abandonne (../../ABORT)
+			// qu'après 6 s : ActionNodePlayTime 6, comparateur 5.
+			const CActionNode *attente = g.Trouver("/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init/LoadWait/LoadSpawn");
+			bool abandon = false;
+			if(attente)
+				for(const COpportunite &o : COpportunite::DuNoeud(g, *attente)){
+					if(o.chemin != "../../ABORT" || o.listeConditions.size() != 1) continue;
+					uint32 type, mots[6];
+					float s6 = 0.0f;
+					if(g.Fichier(*attente)->Condition(o.listeConditions[0], type, mots)) memcpy(&s6, &mots[0], 4);
+					abandon = type == ActionHash("ActionNodePlayTime") && s6 == 6.0f && mots[1] == 5;
+				}
+			VERIF(abandon);
 		}
 		// PlayOnTarget (FUN_006615f0) : dans les prises, un nœud fait jouer à la cible le nœud visé, une fois, à son entrée.
 		{
@@ -424,9 +441,13 @@ main(void)
 				CActionController c;
 				c.arbre = ailleurs;
 				c.Jouer(g, sol, 0.0f);
+				// Son Opportunity ne passe que si ActionNodePlayTimePast (FUN_005fbfc0) est vraie : sans piste Damage à seuil,
+				// le seuil vaut -1 et elle l'est.
+				struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32 type, const uint32 *) const override {
+					return type == ActionHash("ActionNodePlayTimePast"); } } passe;
 				bool releve = false;
 				for(int i = 1; i < 10 && !releve; i++){
-					c.Avancer(g, nil, CJugeAction_Rien(), i / 30.0f);
+					c.Avancer(g, nil, passe, i / 30.0f);
 					releve = g.JoueNom(c.joue, "BellyUpGetUp");
 				}
 				VERIF(releve);
