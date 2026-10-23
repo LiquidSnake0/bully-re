@@ -154,7 +154,17 @@ class Cat:
     def piste(self, off):
         ch = self.champs(self.h[1] + off)
         t = struct.unpack("<I", ch[0][0])[0] & 0x7fffffff if 0 in ch else 0
-        return self.nom_hache(t) + " " + ", ".join("%d=%s" % (k, self.valeur(v, d)) for k, (v, d) in sorted(ch.items()) if k)
+        s = self.nom_hache(t) + " " + ", ".join("%d=%s" % (k, self.valeur(v, d)) for k, (v, d) in sorted(ch.items()) if k)
+        # Les conditions propres d'une Opportunity (+0x3c, champ 60) : la seconde table de renvois cite le champ et
+        # renvoie à une liste de conditions après la fin de l'arbre, comme pour une ConditionGroup.
+        if 60 in ch:
+            for val, ds in getattr(self, "renvois2", []):
+                if ch[60][1] in ds:
+                    at = self.h[3] + val
+                    n = self.b[at]
+                    offs = struct.unpack_from("<%di" % n, self.b, at + 1)
+                    s += "   [si " + " ".join(self.condition(o) for o in offs) + "]"
+        return s
 
     def noeud(self, p, genre, prof, sortie):
         nom, p = self.nom(p)
