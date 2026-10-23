@@ -401,6 +401,35 @@ main(void)
 				VERIF(c.blessures.size() == 1);
 				c.Avancer(g, nil, juge, 0.02f);
 				VERIF(c.blessures.empty());   // une fois, au lancement
+				// La feuille finit avec sa HitAnimation (FUN_00617040 → FUN_0060ae00) ; la Sequence du nœud exécuté
+				// (HitBaseStanding : ../../PostHit/Standing) est gardée pour la fin.
+				// (les durées de MAINPED.HXD ne sont pas chargées ici : celle de l'animation de la feuille est posée à 0,8 s)
+				if(const CActionTreeFile *f = g.Fichier(*c.joue))
+					for(int32 dp : c.joue->pistes){
+						CActionTrack p;
+						if(f->Piste(dp, p) && p.type == ActionHash("HitAnimation")) g.dureesAnimations[p.Mot(24) & 0x7fffffff] = 0.8f;
+					}
+				float d = CActionController::Duree(g, *c.joue);
+				VERIF(fabsf(d - 0.8f) < 1e-4f && !c.suitesExecutees.empty());
+				printf("    sa HitAnimation finit à %.2f s, %zu Sequence venue d'un nœud exécuté\n", d, c.suitesExecutees.size());
+			}
+		}
+		// Une Opportunity hors de l'arbre posé mais dans l'arbre global de son porteur fait passer : un piéton tombé dans
+		// HitTree/Standing/PostHit/BellyUp/On_Ground se relève (../BellyUpGetUp) même si son arbre est Fight_Tutorial.
+		{
+			const CActionNode *sol = g.Trouver("/Global/HitTree/Standing/PostHit/BellyUp/On_Ground");
+			const CActionNode *ailleurs = g.Trouver("/Global/Actions");
+			VERIF(sol != nil && ailleurs != nil);
+			if(sol && ailleurs){
+				CActionController c;
+				c.arbre = ailleurs;
+				c.Jouer(g, sol, 0.0f);
+				bool releve = false;
+				for(int i = 1; i < 10 && !releve; i++){
+					c.Avancer(g, nil, CJugeAction_Rien(), i / 30.0f);
+					releve = g.JoueNom(c.joue, "BellyUpGetUp");
+				}
+				VERIF(releve);
 			}
 		}
 		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());

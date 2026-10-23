@@ -25,6 +25,7 @@ public:
 	float fin = -1.0f;                // l'instant où il se termine (-1 : jamais, il attend)
 	std::vector<COpportunite> occasions;   // les pistes Opportunity du nœud joué, vivantes
 	std::vector<std::string> suites;       // les chemins de ses pistes Sequence, dans l'ordre
+	std::vector<const CActionNode *> suitesExecutees;   // les nœuds visés par les Sequence des nœuds exécutés, après
 	// Ses pistes PlayOnTarget (ExecuteOnTargetTrack, mise à jour FUN_006615f0) : à leur instant d'entrée, le nœud
 	// visé (chemin relatif) est joué par la cible du piéton (FUN_004d5980, un piéton : FUN_005f4500), une seule fois.
 	struct SurCible { float entree; std::string chemin; bool fait; };
