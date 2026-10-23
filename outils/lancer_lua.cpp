@@ -143,8 +143,14 @@ static std::map<uint32, uint32> demandes;
 //   HitLocation          +4, +8 : la zone touchée. L'outil n'a pas les sphères du corps : supposé vrai tant qu'un
 //                        coup est en cours pour ce piéton.
 // L'outil n'a pas d'armes : seul « unarmed » est vrai. Une classe non lue rend -1 : la branche n'est pas prise.
-struct CoupRecu { uint32 drapeau = 0; float jusqua = -1.0f; };   // le dernier coup reçu par un piéton (outil)
+// Le dernier coup reçu par un piéton : le relevé +0x408 de son contrôleur (PedGetLastHitWeapon, 0x474a90, le rend),
+// rempli par la méthode du coup (slot 15 de CPed, FUN_0047b810) : +0x40c l'attaquant, +0x440 (+0x38) les dégâts,
+// +0x46c le drapeau haché (+0x2c de la piste Collision) ; +0x434 (+0x2c) le temps depuis le coup, remis à 0 par le
+// coup (FUN_00472b70, l'ancienne valeur passant en +0x438, +0x30), puis augmenté du pas à chaque image tant qu'il ne
+// vaut pas -1 (FUN_004850b0). L'outil tient le drapeau une seconde (ConditionFlag, HitLocation).
+struct CoupRecu { uint32 drapeau = 0; float jusqua = -1.0f; float degats = 0.0f; int attaquant = -1; float instant = -1.0f, precedent = 0.0f; };
 static std::map<int, CoupRecu> coups;
+static float facteurCoupsJoueur = 1.0f;   // PlayerButes +0xac (172) pour l'état physique 0 (FUN_0047b810), lu au démarrage
 static std::map<int, std::pair<int, uint32>> partenaires;   // le piéton qui nous a fait jouer un nœud (PlayOnTarget), jusqu'à quand (ms)
 struct CJugeOutil : CJugeAction {
 	int ped; float t;
@@ -153,8 +159,48 @@ struct CJugeOutil : CJugeAction {
 		static const uint32 kArme = ActionHash("WeaponEquiped"), kDemande = ActionHash("ActionRequest"),
 		                    kTemps = ActionHash("ActionNodePlayTime"), kLua = ActionHash("LuaCond"),
 		                    kCible = ActionHash("TargetPlaying"), kMoi = ActionHash("MePlaying"),
-		                    kDrapeau = ActionHash("ConditionFlag"), kZone = ActionHash("HitLocation");
+		                    kDrapeau = ActionHash("ConditionFlag"), kZone = ActionHash("HitLocation"),
+		                    kTempsCoup = ActionHash("HitTime"), kStat = ActionHash("stat"), kJoueur = ActionHash("IsPlayer"),
+		                    kSysteme = ActionHash("PedFightingSystem"), kSante = ActionHash("Health"),
+		                    kPourcent = ActionHash("PercentageHealth"), kEnAttente = ActionHash("DamagePending"),
+		                    kHumiliation = ActionHash("IsHealthAtHumiliationLevel");
 		if(type == kArme) return f.ChaineCitee((uint32)d + 8) == "unarmed";
+		const CScriptPed *moi = pietons.Acceder(ped);
+		float seuil; memcpy(&seuil, &mots[0], 4);
+		// IsPlayer (FUN_005ffe40) : le type du piéton (+0x1310) vaut 13 ; dans l'outil, l'entrée 0 du pool.
+		if(type == kJoueur) return ped == SCRIPT_PED_JOUEUR;
+		// PedFightingSystem (FUN_005fd740) : +4 égal au système de combat du piéton (+0x16dc, PedSetFightingSystem).
+		if(type == kSysteme) return moi && (int32)mots[0] == moi->systemeCombat;
+		// Health (FUN_005fd8f0) : la santé (+0x1cb8) comparée à +4 par le comparateur +8 (FUN_005fb750) ;
+		// PercentageHealth (FUN_005fd930) : la santé sur la santé maximale (+0x1ca4).
+		if(type == kSante) return moi ? ComparerCondition(moi->sante, seuil, mots[1]) : -1;
+		if(type == kPourcent) return moi && moi->santeMax > 0 ? ComparerCondition(moi->sante / moi->santeMax, seuil, mots[1]) : -1;
+		// IsHealthAtHumiliationLevel (FUN_00601a90) : un piéton qui n'est pas une fille (PedIsFemale +0x50, non suivi) et
+		// dont la colonne BM (0x3f) est positive, si sa santé sur son maximum est sous BM / 100 ; la seconde voie (la
+		// peur envers le joueur, FUN_00496840 < 5 et l'émotion 4) n'est pas suivie.
+		if(type == kHumiliation){
+			if(moi == nil || moi->stats[0x3f] <= 0 || moi->santeMax <= 0) return 0;
+			return moi->sante / moi->santeMax < moi->stats[0x3f] / 100.0f;
+		}
+		// stat (0x5ffff0, hors de l'index) : si l'octet +9, faux quand le piéton joue le nœud de DAT_01b65288 (non
+		// suivi : l'octet est nul dans les arbres relevés) ; la colonne +0xc (GameGetPedStat) au moins égale à +4 quand
+		// l'octet +8 est nul (sinon un tirage, non suivi).
+		if(type == kStat){
+			if((mots[1] & 0xff00) != 0 || (mots[1] & 0xff) != 0 || moi == nil || mots[2] >= 64) return -1;
+			return (float)moi->stats[mots[2]] >= seuil;
+		}
+		// HitTime (FUN_005fc400) : le temps depuis le coup (+0x434), ou l'intervalle d'avant (+0x438) si l'octet +0xc,
+		// comparé à +4 par +8. Sans coup reçu, +0x434 part de 0 à la création et court : l'outil prend le temps écoulé.
+		// DamagePending (FUN_005fbf00) : les dégâts du relevé (+0x440) comparés à +4 par +8.
+		if(type == kTempsCoup || type == kEnAttente){
+			auto it = coups.find(ped);
+			float v = type == kTempsCoup ? t : 0.0f;   // sans coup : +0x434 a couru depuis la création (à 0)
+			if(it != coups.end()){
+				if(type == kEnAttente) v = it->second.degats;
+				else v = (mots[2] & 0xff) ? it->second.precedent : t - it->second.instant;
+			}
+			return ComparerCondition(v, seuil, mots[1]);
+		}
 		if(type == kMoi) return arbres.JoueHachage(NoeudJoue(ped), mots[0] & 0x7fffffff);
 		if(type == kDrapeau || type == kZone){
 			auto it = coups.find(ped);
@@ -1280,6 +1326,15 @@ PedSetMaxHealth(lua_State *L)
 	return 0;
 }
 
+// PedSetFightingSystem(ped, n) (0x5ca590) : +0x16dc, que la condition PedFightingSystem compare.
+static int
+PedSetFightingSystem(lua_State *L)
+{
+	Journal("PedSetFightingSystem", L, 1);
+	if(CScriptPed *p = PietonArg(L, 1)) p->systemeCombat = (int32)luaL_checknumber(L, 2);
+	return 0;
+}
+
 static int
 GameGetPedStat(lua_State *L)
 {
@@ -1686,6 +1741,8 @@ ChargerMissions(void)
 			printf("%d durées d'animations lues dans MAINPED.HXD\n", (int)arbres.dureesAnimations.size());
 			free(h);
 		}
+		CActionTrack pb;  // FUN_0072ae00 : PlayerButes → DAT_020c88b8 ; +0xac, +0xb0, +0xb4 : le facteur des coups du joueur
+		if(CActionBank::Butes("PlayerButes", pb)) facteurCoupsJoueur = CActionBank::ButesReel(pb, 172);
 		CActionTrack t;   // FUN_0072ae00 : AreaTransitionButes → DAT_020c8910
 		if(CActionBank::Butes("AreaTransitionButes", t)){
 			fonduNoirMs = CActionBank::ButesReel(t, 24) * 1000;
@@ -2072,6 +2129,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedGetMaxHealth", PedGetMaxHealth);
 	lua_register(L, "PedSetMaxHealth", PedSetMaxHealth);
 	lua_register(L, "GameGetPedStat", GameGetPedStat);
+	lua_register(L, "PedSetFightingSystem", PedSetFightingSystem);
 	lua_register(L, "GameSetPedStat", GameSetPedStat);
 	lua_register(L, "PedCreateXYZ", PedCreateXYZ);
 	lua_register(L, "PedDelete", PedDelete);
@@ -2192,7 +2250,18 @@ main(int argc, char **argv)
 				// le moteur l'écarte par la géométrie, l'outil par le partenaire du PlayOnTarget (deux secondes).
 				auto pt = partenaires.find(c.first);
 				if(pt != partenaires.end() && pt->second.first == cible && maintenant <= pt->second.second) continue;
-				coups[cible] = {k.drapeau & 0x7fffffff, maintenant / 1000.0f + 1.0f};
+				// FUN_0047b810 : les dégâts de la piste (+0x34) ; un coup du joueur (type 13) sans arme (-1) est multiplié par
+				// PlayerButes +0xac / +0xb0 / +0xb4 selon l'état physique du joueur (DAT_00c1af4c, PlayerGetPhysicalState ;
+				// l'outil : 0) ; puis, sans arme, arrondi au-dessus après le facteur +0x1cd4 de l'attaquant (FUN_0085dbc0)
+				// et au-dessous après le facteur +0x1cfc de la cible (FUN_0085d540), tous deux à 1 depuis le constructeur
+				// (FUN_0047ffe0 ; FUN_00426560, qui les change, n'est pas suivi).
+				float degats = k.degats * (c.first == SCRIPT_PED_JOUEUR ? facteurCoupsJoueur : 1.0f);
+				degats = floorf(ceilf(degats * 1.0f) * 1.0f);
+				CoupRecu &r = coups[cible];
+				float t = maintenant / 1000.0f;
+				r.precedent = r.instant >= 0.0f ? t - r.instant : 0.0f;   // FUN_00472b70 : +0x434 passe en +0x438
+				r.instant = t;
+				r.drapeau = k.drapeau & 0x7fffffff; r.jusqua = t + 1.0f; r.degats = degats; r.attaquant = c.first;
 				CActionController &v = controleurs[cible];
 				// Un piéton à terre (son nœud joué s'appelle On_Ground, ou un parent) : dans le moteur, la réaction passe par
 				// HitTree/BASE/HitTreeBase/…/On_Ground (« si MePlaying… », joué par un Execute des nœuds de coup), dont
@@ -2206,6 +2275,19 @@ main(int argc, char **argv)
 				if(!k.surCoup.empty())
 					if(const CActionNode *n = arbres.Relatif(k.porteur, k.surCoup.c_str()))
 						c.second.Entrer(arbres, n, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f);
+			}
+			// Les pistes DamageHandle qui se lancent (FUN_0060fc70) : les dégâts du coup reçu (+0x440) multipliés par la
+			// piste, portés par l'attaquant du relevé (+0x40c), par FUN_0047b7f0 → FUN_0047b6b0 → FUN_004782a0
+			// (CScriptPedPool::Blesser : invulnérabilités, santé minimale). Le cas de FUN_004255b0 (la cible tombe
+			// d'un coup du joueur) n'est pas suivi.
+			for(const CActionController::Blessure &b : c.second.blessures){
+				auto r = coups.find(c.first);
+				if(r == coups.end() || b.facteur == 0.0f) continue;
+				const CScriptPed *p = pietons.Acceder(c.first);
+				float avant = p ? p->sante : 0.0f;
+				bool porte = pietons.Blesser(c.first, r->second.degats * b.facteur, r->second.attaquant);
+				printf("%6.2f s  %d subit %.0f × %g (%s) : %s, %.0f → %.0f points de vie\n", maintenant / 1000.0, c.first,
+				       r->second.degats, b.facteur, arbres.CheminDe(b.porteur).c_str(), porte ? "porté" : "rien", avant, p ? p->sante : 0.0f);
 			}
 			// PlayOnTarget : la cible du piéton (FUN_004d5980 ; dans l'outil, celle de PedLockTarget) joue le nœud.
 			for(const CActionNode *n : c.second.pourCible){

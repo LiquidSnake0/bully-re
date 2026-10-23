@@ -36,6 +36,7 @@ struct CScriptPed {
 	float santeMin = 0;          // +0x1ca8, PedSetMinHealth (0x5c8ef0)
 	float regeneration = 0;      // +0x1cac : la colonne G de pedstats.dat (taux de régénération, n/100)
 	int32 stats[64] = {};        // +0x1900 : les 64 colonnes B à BM de son entrée de pedstats.dat (GameGetPedStat)
+	int32 systemeCombat = 0;     // +0x16dc, PedSetFightingSystem (0x5ca590) ; 0 à la création (FUN_00474f50)
 	bool invulnerable = false;   // +0x138c, PedSetInvulnerable (0x5c9160), PlayerSetInvulnerable (0x5d1810)
 	bool invulnerableAuJoueur = false;   // +0x1364, PedSetInvulnerableToPlayer (0x5c9200)
 	bool mort = false;
