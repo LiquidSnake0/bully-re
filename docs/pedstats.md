@@ -34,3 +34,19 @@ emplacements d'arme (type, munitions, poids, mission de déblocage), résistance
 `CPedStats::Reload` (0x49a180) relit le fichier dans les entrées existantes.
 Recréé dans `src/peds/PedStats.cpp`, vérifié par `tests/test_pedstats` sur le
 vrai fichier (75 entrées, valeurs de `STAT_PLAYER` et `STAT_N_EARNEST`).
+
+## Ce qu'un piéton en reçoit (23.10.2026)
+
+`FUN_00478e30` (appelée par le constructeur `FUN_0046dea0` avec l'entrée que le modelinfo du modèle garde en +0x54,
+et par `PedSetStatsType`, 0x5caba0) copie les 64 colonnes dans le piéton en +0x1900 (`GameGetPedStat`, `FUN_00476f10`,
+les relit), puis : santé maximale +0x1ca4 = colonne F (+0x2c de l'entrée), santé +0x1cb8 et +0x1cbc = ce maximum,
+santé minimale +0x1ca8 = 0, régénération +0x1cac = colonne G (+0x30). `GameSetPedStat` (`FUN_00476fa0`) écrit la
+colonne et suit 4 (le maximum, la santé ramenée dessous) et 5 (la régénération). À chaque image, `FUN_00472ff0`
+(depuis `FUN_004812d0`) ajoute régénération / 100 × 0,02 × `CTimer::ms_fTimeStep` à une santé entre 0 et le maximum ;
+le pas valant 1 pour 20 ms (`FUN_0045b810`), c'est régénération / 100 point par seconde. La colonne BM (0x3f), le seuil
+d'humiliation en pour cent, sert à `IsHealthAtHumiliationLevel` (`FUN_00601a90`) et BL (0x3e), « peut être renversé », à
+la condition `stat` de `HitTree/Standing/Melee` (docs/cat.md).
+
+`lancer_lua` lit le fichier avec `CPedStats::ParseLine` et donne à chaque piéton créé l'entrée de son modèle
+(`CScriptPedPool::PoserStats`) : dans `1_02`, le bully (146, `STAT_B_STRIKER_A`) a 95 points de vie, pas de
+régénération, un seuil d'humiliation de 15 % ; tests/test_scriptpeds.

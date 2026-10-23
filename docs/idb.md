@@ -36,7 +36,11 @@ Entrée `peds` : id, modèle, txd, female, taille, type, stat, quatre groupes
 d'animation, unique, racine et fichier de l'arbre d'actions, racine et
 fichier de l'arbre d'IA, nom. Le binaire repère au passage les slots
 `spfirst` / `splast` (0xa136d0 / 0xa136d4) et crée le modelinfo
-(0x51c810, ou 0x51b210 si le slot est déjà un piéton).
+(0x51c810, ou 0x51b210 si le slot est déjà un piéton). Deux colonnes servent aux combats (23.10.2026) : STAT,
+le nom de l'entrée de pedstats.dat que le modelinfo garde en +0x54 (docs/pedstats.md), et SIZE, rangée par
+`FUN_00488a20` dans { Small, Medium, Large, Fat, Huge } (table 0x90e828, `strcmp`, -1 sinon) et posée en +0x74 du
+modelinfo (`FUN_00522220`), que la condition `CharacterSize` lit ; `CModelEnum::statDuPieton` et `tailleDuPieton`,
+tests/test_modelenum (le modèle 146 : `STAT_B_STRIKER_A`, Medium).
 
 Ordre des sections dans `default.idb` : peds (259), cars (27), weap (146),
 cash (2), item (67), scnd (6), objs (6), peds (30), clth (1). Les 75
