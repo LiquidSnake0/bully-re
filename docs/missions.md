@@ -333,9 +333,25 @@ Avec l'outil (docs/cat.md, « Les dégâts, la santé et l'humiliation ») :
 ôte 8 points (95 → 87) et `1_02_FightMsg` s'affiche à 67,2 s ; le bully se relève (`BellyUpGetUp`, 67,9 s) et revient
 à `Fight_Tutorial` ; chaque jab (`JAB`, 8 points) le fait réagir debout (`Standing/Melee`, qui exécute `Base/HitBase` :
 sa `DamageHandle` porte les dégâts) ; au onzième, il est à 5 points : **`1_02_HumiliateHim` à 82,1 s**,
-`TutorialStart("HUMILIATEX")` à 83,2 s. À 84 s, l'humiliation commence (`SetTargetAsGrappleTarget`) : le joueur joue
-`WaitForVictim` et le bully descend dans `Humiliate_Me`, mais tombe dans la branche `Fail` (`HumiliationGroupIs` n'est
-pas lue) et fait jouer `FAIL_PLAYER` au joueur, que le script n'attend pas : `1_02` s'arrête là.
+`TutorialStart("HUMILIATEX")` à 83,2 s.
+
+Le soir du 23.10 (docs/cat.md, « L'humiliation »), la même commande, avec 125 secondes au lieu de 95, mène `1_02` au
+bout : au septième jab (76,16 s, 47 points sur 95, sous la moitié), le bully reçoit le groupe d'humiliation 0
+(`HUMIL_5-8_A`, tiré pour un Medium). À 84 s, l'humiliation commence : le joueur joue `WaitForVictim` et rejoint sa
+victime (`SeekEntityPosition`), le bully descend dans `Humiliate_Me/5-8_NoogieSpit/Success/Load`, demande le groupe
+d'animations et retient sa ligne (`HUMILIATION_ANIM` 3). À 84,08 s, les conditions de `RCV` passent (groupe chargé,
+ligne prête, le joueur à 0,97 m devant lui) : le bully joue `RCV` et fait jouer `GV` au joueur, que le script attend
+(`…/Humiliate_Me/5-8_NoogieSpit`) ; sa ligne part à 84,41 s. `GV/END` (89,30 s) le renvoie dans `RCV/END`, qui exécute
+`HumiliateFlee` : 500 points ôtés, il en avait 5 ; il joue `HitTree/KnockOuts` à 93,56 s, l'écran passe au noir et
+`F_SetupRussellFight` joue la rencontre avec Russell (`EnterNIS` à 96,13 s, `MeetRussell`, `ExitNIS` à 119,10 s) puis
+**`MissionSucceed` : `1_02` se termine réussie à 119,13 s**.
+
+    build/outils/lancer_lua 125 --mission 1_02 … (les mêmes options)
+
+Sans les conditions de `RCV`, le joueur passe en `WaitForVictim/EmergencyAnim` au bout de 5 s (89,03 s) et le script
+l'accepte aussi : `1_02` réussit alors à 117,38 s. Limites : le bully ne fuit pas après `HumiliateFlee` (l'outil ne joue
+pas `Locomotion`) et les collisions `FRIENDLYHIT` de sa chute touchent le joueur resté à côté (0 dégât) ; le geste
+`PedAttack` tient lieu de l'arbre de l'IA (`AI_FightTutorial`).
 
 ## Suite
 
