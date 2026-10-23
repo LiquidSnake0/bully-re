@@ -349,9 +349,23 @@ ligne prête, le joueur à 0,97 m devant lui) : le bully joue `RCV` et fait joue
     build/outils/lancer_lua 125 --mission 1_02 … (les mêmes options)
 
 Sans les conditions de `RCV`, le joueur passe en `WaitForVictim/EmergencyAnim` au bout de 5 s (89,03 s) et le script
-l'accepte aussi : `1_02` réussit alors à 117,38 s. Limites : le bully ne fuit pas après `HumiliateFlee` (l'outil ne joue
-pas `Locomotion`) et les collisions `FRIENDLYHIT` de sa chute touchent le joueur resté à côté (0 dégât) ; le geste
-`PedAttack` tient lieu de l'arbre de l'IA (`AI_FightTutorial`).
+l'accepte aussi : `1_02` réussit alors à 117,38 s.
+
+La nuit du 23.10 (docs/cat.md, « Les arbres de l'IA »), la même commande joue l'arbre de l'IA du bully à la place du
+geste `PedAttack` : `PedSetAITree(1, "/Global/AI_FightTutorial", …)` et `PedAttack(1, 0, 3)` (un objectif d'attaque)
+le font entrer dans `Combat/…/CombatLoco` à 30,06 s ; il se tient à 1,5 m du joueur (la zone de combat 0), son
+`CombatActions` boucle (`ControlNode`, `PostHit/OnGround`, `PostHit/Hit` ; `Offense` attend `F_CanBullyAttack`), et c'est
+la mise à jour de `ManageTargets` qui lui donne le groupe 0 à 76,20 s, au septième jab. À 89,40 s, `GV/END`, qu'aucune
+piste ne retient, rend la main à l'arbre du joueur ; le bully joue `RCV/END`, perd son objectif d'attaque, reçoit un
+`FleeObjective` (`HumiliateFlee`), se retourne et tombe en avant (`KnockOuts/Rear/Rear`, 93,65 s) sans toucher le joueur
+resté dans son dos ; la rencontre avec Russell suit et **`MissionSucceed` : `1_02` se termine réussie à 119,03 s**.
+
+    build/outils/lancer_lua 125 --mission 1_02 … (les mêmes options ; LANCER_IA=1 pour les contrôleurs des spawn)
+
+Limites : le bully ne court pas pendant `RunStart` (la piste `Locomotion` exécute une intention de mouvement que rien ne
+pose dans `AI_FightTutorial` pour l'objectif 22) ; l'intention `Short` de `CombatActions` ne fait pas jouer
+`Offense/Short` à son arbre d'actions (les passages viennent des `ActionOpps` des références montées, la pile du
+contexte) ; un coup ne touche qu'une cible devant l'attaquant (supposé, faute des sphères des os).
 
 ## Suite
 
