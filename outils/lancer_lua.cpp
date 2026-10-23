@@ -163,12 +163,23 @@ struct CJugeOutil : CJugeAction {
 		                    kTempsCoup = ActionHash("HitTime"), kStat = ActionHash("stat"), kJoueur = ActionHash("IsPlayer"),
 		                    kSysteme = ActionHash("PedFightingSystem"), kSante = ActionHash("Health"),
 		                    kPourcent = ActionHash("PercentageHealth"), kEnAttente = ActionHash("DamagePending"),
-		                    kHumiliation = ActionHash("IsHealthAtHumiliationLevel");
+		                    kHumiliation = ActionHash("IsHealthAtHumiliationLevel"), kMission = ActionHash("IsMissionSpecific"),
+		                    kTaille = ActionHash("CharacterSize");
 		if(type == kArme) return f.ChaineCitee((uint32)d + 8) == "unarmed";
 		const CScriptPed *moi = pietons.Acceder(ped);
 		float seuil; memcpy(&seuil, &mots[0], 4);
 		// IsPlayer (FUN_005ffe40) : le type du piéton (+0x1310) vaut 13 ; dans l'outil, l'entrée 0 du pool.
 		if(type == kJoueur) return ped == SCRIPT_PED_JOUEUR;
+		// IsMissionSpecific (FUN_005ffb70) : l'octet +0x1570 vaut 2, ce que le constructeur (FUN_0047ffe0) pose pour un
+		// piéton créé par un script (FUN_005cf6b0 → FUN_0046dea0(modèle, 2)) ; PedMakeAmbient le change (FUN_004770a0).
+		// Dans l'outil : un piéton noté à un objet script.
+		if(type == kMission) return moi && ped != SCRIPT_PED_JOUEUR && moi->script >= 0;
+		// CharacterSize (FUN_00601460) : la taille du modèle (+0x74 du modelinfo, colonne SIZE de l'IDE) égale à +4.
+		if(type == kTaille){
+			if(moi == nil) return -1;
+			auto it = modeles.tailleDuPieton.find(moi->modele);
+			return it != modeles.tailleDuPieton.end() && it->second == (int32)mots[0];
+		}
 		// PedFightingSystem (FUN_005fd740) : +4 égal au système de combat du piéton (+0x16dc, PedSetFightingSystem).
 		if(type == kSysteme) return moi && (int32)mots[0] == moi->systemeCombat;
 		// Health (FUN_005fd8f0) : la santé (+0x1cb8) comparée à +4 par le comparateur +8 (FUN_005fb750) ;
@@ -2288,6 +2299,32 @@ main(int argc, char **argv)
 				bool porte = pietons.Blesser(c.first, r->second.degats * b.facteur, r->second.attaquant);
 				printf("%6.2f s  %d subit %.0f × %g (%s) : %s, %.0f → %.0f points de vie\n", maintenant / 1000.0, c.first,
 				       r->second.degats, b.facteur, arbres.CheminDe(b.porteur).c_str(), porte ? "porté" : "rien", avant, p ? p->sante : 0.0f);
+			}
+			// SetHealth (FUN_00627500) : poser (FUN_00478190, pas sous la santé minimale), rendre (FUN_00474b70, jusqu'au
+			// maximum), ôter (FUN_004782a0, sans les invulnérabilités, ni sous 0 ni sous la santé minimale).
+			for(const CActionController::Sante &e : c.second.santesLancees){
+				CScriptPed *p = pietons.Acceder(c.first);
+				if(p == nil) continue;
+				float avant = p->sante, v = p->sante;
+				if(e.mode == 0) v = e.valeur < p->santeMin ? p->santeMin : e.valeur;
+				else if(e.mode == 1){ if(p->sante <= p->santeMax){ v = p->sante + e.valeur; if(v > p->santeMax) v = p->santeMax; } }
+				else { v = p->sante - e.valeur; if(v < 0) v = 0; if(v < p->santeMin) v = p->santeMin; }
+				pietons.Sante(c.first, v);
+				printf("%6.2f s  SetHealth sur %d (%s %.0f) : %.0f → %.0f points de vie\n", maintenant / 1000.0, c.first,
+				       e.mode == 0 ? "poser" : e.mode == 1 ? "rendre" : "ôter", e.valeur, avant, v);
+			}
+			// SetTargetAsGrappleTarget (FUN_0062a580) : la cible (celle de PedLockTarget) et le piéton deviennent partenaires
+			// et descendent chacun dans leur nœud ; l'exécution sans jouer (+0x19 / +0x1a) n'est pas suivie.
+			for(const CActionController::Prise &e : c.second.prises){
+				const CScriptPed *p = pietons.Acceder(c.first);
+				if(p == nil || p->verrou < 0) continue;
+				int cible = p->verrou;
+				bool a = e.soi && !e.executerSoi && c.second.Entrer(arbres, e.soi, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f);
+				bool b = e.cible && !e.executerCible && controleurs[cible].Entrer(arbres, e.cible, CJugeOutil(cible, maintenant / 1000.0f), maintenant / 1000.0f);
+				partenaires[cible] = {c.first, maintenant + 2000};
+				printf("%6.2f s  prise de %d sur %d : %s %s, %s %s\n", maintenant / 1000.0, c.first, cible,
+				       a ? "il joue" : "rien pour lui", a ? arbres.CheminDe(c.second.joue).c_str() : "",
+				       b ? "la cible joue" : "rien pour la cible", b ? arbres.CheminDe(controleurs[cible].joue).c_str() : (e.cible ? arbres.CheminDe(e.cible).c_str() : ""));
 			}
 			// PlayOnTarget : la cible du piéton (FUN_004d5980 ; dans l'outil, celle de PedLockTarget) joue le nœud.
 			for(const CActionNode *n : c.second.pourCible){

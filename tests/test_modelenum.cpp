@@ -30,6 +30,8 @@ main(int argc, char **argv)
 	// La colonne STAT des entrées peds : le bully de 1_02 (146) et GN_Bully01 (102).
 	VERIF(m.statDuPieton.count(146) && m.statDuPieton.at(146) == "STAT_B_STRIKER_A");
 	VERIF(m.statDuPieton.count(102) && m.statDuPieton.at(102) == "STAT_B_STRIKER_B");
+	// La colonne SIZE : son rang dans Small, Medium, Large, Fat, Huge (le bully de 1_02 : Medium).
+	VERIF(m.tailleDuPieton.count(146) && m.tailleDuPieton.at(146) == 1);
 	printf("test_modelenum : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }
