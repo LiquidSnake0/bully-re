@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Lecteur des arbres d'actions compressés (Act/Act.img, *.cat). Voir docs/cat.md.
 
-  tools/cat.py <nom.cat> [--pistes]      l'arbre, noms résolus ; --pistes : les pistes de chaque nœud
+  tools/cat.py <nom.cat> [--pistes] [--mots]
+                                         l'arbre, noms résolus ; --pistes : les pistes de chaque nœud ;
+                                         --mots : les champs +4 et +8 de chaque condition (mots +8 et +0xc de l'enregistrement)
   tools/cat.py --stats                   tous les fichiers : comptes vérifiés contre l'en-tête
 
 Chargeur du jeu : FUN_005fb3f0 (« CompressedActionTree::load() »), analyse
@@ -118,6 +120,9 @@ class Cat:
                     n = self.b[at]
                     offs = struct.unpack_from("<%di" % n, self.b, at + 1)
                     return nom + "(" + " ".join(self.condition(o, prof + 1) for o in offs) + ")"
+        if getattr(self, "voir_mots", False) and nom not in ("not", "Not", "or", "OR", "False", "random"):
+            mots = struct.unpack_from("<2I", self.b, self.h[1] + off + 8)   # les champs +4 et +8 de l'objet
+            return nom + "[" + ",".join("%#x" % m if m > 0xffff else str(m) for m in mots) + "]"
         return nom
 
     def champs(self, at, prof=0):
@@ -216,6 +221,7 @@ def main():
         return
     c = Cat(act.lire(sys.argv[1]), noms)
     c.voir_pistes = "--pistes" in sys.argv
+    c.voir_mots = "--mots" in sys.argv
     if c.voir_pistes:
         c.ratt = rattachements()
         c.renvois, _ = c.table(0x20)
