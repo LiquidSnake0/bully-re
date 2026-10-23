@@ -2427,6 +2427,26 @@ main(int argc, char **argv)
 					printf("%6.2f s  parole : le piéton %d dit %s ligne %d (lâchée par SpeechStartTrack)\n", maintenant / 1000.0, it->ped, kSpeechEvents[it->evenement], it->ligne);
 					it = parolesTenues.erase(it);
 				}
+			// FaceTarget (FUN_00620dc0) et SeekEntityPosition (FUN_0062a940) : le piéton se tourne vers sa cible, ou y va (à
+			// la course de l'outil) jusqu'à la distance d'arrivée. L'outil n'a ni chemins ni virages progressifs.
+			if(CScriptPed *p = pietons.Acceder(c.first)){
+				auto cibleDe = [&](int genre){ return genre == 0 ? p->verrou : genre == 1 ? p->cibleDePrise : -1; };
+				for(const CActionController::Poursuite &r : c.second.poursuitesActives){
+					const CScriptPed *q = pietons.Acceder(cibleDe(r.genre));
+					if(q == nil || q == p) continue;
+					float dx = q->pos.x - p->pos.x, dy = q->pos.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
+					if(d <= r.arrivee + 1e-3f) continue;   // arrivé (au millimètre près)
+					float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f, k = d - r.arrivee < pas ? (d - r.arrivee) / d : pas / d;
+					p->pos.x += dx * k; p->pos.y += dy * k;
+					p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
+					if(d - r.arrivee < pas) printf("%6.2f s  le piéton %d arrive à %.2f m du piéton %d (SeekEntityPosition)\n", maintenant / 1000.0, c.first, r.arrivee, cibleDe(r.genre));
+				}
+				for(const CActionController::Regard &r : c.second.regardsActifs){
+					const CScriptPed *q = pietons.Acceder(cibleDe(r.genre));
+					if(q == nil || q == p) continue;
+					p->cap = atan2f(q->pos.y - p->pos.y, q->pos.x - p->pos.x) * 180.0f / 3.14159265f + r.decalage;
+				}
+			}
 			// SetHealth (FUN_00627500) : poser (FUN_00478190, pas sous la santé minimale), rendre (FUN_00474b70, jusqu'au
 			// maximum), ôter (FUN_004782a0, sans les invulnérabilités, ni sous 0 ni sous la santé minimale).
 			for(const CActionController::Sante &e : c.second.santesLancees){
@@ -2446,6 +2466,9 @@ main(int argc, char **argv)
 				const CScriptPed *p = pietons.Acceder(c.first);
 				if(p == nil || p->verrou < 0) continue;
 				int cible = p->verrou;
+				// PedSetGrappleTarget (0x474360) des deux côtés : chacun est le partenaire de prise (+0x155c) de l'autre.
+				if(CScriptPed *mp = pietons.Acceder(c.first)) mp->cibleDePrise = cible;
+				if(CScriptPed *mc = pietons.Acceder(cible)) mc->cibleDePrise = c.first;
 				bool a = e.soi && !e.executerSoi && c.second.Entrer(arbres, e.soi, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f);
 				bool b = e.cible && !e.executerCible && controleurs[cible].Entrer(arbres, e.cible, CJugeOutil(cible, maintenant / 1000.0f), maintenant / 1000.0f);
 				partenaires[cible] = {c.first, maintenant + 2000};

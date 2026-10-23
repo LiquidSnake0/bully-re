@@ -9,6 +9,7 @@
 #include "../src/core/ConditionListe.h"
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 static int echecs = 0;
 #define VERIF(cond) do{ if(!(cond)){ printf("ECHEC : %s\n", #cond); echecs++; } }while(0)
@@ -472,6 +473,28 @@ main(void)
 				for(int i = 0; i <= 30; i++) c.Avancer(g, nil, CJugeAction_Rien(), 1.0f + i / 30.0f);
 				VERIF(c.departsLances == 1);
 				printf("  parole : Load retient HUMILIATION_ANIM, RCV la lâche (SpeechStartTrack)\n");
+			}
+		}
+		// FaceTarget et SeekEntityPosition, y compris dans un nœud lancé par spawn : le joueur qui attend sa victime
+		// (WaitForVictim) la rejoint (spawn ./SeekEntity : SeekEntityPosition vers le partenaire de prise, arrivée à
+		// 0,75 m) ; la victime qui attend le chargement (Load, qui exécute LoadWait/LoadSpawn) se tourne vers lui.
+		{
+			const char *init = "/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init";
+			const CActionNode *attend = g.Trouver((std::string(init) + "/WaitForVictim").c_str());
+			const CActionNode *charge = g.Trouver((std::string(init) + "/Humiliate_Me/5-8_NoogieSpit/Success/Load").c_str());
+			VERIF(attend != nil && charge != nil);
+			if(attend && charge){
+				CActionController c;
+				c.Jouer(g, attend, 0.0f);
+				c.Avancer(g, nil, CJugeAction_Rien(), 0.0f);
+				VERIF(c.poursuitesActives.size() == 1 && c.poursuitesActives[0].genre == 1 && fabsf(c.poursuitesActives[0].arrivee - 0.75f) < 1e-4f);
+				CActionController v;
+				v.Jouer(g, charge, 0.0f);
+				v.Avancer(g, nil, CJugeAction_Rien(), 0.0f);
+				bool tourne = false;
+				for(const CActionController::Regard &r : v.regardsActifs) tourne = tourne || (r.genre == 1 && r.decalage == 0.0f);
+				VERIF(tourne);
+				printf("  WaitForVictim rejoint sa victime (SeekEntityPosition, 0,75 m), Load la tourne vers lui (FaceTarget)\n");
 			}
 		}
 		// L'humiliation : SetTargetAsGrappleTarget (FUN_0062a580) envoie le piéton dans ../WaitForVictim et sa cible dans

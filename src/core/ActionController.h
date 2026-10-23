@@ -78,6 +78,16 @@ public:
 	struct Depart { float entree; bool fait; };
 	std::vector<Depart> departs;
 	int departsLances = 0;
+	// Ses pistes FaceTarget (FaceTargetTrack 0x934b00, mise à jour FUN_00620dc0) : tant qu'elles vivent, le piéton se
+	// tourne vers sa cible de genre +0x20 (32 ; FUN_00477ab0 : 0 la cible verrouillée, 1 le partenaire de prise +0x155c),
+	// décalée de +0x28 (40) degrés. Ses pistes SeekEntityPosition (0x933634, lancement FUN_0062a720, mise à jour
+	// FUN_0062a940) : le piéton va vers sa cible de genre +0x1c (28) jusqu'à moins de +0x28 (40) mètres. L'outil prend
+	// aussi celles des nœuds qu'une piste spawn (SpawnTrack 0x92de80) fait jouer à côté, sans le reste de ces nœuds.
+	// `regardsActifs` et `poursuitesActives` : celles qui vivent à cette image, rendues par Avancer.
+	struct Regard { float entree, vie; int32 genre; float decalage; };
+	std::vector<Regard> regards, regardsActifs;
+	struct Poursuite { float entree, vie; int32 genre; float arrivee; };
+	std::vector<Poursuite> poursuites, poursuitesActives;
 	float finExecutees = -1.0f;   // la fin la plus tardive des pistes venues des nœuds exécutés (-1 : aucune)
 	struct Prise { const CActionNode *soi, *cible; bool executerSoi, executerCible; };
 	std::vector<Prise> prises;                    // celles qui se lancent à cette image, rendues par Avancer
@@ -108,5 +118,6 @@ public:
 	static float Duree(const CActionBank &b, const CActionNode &n);
 private:
 	void Pistes(const CActionBank &b, const CActionNode &n, float entree, int prof, const CJugeAction *juge);
+	void PistesLancees(const CActionBank &b, const CActionNode &n, float entree, int prof, const CJugeAction *juge);
 	const CActionNode *Descendre(const CActionBank &b, const CActionNode *depuis, const CJugeAction &juge) const;
 };

@@ -57,7 +57,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	static const uint32 kCollision = ActionHash("Collision"), kExecute = ActionHash("Execute"), kDegats = ActionHash("DamageHandle"),
 	                    kSante = ActionHash("SetHealth"), kPriseCible = ActionHash("SetTargetAsGrappleTarget"),
 	                    kDrapeau = ActionHash("SetPedFlags"), kParole = ActionHash("SpeechTrack"),
-	                    kDepart = ActionHash("SpeechStartTrack");
+	                    kDepart = ActionHash("SpeechStartTrack"), kRegard = ActionHash("FaceTarget"),
+	                    kPoursuite = ActionHash("SeekEntityPosition"), kSpawn = ActionHash("spawn");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -96,6 +97,16 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			                   (int32)p.Mot(40), false});
 		}else if(p.type == kDepart){
 			departs.push_back({a, false});
+		}else if(p.type == kRegard){
+			regards.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(32), Reel(p, 40, 0.0f)});
+		}else if(p.type == kPoursuite){
+			poursuites.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(28), Reel(p, 40, 0.0f)});
+		}else if(p.type == kSpawn){
+			const CActionAttribut *at = p.Champ(32);
+			if(at == nil) continue;
+			const CActionNode *v = b.Relatif(&n, f->ChaineCitee(at->decalage).c_str());
+			const CActionNode *d = v == nil ? nil : juge ? b.Choisir(v, *juge) : b.Choisir(v);
+			if(d) PistesLancees(b, *d, a, prof + 1, juge);
 		}else if(p.type == kSante){
 			const CActionAttribut *o0 = p.Champ(24), *o1 = p.Champ(25), *o2 = p.Champ(26);
 			auto oct = [](const CActionAttribut *x){ return x && x->taille >= 1 && x->valeur[0] != 0; };
@@ -123,6 +134,24 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	}
 }
 
+// Un nœud qu'une piste spawn fait jouer à côté (lancement FUN_005f8860) : l'outil n'en garde que les pistes FaceTarget et
+// SeekEntityPosition, qui vivent avec la piste spawn ; ce nœud n'a pas d'autre effet sur le nœud joué.
+void
+CActionController::PistesLancees(const CActionBank &b, const CActionNode &n, float entree, int prof, const CJugeAction *juge)
+{
+	static const uint32 kRegard = ActionHash("FaceTarget"), kPoursuite = ActionHash("SeekEntityPosition");
+	const CActionTreeFile *f = b.Fichier(n);
+	if(f == nil || prof > 4) return;
+	for(int32 dp : n.pistes){
+		CActionTrack p;
+		if(!f->Piste(dp, p)) continue;
+		float a = Reel(p, 12, 0.0f);
+		if(a < entree) a = entree;
+		if(p.type == kRegard) regards.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(32), Reel(p, 40, 0.0f)});
+		else if(p.type == kPoursuite) poursuites.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(28), Reel(p, 40, 0.0f)});
+	}
+}
+
 void
 CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, const CJugeAction *juge)
 {
@@ -133,6 +162,8 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 		if(!d.fait && d.entree < 0.0f){ d.fait = true; parolesLancees.push_back(d); }
 	paroles.clear();
 	departs.clear();
+	regards.clear();
+	poursuites.clear();
 	joue = n;
 	debut = t;
 	occasions = n ? COpportunite::DuNoeud(b, *n) : std::vector<COpportunite>();
@@ -262,6 +293,12 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; blessures.push_back(d); }
 	for(Drapeau &d : drapeaux)    // FUN_0060f8e0
 		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; drapeauxPoses.push_back(d); }
+	regardsActifs.clear();
+	poursuitesActives.clear();
+	for(const Regard &r : regards)          // FUN_00620dc0, tant que la piste vit
+		if(Temps(t) >= r.entree && (r.vie < 0.0f || Temps(t) <= r.entree + r.vie)) regardsActifs.push_back(r);
+	for(const Poursuite &r : poursuites)    // FUN_0062a940
+		if(Temps(t) >= r.entree && (r.vie < 0.0f || Temps(t) <= r.entree + r.vie)) poursuitesActives.push_back(r);
 	for(Parole &d : paroles)      // FUN_006195a0
 		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; parolesLancees.push_back(d); }
 	for(Depart &d : departs)      // FUN_00619950
