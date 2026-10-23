@@ -24,7 +24,7 @@
 // lance celle dont le joueur touche le corona, et celles qui se lancent seules (champ 51) : 1_02 après 1_01.
 // Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
 // de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s]... [--demander N@s]... [--sequence @s]...
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s[,s2…]]... [--demander N@s]... [--sequence @s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -1864,9 +1864,16 @@ main(int argc, char **argv)
 			portes.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), atoi(e.c_str())});
 		}
 		else if(strcmp(argv[i], "--jouer") == 0 && i + 1 < argc){
+			// --jouer CHEMIN@s1,s2,… : le même geste à plusieurs instants (une série de coups).
 			std::string e = argv[++i];
 			size_t at = e.rfind('@');
-			gestes.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
+			if(at == std::string::npos) gestes.push_back({2000, e});
+			else for(const char *q = e.c_str() + at + 1; *q; ){
+				gestes.push_back({(uint32)(atof(q) * 1000), e.substr(0, at)});
+				const char *v = strchr(q, ',');
+				if(v == nil) break;
+				q = v + 1;
+			}
 		}
 		else if(strcmp(argv[i], "--sequence") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
