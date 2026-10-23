@@ -1,0 +1,18 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compiler chaque source recréée
+        run: ./construire.sh
+      - name: Construire les tests hôtes, les outils et le Lua du jeu
+        run: ./tests/construire_tests.sh
+      - name: Tests sans fichier du jeu
+        run: ./tests/sans_jeu.sh
