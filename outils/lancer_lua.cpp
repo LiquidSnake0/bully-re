@@ -2730,6 +2730,18 @@ main(int argc, char **argv)
 				// le moteur l'écarte par la géométrie, l'outil par le partenaire du PlayOnTarget (deux secondes).
 				auto pt = partenaires.find(c.first);
 				if(pt != partenaires.end() && pt->second.first == cible && maintenant <= pt->second.second) continue;
+				// Supposé aussi : faute des sphères des os (FUN_005f9e70 cherche le contact des sphères de l'attaquant avec les
+				// corps proches), un coup ne touche qu'une cible devant l'attaquant (à moins de 90 degrés de son cap). Le
+				// bully qui fuit après son humiliation (HumiliateFlee/…/RunStart : FaceTarget décalé de 180 degrés) tombe en
+				// avant (KnockOuts/Rear/Rear) : sa collision FRIENDLYHIT ne touche plus le joueur resté dans son dos.
+				if(const CScriptPed *q = pietons.Acceder(cible)){
+					float dx = q->pos.x - p->pos.x, dy = q->pos.y - p->pos.y, a = p->cap * 3.14159265f / 180.0f;
+					float n = sqrtf(dx * dx + dy * dy), cosinus = n > 0.0f ? (cosf(a) * dx + sinf(a) * dy) / n : 1.0f;
+					if(cosinus <= 0.0f){
+						printf("%6.2f s  le coup de %d (%s) manque %d, dans son dos\n", maintenant / 1000.0, c.first, arbres.CheminDe(k.porteur).c_str(), cible);
+						continue;
+					}
+				}
 				// FUN_0047b810 : les dégâts de la piste (+0x34) ; un coup du joueur (type 13) sans arme (-1) est multiplié par
 				// PlayerButes +0xac / +0xb0 / +0xb4 selon l'état physique du joueur (DAT_00c1af4c, PlayerGetPhysicalState ;
 				// l'outil : 0) ; puis, sans arme, arrondi au-dessus après le facteur +0x1cd4 de l'attaquant (FUN_0085dbc0)
