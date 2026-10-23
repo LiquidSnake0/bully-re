@@ -38,6 +38,7 @@
 #include "../src/core/ActionBank.h"
 #include "../src/core/ActionController.h"
 #include "../src/anim/Hxd.h"
+#include "../src/anim/AnimGroups.h"
 #include "../src/core/ConditionListe.h"
 #include "../src/audio/SpeechEvents.h"
 #include "../src/audio/SpeechBank.h"
@@ -114,6 +115,10 @@ static CActionBank arbres;
 // Par piéton, son contrôleur d'actions (src/core/ActionController.h) : l'arbre posé par PedSetActionTree, le nœud
 // joué (+0x10) que PedSetActionNode pose, que PedIsPlaying compare, et qui avance à chaque image.
 static std::map<int, CActionController> controleurs;
+// Les groupes d'animations (src/anim/AnimGroups.h) : les .agr de Stream/World.img, que les scripts chargent
+// (LoadAnimationGroup) et que la condition AnimationGroupLoaded demande ; une demande est servie à l'image suivante.
+static CAnimGroups groupesAnim;
+static uint32 imageCourante = 0;      // le compteur d'images de la boucle (pour les demandes de groupes)
 static const CActionNode *
 NoeudJoue(int ped)
 {
@@ -165,7 +170,8 @@ struct CJugeOutil : CJugeAction {
 		                    kPourcent = ActionHash("PercentageHealth"), kEnAttente = ActionHash("DamagePending"),
 		                    kHumiliation = ActionHash("IsHealthAtHumiliationLevel"), kMission = ActionHash("IsMissionSpecific"),
 		                    kTaille = ActionHash("CharacterSize"), kDrapeaux = ActionHash("PedFlags"),
-		                    kGroupeHumiliation = ActionHash("HumiliationGroupIs"), kTempsPasse = ActionHash("ActionNodePlayTimePast");
+		                    kGroupeHumiliation = ActionHash("HumiliationGroupIs"), kTempsPasse = ActionHash("ActionNodePlayTimePast"),
+		                    kGroupeAnim = ActionHash("AnimationGroupLoaded");
 		if(type == kArme) return f.ChaineCitee((uint32)d + 8) == "unarmed";
 		const CScriptPed *moi = pietons.Acceder(ped);
 		float seuil; memcpy(&seuil, &mots[0], 4);
@@ -185,6 +191,17 @@ struct CJugeOutil : CJugeAction {
 		if(type == kTempsPasse){
 			auto it = controleurs.find(ped);
 			return it == controleurs.end() ? -1 : it->second.Temps(t) >= -1.0f;
+		}
+		// AnimationGroupLoaded (FUN_006024d0) : +4 le nom du groupe (cité par la première table), +8 un octet. Faux sans
+		// piéton ou pour un groupe inconnu (FUN_0042e200) ; vrai s'il est prêt ; sinon, l'octet posé, le groupe est
+		// demandé (FUN_00531ed0) et la condition reste fausse jusqu'à ce qu'il soit chargé.
+		if(type == kGroupeAnim){
+			std::string nom = f.ChaineCitee((uint32)d + 8);
+			if(moi == nil || nom.empty() || !groupesAnim.Existe(nom.c_str())) return 0;
+			if(groupesAnim.EstCharge(nom.c_str())) return 1;
+			if((mots[1] & 0xff) != 0 && groupesAnim.Demander(nom.c_str(), imageCourante))
+				printf("%6.2f s  le piéton %d demande le groupe d'animations %s\n", t, ped, nom.c_str());
+			return 0;
 		}
 		// HumiliationGroupIs (FUN_006039b0) : le groupe d'humiliation du piéton (+0xd44, posé par FUN_0048f5d0) égal à +4.
 		if(type == kGroupeHumiliation) return moi ? moi->groupeHumiliation == (int32)mots[0] : -1;
@@ -1464,6 +1481,32 @@ AvancerPietons(void)
 	}
 }
 
+// LoadAnimationGroup(nom) (0x5c08a0) : le groupe demandé puis chargé tout de suite (LoadAllRequestedModels) ;
+// HasAnimGroupLoaded(nom) (0x5bf6e0) : l'octet +4 de son entrée de streaming ; UnLoadAnimationGroup(nom) (0x5c0920).
+static int
+LoadAnimationGroup(lua_State *L)
+{
+	Journal("LoadAnimationGroup", L, 1);
+	if(lua_isstring(L, 1)) groupesAnim.Charger(lua_tostring(L, 1));
+	return 0;
+}
+
+static int
+HasAnimGroupLoaded(lua_State *L)
+{
+	appels["HasAnimGroupLoaded"]++;
+	lua_pushboolean(L, lua_isstring(L, 1) && groupesAnim.EstCharge(lua_tostring(L, 1)));
+	return 1;
+}
+
+static int
+UnLoadAnimationGroup(lua_State *L)
+{
+	Journal("UnLoadAnimationGroup", L, 1);
+	if(lua_isstring(L, 1)) groupesAnim.Decharger(lua_tostring(L, 1));
+	return 0;
+}
+
 static int
 PlayerGetHealth(lua_State *L)
 {
@@ -2095,6 +2138,10 @@ main(int argc, char **argv)
 	const char *fonction = pos.size() > 2 ? pos[2] : "gamemain";
 	image = CdStream::AddImage(kImg);
 	if(image < 0){ printf("%s introuvable (BULLY_DATA ?)\n", kImg); return 1; }
+	{
+		int monde = CdStream::AddImage("Stream\\World.img");
+		if(monde >= 0) printf("%d groupes d'animations dans Stream/World.img\n", groupesAnim.Lire(CdStream::ms_images[monde]));
+	}
 
 	// CreateLuaState (0x5db260) : bibliothèques, API, puis util.lua dans _G.
 	lua_State *L = lua_open();
@@ -2175,6 +2222,9 @@ main(int argc, char **argv)
 	lua_register(L, "PlayerSetInvulnerable", PlayerSetInvulnerable);
 	lua_register(L, "PedSetMinHealth", PedSetMinHealth);
 	lua_register(L, "PedGetMaxHealth", PedGetMaxHealth);
+	lua_register(L, "LoadAnimationGroup", LoadAnimationGroup);
+	lua_register(L, "HasAnimGroupLoaded", HasAnimGroupLoaded);
+	lua_register(L, "UnLoadAnimationGroup", UnLoadAnimationGroup);
 	lua_register(L, "PedSetMaxHealth", PedSetMaxHealth);
 	lua_register(L, "GameGetPedStat", GameGetPedStat);
 	lua_register(L, "PedSetFightingSystem", PedSetFightingSystem);
@@ -2229,6 +2279,8 @@ main(int argc, char **argv)
 	int images = 0;
 	for(maintenant = 0; maintenant < (uint32)(secondes * 1000); maintenant += 33, images++){
 		horloge.Avancer(0.033f);
+		imageCourante = (uint32)images;
+		groupesAnim.Avancer(imageCourante);
 		if(aLancer && maintenant >= 1000){
 			lua_pushcfunction(L, ForceStartMission);
 			lua_pushstring(L, aLancer);
