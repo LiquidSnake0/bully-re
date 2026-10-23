@@ -21,6 +21,12 @@ enum { SCRIPT_PED_DRAPEAUX = 128, DRAPEAU_INTOUCHABLE = 12, DRAPEAU_INVULNERABLE
 enum eScriptPedAllure { ALLURE_MARCHE = 0, ALLURE_MARCHE_VITE = 1, ALLURE_COURSE = 2, ALLURE_SPRINT = 3 };
 float ScriptPedVitesse(int allure);   // m/s
 
+// Les 22 groupes d'animations d'humiliation (0x9113d0, 32 octets par nom) : « HUMIL_5-8_A » pour 0 … « HUMIL_6-1V6-1 »
+// pour 21. Le groupe 0 à 12 est celui d'une victime du joueur, rangé par sa taille (CharacterSize) : 0 à 2 Medium
+// (5-8), 3 et 4 Fat (5-8F), 5 à 7 Large (6-1), 8 et 9 Small (4-10), 10 à 12 Huge (6-5). nil hors de la table.
+enum { SCRIPT_PED_GROUPES_HUMILIATION = 22 };
+const char *ScriptPedGroupeHumiliation(int groupe);
+
 // La bagarre, réduite : l'attaquant rejoint sa cible à la course, puis frappe à portée.
 enum { SCRIPT_PED_PORTEE_CM = 120, SCRIPT_PED_COUP_PV = 10 };
 static const float SCRIPT_PED_PORTEE = 1.2f;        // m
@@ -45,6 +51,11 @@ struct CScriptPed {
 	// 0x5c9160, PlayerSetInvulnerable 0x5d1810) écartent tout coup, 20 (+0x1364, PedSetInvulnerableToPlayer 0x5c9200)
 	// ceux du joueur.
 	int32 drapeaux[SCRIPT_PED_DRAPEAUX] = {};
+	// +0xd44 : le groupe d'humiliation, le champ +0x200 du composant social du piéton (+0xb44, son piéton en +4),
+	// -1 à la construction (FUN_0048e790, appelé par le constructeur de CPed) ; un indice dans la table des 22 groupes
+	// d'animations HUMIL_ (ScriptPedGroupeHumiliation). La condition HumiliationGroupIs le lit (FUN_006039b0).
+	int32 groupeHumiliation = -1;
+	int cibleDePrise = -1;       // +0x155c, PedSetGrappleTarget (0x474360) : le partenaire de prise, -1 sinon
 	bool mort = false;
 	// Le geste en cours.
 	bool enMarche = false;       // va vers `cible` à `vitesse`
@@ -100,6 +111,27 @@ public:
 	// (+0x1ca8).
 	// Renvoie vrai si le coup a porté.
 	bool Blesser(int cible, float degats, int attaquant);
+	// FUN_00490ef0 : le groupe d'humiliation (+0xd44) du premier piéton du pool, du dernier au premier, qui tombe entre
+	// `de` et `a` ; -1 si aucun. Tous les piétons d'une même taille partagent ainsi le groupe déjà chargé.
+	int GroupeHumiliationDans(int de, int a) const;
+	// FUN_0048f5d0 : pose le groupe d'humiliation du piéton ; l'ancien, s'il est autre, est d'abord libéré
+	// (FUN_0048dc60). Le moteur le fait seulement si le piéton a son objet animé (+0x114), supposé ici. Rend le groupe
+	// libéré (-1 si aucun), dont l'appelant relâche les animations.
+	int PoserGroupeHumiliation(int handle, int groupe);
+	// FUN_0048dc60 (PedStopSocializing 0x490f50 l'appelle) : le groupe repasse à -1 ; rend l'ancien.
+	int LibererGroupeHumiliation(int handle);
+	// FUN_004925d0 : le choix du groupe d'une victime, `humiliateur` (le joueur ou un autre piéton) et `pourLeJoueur`
+	// (l'octet du premier argument) donnés ; `taille` est celle de la victime, `tailleHumiliateur` celle de l'autre
+	// (CharacterSize, modelinfo +0x74), `tirage` le rand() du CRT sur 32767. Le joueur (type 13) et l'octet : le groupe
+	// déjà pris par un piéton de la même taille, sinon un tirage (Small 8 / 9, Medium 0 / 1 / 2, Large 5 / 6 / 7,
+	// Fat 3 / 4, Huge 10 / 11 / 12, aux seuils 0,5 ou 0,33 et 0,66) ; le joueur sans l'octet : 17, 20 ou 14 (Medium, Large,
+	// Huge) ; un autre piéton sans l'octet : par les deux tailles, 13 à 21. Rend le groupe posé, -1 si rien.
+	int ChoisirGroupeHumiliation(int victime, int taille, int humiliateur, int tailleHumiliateur, bool pourLeJoueur, float tirage);
+	// FUN_00492950 : une victime sans groupe (-1, ou au-delà de 12) dont la santé est sous la moitié de son maximum
+	// (le double 0,5 de 0x8ff1f8) reçoit un groupe choisi pour le joueur (FUN_004925d0(1, joueur)). C'est le lancement
+	// d'une piste ManageTargets (FUN_00627420) quand la cible du piéton est le joueur qui l'appelle. Rend le groupe posé,
+	// -1 si rien.
+	int SurveillerHumiliation(int victime, int taille, int tailleJoueur, float tirage);
 	// lua_PedMakeAmbient (0x5ca850) : rendu à la population, plus ramassé par son script.
 	bool RendreAmbiant(int handle);
 	// Une image de dt secondes : marches, poursuites et coups ; pose les drapeaux d'événements. La régénération

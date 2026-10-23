@@ -50,3 +50,9 @@ la condition `stat` de `HitTree/Standing/Melee` (docs/cat.md).
 `lancer_lua` lit le fichier avec `CPedStats::ParseLine` et donne à chaque piéton créé l'entrée de son modèle
 (`CScriptPedPool::PoserStats`) : dans `1_02`, le bully (146, `STAT_B_STRIKER_A`) a 95 points de vie, pas de
 régénération, un seuil d'humiliation de 15 % ; tests/test_scriptpeds.
+
+Le groupe d'humiliation (23.10.2026, soir ; docs/cat.md, « L'humiliation ») ne vient pas de `pedstats.dat` : il se
+choisit quand la santé d'une victime du joueur passe sous la moitié de son maximum (`FUN_00492950`, le double 0,5 de
+0x8ff1f8), indépendamment de la colonne BM, et se range en +0xd44 (+0x200 du composant social du piéton, en +0xb44).
+Dans `1_02`, c'est à 47 points sur 95 que le bully reçoit le groupe 0 ; à 15 % (14 points), `IsHealthAtHumiliationLevel`
+devient vraie.

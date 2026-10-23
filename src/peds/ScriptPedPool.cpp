@@ -237,3 +237,98 @@ CScriptPedPool::Avancer(float dt)
 		}
 	}
 }
+
+// 0x9113d0 : les noms des groupes, 32 octets chacun.
+static const char *const kGroupesHumiliation[SCRIPT_PED_GROUPES_HUMILIATION] = {
+	"HUMIL_5-8_A", "HUMIL_5-8_B", "HUMIL_5-8_C", "HUMIL_5-8F_A", "HUMIL_5-8F_B", "HUMIL_6-1_A", "HUMIL_6-1_B",
+	"HUMIL_6-1_C", "HUMIL_4-10_B", "HUMIL_4-10_C", "HUMIL_6-5_A", "HUMIL_6-5_B", "HUMIL_6-5_C", "HUMIL_6-5V4-10",
+	"HUMIL_6-5VPLY", "HUMIL_6-5V6-1", "HUMIL_5-8V4-10", "HUMIL_5-8VPLY", "HUMIL_5-8V6-1", "HUMIL_6-1V4-10",
+	"HUMIL_6-1VPLY", "HUMIL_6-1V6-1",
+};
+
+const char *
+ScriptPedGroupeHumiliation(int groupe)
+{
+	return groupe >= 0 && groupe < SCRIPT_PED_GROUPES_HUMILIATION ? kGroupesHumiliation[groupe] : nil;
+}
+
+int
+CScriptPedPool::GroupeHumiliationDans(int de, int a) const
+{
+	for(int i = SCRIPT_PED_POOL_SIZE - 1; i >= 0; i--){
+		if(!peds[i].vivant) continue;
+		int32 g = peds[i].groupeHumiliation;
+		if(de <= g && g <= a) return g;
+	}
+	return -1;
+}
+
+int
+CScriptPedPool::LibererGroupeHumiliation(int h)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil || p->groupeHumiliation == -1) return -1;
+	int ancien = p->groupeHumiliation;
+	p->groupeHumiliation = -1;
+	return ancien;
+}
+
+int
+CScriptPedPool::PoserGroupeHumiliation(int h, int groupe)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return -1;
+	int libere = -1;
+	if(p->groupeHumiliation != -1 && p->groupeHumiliation != groupe) libere = LibererGroupeHumiliation(h);
+	p->groupeHumiliation = groupe;
+	return libere;
+}
+
+// Les seuils du tirage : 0,5 (0x9055a0) pour deux groupes, 0,33 (0x9118b0) et 0,66 (0x9118ac) pour trois.
+static int
+TirerGroupe(int premier, int nombre, float tirage)
+{
+	if(nombre == 2) return tirage < 0.5f ? premier : premier + 1;
+	if(tirage < 0.33f) return premier;
+	if(tirage >= 0.66f) return premier + 2;
+	return premier + 1;
+}
+
+int
+CScriptPedPool::ChoisirGroupeHumiliation(int victime, int taille, int humiliateur, int tailleHumiliateur, bool pourLeJoueur, float tirage)
+{
+	if(Acceder(victime) == nil || Acceder(humiliateur) == nil) return -1;
+	int g = -1;
+	if(humiliateur == SCRIPT_PED_JOUEUR){
+		if(pourLeJoueur){
+			// Par taille : le premier groupe de la tranche et leur nombre.
+			static const int premier[5] = { 8, 0, 5, 3, 10 }, nombre[5] = { 2, 3, 3, 2, 3 };
+			if(taille < 0 || taille > 4) return -1;
+			g = GroupeHumiliationDans(premier[taille], premier[taille] + nombre[taille] - 1);
+			if(g == -1) g = TirerGroupe(premier[taille], nombre[taille], tirage);
+		}else
+			g = taille == 1 ? 17 : taille == 2 ? 20 : taille == 4 ? 14 : -1;
+	}else if(!pourLeJoueur){
+		// La victime (Medium, Large, Huge) contre la taille de l'autre : Small, Medium ou Fat, Large.
+		int base = taille == 1 ? 16 : taille == 2 ? 19 : taille == 4 ? 13 : -1;
+		if(base < 0) return -1;
+		switch(tailleHumiliateur){
+		case 0: g = base; break;
+		case 1: case 3: g = base + 1; break;
+		case 2: g = base + 2; break;
+		default: return -1;
+		}
+	}
+	if(g == -1) return -1;
+	PoserGroupeHumiliation(victime, g);
+	return g;
+}
+
+int
+CScriptPedPool::SurveillerHumiliation(int victime, int taille, int tailleJoueur, float tirage)
+{
+	const CScriptPed *p = Acceder(victime);
+	if(p == nil || (p->groupeHumiliation != -1 && p->groupeHumiliation <= 12)) return -1;
+	if(!(p->santeMax > 0 && (double)(p->sante / p->santeMax) < 0.5)) return -1;
+	return ChoisirGroupeHumiliation(victime, taille, SCRIPT_PED_JOUEUR, tailleJoueur, true, tirage);
+}

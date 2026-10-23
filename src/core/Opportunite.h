@@ -9,7 +9,9 @@
 //   +0x30 (48) un octet : le nœud visé peut être le nœud joué lui-même (une reprise) ;
 //   +0x34 (52) la priorité de la demande ;
 //   +0x38 (56) une période : au-delà de 1, la piste ne tente sa chance qu'au tirage de FUN_00465910 ;
-//   +0x3c (60) ses propres conditions (FUN_005fb9b0), nulles dans les fichiers relevés ;
+//   +0x3c (60) ses propres conditions, jugées avant tout (FUN_005fb9b0 sur le contexte du piéton) : le champ est cité par
+//              la seconde table de renvois, comme le +4 d'une ConditionGroup, et renvoie à une liste de conditions après
+//              la fin de l'arbre (80 des 205 Opportunity de Player.cat en ont : ActionRequest, ActionNodePlayTime, False…) ;
 //   +0x44, +0x48 (en mémoire) le nœud retenu et l'octet « prise ».
 // OpportunityRandomLatch (table 0x9380a4 ; lancement FUN_005f7510, mise à jour FUN_005f7f80) fait la même chose, mais
 // sa bascule (+0x54) est tirée au lancement entre +0x4c (76) et +0x50 (80) : rand() / RAND_MAX, comme le CRT.
@@ -39,7 +41,8 @@ struct COpportunite {
 	bool soiMeme = false;               // +0x30
 	int32 priorite = 0;                 // +0x34
 	uint32 periode = 0;                 // +0x38
-	uint32 conditions = 0;              // +0x3c
+	uint32 conditions = 0;              // +0x3c, le mot du fichier
+	std::vector<int32> listeConditions; // la liste à laquelle il renvoie (vide : aucune), dans le fichier du porteur
 	bool loquet = false;                // OpportunityRandomLatch
 	float loquetMin = 0.0f, loquetMax = 0.0f;   // +0x4c, +0x50 : la bascule tirée entre les deux (+0x54)
 	bool prise = false;                 // +0x48

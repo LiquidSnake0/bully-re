@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Lecteur des arbres d'actions compressés (Act/Act.img, *.cat). Voir docs/cat.md.
 
-  tools/cat.py <nom.cat> [--pistes]      l'arbre, noms résolus ; --pistes : les pistes de chaque nœud
+  tools/cat.py <nom.cat> [--pistes] [--mots]
+                                         l'arbre, noms résolus ; --pistes : les pistes de chaque nœud ;
+                                         --mots : les champs +4 et +8 de chaque condition (mots +8 et +0xc de l'enregistrement)
   tools/cat.py --stats                   tous les fichiers : comptes vérifiés contre l'en-tête
 
 Chargeur du jeu : FUN_005fb3f0 (« CompressedActionTree::load() »), analyse
@@ -118,6 +120,9 @@ class Cat:
                     n = self.b[at]
                     offs = struct.unpack_from("<%di" % n, self.b, at + 1)
                     return nom + "(" + " ".join(self.condition(o, prof + 1) for o in offs) + ")"
+        if getattr(self, "voir_mots", False) and nom not in ("not", "Not", "or", "OR", "False", "random"):
+            mots = struct.unpack_from("<2I", self.b, self.h[1] + off + 8)   # les champs +4 et +8 de l'objet
+            return nom + "[" + ",".join("%#x" % m if m > 0xffff else str(m) for m in mots) + "]"
         return nom
 
     def champs(self, at, prof=0):
@@ -149,7 +154,17 @@ class Cat:
     def piste(self, off):
         ch = self.champs(self.h[1] + off)
         t = struct.unpack("<I", ch[0][0])[0] & 0x7fffffff if 0 in ch else 0
-        return self.nom_hache(t) + " " + ", ".join("%d=%s" % (k, self.valeur(v, d)) for k, (v, d) in sorted(ch.items()) if k)
+        s = self.nom_hache(t) + " " + ", ".join("%d=%s" % (k, self.valeur(v, d)) for k, (v, d) in sorted(ch.items()) if k)
+        # Les conditions propres d'une Opportunity (+0x3c, champ 60) : la seconde table de renvois cite le champ et
+        # renvoie à une liste de conditions après la fin de l'arbre, comme pour une ConditionGroup.
+        if 60 in ch:
+            for val, ds in getattr(self, "renvois2", []):
+                if ch[60][1] in ds:
+                    at = self.h[3] + val
+                    n = self.b[at]
+                    offs = struct.unpack_from("<%di" % n, self.b, at + 1)
+                    s += "   [si " + " ".join(self.condition(o) for o in offs) + "]"
+        return s
 
     def noeud(self, p, genre, prof, sortie):
         nom, p = self.nom(p)
@@ -216,6 +231,7 @@ def main():
         return
     c = Cat(act.lire(sys.argv[1]), noms)
     c.voir_pistes = "--pistes" in sys.argv
+    c.voir_mots = "--mots" in sys.argv
     if c.voir_pistes:
         c.ratt = rattachements()
         c.renvois, _ = c.table(0x20)

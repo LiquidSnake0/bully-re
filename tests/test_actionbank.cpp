@@ -9,6 +9,7 @@
 #include "../src/core/ConditionListe.h"
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 static int echecs = 0;
 #define VERIF(cond) do{ if(!(cond)){ printf("ECHEC : %s\n", #cond); echecs++; } }while(0)
@@ -249,19 +250,36 @@ main(void)
 		int n = g.ChargerGlobaux();
 		VERIF(n == 68 && g.EstCharge("Act/HitTree.act") && g.EstCharge("Act/Weapons/EdgarShield.act"));
 		VERIF(g.Trouver("/Global/HitTree/Standing/BlockHits") != nil && g.Trouver("/Global/Player") != nil);
-		// Les conditions propres d'une Opportunity (+0x3c) : dans les 68 arbres du démarrage, aucune n'en porte ; le
-		// contrôleur ne les juge donc pas. Le relevé compte aussi les Opportunity et les loquets.
+		// Les conditions propres d'une Opportunity (+0x3c) : le mot du fichier vaut 0, mais la seconde table de renvois le
+		// cite et renvoie à une liste de conditions, comme pour une ConditionGroup. Le relevé compte aussi les Opportunity
+		// et les loquets.
 		{
-			struct Releve { const CActionBank &b; int occasions = 0, loquets = 0, avecConditions = 0, periodes = 0;
+			struct Releve { const CActionBank &b; int occasions = 0, loquets = 0, avecConditions = 0, periodes = 0, conditionsLues = 0;
 				void Dans(const CActionNode &x){
 					for(const COpportunite &o : COpportunite::DuNoeud(b, x)){
-						occasions++; loquets += o.loquet; avecConditions += o.conditions != 0; periodes += o.periode > 1;
+						occasions++; loquets += o.loquet; avecConditions += !o.listeConditions.empty(); periodes += o.periode > 1;
+						bool lues = !o.listeConditions.empty();
+						for(int32 d : o.listeConditions) lues = lues && b.Fichier(x)->TypeCondition(d) != 0;
+						conditionsLues += lues;
 					}
 					for(const CActionNode &e : x.enfants) Dans(e);
-				} } r{g, 0, 0, 0, 0};
+				} } r{g, 0, 0, 0, 0, 0};
 			r.Dans(*g.Global());
-			VERIF(r.occasions > 1000 && r.loquets > 0 && r.avecConditions == 0);
+			VERIF(r.occasions > 1000 && r.loquets > 0 && r.avecConditions > 0 && r.conditionsLues == r.avecConditions);
 			printf("  %d Opportunity dans les arbres du démarrage (%d loquets, %d à période, %d à conditions propres)\n", r.occasions, r.loquets, r.periodes, r.avecConditions);
+			// L'attente du chargement d'une humiliation (Humiliate_Init/LoadWait/LoadSpawn) n'abandonne (../../ABORT)
+			// qu'après 6 s : ActionNodePlayTime 6, comparateur 5.
+			const CActionNode *attente = g.Trouver("/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init/LoadWait/LoadSpawn");
+			bool abandon = false;
+			if(attente)
+				for(const COpportunite &o : COpportunite::DuNoeud(g, *attente)){
+					if(o.chemin != "../../ABORT" || o.listeConditions.size() != 1) continue;
+					uint32 type, mots[6];
+					float s6 = 0.0f;
+					if(g.Fichier(*attente)->Condition(o.listeConditions[0], type, mots)) memcpy(&s6, &mots[0], 4);
+					abandon = type == ActionHash("ActionNodePlayTime") && s6 == 6.0f && mots[1] == 5;
+				}
+			VERIF(abandon);
 		}
 		// PlayOnTarget (FUN_006615f0) : dans les prises, un nœud fait jouer à la cible le nœud visé, une fois, à son entrée.
 		{
@@ -424,12 +442,75 @@ main(void)
 				CActionController c;
 				c.arbre = ailleurs;
 				c.Jouer(g, sol, 0.0f);
+				// Son Opportunity ne passe que si ActionNodePlayTimePast (FUN_005fbfc0) est vraie : sans piste Damage à seuil,
+				// le seuil vaut -1 et elle l'est.
+				struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32 type, const uint32 *) const override {
+					return type == ActionHash("ActionNodePlayTimePast"); } } passe;
 				bool releve = false;
 				for(int i = 1; i < 10 && !releve; i++){
-					c.Avancer(g, nil, CJugeAction_Rien(), i / 30.0f);
+					c.Avancer(g, nil, passe, i / 30.0f);
 					releve = g.JoueNom(c.joue, "BellyUpGetUp");
 				}
 				VERIF(releve);
+			}
+		}
+		// Les pistes de parole (FUN_006195a0, FUN_00619950) : l'attente d'une humiliation (Humiliate_Me/…/Success/Load)
+		// retient sa ligne (HUMILIATION_ANIM, la ligne de la piste, tenue 2) ; RCV la lâche par SpeechStartTrack.
+		{
+			const CActionNode *charge = g.Trouver("/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init/Humiliate_Me/5-8_NoogieSpit/Success/Load");
+			const CActionNode *rcv = g.Trouver("/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init/Humiliate_Me/5-8_NoogieSpit/Success/RCV");
+			VERIF(charge != nil && rcv != nil);
+			if(charge && rcv){
+				CActionController c;
+				c.Jouer(g, charge, 0.0f);
+				c.Avancer(g, nil, CJugeAction_Rien(), 0.0f);
+				bool tenue = false;
+				for(const CActionController::Parole &p : c.parolesLancees)
+					tenue = tenue || (p.evenement == 165 && p.ligne >= 0 && p.tenue == 2);
+				VERIF(tenue);
+				c.parolesLancees.clear();
+				c.Jouer(g, rcv, 1.0f);
+				for(int i = 0; i <= 30; i++) c.Avancer(g, nil, CJugeAction_Rien(), 1.0f + i / 30.0f);
+				VERIF(c.departsLances == 1);
+				printf("  parole : Load retient HUMILIATION_ANIM, RCV la lâche (SpeechStartTrack)\n");
+			}
+		}
+		// FaceTarget et SeekEntityPosition, y compris dans un nœud lancé par spawn : le joueur qui attend sa victime
+		// (WaitForVictim) la rejoint (spawn ./SeekEntity : SeekEntityPosition vers le partenaire de prise, arrivée à
+		// 0,75 m) ; la victime qui attend le chargement (Load, qui exécute LoadWait/LoadSpawn) se tourne vers lui.
+		{
+			const char *init = "/Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init";
+			const CActionNode *attend = g.Trouver((std::string(init) + "/WaitForVictim").c_str());
+			const CActionNode *charge = g.Trouver((std::string(init) + "/Humiliate_Me/5-8_NoogieSpit/Success/Load").c_str());
+			VERIF(attend != nil && charge != nil);
+			if(attend && charge){
+				CActionController c;
+				c.Jouer(g, attend, 0.0f);
+				c.Avancer(g, nil, CJugeAction_Rien(), 0.0f);
+				VERIF(c.poursuitesActives.size() == 1 && c.poursuitesActives[0].genre == 1 && fabsf(c.poursuitesActives[0].arrivee - 0.75f) < 1e-4f);
+				CActionController v;
+				v.Jouer(g, charge, 0.0f);
+				v.Avancer(g, nil, CJugeAction_Rien(), 0.0f);
+				bool tourne = false;
+				for(const CActionController::Regard &r : v.regardsActifs) tourne = tourne || (r.genre == 1 && r.decalage == 0.0f);
+				VERIF(tourne);
+				printf("  WaitForVictim rejoint sa victime (SeekEntityPosition, 0,75 m), Load la tourne vers lui (FaceTarget)\n");
+			}
+		}
+		// Un nœud qui n'a que des Execute (durée de vie -1, FUN_005f70f0) et des Sequence, et dont l'Execute ne se résout
+		// pas, finit tout de suite : la charge sans le drapeau 70 (HitC/Charge/GIVE/#542875ee) passe à ../Give.
+		{
+			const CActionNode *give = g.Trouver("/Global/Actions/Grapples/Front/Grapples/GrappleMoves/GrappleStrikes/HitC/Charge/GIVE");
+			const CActionNode *transition = nil;
+			if(give) for(const CActionNode &e : give->enfants) if(e.hachage == 0x542875ee) transition = &e;
+			VERIF(transition != nil);
+			if(transition){
+				CActionController c;
+				c.Jouer(g, transition, 0.0f);
+				VERIF(c.fin == 0.0f);
+				c.Avancer(g, nil, CJugeAction_Rien(), 0.0f);
+				VERIF(c.joue && c.joue->genre == 'l' && g.JoueNom(c.joue, "GIVE") && c.joue != transition);
+				printf("  charge sans le drapeau 70 : #542875ee finit tout de suite, puis %s\n", g.CheminDe(c.joue).c_str());
 			}
 		}
 		// L'humiliation : SetTargetAsGrappleTarget (FUN_0062a580) envoie le piéton dans ../WaitForVictim et sa cible dans

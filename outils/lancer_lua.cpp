@@ -38,6 +38,7 @@
 #include "../src/core/ActionBank.h"
 #include "../src/core/ActionController.h"
 #include "../src/anim/Hxd.h"
+#include "../src/anim/AnimGroups.h"
 #include "../src/core/ConditionListe.h"
 #include "../src/audio/SpeechEvents.h"
 #include "../src/audio/SpeechBank.h"
@@ -114,6 +115,16 @@ static CActionBank arbres;
 // Par piéton, son contrôleur d'actions (src/core/ActionController.h) : l'arbre posé par PedSetActionTree, le nœud
 // joué (+0x10) que PedSetActionNode pose, que PedIsPlaying compare, et qui avance à chaque image.
 static std::map<int, CActionController> controleurs;
+// Les groupes d'animations (src/anim/AnimGroups.h) : les .agr de Stream/World.img, que les scripts chargent
+// (LoadAnimationGroup) et que la condition AnimationGroupLoaded demande ; une demande est servie à l'image suivante.
+static CAnimGroups groupesAnim;
+static uint32 imageCourante = 0;      // le compteur d'images de la boucle (pour les demandes de groupes)
+// Les lignes que les pistes SpeechTrack des arbres retiennent (la tenue +0x28 : cinq places en 0x1b655d0, le rappel
+// 0x619550) : préchargées à l'image suivante (l'outil n'a pas de diffusion), jouées quand une piste SpeechStartTrack
+// du piéton les lâche, ou à l'échéance selon la tenue (1 : jouée, 2 : annulée). Une nouvelle ligne retenue par le même
+// piéton annule l'ancienne (FUN_005a5880).
+struct ParoleTenue { int ped, evenement, ligne, tenue; uint32 image, echeance; };
+static std::vector<ParoleTenue> parolesTenues;
 static const CActionNode *
 NoeudJoue(int ped)
 {
@@ -164,7 +175,10 @@ struct CJugeOutil : CJugeAction {
 		                    kSysteme = ActionHash("PedFightingSystem"), kSante = ActionHash("Health"),
 		                    kPourcent = ActionHash("PercentageHealth"), kEnAttente = ActionHash("DamagePending"),
 		                    kHumiliation = ActionHash("IsHealthAtHumiliationLevel"), kMission = ActionHash("IsMissionSpecific"),
-		                    kTaille = ActionHash("CharacterSize"), kDrapeaux = ActionHash("PedFlags");
+		                    kTaille = ActionHash("CharacterSize"), kDrapeaux = ActionHash("PedFlags"),
+		                    kGroupeHumiliation = ActionHash("HumiliationGroupIs"), kTempsPasse = ActionHash("ActionNodePlayTimePast"),
+		                    kGroupeAnim = ActionHash("AnimationGroupLoaded"), kParolePrete = ActionHash("IsSpeechPreloaded"),
+		                    kPositionCible = ActionHash("TargetRelativePosition");
 		if(type == kArme) return f.ChaineCitee((uint32)d + 8) == "unarmed";
 		const CScriptPed *moi = pietons.Acceder(ped);
 		float seuil; memcpy(&seuil, &mots[0], 4);
@@ -174,10 +188,66 @@ struct CJugeOutil : CJugeAction {
 		// piéton créé par un script (FUN_005cf6b0 → FUN_0046dea0(modèle, 2)) ; PedMakeAmbient le change (FUN_004770a0).
 		// Dans l'outil : un piéton noté à un objet script.
 		if(type == kMission) return moi && ped != SCRIPT_PED_JOUEUR && moi->script >= 0;
-		// PedFlags (FUN_005fd700) : le drapeau +4 du piéton (+0x1314 + 4n) non nul. Pas encore jugée : les drapeaux de
-		// posture (70 dans la prise, posé par ExecuteNodes/StanceTransition/Give) ne sont pas tous suivis, et la juger
-		// envoie la charge de la prise de 1_02 dans une transition de posture qui ne finit pas (« NOT PedFlags »).
-		if(type == kDrapeaux) return -1;
+		// PedFlags (FUN_005fd700) : le drapeau +4 du piéton (+0x1314 + 4n) non nul. Dans la charge d'une prise, « Not PedFlags »
+		// (le drapeau 70, posé par la fin de la charge) mène à un nœud dont l'Execute vise GrappleMoves/ExecuteNodes, qui
+		// n'existe pas (ExecuteNodes est sous GrappleStrikes) : le nœud finit tout de suite et passe à ../Give.
+		if(type == kDrapeaux) return moi && mots[0] < SCRIPT_PED_DRAPEAUX ? moi->drapeaux[mots[0]] != 0 : -1;
+		// ActionNodePlayTimePast (FUN_005fbfc0) : le temps du nœud joué a atteint le seuil +0x50 de l'objet +0x10 du contexte,
+		// -1 par défaut (0x9009ac, FUN_005f3ab0), que seule une piste Damage à +0x1c positif pose (FUN_00609400). L'outil
+		// ne lit pas les pistes Damage (aucune des arbres relevés n'a de seuil positif) : le seuil reste -1, c'est vrai.
+		if(type == kTempsPasse){
+			auto it = controleurs.find(ped);
+			return it == controleurs.end() ? -1 : it->second.Temps(t) >= -1.0f;
+		}
+		// AnimationGroupLoaded (FUN_006024d0) : +4 le nom du groupe (cité par la première table), +8 un octet. Faux sans
+		// piéton ou pour un groupe inconnu (FUN_0042e200) ; vrai s'il est prêt ; sinon, l'octet posé, le groupe est
+		// demandé (FUN_00531ed0) et la condition reste fausse jusqu'à ce qu'il soit chargé.
+		if(type == kGroupeAnim){
+			std::string nom = f.ChaineCitee((uint32)d + 8);
+			if(moi == nil || nom.empty() || !groupesAnim.Existe(nom.c_str())) return 0;
+			if(groupesAnim.EstCharge(nom.c_str())) return 1;
+			if((mots[1] & 0xff) != 0 && groupesAnim.Demander(nom.c_str(), imageCourante))
+				printf("%6.2f s  le piéton %d demande le groupe d'animations %s\n", t, ped, nom.c_str());
+			return 0;
+		}
+		// IsSpeechPreloaded (FUN_00602620) : +4 l'événement, +8 la ligne (-1 : toutes), l'octet +0xc : pour ce piéton
+		// seulement. Vrai si l'une des deux places de préchargement du son (0xcf458c, FUN_005a0cc0) tient cette ligne,
+		// prête : dans l'outil, une ligne retenue par une piste SpeechTrack à une image antérieure.
+		if(type == kParolePrete){
+			for(const ParoleTenue &r : parolesTenues)
+				if(r.evenement == (int)mots[0] && (mots[1] == 0xffffffffu || r.ligne == (int)mots[1])
+				   && ((mots[2] & 0xff) == 0 || r.ped == ped) && r.image < imageCourante) return 1;
+			return 0;
+		}
+		// TargetRelativePosition (FUN_005feed0) : la cible de genre +0x14 (FUN_00477ab0 : 0 la cible verrouillée, 1 le
+		// partenaire de prise +0x155c ; les autres genres ne sont pas suivis) à au plus +4 mètres, et dans la direction
+		// +8 (radians, depuis l'avant du piéton, vers sa droite) à +0xc près ; l'octet +0x10 en fait aussi des partenaires
+		// de prise s'ils n'en ont pas (PedSetGrappleTarget). Dans l'outil, l'avant est (cos cap, sin cap).
+		if(type == kPositionCible){
+			if(moi == nil) return 0;
+			int genre = (int)mots[4], h = genre == 0 ? moi->verrou : genre == 1 ? moi->cibleDePrise : -2;
+			if(h == -2) return -1;
+			const CScriptPed *c = pietons.Acceder(h);
+			if(c == nil) return 0;
+			float dx = c->pos.x - moi->pos.x, dy = c->pos.y - moi->pos.y, dz = c->pos.z - moi->pos.z;
+			float dist = sqrtf(dx * dx + dy * dy + dz * dz), portee, angle, tolerance;
+			memcpy(&portee, &mots[0], 4); memcpy(&angle, &mots[1], 4); memcpy(&tolerance, &mots[2], 4);
+			if(dist > portee) return 0;
+			float a = moi->cap * 3.14159265f / 180.0f, fx = cosf(a), fy = sinf(a);
+			float n = dist > 0.0f ? dist : 1.0f, ux = dx / n, uy = dy / n, uz = dz / n;
+			float vu = fx * ux + fy * uy;
+			if(vu > 1.0f) vu = 1.0f; else if(vu < -1.0f) vu = -1.0f;
+			float vers = acosf(vu);
+			if(fy * ux - fx * uy + 0.0f * uz < 0.0f) vers = 6.2831855f - vers;   // à gauche : 2π moins l'angle
+			float ecart = remainderf(vers - angle, 6.2831855f);
+			if(fabsf(ecart) > tolerance) return 0;
+			if((mots[3] & 0xff) == 0) return 1;
+			CScriptPed *mp = pietons.Acceder(ped), *mc = pietons.Acceder(h);
+			if(mp->cibleDePrise < 0 && mc->cibleDePrise < 0){ mp->cibleDePrise = h; mc->cibleDePrise = ped; return 1; }
+			return mp->cibleDePrise == h;
+		}
+		// HumiliationGroupIs (FUN_006039b0) : le groupe d'humiliation du piéton (+0xd44, posé par FUN_0048f5d0) égal à +4.
+		if(type == kGroupeHumiliation) return moi ? moi->groupeHumiliation == (int32)mots[0] : -1;
 		// CharacterSize (FUN_00601460) : la taille du modèle (+0x74 du modelinfo, colonne SIZE de l'IDE) égale à +4.
 		if(type == kTaille){
 			if(moi == nil) return -1;
@@ -1417,11 +1487,34 @@ PedMakeAmbient(lua_State *L)
 	return 0;
 }
 
+// La taille d'un piéton (CharacterSize : modelinfo +0x74, la colonne SIZE de l'IDE), -1 si inconnue.
+static int
+TailleDuPieton(const CScriptPed *p)
+{
+	if(p == nil) return -1;
+	auto it = modeles.tailleDuPieton.find(p->modele);
+	return it == modeles.tailleDuPieton.end() ? -1 : it->second;
+}
+static uint32 graineHumiliation = 1;   // le rand() du CRT que FUN_004925d0 tire (l'outil a sa propre graine)
+
 // Une image des piétons : les gestes avancent, et ce qui aboutit se journalise.
 static void
 AvancerPietons(void)
 {
 	pietons.Avancer(0.033f);
+	// Le groupe d'humiliation d'une victime du joueur (FUN_00492950) : le moteur le choisit au lancement d'une piste
+	// ManageTargets (FUN_00627420) dont la cible est le joueur ; dans 1_02, celle du nœud CombatLoco de l'arbre de l'IA
+	// du bully (AI_FightTutorial), qu'il joue tant qu'il se bat. L'outil ne joue pas les arbres de l'IA : supposé, la
+	// piste se lance à chaque image où le geste PedAttack du piéton vise le joueur.
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
+		CScriptPed *p = pietons.Acceder(i);
+		if(p == nil || i == SCRIPT_PED_JOUEUR || p->mort || p->attaque != SCRIPT_PED_JOUEUR) continue;
+		if(p->groupeHumiliation != -1 && p->groupeHumiliation <= 12) continue;
+		float tirage = (float)RandCrt(graineHumiliation) / 32767.0f;
+		int g = pietons.SurveillerHumiliation(i, TailleDuPieton(p), TailleDuPieton(pietons.Acceder(SCRIPT_PED_JOUEUR)), tirage);
+		if(g >= 0) printf("%6.2f s  le piéton %d (%.0f / %.0f points) reçoit le groupe d'humiliation %d (%s)\n", maintenant / 1000.0, i,
+		                  p->sante, p->santeMax, g, ScriptPedGroupeHumiliation(g));
+	}
 	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
 		const CScriptPed *p = pietons.Acceder(i);
 		if(p == nil || journalRestant <= 0) continue;
@@ -1429,6 +1522,32 @@ AvancerPietons(void)
 		if(p->aFrappe){ journalRestant--; printf("%6.2f s  piéton %d frappe le piéton %d (%.0f pv)\n", maintenant / 1000.0, i, p->dernierFrappe, pietons.Acceder(p->dernierFrappe) ? pietons.Acceder(p->dernierFrappe)->sante : 0); }
 		if(p->vientDeMourir){ journalRestant--; printf("%6.2f s  piéton %d (modèle %d) est mort\n", maintenant / 1000.0, i, p->modele); }
 	}
+}
+
+// LoadAnimationGroup(nom) (0x5c08a0) : le groupe demandé puis chargé tout de suite (LoadAllRequestedModels) ;
+// HasAnimGroupLoaded(nom) (0x5bf6e0) : l'octet +4 de son entrée de streaming ; UnLoadAnimationGroup(nom) (0x5c0920).
+static int
+LoadAnimationGroup(lua_State *L)
+{
+	Journal("LoadAnimationGroup", L, 1);
+	if(lua_isstring(L, 1)) groupesAnim.Charger(lua_tostring(L, 1));
+	return 0;
+}
+
+static int
+HasAnimGroupLoaded(lua_State *L)
+{
+	appels["HasAnimGroupLoaded"]++;
+	lua_pushboolean(L, lua_isstring(L, 1) && groupesAnim.EstCharge(lua_tostring(L, 1)));
+	return 1;
+}
+
+static int
+UnLoadAnimationGroup(lua_State *L)
+{
+	Journal("UnLoadAnimationGroup", L, 1);
+	if(lua_isstring(L, 1)) groupesAnim.Decharger(lua_tostring(L, 1));
+	return 0;
 }
 
 static int
@@ -2062,6 +2181,10 @@ main(int argc, char **argv)
 	const char *fonction = pos.size() > 2 ? pos[2] : "gamemain";
 	image = CdStream::AddImage(kImg);
 	if(image < 0){ printf("%s introuvable (BULLY_DATA ?)\n", kImg); return 1; }
+	{
+		int monde = CdStream::AddImage("Stream\\World.img");
+		if(monde >= 0) printf("%d groupes d'animations dans Stream/World.img\n", groupesAnim.Lire(CdStream::ms_images[monde]));
+	}
 
 	// CreateLuaState (0x5db260) : bibliothèques, API, puis util.lua dans _G.
 	lua_State *L = lua_open();
@@ -2142,6 +2265,9 @@ main(int argc, char **argv)
 	lua_register(L, "PlayerSetInvulnerable", PlayerSetInvulnerable);
 	lua_register(L, "PedSetMinHealth", PedSetMinHealth);
 	lua_register(L, "PedGetMaxHealth", PedGetMaxHealth);
+	lua_register(L, "LoadAnimationGroup", LoadAnimationGroup);
+	lua_register(L, "HasAnimGroupLoaded", HasAnimGroupLoaded);
+	lua_register(L, "UnLoadAnimationGroup", UnLoadAnimationGroup);
 	lua_register(L, "PedSetMaxHealth", PedSetMaxHealth);
 	lua_register(L, "GameGetPedStat", GameGetPedStat);
 	lua_register(L, "PedSetFightingSystem", PedSetFightingSystem);
@@ -2196,6 +2322,8 @@ main(int argc, char **argv)
 	int images = 0;
 	for(maintenant = 0; maintenant < (uint32)(secondes * 1000); maintenant += 33, images++){
 		horloge.Avancer(0.033f);
+		imageCourante = (uint32)images;
+		groupesAnim.Avancer(imageCourante);
 		if(aLancer && maintenant >= 1000){
 			lua_pushcfunction(L, ForceStartMission);
 			lua_pushstring(L, aLancer);
@@ -2308,6 +2436,45 @@ main(int argc, char **argv)
 			if(CScriptPed *p = pietons.Acceder(c.first))
 				for(const CActionController::Drapeau &d : c.second.drapeauxPoses) if(d.numero < SCRIPT_PED_DRAPEAUX) p->drapeaux[d.numero] = d.valeur;
 			c.second.drapeauxPoses.clear();
+			// SpeechTrack (FUN_006195a0) : une ligne à tenir est retenue ; les autres ne sont pas jouées par l'outil (une
+			// seule ligne à la fois, que les scripts attendent). SpeechStartTrack (FUN_00619950) lâche les lignes du piéton.
+			for(const CActionController::Parole &e : c.second.parolesLancees){
+				if(e.tenue == 0 || e.evenement < 0 || e.evenement >= NUM_SPEECH_EVENTS) continue;
+				for(auto it = parolesTenues.begin(); it != parolesTenues.end(); )
+					it = it->ped == c.first ? parolesTenues.erase(it) : it + 1;
+				parolesTenues.push_back({c.first, e.evenement, e.ligne, e.tenue, imageCourante, maintenant + 12000});
+				printf("%6.2f s  le piéton %d retient %s ligne %d\n", maintenant / 1000.0, c.first, kSpeechEvents[e.evenement], e.ligne);
+			}
+			c.second.parolesLancees.clear();
+			for(; c.second.departsLances > 0; c.second.departsLances--)
+				for(auto it = parolesTenues.begin(); it != parolesTenues.end(); ){
+					if(it->ped != c.first){ ++it; continue; }
+					parole.enCours = true; parole.ped = it->ped; parole.evenement = it->evenement;
+					parole.ligne = it->ligne < 0 ? 0 : it->ligne; parole.id++;
+					parole.fin = maintenant + DureeParole(parole.ped, parole.evenement, parole.ligne);
+					printf("%6.2f s  parole : le piéton %d dit %s ligne %d (lâchée par SpeechStartTrack)\n", maintenant / 1000.0, it->ped, kSpeechEvents[it->evenement], it->ligne);
+					it = parolesTenues.erase(it);
+				}
+			// FaceTarget (FUN_00620dc0) et SeekEntityPosition (FUN_0062a940) : le piéton se tourne vers sa cible, ou y va (à
+			// la course de l'outil) jusqu'à la distance d'arrivée. L'outil n'a ni chemins ni virages progressifs.
+			if(CScriptPed *p = pietons.Acceder(c.first)){
+				auto cibleDe = [&](int genre){ return genre == 0 ? p->verrou : genre == 1 ? p->cibleDePrise : -1; };
+				for(const CActionController::Poursuite &r : c.second.poursuitesActives){
+					const CScriptPed *q = pietons.Acceder(cibleDe(r.genre));
+					if(q == nil || q == p) continue;
+					float dx = q->pos.x - p->pos.x, dy = q->pos.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
+					if(d <= r.arrivee + 1e-3f) continue;   // arrivé (au millimètre près)
+					float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f, k = d - r.arrivee < pas ? (d - r.arrivee) / d : pas / d;
+					p->pos.x += dx * k; p->pos.y += dy * k;
+					p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
+					if(d - r.arrivee < pas) printf("%6.2f s  le piéton %d arrive à %.2f m du piéton %d (SeekEntityPosition)\n", maintenant / 1000.0, c.first, r.arrivee, cibleDe(r.genre));
+				}
+				for(const CActionController::Regard &r : c.second.regardsActifs){
+					const CScriptPed *q = pietons.Acceder(cibleDe(r.genre));
+					if(q == nil || q == p) continue;
+					p->cap = atan2f(q->pos.y - p->pos.y, q->pos.x - p->pos.x) * 180.0f / 3.14159265f + r.decalage;
+				}
+			}
 			// SetHealth (FUN_00627500) : poser (FUN_00478190, pas sous la santé minimale), rendre (FUN_00474b70, jusqu'au
 			// maximum), ôter (FUN_004782a0, sans les invulnérabilités, ni sous 0 ni sous la santé minimale).
 			for(const CActionController::Sante &e : c.second.santesLancees){
@@ -2327,6 +2494,9 @@ main(int argc, char **argv)
 				const CScriptPed *p = pietons.Acceder(c.first);
 				if(p == nil || p->verrou < 0) continue;
 				int cible = p->verrou;
+				// PedSetGrappleTarget (0x474360) des deux côtés : chacun est le partenaire de prise (+0x155c) de l'autre.
+				if(CScriptPed *mp = pietons.Acceder(c.first)) mp->cibleDePrise = cible;
+				if(CScriptPed *mc = pietons.Acceder(cible)) mc->cibleDePrise = c.first;
 				bool a = e.soi && !e.executerSoi && c.second.Entrer(arbres, e.soi, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f);
 				bool b = e.cible && !e.executerCible && controleurs[cible].Entrer(arbres, e.cible, CJugeOutil(cible, maintenant / 1000.0f), maintenant / 1000.0f);
 				partenaires[cible] = {c.first, maintenant + 2000};
@@ -2356,6 +2526,17 @@ main(int argc, char **argv)
 			const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
 			printf("%6.2f s  le joueur passe une porte vers la zone %d%s\n", maintenant / 1000.0, e.second, zones.Demander(j->pos, j->cap, e.second, nil, false) ? "" : " : refusé, un changement est en cours");
 			e.second = -1;
+		}
+		// L'échéance d'une ligne retenue (le rappel 0x619550) : la tenue 1 la joue, la tenue 2 l'annule.
+		for(auto it = parolesTenues.begin(); it != parolesTenues.end(); ){
+			if(maintenant < it->echeance){ ++it; continue; }
+			printf("%6.2f s  parole : %s ligne %d retenue par le piéton %d, échue : %s\n", maintenant / 1000.0, kSpeechEvents[it->evenement],
+			       it->ligne, it->ped, it->tenue == 2 ? "annulée" : "jouée");
+			if(it->tenue != 2){
+				parole.enCours = true; parole.ped = it->ped; parole.evenement = it->evenement; parole.ligne = it->ligne < 0 ? 0 : it->ligne;
+				parole.id++; parole.fin = maintenant + DureeParole(parole.ped, parole.evenement, parole.ligne);
+			}
+			it = parolesTenues.erase(it);
 		}
 		if(prechargement.attente){
 			bool annulee = false;

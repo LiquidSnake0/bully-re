@@ -67,6 +67,27 @@ public:
 	struct Drapeau { float entree; uint32 numero; int32 valeur; bool fait; };
 	std::vector<Drapeau> drapeaux;
 	std::vector<Drapeau> drapeauxPoses;
+	// Ses pistes SpeechTrack (table 0x932ed8, lancement FUN_006195a0) : l'événement de parole +0x18 (24), la ligne +0x20
+	// (32) si l'octet +0x1c (28) est posé (sinon -1, une ligne au hasard), la tenue +0x28 (40) : non nulle, la ligne est
+	// préchargée et retenue (une place parmi les cinq de 0x1b655d0, le rappel 0x619550) jusqu'à ce qu'une piste
+	// SpeechStartTrack du piéton la lâche (lancement FUN_00619950) ou que son échéance passe (12 s si la cible du
+	// piéton est le joueur ; alors la tenue 1 la joue, 2 l'annule). Une entrée négative se lance à l'arrêt du nœud.
+	// Les lancées s'accumulent dans `parolesLancees` et `departsLances`, que l'appelant traite et vide.
+	struct Parole { float entree; int32 evenement, ligne, tenue; bool fait; };
+	std::vector<Parole> paroles, parolesLancees;
+	struct Depart { float entree; bool fait; };
+	std::vector<Depart> departs;
+	int departsLances = 0;
+	// Ses pistes FaceTarget (FaceTargetTrack 0x934b00, mise à jour FUN_00620dc0) : tant qu'elles vivent, le piéton se
+	// tourne vers sa cible de genre +0x20 (32 ; FUN_00477ab0 : 0 la cible verrouillée, 1 le partenaire de prise +0x155c),
+	// décalée de +0x28 (40) degrés. Ses pistes SeekEntityPosition (0x933634, lancement FUN_0062a720, mise à jour
+	// FUN_0062a940) : le piéton va vers sa cible de genre +0x1c (28) jusqu'à moins de +0x28 (40) mètres. L'outil prend
+	// aussi celles des nœuds qu'une piste spawn (SpawnTrack 0x92de80) fait jouer à côté, sans le reste de ces nœuds.
+	// `regardsActifs` et `poursuitesActives` : celles qui vivent à cette image, rendues par Avancer.
+	struct Regard { float entree, vie; int32 genre; float decalage; };
+	std::vector<Regard> regards, regardsActifs;
+	struct Poursuite { float entree, vie; int32 genre; float arrivee; };
+	std::vector<Poursuite> poursuites, poursuitesActives;
 	float finExecutees = -1.0f;   // la fin la plus tardive des pistes venues des nœuds exécutés (-1 : aucune)
 	struct Prise { const CActionNode *soi, *cible; bool executerSoi, executerCible; };
 	std::vector<Prise> prises;                    // celles qui se lancent à cette image, rendues par Avancer
@@ -97,5 +118,6 @@ public:
 	static float Duree(const CActionBank &b, const CActionNode &n);
 private:
 	void Pistes(const CActionBank &b, const CActionNode &n, float entree, int prof, const CJugeAction *juge);
+	void PistesLancees(const CActionBank &b, const CActionNode &n, float entree, int prof, const CJugeAction *juge);
 	const CActionNode *Descendre(const CActionBank &b, const CActionNode *depuis, const CJugeAction &juge) const;
 };

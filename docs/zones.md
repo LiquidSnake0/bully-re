@@ -173,3 +173,14 @@ de l'école, trouve les 6 sorties du hall vers la cour (`DT_ischool_FrontDoorL`�
 par `DT_ischool_Classroom` (zone 15). `lancer_lua --porte DT_NOM@s` pose +0x394 à la place de
 l'animation de la porte (non jouée) : dans `1_02`, `--porte DT_ischool_FrontDoorL@40` ramène le joueur
 dans la cour (zone 0, `MainMap.lua` rechargé) par la vraie machine.
+
+Qui pose l'objet de porte (relevé le 23.10.2026, soir) : trois pistes des arbres d'actions appellent `FUN_00415160` avec
+le déclencheur (+0x23c) d'une porte qui a une transition (+0x194 non nul). La porte est l'objet du contexte
+(`FUN_004eaa60` : l'objet visé +0x548 du piéton, sinon son objet de contact +0x438 s'il est de type 6, …).
+`ActivateDoorTrack` (0x9348b8, lancement `FUN_00610ed0`) : le piéton, ou son partenaire de prise, est près de la porte
+(`FUN_00465bc0`) ; ne sert que dans les prises (`GrappleLoco` → `HandleDoors/ActivateDoor` : pousser quelqu'un par une
+porte) et les véhicules. `PropAttemptDoorTransitionTrack` (0x9362e0, `FUN_00655c40`) : sans autre test. Et
+`PropAnimationTrack` (0x935390, lancement `FUN_006572c0`), l'animation d'un objet : quand l'objet est celui que le
+joueur touche (+0x438 du joueur) et que l'animation demandée s'appelle `OPEN`, si la porte n'est pas déjà la porte en
+cours. Les portes ordinaires ont leur arbre (`Doorstr.cat` : `OPEN` puis `Close`, des `PropAnimation`). L'outil n'a
+pas d'objets animés : `--porte` reste le moyen de pousser une porte.

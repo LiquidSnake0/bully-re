@@ -46,6 +46,10 @@ COpportunite::Lire(const CActionTreeFile &f, const CActionNode &porteur, const C
 	o.priorite = (int32)p.Mot(52);
 	o.periode = p.Mot(56);
 	o.conditions = p.Mot(60);
+	if(const CActionAttribut *a = p.Champ(60)){
+		int32 v = f.Renvoi2(a->decalage);
+		if(v >= 0) f.Groupe((uint32)v, o.listeConditions);
+	}
 	return true;
 }
 

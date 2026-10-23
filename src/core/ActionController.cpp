@@ -56,7 +56,9 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 {
 	static const uint32 kCollision = ActionHash("Collision"), kExecute = ActionHash("Execute"), kDegats = ActionHash("DamageHandle"),
 	                    kSante = ActionHash("SetHealth"), kPriseCible = ActionHash("SetTargetAsGrappleTarget"),
-	                    kDrapeau = ActionHash("SetPedFlags");
+	                    kDrapeau = ActionHash("SetPedFlags"), kParole = ActionHash("SpeechTrack"),
+	                    kDepart = ActionHash("SpeechStartTrack"), kRegard = ActionHash("FaceTarget"),
+	                    kPoursuite = ActionHash("SeekEntityPosition"), kSpawn = ActionHash("spawn");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -88,6 +90,23 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			const CActionAttribut *v = p.Champ(24);
 			float e = Reel(p, 12, 0.0f);
 			drapeaux.push_back({e < 0.0f ? -1.0f : a, p.Mot(28), v && v->taille >= 1 ? (int32)v->valeur[0] : 0, false});
+		}else if(p.type == kParole){
+			const CActionAttribut *l = p.Champ(28);
+			float e = Reel(p, 12, 0.0f);
+			paroles.push_back({e < 0.0f ? -1.0f : a, (int32)p.Mot(24), l && l->taille >= 1 && l->valeur[0] ? (int32)p.Mot(32) : -1,
+			                   (int32)p.Mot(40), false});
+		}else if(p.type == kDepart){
+			departs.push_back({a, false});
+		}else if(p.type == kRegard){
+			regards.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(32), Reel(p, 40, 0.0f)});
+		}else if(p.type == kPoursuite){
+			poursuites.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(28), Reel(p, 40, 0.0f)});
+		}else if(p.type == kSpawn){
+			const CActionAttribut *at = p.Champ(32);
+			if(at == nil) continue;
+			const CActionNode *v = b.Relatif(&n, f->ChaineCitee(at->decalage).c_str());
+			const CActionNode *d = v == nil ? nil : juge ? b.Choisir(v, *juge) : b.Choisir(v);
+			if(d) PistesLancees(b, *d, a, prof + 1, juge);
 		}else if(p.type == kSante){
 			const CActionAttribut *o0 = p.Champ(24), *o1 = p.Champ(25), *o2 = p.Champ(26);
 			auto oct = [](const CActionAttribut *x){ return x && x->taille >= 1 && x->valeur[0] != 0; };
@@ -115,12 +134,36 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	}
 }
 
+// Un nœud qu'une piste spawn fait jouer à côté (lancement FUN_005f8860) : l'outil n'en garde que les pistes FaceTarget et
+// SeekEntityPosition, qui vivent avec la piste spawn ; ce nœud n'a pas d'autre effet sur le nœud joué.
+void
+CActionController::PistesLancees(const CActionBank &b, const CActionNode &n, float entree, int prof, const CJugeAction *juge)
+{
+	static const uint32 kRegard = ActionHash("FaceTarget"), kPoursuite = ActionHash("SeekEntityPosition");
+	const CActionTreeFile *f = b.Fichier(n);
+	if(f == nil || prof > 4) return;
+	for(int32 dp : n.pistes){
+		CActionTrack p;
+		if(!f->Piste(dp, p)) continue;
+		float a = Reel(p, 12, 0.0f);
+		if(a < entree) a = entree;
+		if(p.type == kRegard) regards.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(32), Reel(p, 40, 0.0f)});
+		else if(p.type == kPoursuite) poursuites.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(28), Reel(p, 40, 0.0f)});
+	}
+}
+
 void
 CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, const CJugeAction *juge)
 {
 	for(Drapeau &d : drapeaux)    // FUN_005f3fb0 à l'arrêt du nœud : les entrées négatives se lancent
 		if(!d.fait && d.entree < 0.0f){ d.fait = true; drapeauxPoses.push_back(d); }
 	drapeaux.clear();
+	for(Parole &d : paroles)
+		if(!d.fait && d.entree < 0.0f){ d.fait = true; parolesLancees.push_back(d); }
+	paroles.clear();
+	departs.clear();
+	regards.clear();
+	poursuites.clear();
 	joue = n;
 	debut = t;
 	occasions = n ? COpportunite::DuNoeud(b, *n) : std::vector<COpportunite>();
@@ -149,6 +192,20 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 		if(o.loquet) o.bascule = (float)RandCrt(hasard) / 32767.0f * (o.loquetMax - o.loquetMin) + o.loquetMin;
 	float d = n ? Duree(b, *n) : -1.0f;
 	if(finExecutees > d) d = finExecutees;
+	// Un Execute ne retient pas son nœud : sa mise à jour (FUN_005f70f0) rend +0x31, posé seulement pour une durée de vie
+	// positive ; seules les pistes du nœud exécuté le font (FUN_005f3e20). Un nœud qui n'a que des Execute et des
+	// Sequence, et dont aucun Execute n'a ajouté de piste (le chemin ne se résout pas), finit donc tout de suite : la
+	// charge d'une prise sans le drapeau 70 (GrappleStrikes/…/GIVE/#542875ee, « Not PedFlags ») passe à ../Give.
+	if(n && d < 0.0f && finExecutees < 0.0f && !n->pistes.empty())
+		if(const CActionTreeFile *f = b.Fichier(*n)){
+			static const uint32 kExecute = ActionHash("Execute"), kSequence = ActionHash("Sequence");
+			bool instantane = true;
+			for(int32 dp : n->pistes){
+				CActionTrack p;
+				if(!f->Piste(dp, p) || (p.type != kSequence && !(p.type == kExecute && Reel(p, 16, -1.0f) <= 0.0f))){ instantane = false; break; }
+			}
+			if(instantane) d = 0.0f;
+		}
 	fin = d >= 0.0f ? t + d : -1.0f;
 }
 
@@ -197,9 +254,14 @@ CActionController::Occasions(const CActionBank &b, const CJugeAction &juge, floa
 		if(o.arretee || temps < o.entree) continue;
 		bool arret = o.vie >= 0.0f && temps > o.entree + o.vie;   // la durée de vie, comme toute piste
 		if(!arret && !o.prise && TirageOpportunite(o.periode, graine, image)){
-			// Les conditions propres de la piste (+0x3c) : nulles dans les fichiers relevés, non jugées.
+			// Les conditions propres de la piste (+0x3c), jugées d'abord (FUN_005fb9b0) : faute de les passer, rien.
+			// Sinon la piste n'est pas prise à cette image, et sa fermeture se juge comme d'habitude.
+			const CActionTreeFile *fp = o.listeConditions.empty() ? nil : b.Fichier(*o.porteur);
+			bool permise = fp == nil || b.JugerListe(*fp, o.listeConditions, juge) == 1;
 			const CActionNode *visee = o.chemin.empty() ? nil : b.Relatif(o.porteur, o.chemin.c_str());
-			if(visee == nil){
+			if(!permise)
+				;
+			else if(visee == nil){
 				if(o.chemin.empty()) o.prise = true;           // sans chemin : prise, sans nœud
 			}else{
 				const CActionNode *d = b.Choisir(visee, juge);  // l'emplacement +0x4c du nœud visé
@@ -245,6 +307,16 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; blessures.push_back(d); }
 	for(Drapeau &d : drapeaux)    // FUN_0060f8e0
 		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; drapeauxPoses.push_back(d); }
+	regardsActifs.clear();
+	poursuitesActives.clear();
+	for(const Regard &r : regards)          // FUN_00620dc0, tant que la piste vit
+		if(Temps(t) >= r.entree && (r.vie < 0.0f || Temps(t) <= r.entree + r.vie)) regardsActifs.push_back(r);
+	for(const Poursuite &r : poursuites)    // FUN_0062a940
+		if(Temps(t) >= r.entree && (r.vie < 0.0f || Temps(t) <= r.entree + r.vie)) poursuitesActives.push_back(r);
+	for(Parole &d : paroles)      // FUN_006195a0
+		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; parolesLancees.push_back(d); }
+	for(Depart &d : departs)      // FUN_00619950
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; departsLances++; }
 	for(Sante &d : santes)        // FUN_00627500
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; santesLancees.push_back(d); }
 	for(PriseCible &d : prisesCible)   // FUN_0062a580

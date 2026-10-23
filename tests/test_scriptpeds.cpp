@@ -2,6 +2,7 @@
 // libérés repris, le ramassage par objet script ; puis les gestes : marche, sprint, arrêt, bagarre
 // et mort. Aucun fichier du jeu.
 //   build/tests/test_scriptpeds
+#include <cstring>
 #include <cmath>
 #include "../src/peds/ScriptPedPool.h"
 #include <cstdio>
@@ -131,6 +132,31 @@ main(void)
 		q.Sante(a, 0);
 		for(int i = 0; i < 30; i++) q.Avancer(1.0f / 30);    // à zéro : rien non plus
 		VERIF(pa->sante == 0);
+	}
+	// FUN_0048e790, FUN_00490ef0, FUN_004925d0, FUN_0048f5d0, FUN_0048dc60, FUN_00492950 : le groupe d'humiliation.
+	{
+		CScriptPedPool q;
+		int a = q.Creer(146, CVector(0, 0, 0), 0, 1), b = q.Creer(146, CVector(1, 0, 0), 0, 1);
+		CScriptPed *pa = q.Acceder(a), *pb = q.Acceder(b);
+		VERIF(pa->groupeHumiliation == -1 && q.GroupeHumiliationDans(0, 2) == -1);   // le constructeur : -1
+		VERIF(strcmp(ScriptPedGroupeHumiliation(0), "HUMIL_5-8_A") == 0 && strcmp(ScriptPedGroupeHumiliation(2), "HUMIL_5-8_C") == 0);
+		VERIF(strcmp(ScriptPedGroupeHumiliation(21), "HUMIL_6-1V6-1") == 0 && ScriptPedGroupeHumiliation(22) == nil);
+		// Au-dessus de la moitié de la santé : rien ; dessous, un Medium (1) tire 0, 1 ou 2.
+		pa->santeMax = 95; pa->sante = 50;
+		VERIF(q.SurveillerHumiliation(a, 1, 1, 0.9f) == -1 && pa->groupeHumiliation == -1);
+		pa->sante = 5;
+		VERIF(q.SurveillerHumiliation(a, 1, 1, 0.9f) == 2 && pa->groupeHumiliation == 2);   // 5-8_IndianBurn
+		VERIF(q.SurveillerHumiliation(a, 1, 1, 0.1f) == -1 && pa->groupeHumiliation == 2);   // déjà un groupe
+		// Un autre Medium prend le groupe déjà là, sans tirage.
+		pb->santeMax = 100; pb->sante = 10;
+		VERIF(q.SurveillerHumiliation(b, 1, 1, 0.1f) == 2 && pb->groupeHumiliation == 2);
+		VERIF(q.LibererGroupeHumiliation(a) == 2 && q.LibererGroupeHumiliation(b) == 2 && q.LibererGroupeHumiliation(b) == -1);
+		VERIF(q.SurveillerHumiliation(b, 1, 1, 0.1f) == 0 && q.SurveillerHumiliation(a, 3, 1, 0.7f) == 4);   // 0,33 ; 0,5
+		VERIF(q.ChoisirGroupeHumiliation(a, 4, SCRIPT_PED_JOUEUR, 1, true, 0.5f) == 11);   // Huge : 6-5_B
+		VERIF(q.ChoisirGroupeHumiliation(a, 1, SCRIPT_PED_JOUEUR, 1, false, 0.5f) == 17);  // 5-8VPLY
+		VERIF(q.ChoisirGroupeHumiliation(a, 2, b, 0, false, 0.5f) == 19 && q.ChoisirGroupeHumiliation(a, 2, b, 3, false, 0.5f) == 20);
+		VERIF(q.ChoisirGroupeHumiliation(a, 1, b, 1, true, 0.5f) == -1 && pa->groupeHumiliation == 20);   // un autre et l'octet : rien
+		VERIF(q.PoserGroupeHumiliation(a, 5) == 20 && q.PoserGroupeHumiliation(a, 5) == -1);
 	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
