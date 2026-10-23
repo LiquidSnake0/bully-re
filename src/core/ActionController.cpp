@@ -192,6 +192,20 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 		if(o.loquet) o.bascule = (float)RandCrt(hasard) / 32767.0f * (o.loquetMax - o.loquetMin) + o.loquetMin;
 	float d = n ? Duree(b, *n) : -1.0f;
 	if(finExecutees > d) d = finExecutees;
+	// Un Execute ne retient pas son nœud : sa mise à jour (FUN_005f70f0) rend +0x31, posé seulement pour une durée de vie
+	// positive ; seules les pistes du nœud exécuté le font (FUN_005f3e20). Un nœud qui n'a que des Execute et des
+	// Sequence, et dont aucun Execute n'a ajouté de piste (le chemin ne se résout pas), finit donc tout de suite : la
+	// charge d'une prise sans le drapeau 70 (GrappleStrikes/…/GIVE/#542875ee, « Not PedFlags ») passe à ../Give.
+	if(n && d < 0.0f && finExecutees < 0.0f && !n->pistes.empty())
+		if(const CActionTreeFile *f = b.Fichier(*n)){
+			static const uint32 kExecute = ActionHash("Execute"), kSequence = ActionHash("Sequence");
+			bool instantane = true;
+			for(int32 dp : n->pistes){
+				CActionTrack p;
+				if(!f->Piste(dp, p) || (p.type != kSequence && !(p.type == kExecute && Reel(p, 16, -1.0f) <= 0.0f))){ instantane = false; break; }
+			}
+			if(instantane) d = 0.0f;
+		}
 	fin = d >= 0.0f ? t + d : -1.0f;
 }
 

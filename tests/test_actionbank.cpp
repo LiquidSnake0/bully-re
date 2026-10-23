@@ -497,6 +497,22 @@ main(void)
 				printf("  WaitForVictim rejoint sa victime (SeekEntityPosition, 0,75 m), Load la tourne vers lui (FaceTarget)\n");
 			}
 		}
+		// Un nœud qui n'a que des Execute (durée de vie -1, FUN_005f70f0) et des Sequence, et dont l'Execute ne se résout
+		// pas, finit tout de suite : la charge sans le drapeau 70 (HitC/Charge/GIVE/#542875ee) passe à ../Give.
+		{
+			const CActionNode *give = g.Trouver("/Global/Actions/Grapples/Front/Grapples/GrappleMoves/GrappleStrikes/HitC/Charge/GIVE");
+			const CActionNode *transition = nil;
+			if(give) for(const CActionNode &e : give->enfants) if(e.hachage == 0x542875ee) transition = &e;
+			VERIF(transition != nil);
+			if(transition){
+				CActionController c;
+				c.Jouer(g, transition, 0.0f);
+				VERIF(c.fin == 0.0f);
+				c.Avancer(g, nil, CJugeAction_Rien(), 0.0f);
+				VERIF(c.joue && c.joue->genre == 'l' && g.JoueNom(c.joue, "GIVE") && c.joue != transition);
+				printf("  charge sans le drapeau 70 : #542875ee finit tout de suite, puis %s\n", g.CheminDe(c.joue).c_str());
+			}
+		}
 		// L'humiliation : SetTargetAsGrappleTarget (FUN_0062a580) envoie le piéton dans ../WaitForVictim et sa cible dans
 		// ../Humiliate_Me ; la fuite d'une victime de mission (HumiliateFlee, IsMissionSpecific) lui ôte 500 points
 		// (SetHealth, FUN_00627500) et son Opportunity sans bascule (-1) ne dépose sa demande qu'à la fin du nœud
