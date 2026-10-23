@@ -177,7 +177,8 @@ struct CJugeOutil : CJugeAction {
 		                    kHumiliation = ActionHash("IsHealthAtHumiliationLevel"), kMission = ActionHash("IsMissionSpecific"),
 		                    kTaille = ActionHash("CharacterSize"), kDrapeaux = ActionHash("PedFlags"),
 		                    kGroupeHumiliation = ActionHash("HumiliationGroupIs"), kTempsPasse = ActionHash("ActionNodePlayTimePast"),
-		                    kGroupeAnim = ActionHash("AnimationGroupLoaded"), kParolePrete = ActionHash("IsSpeechPreloaded");
+		                    kGroupeAnim = ActionHash("AnimationGroupLoaded"), kParolePrete = ActionHash("IsSpeechPreloaded"),
+		                    kPositionCible = ActionHash("TargetRelativePosition");
 		if(type == kArme) return f.ChaineCitee((uint32)d + 8) == "unarmed";
 		const CScriptPed *moi = pietons.Acceder(ped);
 		float seuil; memcpy(&seuil, &mots[0], 4);
@@ -217,6 +218,33 @@ struct CJugeOutil : CJugeAction {
 				if(r.evenement == (int)mots[0] && (mots[1] == 0xffffffffu || r.ligne == (int)mots[1])
 				   && ((mots[2] & 0xff) == 0 || r.ped == ped) && r.image < imageCourante) return 1;
 			return 0;
+		}
+		// TargetRelativePosition (FUN_005feed0) : la cible de genre +0x14 (FUN_00477ab0 : 0 la cible verrouillée, 1 le
+		// partenaire de prise +0x155c ; les autres genres ne sont pas suivis) à au plus +4 mètres, et dans la direction
+		// +8 (radians, depuis l'avant du piéton, vers sa droite) à +0xc près ; l'octet +0x10 en fait aussi des partenaires
+		// de prise s'ils n'en ont pas (PedSetGrappleTarget). Dans l'outil, l'avant est (cos cap, sin cap).
+		if(type == kPositionCible){
+			if(moi == nil) return 0;
+			int genre = (int)mots[4], h = genre == 0 ? moi->verrou : genre == 1 ? moi->cibleDePrise : -2;
+			if(h == -2) return -1;
+			const CScriptPed *c = pietons.Acceder(h);
+			if(c == nil) return 0;
+			float dx = c->pos.x - moi->pos.x, dy = c->pos.y - moi->pos.y, dz = c->pos.z - moi->pos.z;
+			float dist = sqrtf(dx * dx + dy * dy + dz * dz), portee, angle, tolerance;
+			memcpy(&portee, &mots[0], 4); memcpy(&angle, &mots[1], 4); memcpy(&tolerance, &mots[2], 4);
+			if(dist > portee) return 0;
+			float a = moi->cap * 3.14159265f / 180.0f, fx = cosf(a), fy = sinf(a);
+			float n = dist > 0.0f ? dist : 1.0f, ux = dx / n, uy = dy / n, uz = dz / n;
+			float vu = fx * ux + fy * uy;
+			if(vu > 1.0f) vu = 1.0f; else if(vu < -1.0f) vu = -1.0f;
+			float vers = acosf(vu);
+			if(fy * ux - fx * uy + 0.0f * uz < 0.0f) vers = 6.2831855f - vers;   // à gauche : 2π moins l'angle
+			float ecart = remainderf(vers - angle, 6.2831855f);
+			if(fabsf(ecart) > tolerance) return 0;
+			if((mots[3] & 0xff) == 0) return 1;
+			CScriptPed *mp = pietons.Acceder(ped), *mc = pietons.Acceder(h);
+			if(mp->cibleDePrise < 0 && mc->cibleDePrise < 0){ mp->cibleDePrise = h; mc->cibleDePrise = ped; return 1; }
+			return mp->cibleDePrise == h;
 		}
 		// HumiliationGroupIs (FUN_006039b0) : le groupe d'humiliation du piéton (+0xd44, posé par FUN_0048f5d0) égal à +4.
 		if(type == kGroupeHumiliation) return moi ? moi->groupeHumiliation == (int32)mots[0] : -1;
