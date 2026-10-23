@@ -172,6 +172,10 @@ main(void)
 		VERIF(q.Attaquer(a, c, 0, true) && q.Acceder(a)->nombreObjectifs == 3 && q.ObjectifCourant(a)->cible == c);
 		VERIF(q.Acceder(a)->objectifs[1].cible == SCRIPT_PED_JOUEUR && q.Acceder(a)->objectifs[2].cible == b);
 		VERIF(q.Attaquer(a, c, 0, true) && q.Acceder(a)->nombreObjectifs == 3);              // devant : comparé au premier
+		// FUN_00470110 : les deux attaques de suite (0 et 1) ; la seconde, venue à la place de la première, est sautée.
+		VERIF(q.RetirerObjectifs(a, OBJECTIF_ATTAQUER_PIETON) == 2 && q.Acceder(a)->nombreObjectifs == 1 && q.ObjectifCourant(a)->cible == SCRIPT_PED_JOUEUR);
+		VERIF(q.RetirerObjectifs(a, OBJECTIF_ATTAQUER_PIETON) == 1 && q.ObjectifCourant(a) == nil);
+		VERIF(q.Attaquer(a, c, 0, true) && q.Attaquer(a, b) && q.Attaquer(a, SCRIPT_PED_JOUEUR) && q.Acceder(a)->nombreObjectifs == 3);
 		CObjectifPieton autre; autre.type = 9;
 		for(int i = 3; i < SCRIPT_PED_OBJECTIFS; i++) VERIF(q.PousserObjectif(a, autre, false));
 		VERIF(!q.PousserObjectif(a, autre, false) && q.Acceder(a)->nombreObjectifs == SCRIPT_PED_OBJECTIFS);   // 20 places

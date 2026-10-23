@@ -39,7 +39,8 @@ static const float SCRIPT_PED_DEGATS = 10.0f;       // points de vie par coup
 // son type en +8 ; AttackPedObjective (FUN_00470c10, table 0x… : « attaquer un piéton ») est le type 7, sa cible en +0x14,
 // son style en +0x10 (le troisième argument de PedAttack, 0 à 3) ; le type 16 a aussi une cible en +0x14 (la condition
 // Objective les traite ensemble, FUN_00606c00). Le compte de références (+0xc) n'est pas suivi.
-enum { OBJECTIF_ATTAQUER_PIETON = 7, OBJECTIF_ATTAQUER_16 = 16, SCRIPT_PED_OBJECTIFS = 20 };
+// FleeObjective (le constructeur FUN_0046f940(0x16, piéton), table 0x911894) est le type 22, la cible fuie en +0x10.
+enum { OBJECTIF_ATTAQUER_PIETON = 7, OBJECTIF_ATTAQUER_16 = 16, OBJECTIF_FUIR = 22, SCRIPT_PED_OBJECTIFS = 20 };
 struct CObjectifPieton { int32 type = -1; int cible = -1; int32 style = 0; };
 
 struct CScriptPed {
@@ -123,6 +124,10 @@ public:
 	// (+0x14) que le dernier de la file (le premier, devant) n'est pas ajouté, ni un objectif de type 8 qui porte le même
 	// +0x1c (non suivi ici) ; la file pleine (20) refuse. Vrai si l'objectif est dans la file (ajouté ou déjà là).
 	bool PousserObjectif(int handle, const CObjectifPieton &o, bool devant);
+	// FUN_00470110 (la mise à jour de la piste ClearCurrentObjective, FUN_0062a180) : retire de la file les objectifs du
+	// type donné ; après un retrait, l'objectif qui prend sa place n'est pas examiné (l'indice avance quand même, comme
+	// dans le moteur). Rend le nombre retiré.
+	int RetirerObjectifs(int handle, int32 type);
 	// FUN_004701f0 : l'objectif courant, le premier de la file ; nil si elle est vide (l'objectif par défaut +0x5c n'est
 	// pas suivi).
 	const CObjectifPieton *ObjectifCourant(int handle) const;

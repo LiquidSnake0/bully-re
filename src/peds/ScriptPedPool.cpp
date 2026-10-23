@@ -170,6 +170,21 @@ CScriptPedPool::JoindreZoneCombat(int h, int cible, int zone, bool essai)
 	return true;
 }
 
+int
+CScriptPedPool::RetirerObjectifs(int h, int32 type)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return 0;
+	int retires = 0;
+	for(int i = 0; i < p->nombreObjectifs; i++)
+		if(p->objectifs[i].type == type){
+			for(int k = i; k + 1 < p->nombreObjectifs; k++) p->objectifs[k] = p->objectifs[k + 1];   // FUN_0046fe40
+			p->nombreObjectifs--;
+			retires++;
+		}
+	return retires;
+}
+
 const CObjectifPieton *
 CScriptPedPool::ObjectifCourant(int h) const
 {

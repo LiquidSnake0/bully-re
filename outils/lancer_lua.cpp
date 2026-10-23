@@ -1687,6 +1687,25 @@ TailleDuPieton(const CScriptPed *p)
 }
 static uint32 graineHumiliation = 1;   // le rand() du CRT que FUN_004925d0 tire (l'outil a sa propre graine)
 
+// Les pistes des objectifs lancées à cette image : ClearCurrentObjective (FUN_0062a180 → FUN_00470110) et FleeObjective
+// (FUN_00628ce0 : la cible fuie est +0x538, ou +0x544 si l'octet +0x19, non suivi ; rien sans cible).
+static void
+AppliquerObjectifs(int ped, CActionController &c)
+{
+	for(const CActionController::Effacement &e : c.effacementsLances){
+		int n = pietons.RetirerObjectifs(ped, e.type);
+		if(n > 0) printf("%6.2f s  le piéton %d perd %d objectif(s) de type %d (ClearCurrentObjective)\n", maintenant / 1000.0, ped, n, e.type);
+	}
+	for(const CActionController::Fuite &f : c.fuitesLancees){
+		int cible = f.autreCible ? -1 : CibleDe(ped);
+		if(cible < 0) continue;
+		CObjectifPieton o; o.type = OBJECTIF_FUIR; o.cible = cible;
+		if(pietons.PousserObjectif(ped, o, !f.auBout))
+			printf("%6.2f s  le piéton %d fuit le piéton %d (FleeObjective, %s de la file)\n", maintenant / 1000.0, ped, cible, f.auBout ? "au bout" : "devant");
+	}
+	c.effacementsLances.clear(); c.fuitesLancees.clear();
+}
+
 // La mise à jour d'une piste ManageTargets (FUN_00627420), à chaque image où elle vit : l'octet +0x18 fait du joueur la
 // cible (FUN_004989c0) ; si la cible (+0x538, FUN_0048bee0) est le joueur, un tirage de période 8 (FUN_00465910) mène à
 // FUN_0048d6a0 (sur le composant social +0xb44, non suivi) et FUN_00492950 donne au piéton, sous la moitié de sa santé,
@@ -1764,6 +1783,7 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 		}
 		for(const CActionController::Drapeau &d : k->drapeauxPoses) if(d.numero < SCRIPT_PED_DRAPEAUX) p->drapeaux[d.numero] = d.valeur;
 		k->drapeauxPoses.clear();
+		AppliquerObjectifs(ped, *k);
 	}
 }
 
@@ -2774,6 +2794,7 @@ main(int argc, char **argv)
 					p->cap = atan2f(q->pos.y - p->pos.y, q->pos.x - p->pos.x) * 180.0f / 3.14159265f + r.decalage;
 				}
 			}
+			AppliquerObjectifs(c.first, c.second);
 			// SetHealth (FUN_00627500) : poser (FUN_00478190, pas sous la santé minimale), rendre (FUN_00474b70, jusqu'au
 			// maximum), ôter (FUN_004782a0, sans les invulnérabilités, ni sous 0 ni sous la santé minimale).
 			for(const CActionController::Sante &e : c.second.santesLancees){

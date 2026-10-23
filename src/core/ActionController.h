@@ -105,6 +105,16 @@ public:
 	// L'octet +8 d'une piste retient le nœud (FUN_005f4230 : le nœud finit quand plus aucune piste vivante à l'octet +8 ne
 	// reste ; une piste meurt quand sa mise à jour rend faux ou que sa durée de vie +0x10 est passée). L'outil s'en sert
 	// pour ces trois pistes, quand le nœud n'a pas d'autre fin : il finit quand elles sont toutes mortes.
+	// Les pistes des objectifs, suivies dans tous les contrôleurs (HumiliateFlee les porte) :
+	// - ClearCurrentObjective (0x936094 ; lancement FUN_0061bbf0, mise à jour FUN_0062a180 → FUN_00470110) : retire de la
+	//   file des objectifs ceux du type +0x18 (24), puis meurt (sa mise à jour rend faux) ;
+	// - FleeObjective (0x935578 ; lancement FUN_00628ce0) : un FleeObjective (type 22) fuyant la cible du piéton (+0x538 ;
+	//   +0x544 si l'octet +0x19 (25) ; d'abord le +4 du +0x10 du contexte, non suivi), mis devant la file (FUN_00471320),
+	//   ou au bout si l'octet +0x18 (24) (CPed::PushObjective) ; rien sans cible.
+	struct Effacement { float entree; int32 type; bool fait; };
+	std::vector<Effacement> effacements, effacementsLances;
+	struct Fuite { float entree; bool auBout, autreCible, fait; };
+	std::vector<Fuite> fuites, fuitesLancees;
 	struct Gestion { float entree, vie; bool joueur, retient; };
 	std::vector<Gestion> gestions, gestionsActives, combats, combatsActifs;
 	struct DemandeNoeud { float entree; uint32 nom; bool tenir, suivre, rendre, retient, vu, vivante; };
