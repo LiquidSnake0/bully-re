@@ -2679,6 +2679,7 @@ main(int argc, char **argv)
 			if(n == nil) printf("%6.2f s  le joueur joue %s : nœud absent de l'arbre global\n", maintenant / 1000.0, e.second.c_str());
 			else {
 				CActionController &c = controleurs[SCRIPT_PED_JOUEUR];
+				c.parLaManette = true;   // le nœud tient lieu d'un bouton tenu (src/core/ActionController.cpp, Jouer)
 				if(!c.Entrer(arbres, n, CJugeOutil(SCRIPT_PED_JOUEUR, maintenant / 1000.0f), maintenant / 1000.0f)){
 					// Une banque dont la descente jugée n'aboutit pas (conditions de visée, de bouton) : la manette de l'outil
 					// prend le premier nœud jouable sans condition parmi ses enfants (HeavyAttacks → son coup de pied).
@@ -2686,6 +2687,7 @@ main(int argc, char **argv)
 					if(n->genre == 'b') for(const CActionNode &e : n->enfants) if((d = arbres.Choisir(&e)) != nil) break;
 					c.Jouer(arbres, d ? d : n, maintenant / 1000.0f);
 				}
+				c.parLaManette = false;
 				printf("%6.2f s  le joueur joue %s%s\n", maintenant / 1000.0, chemin.c_str(), c.joue != n ? (" → " + arbres.CheminDe(c.joue)).c_str() : "");
 			}
 			e.second.clear();

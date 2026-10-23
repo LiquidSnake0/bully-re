@@ -121,6 +121,8 @@ public:
 	std::vector<DemandeNoeud> demandesNoeud;
 	std::vector<uint32> intentions;               // les noms posés en intention à cette image, rendus par Avancer
 	bool finParRetenues = false;                  // le nœud finit à la mort de ses pistes de l'IA qui le retiennent
+	bool retenu = false;                          // une piste du nœud (ou d'un nœud exécuté) a l'octet +8
+	bool parLaManette = false;                    // posé par l'appelant le temps d'un Entrer / Jouer de sa manette
 	// Ses pistes spawn (SpawnTrack 0x92de80 ; lancement FUN_005f8860, mise à jour FUN_005f72e0, arrêt FUN_005f7390) : la
 	// piste a son propre contrôleur (+0x84) et son contexte (+0x2c, dont la racine +0x40 est le nœud visé +0x6c, résolu
 	// d'avance) ; au lancement, le contrôleur descend dans le nœud visé et joue ce qu'il trouve ; à chaque image il avance

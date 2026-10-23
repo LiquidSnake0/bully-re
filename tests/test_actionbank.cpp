@@ -544,7 +544,11 @@ main(void)
 					VERIF(c.santes.size() == 1 && c.santes[0].mode == 2 && c.santes[0].valeur == 500.0f);
 					c.Avancer(g, nil, JugeMission(), 0.01f);
 					VERIF(c.santesLancees.size() == 1);
-					printf("  HumiliateFlee (victime de mission) : %s, SetHealth ôte %g\n", g.CheminDe(n).c_str(), c.santes[0].valeur);
+					// Aucune de ses pistes ne retient le nœud (FUN_005f4230) : il finit tout de suite, et son Opportunity prise
+					// mène à RunStart.
+					VERIF(c.joue && (c.joue->hachage & 0x7fffffff) == ActionHash("RunStart"));
+					printf("  HumiliateFlee (victime de mission) : %s, SetHealth ôte %g, puis %s\n", g.CheminDe(n).c_str(),
+					       c.santesLancees.empty() ? 0.0f : c.santesLancees[0].valeur, g.CheminDe(c.joue).c_str());
 				}
 			}
 		}

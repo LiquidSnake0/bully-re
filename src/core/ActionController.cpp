@@ -82,6 +82,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 		if(!f->Piste(dp, p)) continue;
 		float a = Reel(p, 12, 0.0f);
 		if(a < entree) a = entree;
+		if(Octet(p, 8)) retenu = true;   // FUN_005f4230 : une piste qui retient le nœud
 		if(prof > 0){
 			// Les pistes ajoutées comptent pour la fin du nœud joué comme les siennes (FUN_005f3e20 : une seule liste).
 			float vie = Reel(p, 16, -1.0f), finAnim = FinAnimation(b, p);
@@ -202,6 +203,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	effacements.clear(); fuites.clear();
 	lances.clear();                    // FUN_005f7390 : l'arrêt d'une piste spawn arrête son contrôleur
 	finExecutees = -1.0f;
+	retenu = false;
 	if(n) Pistes(b, *n, 0.0f, 0, juge);
 	if(n){
 		static const uint32 kSequence = ActionHash("Sequence"), kSurCible = ActionHash("PlayOnTarget");
@@ -233,6 +235,12 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 			}
 			if(instantane) d = 0.0f;
 		}
+	// FUN_005f4230 : un nœud qu'aucune de ses pistes (ni de celles que ses Execute ajoutent) ne retient (l'octet +8) finit à
+	// sa première mise à jour. GV/END d'une humiliation (SetMotionIntention, PlayOnTarget, TargetGrappleRelease, Execute)
+	// rend ainsi la main à l'arbre du joueur.
+	// Exception de l'outil : un nœud que sa manette fait jouer (lancer_lua --jouer) tient lieu d'un bouton tenu, qui le
+	// retient dans le jeu (0_BLOCK_0, la parade de 1_02, tant que le bouton est tenu) : il garde la règle d'avant.
+	if(n && d < 0.0f && !retenu && !parLaManette) d = 0.0f;
 	fin = d >= 0.0f ? t + d : -1.0f;
 	finParRetenues = false;
 	if(fin < 0.0f){
