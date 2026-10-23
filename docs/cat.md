@@ -222,9 +222,9 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
   premier), sinon un tirage `rand()` / 32767 : Small 8 / 9, Fat 3 / 4 (seuil 0,5), Medium 0 / 1 / 2, Large 5 / 6 / 7,
   Huge 10 / 11 / 12 (seuils 0,33 et 0,66) ; sans l'octet du premier argument, 17, 20 ou 14 pour le joueur, 13 à 21 par les
   deux tailles pour un autre humiliateur. `FUN_00492950` donne un groupe à une victime qui n'en a pas (-1 ou au-delà de
-  12) quand sa santé passe sous la moitié de son maximum (le double 0,5 de 0x8ff1f8), au lancement d'une piste
-  **`ManageTargets`** (`FUN_00627420`) dont la cible est le joueur : dans `1_02`, celle de `CombatLoco` dans
-  `AI_FightTutorial`. `CScriptPedPool::ChoisirGroupeHumiliation`, `SurveillerHumiliation`, `tests/test_scriptpeds`.
+  12) quand sa santé passe sous la moitié de son maximum (le double 0,5 de 0x8ff1f8), à la mise à jour d'une piste
+  **`ManageTargets`** (`FUN_00627420`, à chaque image où elle vit ; son lancement est `FUN_006273f0`) dont la cible est
+  le joueur : dans `1_02`, celle de `CombatLoco` dans `AI_FightTutorial` (section suivante). `CScriptPedPool::ChoisirGroupeHumiliation`, `SurveillerHumiliation`, `tests/test_scriptpeds`.
 - **Les branches de `Humiliate_Me`** (`tools/cat.py --mots`) : `CharacterSize` puis `HumiliationGroupIs`. Un Medium
   (rang 1) joue `5-8_NoogieSpit` (groupe 0, ou sans groupe : les deux `NOT` passent), `5-8_HitSelf` (1) ou
   `5-8_IndianBurn` (2) ; chaque branche a `Success/Load` (l'attente du chargement) puis `RCV`.
@@ -270,9 +270,96 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
   classe vérifiée par l'emplacement 0 sont résolues de nouveau avec, en `DAT_00b0a604`, le haut de cette pile : la clé
   qui choisit le parent d'une référence montée à plusieurs endroits (`FUN_005f6290`, `ActionNodeMultiParentReference`).
   Non suivi : l'outil résout depuis le nœud qui porte la piste.
-- **Ce qui reste supposé** : les arbres de l'IA ne sont pas joués (`ManageTargets` se lance dans l'outil à chaque image
-  où le geste `PedAttack` vise le joueur) ; le piéton qui fuit (`HumiliateFlee`, `Locomotion`) ne bouge pas, et les
-  collisions `FRIENDLYHIT` de sa chute (`KnockOuts/Rear/Rear`, 0 dégât) touchent le joueur resté à côté.
+- **Ce qui restait supposé ce soir-là** (levé ou précisé dans la section suivante) : les arbres de l'IA n'étaient pas
+  joués (`ManageTargets` se lançait dans l'outil à chaque image où le geste `PedAttack` visait le joueur) ; le piéton qui
+  fuit (`HumiliateFlee`, `Locomotion`) ne bouge pas, et les collisions `FRIENDLYHIT` de sa chute (`KnockOuts/Rear/Rear`,
+  0 dégât) touchaient le joueur resté à côté.
+
+## Les arbres de l'IA (23.10.2026, nuit)
+
+- **Les classes et leurs fonctions** : la table d'enregistrement des conditions (`FUN_0064b090`) range, par classe, son
+  nom, son créateur et sa table virtuelle ; la fonction qui juge est l'emplacement 1 de la table (`rtti.json` dans
+  l'export). Pour une piste, l'emplacement 2 est le lancement, 3 la mise à jour (à chaque image), 4 l'arrêt.
+- **Le composant d'actions du piéton** (+0x2e0, son piéton en +0x308) : le contrôleur d'actions en +0x258 et son contexte
+  en +0x300 (la racine, l'arbre de `PedSetActionTree`, en +0x340 ; `FUN_00484860`), le contrôleur de l'IA en +0x290 et
+  son contexte en +0x358 (`PedSetAITree` 0x5caac0 → `FUN_00484290` : l'arbre en +0x4b4, racine du contexte par
+  `FUN_005f36d0`), l'état des boutons et l'**intention** (+0x254) que `FUN_005f3720` efface à chaque image.
+  `FUN_00484490` fait avancer le contrôleur de l'IA (`FUN_005f49a0`) après l'avoir fait redescendre depuis la racine
+  s'il ne joue rien (`FUN_00483ec0`). L'outil fait avancer l'IA avant les actions : l'intention posée se lit à la même
+  image.
+- **La file des objectifs** (+0x5f0 : 20 places en +8, le nombre en +0x58, l'objectif courant est le premier,
+  `FUN_004701f0`). `PedAttack` (0x5c9ca0) y met un `AttackPedObjective` (`FUN_00470c10` : type 7, style +0x10, cible
+  +0x14), au bout (`CPed::PushObjective`, `FUN_00471240`) ou devant (`FUN_00471320`) ; une attaque de la même cible n'est
+  pas doublée. `FleeObjective` (type 22, la cible fuie en +0x10) vient de la piste du même nom. `FUN_00470110` retire
+  les objectifs d'un type (en sautant celui qui prend la place d'un retiré).
+- **La cible** : `PedGetTargetPed` (`FUN_00496fb0`) rend, pour un piéton qui n'est pas le joueur, +0x538 (le +0x17c du
+  composant de visée en +0x3bc), que `FUN_00497d20` pose (`PedLockTarget`, `ManageTargets`, `CombatLoco`) ; la cible
+  d'un objectif d'attaque passe en +0x540 quand la condition `Objective` le voit.
+- **Les zones de combat** (`PedJoinCombatZone`, `FUN_00487a70`) : trois zones autour d'une cible, chacune avec sa
+  capacité (+0x670 : `AIButes` +0x18, +0x1c, +0x20 = 1, 2, 4) et ses combattants (+0x67c + 0x2c × zone) ; l'attaquant
+  garde la sienne en +0x66c et son masque (`PedSetCombatZoneMask`, `FUN_00486110`). Les rayons sont ceux d'`AIButes`
+  (+0x28 à +0x38 : 0,9 / 1,5 / 3 / 6 / 8 m), la portée et le cosinus du cône d'attaque +0x54 / +0x58 (1,5 m, 0,76).
+- **Conditions lues** :
+
+| Classe | Fonction | Ce qu'elle juge |
+|---|---|---|
+| `Objective` | `FUN_00606c00` | l'objectif courant est du type +4 ; pour 7 et 16, sa cible passe en +0x540 (`FUN_0048c330`) |
+| `SetPedFlags` (condition) | `FUN_005fd720` | pose le drapeau +8 à l'octet +4, toujours vraie (la banque `Combat` lève le drapeau 54) |
+| `AttacksDisabled` | `FUN_006094f0` | toujours faux |
+| `Print` | `FUN_00609b30` | toujours vrai (un message de mise au point) |
+| `AcquireTarget` | `FUN_00601760` → `FUN_00499320` | le piéton a une cible (le choix de `FUN_004992a0` n'est pas lu en détail) |
+| `JoinCombatZone` | `FUN_00601550` | la zone +8 (ou l'une des trois) autour de la cible +0x538 est prenable, en essai |
+| `IsTargetOutOfReach` | `FUN_00602c40` → `FUN_00487560` | la cible hors d'atteinte (escalade, maillage de navigation) ; l'outil : faux |
+| `Interval` | `FUN_006033b0` | le tirage de période +4 de `FUN_00465910` pour le piéton |
+| `Random` | `FUN_00600a50` | une valeur tirée comparée à +4 par +8 |
+| `WeightedRandom` | `FUN_00600b00` | faux si le seuil +8 est sous le tirage du contexte (+0x24), sinon vrai et le tirage est renouvelé |
+| `RangeToTarget` | `FUN_00600780` | la distance à la cible comparée à +4 par +8 |
+| `InCombatZone` | `FUN_006015e0` | la distance à la cible dans la zone +4, élargie de +8 |
+| `ActionNodeRequest` | `FUN_005fd620` (`ConditionIntentionActionNodeRequest`) | l'intention (+0x254) est le nom du nœud jugé (le +0x34 du contexte) |
+| `OpeningBranchChildHasChild` | `FUN_00602710` | la racine de l'arbre d'actions a un enfant +4 qui a un enfant +8 (`Offense/Short`) |
+| `TargetConditionGroup` | `FUN_00601cc0` | le groupe +4 jugé pour la cible (le partenaire de prise si l'octet +8) |
+| `InAttackCone` | `FUN_004865a0` | la cible à portée et devant (`AIButes` +0x54, +0x58) |
+| `TargetRelativeHeight` | `FUN_00603170` | les hauteurs se recouvrent (l'outil : 1,8 m depuis les pieds, supposé) |
+| `LuaCond` | `FUN_006a74d0` → `FUN_005d80a0` | le résultat de la fonction du script lu par `lua_tonumber` (0x73b0d0), positif ; `0.0` est faux |
+
+- **Pistes lues** : `ManageTargets` (0x934d14 : `FUN_006273f0`, `FUN_00627420`) ; `CombatLoco` (0x9349e0 : `FUN_0062e9e0`,
+  `FUN_0062ea40` : la zone prise par `FUN_006252d0`, ses rayons par `FUN_006253e0`, l'intention de mouvement par
+  `FUN_0062e120` / `FUN_0061b430`) ; `ActionNodeRequest` (0x9334dc : `FUN_0061bb40`, `FUN_006262a0` → `FUN_006261f0` :
+  l'intention tant que le nœud nommé n'est pas joué par le contrôleur d'actions, puis la vie selon +0x1c, +0x1d, +0x1e) ;
+  `spawn` (0x92de80 : `FUN_005f8860`, `FUN_005f72e0`, `FUN_005f7390` : un contrôleur propre, qui redescend dans le nœud
+  visé quand son nœud finit si l'octet +0x29) ; `ClearCurrentObjective` (0x936094 : `FUN_0062a180` → `FUN_00470110`) ;
+  `FleeObjective` (0x935578 : `FUN_00628ce0`) ; `TargetPlayer` (0x9357d0 : `FUN_00629ba0`, la cible devient le joueur ; lue, pas jouée par l'outil).
+- **Ce qui retient un nœud** (`FUN_005f4230`, dans `FUN_005f49a0`) : chaque image, chaque piste vivante est mise à jour ;
+  elle meurt si sa mise à jour rend faux ou si sa durée de vie (+0x10) est passée ; le nœud vit tant qu'une piste vivante
+  a l'**octet +8**. Un nœud qu'aucune piste ne retient finit donc à sa première mise à jour (`GV/END` d'une humiliation) ;
+  l'outil applique la règle, sauf aux nœuds que sa manette fait jouer (ils tiennent lieu d'un bouton tenu), et fait
+  finir un nœud de l'IA sans autre fin quand ses pistes `ManageTargets`, `CombatLoco`, `ActionNodeRequest` et
+  `Opportunity` qui le retiennent sont mortes.
+- **Dans `1_02`** : `PedSetAITree(1, "/Global/AI_FightTutorial", …)` puis `PedAttack(1, 0, 3)` ; à 30,06 s le bully
+  descend dans `Combat/#7bfb37aa/CombatLoco` (`Special` refusée : `Fight_Tutorial` n'a pas d'`Offense/Special` ;
+  `WaitForTargetLoco` : à portée). `CombatLoco` le mène à 1,5 m du joueur (la zone 0) ; son `spawn` fait jouer
+  `CombatActions` : le `ControlNode` (retenu 1,03 s), puis `PostHit/OnGround` quand il est à terre et `PostHit/Hit` sous
+  les jabs ; `Offense` attend `F_CanBullyAttack` (0.0 pendant l'entraînement). `ManageTargets` lui donne le groupe 0 à
+  76,20 s. À 89,43 s, `HumiliateFlee/#575eb303` lui ôte son objectif d'attaque (`ClearCurrentObjective` 7) et lui donne
+  un `FleeObjective` : la banque `Combat` ne passe plus.
+- **Ce qui reste supposé ou non lu** : le choix d'une cible par `AcquireTarget` (l'outil prend celle de l'objectif) ;
+  l'atteinte (escalade, maillage) ; la hauteur relative ; le déplacement de `CombatLoco` va tout droit, à l'allure de
+  course, sans la recherche de chemin ni le recul ; `CollisionStart` et `AttackPhase` ne sont pas jugées (la parade de
+  `Block` ne passe pas). L'**intention** ne fait pas encore jouer `Offense/Short` à l'arbre d'actions : dans
+  `Fight_Tutorial`, la descente tombe toujours dans `Default_KEY` (la banque sans condition), et les passages vers
+  `Offense` viennent des `ActionOpps` que les nœuds de `Locomotion.act` exécutent (`../../ActionOpps`), relatifs à
+  l'endroit où la référence `r` est montée : c'est la pile du contexte, ci-dessous. La course de `RunStart` (la piste
+  `Locomotion`, `FUN_00613480`, exécute l'intention de mouvement +0 / +0x1c du composant +0x2e0) n'est pas jouée :
+  `AI_FightTutorial` n'a aucune branche pour l'objectif 22, seules `CombatLoco` et la piste `flee` des `Reactions`
+  posent cette intention. L'outil fait donc manquer la collision d'un coup quand la cible est dans le dos de l'attaquant
+  (supposé, faute des sphères des os de `FUN_005f9e70`) : le bully, retourné de 180 degrés, tombe sans toucher le joueur.
+- **La pile du contexte**, lue sans être recréée : `FUN_005f36d0` pose la racine (+0x40), remet la pile à zéro (+0x44) et
+  y met d'abord `FUN_005f4e40(racine)` : le nom haché de l'ancêtre de la racine placé juste sous la racine absolue
+  (`DAT_01b649dc`, en remontant par l'emplacement +0x34 avec -1). Une référence montée à plusieurs endroits
+  (`ActionNodeMultiParentReference`) rend son parent par `FUN_005f6290` : avec la clé -1, celle de `DAT_00b0a604` ; si
+  elle vaut aussi -1, le parent par défaut (+4) ; sinon le parent rangé pour cette clé dans sa table (+0x30, +0x38 paires).
+  Reste à établir qui remplit cette table au chargement et ce que vaut la clé pour `Fight_Tutorial` (toutes les banques
+  étant greffées sous `/Global`, `FUN_005f4e40` semble rendre `Global` pour tout arbre).
 
 ## Le chemin d'un nœud (18.10.2026)
 
