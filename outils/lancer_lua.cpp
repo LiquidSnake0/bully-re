@@ -163,6 +163,16 @@ static std::map<uint32, uint32> demandes;
 // vaut pas -1 (FUN_004850b0). L'outil tient le drapeau une seconde (ConditionFlag, HitLocation).
 struct CoupRecu { uint32 drapeau = 0; float jusqua = -1.0f; float degats = 0.0f; int attaquant = -1; float instant = -1.0f, precedent = 0.0f; };
 static std::map<int, CoupRecu> coups;
+// Un piéton qui disparaît emporte ses contrôleurs (le composant +0x2e0, libéré avec le CPed) : une entrée du pool reprise
+// plus tard (PedCreatePoint) part de contrôleurs neufs.
+static void
+OublierControleurs(int h)
+{
+	controleurs.erase(h);
+	controleursIA.erase(h);
+	coups.erase(h);
+}
+
 static float facteurCoupsJoueur = 1.0f;   // PlayerButes +0xac (172) pour l'état physique 0 (FUN_0047b810), lu au démarrage
 static std::map<int, std::pair<int, uint32>> partenaires;   // le piéton qui nous a fait jouer un nœud (PlayOnTarget), jusqu'à quand (ms)
 // L'intention de chaque piéton pour l'image (+0x254 du composant +0x2e0) : le nom qu'une piste ActionNodeRequest de son
@@ -958,7 +968,13 @@ AvancerMission(lua_State *L)
 				if(gestionnaire.etat.reussites.size() != banque.missions.size()) gestionnaire.etat.reussites.assign(banque.missions.size(), 0);
 				gestionnaire.etat.reussites[mission.indice]++;
 			}
-			{ int n = pietons.SupprimerDuScript(mission.script); if(n) printf("        %d piéton(s) laissé(s) par la mission, libéré(s)\n", n); }
+			{
+				std::vector<int> partis;
+				for(int i = 1; i < SCRIPT_PED_POOL_SIZE; i++) if(const CScriptPed *p = pietons.Acceder(i)) if(p->script == mission.script) partis.push_back(i);
+				int n = pietons.SupprimerDuScript(mission.script);
+				for(int h : partis) OublierControleurs(h);
+				if(n) printf("        %d piéton(s) laissé(s) par la mission, libéré(s)\n", n);
+			}
 			for(Thread &t : scripts[mission.script].threads)
 				if(t.etat < TUE){ t.etat = TUE; luaL_unref(L, LUA_REGISTRYINDEX, t.ref); t.ref = LUA_NOREF; }
 			mission.etat = AUCUNE;
@@ -1438,7 +1454,7 @@ static int
 PedDelete(lua_State *L)
 {
 	Journal("PedDelete", L, 1);
-	if(lua_isnumber(L, 1)) pietons.Supprimer((int)lua_tonumber(L, 1));
+	if(lua_isnumber(L, 1) && pietons.Supprimer((int)lua_tonumber(L, 1))) OublierControleurs((int)lua_tonumber(L, 1));
 	return 0;
 }
 
