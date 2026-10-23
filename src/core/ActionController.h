@@ -40,6 +40,14 @@ public:
 	struct Contact { const CActionNode *porteur; float debut, fin; uint32 drapeau; float degats; std::string surCoup; bool fait; };
 	std::vector<Contact> contacts;
 	std::vector<Contact> touches;                 // les coups qui portent à cette image, rendus par Avancer
+	// Ses pistes DamageHandle (HandleDamageTrack, table 0x9313e4 ; lancement FUN_0060fc70), y compris celles des nœuds
+	// que ses Execute font jouer (HitTree/…/Base/HitBase) : à leur lancement, le piéton subit les dégâts du coup reçu
+	// (le relevé +0x408 du contrôleur, ses dégâts en +0x38 : +0x440) multipliés par +0x18 (24), portés par
+	// l'attaquant du relevé (+4 : +0x40c), par FUN_0047b7f0 → FUN_0047b6b0. L'octet +0x1c (28) ajoute un effet de
+	// coup (FUN_0059b750), que l'outil ne joue pas.
+	struct Blessure { const CActionNode *porteur; float entree; float facteur; bool effet; bool fait; };
+	std::vector<Blessure> degats;
+	std::vector<Blessure> blessures;              // celles qui se lancent à cette image, rendues par Avancer
 	uint16 graine = 0;                // le mot +0x10c du piéton, pour le tirage (FUN_00465910) ; posé par l'appelant
 	uint32 image = 0;                 // le compteur d'images du jeu (DAT_00c1a99c, CTimer), tenu par l'appelant
 	uint32 hasard = 1;                // la graine du rand() du CRT (OpportunityRandomLatch)
@@ -48,8 +56,11 @@ public:
 
 	// PedSetActionTree : l'arbre posé, la descente faite tout de suite. Faux si rien n'aboutit (le nœud ne change pas).
 	bool Poser(const CActionBank &b, const CActionNode *a, const CJugeAction &juge, float t);
-	// Ce nœud devient le nœud joué.
-	void Jouer(const CActionBank &b, const CActionNode *n, float t);
+	// Ce nœud devient le nœud joué. Ses pistes Execute (lancement FUN_005f7070) font descendre le nœud visé (+0x4c, avec
+	// le juge s'il est donné, sans lui sinon) et ajoutent les pistes du nœud obtenu à celles du contrôleur
+	// (FUN_005f3e20, la même liste que le nœud joué : pas de contrôleur à part) ; chacune se lance quand le temps du nœud
+	// atteint son entrée (FUN_005f3fb0). L'outil en garde les Opportunity, les Collision et les DamageHandle.
+	void Jouer(const CActionBank &b, const CActionNode *n, float t, const CJugeAction *juge = nil);
 	// PedSetActionNode (FUN_004849a0 joue le nœud par l'emplacement +0x4c, la descente) et la manette de l'outil :
 	// une banque descend jusqu'au nœud qui aboutit (FUN_005f5490), un nœud jouable se joue lui-même. Faux si rien
 	// n'aboutit ; le nœud joué ne change pas alors.
@@ -63,6 +74,6 @@ public:
 	// La fin d'un nœud : le plus tard des (entrée + durée de vie) de ses pistes à durée finie ; -1 si aucune n'en a.
 	static float Duree(const CActionBank &b, const CActionNode &n);
 private:
-	void Contacts(const CActionBank &b, const CActionNode &n, float entree, int prof);
+	void Pistes(const CActionBank &b, const CActionNode &n, float entree, int prof, const CJugeAction *juge);
 	const CActionNode *Descendre(const CActionBank &b, const CActionNode *depuis, const CJugeAction &juge) const;
 };

@@ -45,36 +45,46 @@ CActionController::Duree(const CActionBank &b, const CActionNode &n)
 	return d;
 }
 
-// Les pistes Collision d'un nœud (entree : l'instant où il a été lancé dans le nœud joué), et celles des nœuds que ses
-// pistes Execute font jouer : la descente sans juge, comme le fait l'outil pour un nœud sans contexte (une feuille à
-// conditions n'est pas prise ; sous HeavyAttacks/…/Collision, c'est « ped »).
+// Les pistes d'un nœud que le contrôleur suit (Collision, DamageHandle et, pour un nœud exécuté, Opportunity), puis
+// celles des nœuds que ses pistes Execute font jouer (FUN_005f7070 : la descente +0x4c du nœud visé, FUN_005f3e20 :
+// ses pistes rejoignent la liste du contrôleur). entree : l'instant où le nœud a rejoint le nœud joué ; une piste
+// ajoutée se lance quand le temps du nœud atteint son entrée (+12, FUN_005f3fb0), donc au plus tôt à `entree`.
 void
-CActionController::Contacts(const CActionBank &b, const CActionNode &n, float entree, int prof)
+CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entree, int prof, const CJugeAction *juge)
 {
-	static const uint32 kCollision = ActionHash("Collision"), kExecute = ActionHash("Execute");
+	static const uint32 kCollision = ActionHash("Collision"), kExecute = ActionHash("Execute"), kDegats = ActionHash("DamageHandle");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
+	if(prof > 0)
+		for(COpportunite &o : COpportunite::DuNoeud(b, n)){
+			if(o.entree < entree) o.entree = entree;
+			occasions.push_back(o);
+		}
 	for(int32 dp : n.pistes){
 		CActionTrack p;
 		if(!f->Piste(dp, p)) continue;
+		float a = Reel(p, 12, 0.0f);
+		if(a < entree) a = entree;
 		if(p.type == kCollision){
 			const CActionAttribut *dr = p.Champ(44), *sur = p.Champ(104);
 			Contact c{&n, entree + Reel(p, 24, 0.0f), entree + Reel(p, 28, -1.0f),
 			          dr ? ActionHash(f->ChaineCitee(dr->decalage).c_str()) : 0u, Reel(p, 52, 0.0f),
 			          sur ? f->ChaineCitee(sur->decalage) : std::string(), false};
 			contacts.push_back(c);
+		}else if(p.type == kDegats){
+			{ const CActionAttribut *fx = p.Champ(28); degats.push_back({&n, a, Reel(p, 24, 0.0f), fx && fx->taille >= 1 && fx->valeur[0] != 0, false}); }
 		}else if(p.type == kExecute){
-			const CActionAttribut *a = p.Champ(32);
-			if(a == nil) continue;
-			const CActionNode *v = b.Relatif(&n, f->ChaineCitee(a->decalage).c_str());
-			const CActionNode *d = v ? b.Choisir(v) : nil;
-			if(d) Contacts(b, *d, entree + Reel(p, 12, 0.0f), prof + 1);
+			const CActionAttribut *at = p.Champ(32);
+			if(at == nil) continue;
+			const CActionNode *v = b.Relatif(&n, f->ChaineCitee(at->decalage).c_str());
+			const CActionNode *d = v == nil ? nil : juge ? b.Choisir(v, *juge) : b.Choisir(v);
+			if(d) Pistes(b, *d, a, prof + 1, juge);
 		}
 	}
 }
 
 void
-CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t)
+CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, const CJugeAction *juge)
 {
 	joue = n;
 	debut = t;
@@ -82,7 +92,8 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t)
 	suites.clear();
 	surCible.clear();
 	contacts.clear();
-	if(n) Contacts(b, *n, 0.0f, 0);
+	degats.clear();
+	if(n) Pistes(b, *n, 0.0f, 0, juge);
 	if(n){
 		static const uint32 kSequence = ActionHash("Sequence"), kSurCible = ActionHash("PlayOnTarget");
 		if(const CActionTreeFile *f = b.Fichier(*n))
@@ -113,7 +124,7 @@ CActionController::Entrer(const CActionBank &b, const CActionNode *n, const CJug
 	if(n == nil) return false;
 	const CActionNode *r = n->genre == 'b' ? b.Choisir(n, juge) : n;
 	if(r == nil) return false;
-	Jouer(b, r, t);
+	Jouer(b, r, t, &juge);
 	return true;
 }
 
@@ -123,7 +134,7 @@ CActionController::Poser(const CActionBank &b, const CActionNode *a, const CJuge
 	arbre = a;
 	const CActionNode *n = Descendre(b, a, juge);
 	if(n == nil) return false;
-	Jouer(b, n, t);
+	Jouer(b, n, t, &juge);
 	return true;
 }
 
@@ -179,6 +190,9 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 	(void)depuisRacine;
 	pourCible.clear();
 	touches.clear();
+	blessures.clear();
+	for(Blessure &d : degats)     // FUN_0060fc70 : au lancement de la piste
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; blessures.push_back(d); }
 	for(Contact &c : contacts)    // FUN_005f9e70 : la fenêtre du coup
 		if(!c.fait && Temps(t) >= c.debut && (c.fin < 0.0f || Temps(t) <= c.fin)){ c.fait = true; touches.push_back(c); }
 	for(SurCible &c : surCible)   // FUN_006615f0
@@ -188,7 +202,7 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		}
 	if(joue){
 		const CActionNode *n = Occasions(b, juge, t);
-		if(n){ Jouer(b, n, t); return true; }
+		if(n){ Jouer(b, n, t, &juge); return true; }
 	}
 	bool fini = joue && fin >= 0.0f && t >= fin;
 	// FUN_005f7030 : les Sequence à la fin du nœud. Le nœud visé (FUN_005f4e30) peut être hors de l'arbre posé : la
@@ -196,18 +210,18 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 	if(fini)
 		for(const std::string &chemin : suites){
 			const CActionNode *d = b.Choisir(b.Relatif(joue, chemin.c_str()), juge);
-			if(d){ Jouer(b, d, t); return true; }
+			if(d){ Jouer(b, d, t, &juge); return true; }
 		}
 	if(!fini && !demande) return false;
 	if(joue){
 		for(const CActionNode &e : joue->enfants){
 			const CActionNode *n = Descendre(b, &e, juge);
-			if(n && n != joue){ Jouer(b, n, t); return true; }
+			if(n && n != joue){ Jouer(b, n, t, &juge); return true; }
 		}
 	}
 	if(arbre){
 		const CActionNode *n = Descendre(b, arbre, juge);
-		if(n && (n != joue || fini)){ Jouer(b, n, t); return true; }
+		if(n && (n != joue || fini)){ Jouer(b, n, t, &juge); return true; }
 	}
 	return false;
 }

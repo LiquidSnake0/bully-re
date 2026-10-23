@@ -372,6 +372,37 @@ main(void)
 				VERIF(g.JoueNom(c.joue, "OnGroundBounce"));
 			}
 		}
+		// Les pistes d'un nœud exécuté rejoignent celles du contrôleur (FUN_005f7070, FUN_005f3e20) : un coup reçu debout
+		// (HEADJAB) fait jouer une feuille de HitTree qui exécute ../HitBase, dont la piste DamageHandle (facteur 1) et
+		// l'Opportunity vers KnockOuts arrivent au contrôleur ; la DamageHandle se lance à l'entrée (FUN_0060fc70).
+		{
+			struct JugeCoup : CJugeAction {
+				int Juger(const CActionTreeFile &, int32, uint32 type, const uint32 mots[6]) const override {
+					if(type == ActionHash("ConditionFlag")) return (mots[0] & 0x7fffffff) == ActionHash("HEADJAB");
+					if(type == ActionHash("HitLocation") || type == ActionHash("HitTime") || type == ActionHash("stat")) return 1;
+					if(type == ActionHash("MePlaying") || type == ActionHash("IsPlayer") || type == ActionHash("PedFightingSystem")) return 0;
+					return -1;
+				}
+			};
+			const CActionNode *coups = g.Trouver("/Global/HitTree");
+			VERIF(coups != nil);
+			if(coups){
+				CActionController c;
+				JugeCoup juge;
+				VERIF(c.Entrer(g, coups, juge, 0.0f));
+				printf("  coup reçu debout (HEADJAB) : %s, la DamageHandle et l'Opportunity de ../HitBase (exécuté)\n", g.CheminDe(c.joue).c_str());
+				const CActionNode *base = g.Trouver("/Global/HitTree/Standing/Base/HitBase");
+				VERIF(base != nil && c.degats.size() == 1 && c.degats[0].porteur == base && c.degats[0].facteur == 1.0f && c.degats[0].effet);
+				bool ko = false;
+				for(const COpportunite &o : c.occasions) if(o.porteur == base && o.chemin == "../../../KnockOuts") ko = true;
+				VERIF(ko);
+				VERIF(c.blessures.empty());
+				c.Avancer(g, nil, juge, 0.01f);
+				VERIF(c.blessures.size() == 1);
+				c.Avancer(g, nil, juge, 0.02f);
+				VERIF(c.blessures.empty());   // une fois, au lancement
+			}
+		}
 		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());
 	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");
