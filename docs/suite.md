@@ -37,12 +37,24 @@ chantier. Un point fini passe en bas, avec son commit.
    `Opportunity`, les groupes d'animations, la parole retenue, `TargetRelativePosition`, `FaceTarget`,
    `SeekEntityPosition`, `PedFlags` jugée : **`1_02` se termine réussie à 119,13 s** (la vraie `5-8_NoogieSpit`, puis
    `F_SetupRussellFight`).
-   Suite : les arbres de l'IA (`PedSetAITree`, `AI_FightTutorial` : le nœud `CombatActions` lancé par `spawn`, un second
-   contrôleur ; les conditions `OBJECTIVE`, `AcquireTarget`, `JoinCombatZone`, `IsTargetOutOfReach` ; la piste
-   `ManageTargets`, que l'outil lance aujourd'hui à chaque image du geste `PedAttack`) à la place du geste `PedAttack` ;
-   la locomotion des arbres (`Locomotion`, la fuite après `HumiliateFlee`, pour que les `FRIENDLYHIT` de la chute ne
-   touchent plus le joueur) ; la pile du contexte (+0x44 / +0x48, la clé `DAT_00b0a604` des références montées à
-   plusieurs endroits, `FUN_005f6290`) ; les `SpeechTrack` sans tenue ; puis la mission suivante, `1_03`.
+   L'arbre de l'IA est joué (docs/cat.md, « Les arbres de l'IA ») : `PedSetAITree`, la file des objectifs, dix-huit
+   conditions, `ManageTargets`, `CombatLoco`, `ActionNodeRequest`, `spawn`, `ClearCurrentObjective`, `FleeObjective`, la
+   règle de l'octet +8 ; `1_02` reste réussie (119,03 s).
+   Suite, dans l'ordre :
+   - **la pile du contexte et les références montées** (+0x44 / +0x48 ; `FUN_005f36d0`, `FUN_005f4e40`, `FUN_005f6290`,
+     la clé `DAT_00b0a604`) : trouver qui remplit la table des parents d'une `ActionNodeMultiParentReference` au
+     chargement (+0x30, +0x38) et ce que vaut la clé, pour suivre les références `r` (`Locomotion.act` sous
+     `Fight_Tutorial/Default_KEY`) ; c'est ce qui bloque l'intention `Short` de `CombatActions` : les passages vers
+     `Offense` viennent des `ActionOpps` que les nœuds de `Locomotion` exécutent (`../../ActionOpps`), relatifs à
+     l'endroit où la référence est montée. Blocage du 23.10 au soir : `FUN_005f4e40` semble rendre `Global` pour tout
+     arbre greffé sous `/Global`, la clé reste donc à comprendre (lire le chargeur des références, `FUN_005f6960` ?) ;
+   - **la course de `RunStart`** (la piste `Locomotion`, `FUN_00613480`, exécute l'intention de mouvement +0 / +0x1c du
+     composant +0x2e0) : qui la pose pour un piéton dont l'objectif est `FleeObjective` (22), alors
+     qu'`AI_FightTutorial` n'a aucune branche pour cet objectif (seules `CombatLoco` et la piste `flee` des `Reactions`
+     la posent) ; peut-être l'animation `PLAYERRUN_START` elle-même (le déplacement de la racine) ;
+   - le choix d'une cible (`FUN_004992a0`, `FUN_004988b0`, `FUN_00496b60`), `CollisionStart` et `AttackPhase` (la parade
+     `Block` de `CombatActions`), les sphères des os des coups (au lieu du demi-espace avant) ;
+   - les `SpeechTrack` sans tenue ; puis la mission suivante, `1_03`.
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
    directement au lieu des exports headless. Prérequis : Ghidra 12.1.4 et
@@ -73,6 +85,13 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- Les arbres de l'IA (23.10, nuit ; aa2b85d, cf1c182, fccc685, b5f3ef3, 4d2d23f, e9205d8, 495f738, a287497, fc9349b) :
+  `LuaCond` lue par `lua_tonumber` ; la file des objectifs et `AttackPedObjective` (`PedAttack`) ; le contrôleur de l'IA
+  (`PedSetAITree`, `FUN_00484290`, `FUN_00484490`) et dix-huit conditions ; les pistes `ManageTargets` (mise à jour
+  `FUN_00627420`, qui donne le groupe d'humiliation), `CombatLoco`, `ActionNodeRequest` (l'intention +0x254), `spawn` (un
+  contrôleur propre), `ClearCurrentObjective`, `FleeObjective` ; les zones de combat (`PedJoinCombatZone`) ; l'octet +8
+  qui retient un nœud (`FUN_005f4230`) ; les contrôleurs d'un piéton supprimé ; les coups de face. **`1_02` reste réussie,
+  à 119,03 s**, avec le vrai comportement de l'IA à la place du geste `PedAttack`.
 - L'humiliation de `1_02` (23.10, soir ; 9985800) : le groupe d'humiliation (+0x200 du composant social en +0xb44,
   `FUN_0048e790`, `FUN_0048f5d0`, `FUN_004925d0`, `FUN_00492950`, `ManageTargets` `FUN_00627420`), `HumiliationGroupIs` ;
   les conditions propres des `Opportunity` (le champ 60 par la seconde table de renvois), `ActionNodePlayTimePast` ;

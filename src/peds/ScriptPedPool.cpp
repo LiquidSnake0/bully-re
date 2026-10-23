@@ -35,11 +35,21 @@ CScriptPedPool::Creer(int32 modele, const CVector &pos, float cap, int32 script)
 	return -1;
 }
 
+// Un piéton qui disparaît quitte les zones de combat où il se tenait (supposé : le destructeur de CPed le fait).
+static void
+QuitterZones(CScriptPed *peds, int h)
+{
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++)
+		for(std::vector<int> &z : peds[i].combattants)
+			for(size_t k = 0; k < z.size(); ) if(z[k] == h) z.erase(z.begin() + k); else k++;
+}
+
 bool
 CScriptPedPool::Supprimer(int h)
 {
 	if(h == SCRIPT_PED_JOUEUR || !Valide(h)) return false;
 	peds[h] = CScriptPed();
+	QuitterZones(peds, h);
 	return true;
 }
 
@@ -66,7 +76,7 @@ CScriptPedPool::SupprimerDuScript(int32 script)
 {
 	int n = 0;
 	for(int i = 1; i < SCRIPT_PED_POOL_SIZE; i++)
-		if(peds[i].vivant && peds[i].script == script){ peds[i] = CScriptPed(); n++; }
+		if(peds[i].vivant && peds[i].script == script){ peds[i] = CScriptPed(); QuitterZones(peds, i); n++; }
 	return n;
 }
 
@@ -102,7 +112,7 @@ CScriptPedPool::Arreter(int h)
 }
 
 bool
-CScriptPedPool::Attaquer(int h, int cible)
+CScriptPedPool::Attaquer(int h, int cible, int32 style, bool devant)
 {
 	CScriptPed *p = Acceder(h);
 	const CScriptPed *c = Acceder(cible);
@@ -110,7 +120,76 @@ CScriptPedPool::Attaquer(int h, int cible)
 	p->attaque = cible;
 	p->enMarche = false;
 	p->prochainCoup = 0;
+	CObjectifPieton o;
+	o.type = OBJECTIF_ATTAQUER_PIETON; o.cible = cible; o.style = style;
+	PousserObjectif(h, o, devant);
 	return true;
+}
+
+// Deux objectifs qui reviennent au même pour la file : deux attaques (type 7) de la même cible (+0x14).
+static bool
+MemeObjectif(const CObjectifPieton &a, const CObjectifPieton &b)
+{
+	return a.type == OBJECTIF_ATTAQUER_PIETON && b.type == OBJECTIF_ATTAQUER_PIETON && a.cible == b.cible;
+}
+
+bool
+CScriptPedPool::PousserObjectif(int h, const CObjectifPieton &o, bool devant)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return false;
+	int &n = p->nombreObjectifs;
+	if(n != 0 && MemeObjectif(o, p->objectifs[devant ? 0 : n - 1])) return true;
+	if(n >= SCRIPT_PED_OBJECTIFS) return false;
+	if(devant){
+		for(int i = n; i > 0; i--) p->objectifs[i] = p->objectifs[i - 1];
+		p->objectifs[0] = o;
+	}else
+		p->objectifs[n] = o;
+	n++;
+	return true;
+}
+
+bool
+CScriptPedPool::JoindreZoneCombat(int h, int cible, int zone, bool essai)
+{
+	CScriptPed *p = Acceder(h), *c = Acceder(cible);
+	if(p == nil || c == nil || h == cible) return false;
+	if(zone >= 0 && zone <= 2 && !p->masqueZones[zone]) return false;
+	if(!essai && p->verrou != cible) Verrouiller(h, cible, 0);
+	if(zone < 0 || zone > 2) return false;
+	std::vector<int> &z = c->combattants[zone];
+	for(int x : z) if(x == h) return true;
+	if((int)z.size() >= c->capaciteZones[zone]) return false;
+	if(essai) return true;
+	for(int k = 0; k < 3; k++)
+		for(size_t i = 0; i < c->combattants[k].size(); )
+			if(c->combattants[k][i] == h) c->combattants[k].erase(c->combattants[k].begin() + i); else i++;
+	z.push_back(h);
+	p->zoneCombat = zone;
+	return true;
+}
+
+int
+CScriptPedPool::RetirerObjectifs(int h, int32 type)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return 0;
+	int retires = 0;
+	for(int i = 0; i < p->nombreObjectifs; i++)
+		if(p->objectifs[i].type == type){
+			for(int k = i; k + 1 < p->nombreObjectifs; k++) p->objectifs[k] = p->objectifs[k + 1];   // FUN_0046fe40
+			p->nombreObjectifs--;
+			retires++;
+		}
+	return retires;
+}
+
+const CObjectifPieton *
+CScriptPedPool::ObjectifCourant(int h) const
+{
+	const CScriptPed *p = Acceder(h);
+	return p && p->nombreObjectifs > 0 ? &p->objectifs[0] : nil;
 }
 
 bool
@@ -220,7 +299,7 @@ CScriptPedPool::Avancer(float dt)
 			p.sante += p.regeneration / 100.0f * dt;
 			if(p.sante > p.santeMax) p.sante = p.santeMax;
 		}
-		if(p.attaque >= 0){
+		if(p.attaque >= 0 && !p.arbreIA){
 			CScriptPed *c = Acceder(p.attaque);
 			if(c == nil || c->mort){ p.attaque = -1; continue; }
 			// La poursuite se fait à la course ; à portée, un coup toutes les SCRIPT_PED_CADENCE s.

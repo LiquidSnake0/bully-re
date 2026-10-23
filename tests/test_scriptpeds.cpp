@@ -158,6 +158,42 @@ main(void)
 		VERIF(q.ChoisirGroupeHumiliation(a, 1, b, 1, true, 0.5f) == -1 && pa->groupeHumiliation == 20);   // un autre et l'octet : rien
 		VERIF(q.PoserGroupeHumiliation(a, 5) == 20 && q.PoserGroupeHumiliation(a, 5) == -1);
 	}
+	// lua_PedAttack (0x5c9ca0) : un AttackPedObjective (FUN_00470c10, type 7) dans la file des objectifs (+0x5f0) ;
+	// FUN_00471240 l'ajoute au bout, FUN_00471320 devant ; la même attaque que le dernier (le premier) n'est pas doublée.
+	{
+		CScriptPedPool q;
+		int a = q.Creer(146, CVector(0, 0, 0), 0, 1), b = q.Creer(85, CVector(1, 0, 0), 0, 1), c = q.Creer(99, CVector(2, 0, 0), 0, 1);
+		VERIF(q.ObjectifCourant(a) == nil);                    // l'objectif par défaut n'est pas suivi
+		VERIF(q.Attaquer(a, SCRIPT_PED_JOUEUR, 3) && q.Acceder(a)->nombreObjectifs == 1);
+		const CObjectifPieton *o = q.ObjectifCourant(a);
+		VERIF(o && o->type == OBJECTIF_ATTAQUER_PIETON && o->cible == SCRIPT_PED_JOUEUR && o->style == 3);
+		VERIF(q.Attaquer(a, SCRIPT_PED_JOUEUR, 3) && q.Acceder(a)->nombreObjectifs == 1);   // pas doublé
+		VERIF(q.Attaquer(a, b) && q.Acceder(a)->nombreObjectifs == 2 && q.ObjectifCourant(a)->cible == SCRIPT_PED_JOUEUR);
+		VERIF(q.Attaquer(a, c, 0, true) && q.Acceder(a)->nombreObjectifs == 3 && q.ObjectifCourant(a)->cible == c);
+		VERIF(q.Acceder(a)->objectifs[1].cible == SCRIPT_PED_JOUEUR && q.Acceder(a)->objectifs[2].cible == b);
+		VERIF(q.Attaquer(a, c, 0, true) && q.Acceder(a)->nombreObjectifs == 3);              // devant : comparé au premier
+		// FUN_00470110 : les deux attaques de suite (0 et 1) ; la seconde, venue à la place de la première, est sautée.
+		VERIF(q.RetirerObjectifs(a, OBJECTIF_ATTAQUER_PIETON) == 2 && q.Acceder(a)->nombreObjectifs == 1 && q.ObjectifCourant(a)->cible == SCRIPT_PED_JOUEUR);
+		VERIF(q.RetirerObjectifs(a, OBJECTIF_ATTAQUER_PIETON) == 1 && q.ObjectifCourant(a) == nil);
+		VERIF(q.Attaquer(a, c, 0, true) && q.Attaquer(a, b) && q.Attaquer(a, SCRIPT_PED_JOUEUR) && q.Acceder(a)->nombreObjectifs == 3);
+		CObjectifPieton autre; autre.type = 9;
+		for(int i = 3; i < SCRIPT_PED_OBJECTIFS; i++) VERIF(q.PousserObjectif(a, autre, false));
+		VERIF(!q.PousserObjectif(a, autre, false) && q.Acceder(a)->nombreObjectifs == SCRIPT_PED_OBJECTIFS);   // 20 places
+	}
+	// PedJoinCombatZone (FUN_00487a70) : la zone 0 du joueur n'a qu'une place (AIButes +0x18) ; l'essai ne prend rien.
+	{
+		CScriptPedPool q;
+		int a = q.Creer(146, CVector(0, 0, 0), 0, 1), b = q.Creer(85, CVector(1, 0, 0), 0, 1);
+		VERIF(q.JoindreZoneCombat(a, SCRIPT_PED_JOUEUR, 0, true) && q.Acceder(a)->zoneCombat == -1 && q.Acceder(a)->verrou == -1);
+		VERIF(q.JoindreZoneCombat(a, SCRIPT_PED_JOUEUR, 0, false) && q.Acceder(a)->zoneCombat == 0 && q.Acceder(a)->verrou == SCRIPT_PED_JOUEUR);
+		VERIF(q.JoindreZoneCombat(a, SCRIPT_PED_JOUEUR, 0, true));                       // déjà dedans
+		VERIF(!q.JoindreZoneCombat(b, SCRIPT_PED_JOUEUR, 0, true) && q.JoindreZoneCombat(b, SCRIPT_PED_JOUEUR, 1, false));
+		q.Acceder(b)->masqueZones[2] = false;                                            // PedSetCombatZoneMask
+		VERIF(!q.JoindreZoneCombat(b, SCRIPT_PED_JOUEUR, 2, true));
+		VERIF(q.JoindreZoneCombat(a, SCRIPT_PED_JOUEUR, 1, false) && q.Acceder(a)->zoneCombat == 1);   // il quitte la zone 0
+		VERIF(q.Acceder(SCRIPT_PED_JOUEUR)->combattants[0].empty() && q.Acceder(SCRIPT_PED_JOUEUR)->combattants[1].size() == 2);
+		VERIF(q.Supprimer(a) && q.Acceder(SCRIPT_PED_JOUEUR)->combattants[1].size() == 1);
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }

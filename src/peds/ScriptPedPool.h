@@ -9,6 +9,7 @@
 // scripts avancent et voient les piétons bouger, arriver et mourir.
 #pragma once
 #include "../common.h"
+#include <vector>
 
 enum { SCRIPT_PED_POOL_SIZE = 24, SCRIPT_PED_JOUEUR = 0 };
 // Les drapeaux de +0x1314 (CScriptPed::drapeaux) : jusqu'à 123 dans les arbres d'actions relevés.
@@ -33,6 +34,15 @@ static const float SCRIPT_PED_PORTEE = 1.2f;        // m
 static const float SCRIPT_PED_CADENCE = 0.8f;       // s entre deux coups
 static const float SCRIPT_PED_DEGATS = 10.0f;       // points de vie par coup
 
+// Les objectifs d'un piéton (+0x5f0 : une file de 20 places en +8, leur nombre en +0x58, l'objectif par défaut en +0x5c).
+// L'objectif courant est le premier de la file (FUN_004701f0), sinon celui par défaut (l'outil n'en a pas). Un objectif a
+// son type en +8 ; AttackPedObjective (FUN_00470c10, table 0x… : « attaquer un piéton ») est le type 7, sa cible en +0x14,
+// son style en +0x10 (le troisième argument de PedAttack, 0 à 3) ; le type 16 a aussi une cible en +0x14 (la condition
+// Objective les traite ensemble, FUN_00606c00). Le compte de références (+0xc) n'est pas suivi.
+// FleeObjective (le constructeur FUN_0046f940(0x16, piéton), table 0x911894) est le type 22, la cible fuie en +0x10.
+enum { OBJECTIF_ATTAQUER_PIETON = 7, OBJECTIF_ATTAQUER_16 = 16, OBJECTIF_FUIR = 22, SCRIPT_PED_OBJECTIFS = 20 };
+struct CObjectifPieton { int32 type = -1; int cible = -1; int32 style = 0; };
+
 struct CScriptPed {
 	bool vivant = false;         // l'entrée est prise
 	int32 modele = -1;
@@ -56,6 +66,21 @@ struct CScriptPed {
 	// d'animations HUMIL_ (ScriptPedGroupeHumiliation). La condition HumiliationGroupIs le lit (FUN_006039b0).
 	int32 groupeHumiliation = -1;
 	int cibleDePrise = -1;       // +0x155c, PedSetGrappleTarget (0x474360) : le partenaire de prise, -1 sinon
+	CObjectifPieton objectifs[SCRIPT_PED_OBJECTIFS];   // +0x5f8, la file des objectifs
+	int nombreObjectifs = 0;     // +0x648
+	// Le composant de combat (+0x668, son piéton en +0) : la zone de combat où le piéton s'est placé autour de sa cible
+	// (+0x66c, -1 aucune), le masque des trois zones qu'il peut prendre (+0x700, PedSetCombatZoneMask 0x5cd0c0 →
+	// FUN_00486110 ; vrai par défaut, supposé). Comme cible : la capacité de chaque zone (+0x670, PedSetNumCombatants
+	// 0x5cb7d0 ; PedRestoreNumCombatants 0x5cb9c0 remet AIButes +0x18, +0x1c, +0x20 : 1, 2, 4) et ses combattants
+	// (+0x67c + 0x2c × zone : le nombre, puis les piétons).
+	bool arbreIA = false;        // +0x4b4 du composant +0x2e0 : un arbre de l'IA posé (PedSetAITree) ; l'outil ne joue
+	                             // alors plus le geste de PedAttack, c'est l'arbre qui mène le piéton
+	int zoneCombat = -1;
+	bool masqueZones[3] = {true, true, true};
+	int32 capaciteZones[3] = {1, 2, 4};
+	std::vector<int> combattants[3];
+	int cibleObjectif = -1;      // +0x540 (+0x184 du composant de visée en +0x3bc) : la cible d'un objectif d'attaque, que la
+	                             // condition Objective pose quand elle passe (FUN_0048c330)
 	bool mort = false;
 	// Le geste en cours.
 	bool enMarche = false;       // va vers `cible` à `vitesse`
@@ -89,8 +114,23 @@ public:
 	bool Aller(int handle, const CVector &cible, int allure);
 	// lua_PedStop (0x5c7630) : plus de geste en cours.
 	bool Arreter(int handle);
-	// lua_PedAttack (0x5c9ca0) : l'attaquant prend la cible ; faux si l'un des deux n'existe pas.
-	bool Attaquer(int handle, int cible);
+	// lua_PedAttack (0x5c9ca0) : l'attaquant prend la cible ; faux si l'un des deux n'existe pas. Le moteur crée un
+	// AttackPedObjective (FUN_00470c10 : type 7, la cible, le style) et le met dans la file des objectifs : au bout
+	// (CPed::PushObjective, FUN_00471240), ou devant si `devant` (le quatrième argument du script quand le troisième est
+	// un nombre ; FUN_00471320). L'outil garde aussi le geste (poursuite et coups), que lancer_lua n'avance pas pour un
+	// piéton qui a un arbre de l'IA : c'est alors l'arbre qui le mène.
+	bool Attaquer(int handle, int cible, int32 style = 0, bool devant = false);
+	// FUN_00471240 (devant faux) et FUN_00471320 (devant vrai) : un objectif d'attaque (type 7) qui vise la même cible
+	// (+0x14) que le dernier de la file (le premier, devant) n'est pas ajouté, ni un objectif de type 8 qui porte le même
+	// +0x1c (non suivi ici) ; la file pleine (20) refuse. Vrai si l'objectif est dans la file (ajouté ou déjà là).
+	bool PousserObjectif(int handle, const CObjectifPieton &o, bool devant);
+	// FUN_00470110 (la mise à jour de la piste ClearCurrentObjective, FUN_0062a180) : retire de la file les objectifs du
+	// type donné ; après un retrait, l'objectif qui prend sa place n'est pas examiné (l'indice avance quand même, comme
+	// dans le moteur). Rend le nombre retiré.
+	int RetirerObjectifs(int handle, int32 type);
+	// FUN_004701f0 : l'objectif courant, le premier de la file ; nil si elle est vide (l'objectif par défaut +0x5c n'est
+	// pas suivi).
+	const CObjectifPieton *ObjectifCourant(int handle) const;
 	// lua_PedLockTarget (0x5cb060) : rien si le piéton n'existe pas ; cible -1 lève le verrou (FUN_004989c0(0)) ;
 	// sinon, si la cible existe, FUN_00497d20 la verrouille avec le mode donné. Vrai si quelque chose a changé.
 	bool Verrouiller(int handle, int cible, int mode);
@@ -132,6 +172,13 @@ public:
 	// d'une piste ManageTargets (FUN_00627420) quand la cible du piéton est le joueur qui l'appelle. Rend le groupe posé,
 	// -1 si rien.
 	int SurveillerHumiliation(int victime, int taille, int tailleJoueur, float tirage);
+	// PedJoinCombatZone (FUN_00487a70, ecx = le composant de combat de l'attaquant) : prendre la zone `zone` (0, 1, 2)
+	// autour de `cible`. Refusé si la zone est masquée (une zone hors de 0 à 2 passe). Sauf `essai` (l'octet du dernier
+	// argument : la condition JoinCombatZone ne fait que tester), la cible devient celle de l'attaquant (FUN_004989c0).
+	// Vrai si l'attaquant y est déjà, ou si la zone a moins de combattants que sa capacité : alors, sauf `essai`, il
+	// quitte sa zone d'avant et y entre (FUN_004878e0, FUN_00486c70, +0x66c). Le remplacement d'un combattant moins bien
+	// placé (FUN_004863c0) et l'arme à distance (FUN_00486a90, seule la zone 2) ne sont pas suivis.
+	bool JoindreZoneCombat(int handle, int cible, int zone, bool essai);
 	// lua_PedMakeAmbient (0x5ca850) : rendu à la population, plus ramassé par son script.
 	bool RendreAmbiant(int handle);
 	// Une image de dt secondes : marches, poursuites et coups ; pose les drapeaux d'événements. La régénération

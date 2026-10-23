@@ -115,6 +115,8 @@ static CActionBank arbres;
 // Par piéton, son contrôleur d'actions (src/core/ActionController.h) : l'arbre posé par PedSetActionTree, le nœud
 // joué (+0x10) que PedSetActionNode pose, que PedIsPlaying compare, et qui avance à chaque image.
 static std::map<int, CActionController> controleurs;
+static std::map<int, CActionController> controleursIA;   // le contrôleur de l'IA (+0x290 du composant +0x2e0), PedSetAITree
+static int journalIA = 80;   // les passages du contrôleur de l'IA journalisés (les premiers)
 // Les groupes d'animations (src/anim/AnimGroups.h) : les .agr de Stream/World.img, que les scripts chargent
 // (LoadAnimationGroup) et que la condition AnimationGroupLoaded demande ; une demande est servie à l'image suivante.
 static CAnimGroups groupesAnim;
@@ -161,11 +163,63 @@ static std::map<uint32, uint32> demandes;
 // vaut pas -1 (FUN_004850b0). L'outil tient le drapeau une seconde (ConditionFlag, HitLocation).
 struct CoupRecu { uint32 drapeau = 0; float jusqua = -1.0f; float degats = 0.0f; int attaquant = -1; float instant = -1.0f, precedent = 0.0f; };
 static std::map<int, CoupRecu> coups;
+// Un piéton qui disparaît emporte ses contrôleurs (le composant +0x2e0, libéré avec le CPed) : une entrée du pool reprise
+// plus tard (PedCreatePoint) part de contrôleurs neufs.
+static void
+OublierControleurs(int h)
+{
+	controleurs.erase(h);
+	controleursIA.erase(h);
+	coups.erase(h);
+}
+
 static float facteurCoupsJoueur = 1.0f;   // PlayerButes +0xac (172) pour l'état physique 0 (FUN_0047b810), lu au démarrage
 static std::map<int, std::pair<int, uint32>> partenaires;   // le piéton qui nous a fait jouer un nœud (PlayOnTarget), jusqu'à quand (ms)
+// L'intention de chaque piéton pour l'image (+0x254 du composant +0x2e0) : le nom qu'une piste ActionNodeRequest de son
+// arbre de l'IA y pose (FUN_005f35e0), lu par la condition ActionNodeRequest de son arbre d'actions, effacé en fin d'image
+// avec l'état des boutons (FUN_005f3720).
+static std::map<int, uint32> intentionsPietons;
+// AIButes (Globals.cat, DAT_020c889c, FUN_0072ae00) : +0x18 à +0x20 la capacité des trois zones de combat ; +0x28 à
+// +0x38 les rayons des zones (0,9 / 1,5 / 3 / 6 / 8 m) ; +0x54 la portée et +0x58 le cosinus du cône d'attaque.
+static CActionTrack butesIA;
+static float
+ButeIA(uint16 position, float defaut)
+{
+	return butesIA.Champ(position) ? CActionBank::ButesReel(butesIA, position) : defaut;
+}
+static uint32 graineIA = 7;   // le rand() du CRT des conditions Random et WeightedRandom (l'outil a sa propre graine)
+// La cible d'un piéton (PedGetTargetPed, FUN_00496fb0) : pour un autre que le joueur, +0x538 (dans l'outil, la cible
+// verrouillée : PedLockTarget et FUN_00497d20 la posent) ; la cible forcée +0xbb4 n'est pas suivie. -1 sans cible.
+static int
+CibleDe(int ped)
+{
+	const CScriptPed *p = pietons.Acceder(ped);
+	if(p == nil) return -1;
+	const CScriptPed *c = pietons.Acceder(p->verrou);
+	return c && !c->mort ? p->verrou : -1;
+}
+static float
+DistancePietons(const CScriptPed *a, const CScriptPed *b)
+{
+	float dx = b->pos.x - a->pos.x, dy = b->pos.y - a->pos.y, dz = b->pos.z - a->pos.z;
+	return sqrtf(dx * dx + dy * dy + dz * dz);
+}
 struct CJugeOutil : CJugeAction {
 	int ped; float t;
-	CJugeOutil(int p, float t_) : ped(p), t(t_) {}
+	// Le tirage du contexte (+0x24) que WeightedRandom compare puis renouvelle (FUN_00600b00) : tiré à chaque nouveau
+	// contexte, donc à chaque descente (supposé : le contexte le tire à sa remise à zéro). Les seuils de branches
+	// sœurs étant croissants (0,2 puis 1), la première qui passe l'emporte avec la probabilité de son écart.
+	mutable float tirage;
+	CJugeOutil(int p, float t_) : ped(p), t(t_) { tirage = (float)RandCrt(graineIA) / 32767.0f; }
+	int JoueNom(uint32 nom) const override { return arbres.JoueHachage(NoeudJoue(ped), nom & 0x7fffffff); }
+	bool ACible(void) const override { return CibleDe(ped) >= 0; }
+	// Le temps du nœud joué par le contrôleur qui juge (le +0x10 du contexte), sinon celui du contrôleur d'actions.
+	float TempsDuNoeud(bool *ok) const {
+		if(controleur){ *ok = true; return controleur->Temps(t); }
+		auto it = controleurs.find(ped);
+		*ok = it != controleurs.end();
+		return *ok ? it->second.Temps(t) : 0.0f;
+	}
 	int Juger(const CActionTreeFile &f, int32 d, uint32 type, const uint32 mots[6]) const override {
 		static const uint32 kArme = ActionHash("WeaponEquiped"), kDemande = ActionHash("ActionRequest"),
 		                    kTemps = ActionHash("ActionNodePlayTime"), kLua = ActionHash("LuaCond"),
@@ -196,8 +250,8 @@ struct CJugeOutil : CJugeAction {
 		// -1 par défaut (0x9009ac, FUN_005f3ab0), que seule une piste Damage à +0x1c positif pose (FUN_00609400). L'outil
 		// ne lit pas les pistes Damage (aucune des arbres relevés n'a de seuil positif) : le seuil reste -1, c'est vrai.
 		if(type == kTempsPasse){
-			auto it = controleurs.find(ped);
-			return it == controleurs.end() ? -1 : it->second.Temps(t) >= -1.0f;
+			bool ok; float v = TempsDuNoeud(&ok);
+			return ok ? v >= -1.0f : -1;
 		}
 		// AnimationGroupLoaded (FUN_006024d0) : +4 le nom du groupe (cité par la première table), +8 un octet. Faux sans
 		// piéton ou pour un groupe inconnu (FUN_0042e200) ; vrai s'il est prêt ; sinon, l'octet posé, le groupe est
@@ -301,10 +355,8 @@ struct CJugeOutil : CJugeAction {
 			return EtatBoutonCondition(etat, mots[1]);
 		}
 		if(type == kTemps){
-			auto it = controleurs.find(ped);
-			if(it == controleurs.end()) return -1;
-			float seuil; memcpy(&seuil, &mots[0], 4);
-			float v = it->second.Temps(t);
+			bool ok; float v = TempsDuNoeud(&ok);
+			if(!ok) return -1;
 			return ComparerCondition(v, seuil, mots[1]);
 		}
 		if(type == kCible){
@@ -318,9 +370,145 @@ struct CJugeOutil : CJugeAction {
 			lua_getglobal(etatLua, fonction.c_str());
 			if(!lua_isfunction(etatLua, -1)){ lua_pop(etatLua, 1); return 0; }
 			if(lua_pcall(etatLua, 0, 1, 0) != 0){ lua_pop(etatLua, 1); return -1; }
-			int r = lua_toboolean(etatLua, -1);
+			// FUN_006a74d0 → FUN_005d80a0 : le résultat est lu par lua_tonumber (0x73b0d0 : un nombre, ou une chaîne
+			// convertible, sinon 0), tronqué en entier (0x85c6f0), et la condition est vraie s'il est positif. Les
+			// fonctions des scripts rendent 1.0 ou 0.0 (F_CanBullyAttack, F_PlayerGroundKicks…) : 0.0 est faux, et un
+			// booléen, faute d'être un nombre, l'est aussi.
+			int r = (int)lua_tonumber(etatLua, -1) > 0;
 			lua_pop(etatLua, 1);
 			return r;
+		}
+		return JugerIA(f, d, type, mots, seuil);
+	}
+	// Les conditions des arbres de l'IA (AI_FightTutorial et son CombatActions ; table d'enregistrement FUN_0064b090, la
+	// fonction de jugement à l'emplacement 1 de chaque table virtuelle).
+	int JugerIA(const CActionTreeFile &f, int32 d, uint32 type, const uint32 mots[6], float seuil) const {
+		static const uint32 kObjectif = ActionHash("Objective"), kPoserDrapeau = ActionHash("SetPedFlags"),
+		                    kInterdites = ActionHash("AttacksDisabled"), kPrint = ActionHash("Print"),
+		                    kAcquerir = ActionHash("AcquireTarget"), kJoindre = ActionHash("JoinCombatZone"),
+		                    kHorsPortee = ActionHash("IsTargetOutOfReach"), kIntervalle = ActionHash("Interval"),
+		                    kHasard = ActionHash("Random"), kPondere = ActionHash("WeightedRandom"),
+		                    kDistance = ActionHash("RangeToTarget"), kDansZone = ActionHash("InCombatZone"),
+		                    kIntention = ActionHash("ActionNodeRequest"), kBranche = ActionHash("OpeningBranchChildHasChild"),
+		                    kGroupeCible = ActionHash("TargetConditionGroup"), kCone = ActionHash("InAttackCone"),
+		                    kHauteur = ActionHash("TargetRelativeHeight");
+		CScriptPed *moi = pietons.Acceder(ped);
+		// Objective (FUN_00606c00) : l'objectif courant (FUN_004701f0) est du type +4 ; un objectif d'attaque (7 ou 16)
+		// qui a une cible la pose en +0x540 (FUN_0048c330 sur le composant de visée +0x3bc). Le cas du type 8
+		// (FUN_0077e470, FUN_00606b40) n'est pas suivi.
+		if(type == kObjectif){
+			const CObjectifPieton *o = pietons.ObjectifCourant(ped);
+			if(o == nil || o->type != (int32)mots[0]) return 0;
+			if((o->type == OBJECTIF_ATTAQUER_PIETON || o->type == OBJECTIF_ATTAQUER_16) && pietons.Acceder(o->cible)) moi->cibleObjectif = o->cible;
+			return 1;
+		}
+		// SetPedFlags, en condition (FUN_005fd720) : le drapeau +8 du piéton reçoit l'octet +4 ; toujours vraie. La banque
+		// Combat d'AI_FightTutorial lève ainsi le drapeau 54.
+		if(type == kPoserDrapeau){
+			if(moi == nil || mots[1] >= SCRIPT_PED_DRAPEAUX) return -1;
+			moi->drapeaux[mots[1]] = (int32)(mots[0] & 0xff);
+			return 1;
+		}
+		if(type == kInterdites) return 0;   // AttacksDisabled (FUN_006094f0) rend toujours faux
+		if(type == kPrint) return 1;        // Print (FUN_00609b30) : un message de mise au point, vraie
+		// AcquireTarget (FUN_00601760 → FUN_00499320) : si l'octet +0x1de4 le demande, la cible est choisie de nouveau
+		// (FUN_004992a0, parmi les objectifs : FUN_004988b0, FUN_00496b60 ; non lu en détail) ; vraie si le piéton a une
+		// cible (PedGetTargetPed). Supposé : sans cible, il prend celle de son objectif d'attaque (+0x540).
+		if(type == kAcquerir){
+			if(moi == nil) return 0;
+			if(CibleDe(ped) < 0 && pietons.Acceder(moi->cibleObjectif)) pietons.Verrouiller(ped, moi->cibleObjectif, 0);
+			return CibleDe(ped) >= 0;
+		}
+		// JoinCombatZone (FUN_00601550) : la cible +0x538, un piéton ; la zone +8 (0 à 2, sinon la première des trois qui
+		// passe), en essai seulement (PedJoinCombatZone avec l'octet 1).
+		if(type == kJoindre){
+			int c = CibleDe(ped);
+			if(c < 0) return 0;
+			if(mots[1] < 3) return pietons.JoindreZoneCombat(ped, c, (int)mots[1], true);
+			for(int z = 0; z < 3; z++) if(pietons.JoindreZoneCombat(ped, c, z, true)) return 1;
+			return 0;
+		}
+		// IsTargetOutOfReach (FUN_00602c40 → FUN_00487990 / FUN_00487560) : la cible (et celle que FUN_00496c30 lui
+		// associe) hors d'atteinte : plus haute de +8 mètres (2) en grimpant, ou hors du maillage de navigation
+		// (FUN_005ead00). L'outil n'a ni maillage ni escalade : supposé à portée, faux.
+		if(type == kHorsPortee) return 0;
+		// Interval (FUN_006033b0) : avec un piéton, le tirage de FUN_00465910 à la période +4 (son mot +0x10c, ici son
+		// numéro, et le compteur d'images) ; sans piéton, une image sur +4.
+		if(type == kIntervalle) return TirageOpportunite(mots[0], (uint16)ped, imageCourante);
+		// Random (FUN_00600a50) : une valeur tirée (l'octet +0xd la tire dans le contexte, sinon la valeur +0x1748 du
+		// piéton) comparée à +4 par +8. Supposé : un tirage neuf ; la garde de l'octet +0xc (un nœud joué) n'est pas suivie.
+		if(type == kHasard) return ComparerCondition((float)RandCrt(graineIA) / 32767.0f, seuil, mots[1]);
+		// WeightedRandom (FUN_00600b00) : faux si le seuil +8 est sous le tirage du contexte (+0x24) ; sinon le tirage est
+		// renouvelé et la condition vraie. Les gardes des octets +0xc et +0xd ne sont pas suivies.
+		if(type == kPondere){
+			float s8; memcpy(&s8, &mots[1], 4);
+			if(s8 < tirage) return 0;
+			tirage = (float)RandCrt(graineIA) / 32767.0f;
+			return 1;
+		}
+		// RangeToTarget (FUN_00600780) : la distance à la cible (+0x434, sinon PedGetTargetPed) comparée à +4 par +8.
+		if(type == kDistance){
+			const CScriptPed *c = pietons.Acceder(CibleDe(ped));
+			if(moi == nil || c == nil) return 0;
+			return ComparerCondition(DistancePietons(moi, c), seuil, mots[1]);
+		}
+		// InCombatZone (FUN_006015e0) : la distance à la cible dans la zone +4, élargie de +8 des deux côtés ; la zone 0
+		// va de 0 à AIButes +0x2c, la 1 de +0x2c à +0x30, la 2 de +0x30 à 100 m (0x900490).
+		if(type == kDansZone){
+			const CScriptPed *c = pietons.Acceder(CibleDe(ped));
+			if(moi == nil || c == nil) return 0;
+			float dedans = 0.0f, dehors = 0.0f, tol; memcpy(&tol, &mots[1], 4);
+			if(mots[0] == 0){ dedans = 0.0f; dehors = ButeIA(44, 1.5f); }
+			else if(mots[0] == 1){ dedans = ButeIA(44, 1.5f); dehors = ButeIA(48, 3.0f); }
+			else if(mots[0] == 2){ dedans = ButeIA(48, 3.0f); dehors = 100.0f; }
+			float dist = DistancePietons(moi, c);
+			return dedans - tol <= dist && dist <= dehors + tol;
+		}
+		// ActionNodeRequest (ConditionIntentionActionNodeRequest, FUN_005fd620) : l'intention du piéton (+0x254) est le
+		// nom du nœud jugé (le +0x34 du contexte).
+		if(type == kIntention){
+			auto it = intentionsPietons.find(ped);
+			return noeud && it != intentionsPietons.end() && it->second == (noeud->hachage & 0x7fffffff);
+		}
+		// OpeningBranchChildHasChild (FUN_00602710) : la racine de l'arbre d'actions du piéton (le +0x40 du contexte du
+		// contrôleur d'actions) a un enfant nommé +4, qui a lui-même un enfant nommé +8.
+		if(type == kBranche){
+			auto it = controleurs.find(ped);
+			if(it == controleurs.end() || it->second.arbre == nil) return 0;
+			for(const CActionNode &e : it->second.arbre->enfants)
+				if((e.hachage & 0x7fffffff) == (mots[0] & 0x7fffffff)){
+					for(const CActionNode &g : e.enfants) if((g.hachage & 0x7fffffff) == (mots[1] & 0x7fffffff)) return 1;
+					return 0;
+				}
+			return 0;
+		}
+		// TargetConditionGroup (FUN_00601cc0) : le groupe de conditions (+4, par la seconde table de renvois) jugé pour la
+		// cible : le partenaire de prise (+0x155c) si l'octet +8, sinon PedGetTargetPed ; faux sans cible.
+		if(type == kGroupeCible){
+			int c = (mots[1] & 0xff) ? (moi ? moi->cibleDePrise : -1) : CibleDe(ped);
+			std::vector<int32> groupe;
+			if(pietons.Acceder(c) == nil || !f.GroupeDe(d, groupe)) return 0;
+			return arbres.JugerListe(f, groupe, CJugeOutil(c, t)) == 1;
+		}
+		// InAttackCone (FUN_00602200 → FUN_004865a0) : la cible à moins d'AIButes +0x54 (1,5 m) et devant le piéton (le
+		// cosinus de l'angle au moins +0x58, 0,76). Le dernier test (FUN_0048d320, l'un voit l'autre) est supposé vrai.
+		if(type == kCone){
+			const CScriptPed *c = pietons.Acceder(CibleDe(ped));
+			if(moi == nil || c == nil) return 0;
+			float dx = c->pos.x - moi->pos.x, dy = c->pos.y - moi->pos.y, n = sqrtf(dx * dx + dy * dy);
+			if(sqrtf(dx * dx + dy * dy) > ButeIA(84, 1.5f)) return 0;
+			if(n <= 0.0f) return 1;
+			float a = moi->cap * 3.14159265f / 180.0f;
+			return (cosf(a) * dx + sinf(a) * dy) / n >= ButeIA(88, 0.76f);
+		}
+		// TargetRelativeHeight (FUN_00603170) : la tranche +8 … +0xc de la hauteur du piéton (sa boîte de collision, +0x18
+		// et +0x28 du modèle) recouvre la hauteur de la cible. L'outil n'a pas les boîtes : 1,8 m depuis les pieds, supposé.
+		if(type == kHauteur){
+			const CScriptPed *c = pietons.Acceder((mots[0] & 0xff) ? (moi ? moi->cibleDePrise : -1) : CibleDe(ped));
+			if(moi == nil || c == nil) return 0;
+			float bas, haut; memcpy(&bas, &mots[1], 4); memcpy(&haut, &mots[2], 4);
+			const float h = 1.8f;
+			return moi->pos.z + bas * h <= c->pos.z + h && c->pos.z <= moi->pos.z + haut * h;
 		}
 		return -1;
 	}
@@ -780,7 +968,13 @@ AvancerMission(lua_State *L)
 				if(gestionnaire.etat.reussites.size() != banque.missions.size()) gestionnaire.etat.reussites.assign(banque.missions.size(), 0);
 				gestionnaire.etat.reussites[mission.indice]++;
 			}
-			{ int n = pietons.SupprimerDuScript(mission.script); if(n) printf("        %d piéton(s) laissé(s) par la mission, libéré(s)\n", n); }
+			{
+				std::vector<int> partis;
+				for(int i = 1; i < SCRIPT_PED_POOL_SIZE; i++) if(const CScriptPed *p = pietons.Acceder(i)) if(p->script == mission.script) partis.push_back(i);
+				int n = pietons.SupprimerDuScript(mission.script);
+				for(int h : partis) OublierControleurs(h);
+				if(n) printf("        %d piéton(s) laissé(s) par la mission, libéré(s)\n", n);
+			}
 			for(Thread &t : scripts[mission.script].threads)
 				if(t.etat < TUE){ t.etat = TUE; luaL_unref(L, LUA_REGISTRYINDEX, t.ref); t.ref = LUA_NOREF; }
 			mission.etat = AUCUNE;
@@ -1260,7 +1454,7 @@ static int
 PedDelete(lua_State *L)
 {
 	Journal("PedDelete", L, 1);
-	if(lua_isnumber(L, 1)) pietons.Supprimer((int)lua_tonumber(L, 1));
+	if(lua_isnumber(L, 1) && pietons.Supprimer((int)lua_tonumber(L, 1))) OublierControleurs((int)lua_tonumber(L, 1));
 	return 0;
 }
 
@@ -1467,12 +1661,24 @@ PedStop(lua_State *L)
 	return 0;
 }
 
-// PedAttack(attaquant, cible, style) (0x5c9ca0) : le style (3 dans 1_01) n'est pas joué.
+// PedAttack(attaquant, cible, style, devant, …) (0x5c9ca0) : un AttackPedObjective (FUN_00470c10 : type 7, la cible, le
+// style) dans la file des objectifs de l'attaquant. Un troisième argument nombre est le style (3 dans 1_01 et 1_02) et le
+// quatrième, un booléen (faux par défaut), le met devant (FUN_00471320) plutôt qu'au bout (FUN_00471240) ; sinon les
+// troisième et quatrième, deux booléens, donnent le style par FUN_004969a0 (faux, vrai : 0 ; faux, faux : 1 ; vrai, vrai : 2 ;
+// vrai, faux : 3). Le cinquième (un booléen) va en +0x1404, non suivi.
 static int
 PedAttack(lua_State *L)
 {
 	Journal("PedAttack", L, 1);
-	if(lua_isnumber(L, 1) && lua_isnumber(L, 2)) pietons.Attaquer((int)lua_tonumber(L, 1), (int)lua_tonumber(L, 2));
+	if(!lua_isnumber(L, 1) || !lua_isnumber(L, 2)) return 0;
+	int32 style = 0; bool devant = false;
+	if(lua_isnumber(L, 3)){ style = (int32)lua_tonumber(L, 3); devant = lua_toboolean(L, 4) != 0; }
+	else {
+		// FUN_005d8fa0(L, n, 1) : un booléen (ou un nombre) est lu, autre chose (nil compris) vaut le défaut, vrai.
+		bool a = lua_isboolean(L, 3) ? lua_toboolean(L, 3) != 0 : true, b = lua_isboolean(L, 4) || lua_isnumber(L, 4) ? lua_toboolean(L, 4) != 0 : true;
+		style = !a ? (b ? 0 : 1) : (b ? 2 : 3);
+	}
+	pietons.Attaquer((int)lua_tonumber(L, 1), (int)lua_tonumber(L, 2), style, devant);
 	return 0;
 }
 
@@ -1497,24 +1703,111 @@ TailleDuPieton(const CScriptPed *p)
 }
 static uint32 graineHumiliation = 1;   // le rand() du CRT que FUN_004925d0 tire (l'outil a sa propre graine)
 
+// Les pistes des objectifs lancées à cette image : ClearCurrentObjective (FUN_0062a180 → FUN_00470110) et FleeObjective
+// (FUN_00628ce0 : la cible fuie est +0x538, ou +0x544 si l'octet +0x19, non suivi ; rien sans cible).
+static void
+AppliquerObjectifs(int ped, CActionController &c)
+{
+	for(const CActionController::Effacement &e : c.effacementsLances){
+		int n = pietons.RetirerObjectifs(ped, e.type);
+		if(n > 0) printf("%6.2f s  le piéton %d perd %d objectif(s) de type %d (ClearCurrentObjective)\n", maintenant / 1000.0, ped, n, e.type);
+	}
+	for(const CActionController::Fuite &f : c.fuitesLancees){
+		int cible = f.autreCible ? -1 : CibleDe(ped);
+		if(cible < 0) continue;
+		CObjectifPieton o; o.type = OBJECTIF_FUIR; o.cible = cible;
+		if(pietons.PousserObjectif(ped, o, !f.auBout))
+			printf("%6.2f s  le piéton %d fuit le piéton %d (FleeObjective, %s de la file)\n", maintenant / 1000.0, ped, cible, f.auBout ? "au bout" : "devant");
+	}
+	c.effacementsLances.clear(); c.fuitesLancees.clear();
+}
+
+// La mise à jour d'une piste ManageTargets (FUN_00627420), à chaque image où elle vit : l'octet +0x18 fait du joueur la
+// cible (FUN_004989c0) ; si la cible (+0x538, FUN_0048bee0) est le joueur, un tirage de période 8 (FUN_00465910) mène à
+// FUN_0048d6a0 (sur le composant social +0xb44, non suivi) et FUN_00492950 donne au piéton, sous la moitié de sa santé,
+// son groupe d'humiliation. La suite (les types de piétons 0, 7, 8 et le +0x1d40 de la cible) n'est pas suivie.
+static void
+GererCibles(int ped, bool joueur)
+{
+	CScriptPed *p = pietons.Acceder(ped);
+	if(p == nil) return;
+	if(joueur) pietons.Verrouiller(ped, SCRIPT_PED_JOUEUR, 0);
+	if(CibleDe(ped) != SCRIPT_PED_JOUEUR) return;
+	if(p->groupeHumiliation != -1 && p->groupeHumiliation <= 12) return;
+	// Le rand() de FUN_004925d0 n'est tiré que quand FUN_00492950 choisit, sous la moitié de la santé.
+	if(!(p->santeMax > 0 && (double)(p->sante / p->santeMax) < 0.5)) return;
+	float tirage = (float)RandCrt(graineHumiliation) / 32767.0f;
+	int g = pietons.SurveillerHumiliation(ped, TailleDuPieton(p), TailleDuPieton(pietons.Acceder(SCRIPT_PED_JOUEUR)), tirage);
+	if(g >= 0) printf("%6.2f s  le piéton %d (%.0f / %.0f points) reçoit le groupe d'humiliation %d (%s), par ManageTargets\n",
+	                  maintenant / 1000.0, ped, p->sante, p->santeMax, g, ScriptPedGroupeHumiliation(g));
+}
+
+// La mise à jour d'une piste CombatLoco (FUN_0062ea40) : la cible (FUN_00625270 : le joueur si l'octet +0x18, sinon
+// +0x538) ; une image sur le tirage de période 8, ou à la première, le piéton prend une zone de combat autour d'elle
+// (FUN_006252d0 : PedJoinCombatZone, la zone 0, sinon 1, sinon 2) ; les rayons de sa zone (FUN_006253e0 : +0x66c, AIButes
+// +0x28 / +0x2c pour la zone 0, +0x2c / +0x30, +0x30 / +0x34, sinon +0x34 / +0x38 ; un demi-mètre de plus si son émotion
+// envers la cible est 4 à 6, non suivie) ; puis l'intention de mouvement (FUN_0062e120, FUN_0061b430) : le piéton va
+// vers sa cible tant qu'il est plus loin que le grand rayon. Supposé : à l'allure de course de l'outil, tout droit (le
+// moteur passe par la recherche de chemin, FUN_005e9df0) ; le petit rayon (reculer) n'est pas suivi.
+static void
+CombatLoco(int ped, bool joueur, bool premiere)
+{
+	CScriptPed *p = pietons.Acceder(ped);
+	if(p == nil || p->mort) return;
+	if(joueur) pietons.Verrouiller(ped, SCRIPT_PED_JOUEUR, 0);
+	int c = CibleDe(ped);
+	const CScriptPed *q = pietons.Acceder(c);
+	if(q == nil) return;
+	if(premiere || TirageOpportunite(8, (uint16)ped, imageCourante))
+		for(int z = 0; z < 3; z++) if(pietons.JoindreZoneCombat(ped, c, z, false)) break;
+	static const uint16 kGrands[5] = {44, 48, 52, 56, 56};
+	int z = p->zoneCombat < 0 || p->zoneCombat > 3 ? 3 : p->zoneCombat;
+	float rayon = ButeIA(kGrands[z], 1.5f);
+	float dx = q->pos.x - p->pos.x, dy = q->pos.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
+	if(d <= rayon) return;
+	float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f, k = d - rayon < pas ? (d - rayon) / d : pas / d;
+	p->pos.x += dx * k; p->pos.y += dy * k;
+	p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
+}
+
+// Une image du contrôleur de l'IA d'un piéton (FUN_00484490), puis ce que font ses pistes et celles des contrôleurs de
+// ses pistes spawn : l'intention (ActionNodeRequest), ManageTargets, CombatLoco, FaceTarget, SetPedFlags.
+static void
+AvancerIA(int ped, CActionController &c, uint32 images)
+{
+	CScriptPed *p = pietons.Acceder(ped);
+	if(p == nil || p->mort || c.arbre == nil) return;
+	float t = maintenant / 1000.0f;
+	c.image = images; c.graine = (uint16)ped;
+	const CActionNode *avant = c.joue;
+	if(c.joue == nil) c.Poser(arbres, c.arbre, CJugeOutil(ped, t), t);   // FUN_00483ec0
+	else c.Avancer(arbres, nil, CJugeOutil(ped, t), t);
+	if(c.joue != avant && journalIA > 0){ journalIA--; printf("%6.2f s  IA de %d : %s\n", t, ped, arbres.CheminDe(c.joue).c_str()); }
+	std::vector<CActionController *> tous;
+	c.Recueillir(tous);
+	static std::map<const CActionController *, const CActionNode *> vus;   // LANCER_IA : les passages des contrôleurs des spawn
+	if(getenv("LANCER_IA"))
+		for(size_t i = 1; i < tous.size(); i++)
+			if(vus[tous[i]] != tous[i]->joue){ vus[tous[i]] = tous[i]->joue; printf("%6.2f s  IA de %d, spawn : %s\n", t, ped, arbres.CheminDe(tous[i]->joue).c_str()); }
+	for(CActionController *k : tous){
+		for(uint32 n : k->intentions) intentionsPietons[ped] = n;
+		for(const CActionController::Gestion &g : k->gestionsActives) GererCibles(ped, g.joueur);
+		for(const CActionController::Gestion &g : k->combatsActifs) CombatLoco(ped, g.joueur, k->Temps(t) <= g.entree + 0.034f);
+		for(const CActionController::Regard &r : k->regardsActifs){   // FUN_00620dc0
+			const CScriptPed *q = pietons.Acceder(r.genre == 0 ? CibleDe(ped) : r.genre == 1 ? p->cibleDePrise : -1);
+			if(q && q != p) p->cap = atan2f(q->pos.y - p->pos.y, q->pos.x - p->pos.x) * 180.0f / 3.14159265f + r.decalage;
+		}
+		for(const CActionController::Drapeau &d : k->drapeauxPoses) if(d.numero < SCRIPT_PED_DRAPEAUX) p->drapeaux[d.numero] = d.valeur;
+		k->drapeauxPoses.clear();
+		AppliquerObjectifs(ped, *k);
+	}
+}
+
 // Une image des piétons : les gestes avancent, et ce qui aboutit se journalise.
 static void
 AvancerPietons(void)
 {
 	pietons.Avancer(0.033f);
-	// Le groupe d'humiliation d'une victime du joueur (FUN_00492950) : le moteur le choisit au lancement d'une piste
-	// ManageTargets (FUN_00627420) dont la cible est le joueur ; dans 1_02, celle du nœud CombatLoco de l'arbre de l'IA
-	// du bully (AI_FightTutorial), qu'il joue tant qu'il se bat. L'outil ne joue pas les arbres de l'IA : supposé, la
-	// piste se lance à chaque image où le geste PedAttack du piéton vise le joueur.
-	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
-		CScriptPed *p = pietons.Acceder(i);
-		if(p == nil || i == SCRIPT_PED_JOUEUR || p->mort || p->attaque != SCRIPT_PED_JOUEUR) continue;
-		if(p->groupeHumiliation != -1 && p->groupeHumiliation <= 12) continue;
-		float tirage = (float)RandCrt(graineHumiliation) / 32767.0f;
-		int g = pietons.SurveillerHumiliation(i, TailleDuPieton(p), TailleDuPieton(pietons.Acceder(SCRIPT_PED_JOUEUR)), tirage);
-		if(g >= 0) printf("%6.2f s  le piéton %d (%.0f / %.0f points) reçoit le groupe d'humiliation %d (%s)\n", maintenant / 1000.0, i,
-		                  p->sante, p->santeMax, g, ScriptPedGroupeHumiliation(g));
-	}
 	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
 		const CScriptPed *p = pietons.Acceder(i);
 		if(p == nil || journalRestant <= 0) continue;
@@ -1602,6 +1895,42 @@ PedSetActionTree(lua_State *L)
 	CActionController &c = controleurs[ped];
 	if(!c.Poser(arbres, arbres.Trouver(arbre), CJugeOutil(ped, maintenant / 1000.0f), maintenant / 1000.0f))
 		printf("        PedSetActionTree : rien n'aboutit dans %s (conditions jugées)\n", arbre);
+	return 0;
+}
+
+// PedSetAITree(ped, arbre, fichier) (lua_PedSetAITree 0x5caac0) : FUN_00473f70 → FUN_00484290 (ecx = le composant +0x2e0
+// du piéton) remet à zéro le contrôleur de l'IA (+0x290, FUN_005f3f40), garde les deux noms (+0x540, +0x580), trouve
+// l'arbre (FUN_005f59b0, le fichier chargé s'il manque : FUN_005dbe60, FUN_005f6c50) en +0x4b4 et en fait la racine du
+// contexte de l'IA (+0x358, FUN_005f36d0). Chaque image, FUN_00484490 fait avancer ce contrôleur (FUN_005f49a0) après
+// l'avoir fait redescendre depuis cette racine s'il ne joue rien (FUN_00483ec0). FUN_005dc040 note le fichier à
+// l'objet script, comme pour PedSetActionTree.
+static int
+PedSetAITree(lua_State *L)
+{
+	Journal("PedSetAITree", L, 1);
+	CScriptPed *p = pietons.Acceder(lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1);
+	const char *arbre = luaL_optstring(L, 2, ""), *fichier = luaL_optstring(L, 3, "");
+	if(p == nil || *arbre == 0) return 0;
+	if(!arbres.TrouverOuCharger(arbre, fichier)){
+		printf("        PedSetAITree : %s absent de %s\n", arbre, fichier);
+		return 0;
+	}
+	int ped = (int)lua_tonumber(L, 1);
+	CActionController &c = controleursIA[ped];
+	c = CActionController();
+	c.sousControleurs = true;
+	p->arbreIA = true;
+	c.arbre = arbres.Trouver(arbre);
+	return 0;
+}
+
+// PedSetCombatZoneMask(ped, z0, z1, z2) (0x5cd0c0 → FUN_00486110) : les zones de combat que le piéton peut prendre.
+static int
+PedSetCombatZoneMask(lua_State *L)
+{
+	Journal("PedSetCombatZoneMask", L, 1);
+	CScriptPed *p = pietons.Acceder(lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1);
+	if(p) for(int z = 0; z < 3; z++) p->masqueZones[z] = lua_toboolean(L, 2 + z) != 0;
 	return 0;
 }
 
@@ -1877,6 +2206,7 @@ ChargerMissions(void)
 		}
 		CActionTrack pb;  // FUN_0072ae00 : PlayerButes → DAT_020c88b8 ; +0xac, +0xb0, +0xb4 : le facteur des coups du joueur
 		if(CActionBank::Butes("PlayerButes", pb)) facteurCoupsJoueur = CActionBank::ButesReel(pb, 172);
+		CActionBank::Butes("AIButes", butesIA);   // FUN_0072ae00 : AIButes → DAT_020c889c
 		CActionTrack t;   // FUN_0072ae00 : AreaTransitionButes → DAT_020c8910
 		if(CActionBank::Butes("AreaTransitionButes", t)){
 			fonduNoirMs = CActionBank::ButesReel(t, 24) * 1000;
@@ -2289,6 +2619,8 @@ main(int argc, char **argv)
 	lua_register(L, "PedMoveToXYZ", PedMoveToXYZ);
 	lua_register(L, "PedStop", PedStop);
 	lua_register(L, "PedAttack", PedAttack);
+	lua_register(L, "PedSetAITree", PedSetAITree);
+	lua_register(L, "PedSetCombatZoneMask", PedSetCombatZoneMask);
 	lua_register(L, "PedMakeAmbient", PedMakeAmbient);
 	// Les énumérations posées par 0x5db040 : POINTLIST, PATH et TRIGGER cherchent dans les pools.
 	PoserEnumeration(L, "POINTLIST", IndexPointList);
@@ -2347,6 +2679,7 @@ main(int argc, char **argv)
 			if(n == nil) printf("%6.2f s  le joueur joue %s : nœud absent de l'arbre global\n", maintenant / 1000.0, e.second.c_str());
 			else {
 				CActionController &c = controleurs[SCRIPT_PED_JOUEUR];
+				c.parLaManette = true;   // le nœud tient lieu d'un bouton tenu (src/core/ActionController.cpp, Jouer)
 				if(!c.Entrer(arbres, n, CJugeOutil(SCRIPT_PED_JOUEUR, maintenant / 1000.0f), maintenant / 1000.0f)){
 					// Une banque dont la descente jugée n'aboutit pas (conditions de visée, de bouton) : la manette de l'outil
 					// prend le premier nœud jouable sans condition parmi ses enfants (HeavyAttacks → son coup de pied).
@@ -2354,6 +2687,7 @@ main(int argc, char **argv)
 					if(n->genre == 'b') for(const CActionNode &e : n->enfants) if((d = arbres.Choisir(&e)) != nil) break;
 					c.Jouer(arbres, d ? d : n, maintenant / 1000.0f);
 				}
+				c.parLaManette = false;
 				printf("%6.2f s  le joueur joue %s%s\n", maintenant / 1000.0, chemin.c_str(), c.joue != n ? (" → " + arbres.CheminDe(c.joue)).c_str() : "");
 			}
 			e.second.clear();
@@ -2366,6 +2700,9 @@ main(int argc, char **argv)
 			printf("%6.2f s  le joueur demande l'action %u\n", maintenant / 1000.0, e.second);
 			e.first = 0xffffffffu; demande = true;
 		}
+		// Les contrôleurs de l'IA d'abord (FUN_00484490) : l'intention qu'ils posent se lit dans l'arbre d'actions à la
+		// même image.
+		for(auto &c : controleursIA) AvancerIA(c.first, c.second, (uint32)images);
 		// Les contrôleurs d'actions avancent (src/core/ActionController.h) ; on journalise ceux du joueur.
 		for(auto &c : controleurs){
 			const CActionNode *avant = c.second.joue;
@@ -2393,6 +2730,18 @@ main(int argc, char **argv)
 				// le moteur l'écarte par la géométrie, l'outil par le partenaire du PlayOnTarget (deux secondes).
 				auto pt = partenaires.find(c.first);
 				if(pt != partenaires.end() && pt->second.first == cible && maintenant <= pt->second.second) continue;
+				// Supposé aussi : faute des sphères des os (FUN_005f9e70 cherche le contact des sphères de l'attaquant avec les
+				// corps proches), un coup ne touche qu'une cible devant l'attaquant (à moins de 90 degrés de son cap). Le
+				// bully qui fuit après son humiliation (HumiliateFlee/…/RunStart : FaceTarget décalé de 180 degrés) tombe en
+				// avant (KnockOuts/Rear/Rear) : sa collision FRIENDLYHIT ne touche plus le joueur resté dans son dos.
+				if(const CScriptPed *q = pietons.Acceder(cible)){
+					float dx = q->pos.x - p->pos.x, dy = q->pos.y - p->pos.y, a = p->cap * 3.14159265f / 180.0f;
+					float n = sqrtf(dx * dx + dy * dy), cosinus = n > 0.0f ? (cosf(a) * dx + sinf(a) * dy) / n : 1.0f;
+					if(cosinus <= 0.0f){
+						printf("%6.2f s  le coup de %d (%s) manque %d, dans son dos\n", maintenant / 1000.0, c.first, arbres.CheminDe(k.porteur).c_str(), cible);
+						continue;
+					}
+				}
 				// FUN_0047b810 : les dégâts de la piste (+0x34) ; un coup du joueur (type 13) sans arme (-1) est multiplié par
 				// PlayerButes +0xac / +0xb0 / +0xb4 selon l'état physique du joueur (DAT_00c1af4c, PlayerGetPhysicalState ;
 				// l'outil : 0) ; puis, sans arme, arrondi au-dessus après le facteur +0x1cd4 de l'attaquant (FUN_0085dbc0)
@@ -2475,6 +2824,7 @@ main(int argc, char **argv)
 					p->cap = atan2f(q->pos.y - p->pos.y, q->pos.x - p->pos.x) * 180.0f / 3.14159265f + r.decalage;
 				}
 			}
+			AppliquerObjectifs(c.first, c.second);
 			// SetHealth (FUN_00627500) : poser (FUN_00478190, pas sous la santé minimale), rendre (FUN_00474b70, jusqu'au
 			// maximum), ôter (FUN_004782a0, sans les invulnérabilités, ni sous 0 ni sous la santé minimale).
 			for(const CActionController::Sante &e : c.second.santesLancees){
@@ -2514,6 +2864,7 @@ main(int argc, char **argv)
 				printf("%6.2f s  la cible de %d (%d) joue %s\n", maintenant / 1000.0, c.first, p->verrou, arbres.CheminDe(cible.joue).c_str());
 			}
 		}
+		intentionsPietons.clear();   // FUN_005f3720 : l'intention ne vaut que pour l'image
 		for(auto it = demandes.begin(); it != demandes.end(); ) it = maintenant > it->second ? demandes.erase(it) : ++it;
 		for(auto &e : poussees) if(!e.second.empty() && maintenant >= e.first){
 			int h = donnees.Declencheur(e.second.c_str());

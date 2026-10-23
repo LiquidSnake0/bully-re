@@ -1,6 +1,13 @@
 #include "ActionController.h"
 #include <cstring>
 
+static bool
+Octet(const CActionTrack &p, uint16 position)
+{
+	const CActionAttribut *a = p.Champ(position);
+	return a && a->taille >= 1 && a->valeur[0] != 0;
+}
+
 static float
 Reel(const CActionTrack &p, uint16 position, float defaut)
 {
@@ -58,7 +65,10 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kSante = ActionHash("SetHealth"), kPriseCible = ActionHash("SetTargetAsGrappleTarget"),
 	                    kDrapeau = ActionHash("SetPedFlags"), kParole = ActionHash("SpeechTrack"),
 	                    kDepart = ActionHash("SpeechStartTrack"), kRegard = ActionHash("FaceTarget"),
-	                    kPoursuite = ActionHash("SeekEntityPosition"), kSpawn = ActionHash("spawn");
+	                    kPoursuite = ActionHash("SeekEntityPosition"), kSpawn = ActionHash("spawn"),
+	                    kGestion = ActionHash("ManageTargets"), kCombatLoco = ActionHash("CombatLoco"),
+	                    kDemandeNoeud = ActionHash("ActionNodeRequest"), kEffacer = ActionHash("ClearCurrentObjective"),
+	                    kFuite = ActionHash("FleeObjective");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -72,6 +82,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 		if(!f->Piste(dp, p)) continue;
 		float a = Reel(p, 12, 0.0f);
 		if(a < entree) a = entree;
+		if(Octet(p, 8)) retenu = true;   // FUN_005f4230 : une piste qui retient le nœud
 		if(prof > 0){
 			// Les pistes ajoutées comptent pour la fin du nœud joué comme les siennes (FUN_005f3e20 : une seule liste).
 			float vie = Reel(p, 16, -1.0f), finAnim = FinAnimation(b, p);
@@ -101,6 +112,20 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			regards.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(32), Reel(p, 40, 0.0f)});
 		}else if(p.type == kPoursuite){
 			poursuites.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(28), Reel(p, 40, 0.0f)});
+		}else if(p.type == kEffacer){
+			effacements.push_back({a, (int32)p.Mot(24), false});
+		}else if(p.type == kFuite){
+			fuites.push_back({a, Octet(p, 24), Octet(p, 25), false});
+		}else if(sousControleurs && (p.type == kGestion || p.type == kCombatLoco)){
+			Gestion g{a, Reel(p, 16, -1.0f), Octet(p, 24), Octet(p, 8)};
+			(p.type == kGestion ? gestions : combats).push_back(g);
+		}else if(sousControleurs && p.type == kDemandeNoeud){
+			demandesNoeud.push_back({a, p.Mot(24) & 0x7fffffff, Octet(p, 28), Octet(p, 29), Octet(p, 30), Octet(p, 8), false, true});
+		}else if(sousControleurs && p.type == kSpawn){
+			// FUN_005f8860 : le nœud visé (+0x6c), résolu d'avance depuis le nœud qui porte la piste (FUN_005f4e30).
+			const CActionAttribut *at = p.Champ(32);
+			const CActionNode *v = at ? b.Relatif(&n, f->ChaineCitee(at->decalage).c_str()) : nil;
+			if(v) lances.push_back({a, Reel(p, 16, -1.0f), v, Octet(p, 41), false, false, nullptr});
 		}else if(p.type == kSpawn){
 			const CActionAttribut *at = p.Champ(32);
 			if(at == nil) continue;
@@ -174,7 +199,11 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	suitesExecutees.clear();
 	santes.clear();
 	prisesCible.clear();
+	gestions.clear(); combats.clear(); demandesNoeud.clear();
+	effacements.clear(); fuites.clear();
+	lances.clear();                    // FUN_005f7390 : l'arrêt d'une piste spawn arrête son contrôleur
 	finExecutees = -1.0f;
+	retenu = false;
 	if(n) Pistes(b, *n, 0.0f, 0, juge);
 	if(n){
 		static const uint32 kSequence = ActionHash("Sequence"), kSurCible = ActionHash("PlayOnTarget");
@@ -206,8 +235,35 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 			}
 			if(instantane) d = 0.0f;
 		}
+	// FUN_005f4230 : un nœud qu'aucune de ses pistes (ni de celles que ses Execute ajoutent) ne retient (l'octet +8) finit à
+	// sa première mise à jour. GV/END d'une humiliation (SetMotionIntention, PlayOnTarget, TargetGrappleRelease, Execute)
+	// rend ainsi la main à l'arbre du joueur.
+	// Exception de l'outil : un nœud que sa manette fait jouer (lancer_lua --jouer) tient lieu d'un bouton tenu, qui le
+	// retient dans le jeu (0_BLOCK_0, la parade de 1_02, tant que le bouton est tenu) : il garde la règle d'avant.
+	if(n && d < 0.0f && !retenu && !parLaManette) d = 0.0f;
 	fin = d >= 0.0f ? t + d : -1.0f;
+	finParRetenues = false;
+	if(fin < 0.0f){
+		for(const Gestion &g : gestions) finParRetenues |= g.retient;
+		for(const Gestion &g : combats) finParRetenues |= g.retient;
+		for(const DemandeNoeud &g : demandesNoeud) finParRetenues |= g.retient;
+		if(sousControleurs) for(const COpportunite &o : occasions) finParRetenues |= o.retient;
+	}
 }
+
+void
+CActionController::Recueillir(std::vector<CActionController *> &tous)
+{
+	tous.push_back(this);
+	for(Lance &l : lances) if(l.lancee && !l.morte && l.c) l.c->Recueillir(tous);
+}
+
+// Le contrôleur qui juge, posé dans le contexte le temps d'un appel (le +0x10 du contexte de FUN_005fb9b0).
+struct CGardeControleur {
+	const CJugeAction &juge; const CActionController *avant;
+	CGardeControleur(const CJugeAction &j, const CActionController *c) : juge(j), avant(j.controleur) { j.controleur = c; }
+	~CGardeControleur(void){ juge.controleur = avant; }
+};
 
 const CActionNode *
 CActionController::Descendre(const CActionBank &b, const CActionNode *depuis, const CJugeAction &juge) const
@@ -219,6 +275,7 @@ bool
 CActionController::Entrer(const CActionBank &b, const CActionNode *n, const CJugeAction &juge, float t)
 {
 	if(n == nil) return false;
+	CGardeControleur garde(juge, this);
 	const CActionNode *r = n->genre == 'b' ? b.Choisir(n, juge) : n;
 	if(r == nil) return false;
 	Jouer(b, r, t, &juge);
@@ -229,6 +286,7 @@ bool
 CActionController::Poser(const CActionBank &b, const CActionNode *a, const CJugeAction &juge, float t)
 {
 	arbre = a;
+	CGardeControleur garde(juge, this);
 	const CActionNode *n = Descendre(b, a, juge);
 	if(n == nil) return false;
 	Jouer(b, n, t, &juge);
@@ -298,6 +356,51 @@ bool
 CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine, const CJugeAction &juge, float t, bool demande)
 {
 	(void)depuisRacine;
+	CGardeControleur garde(juge, this);
+	intentions.clear();
+	// FUN_00627420 (ManageTargets) et FUN_0062ea40 (CombatLoco), à chaque image, tant que le piéton a une cible.
+	gestionsActives.clear(); combatsActifs.clear();
+	for(int k = 0; k < 2; k++)
+		for(Gestion &g : k ? combats : gestions){
+			if(Temps(t) < g.entree || g.vie == -2.0f) continue;
+			if((g.vie >= 0.0f && Temps(t) > g.entree + g.vie) || !juge.ACible()){ g.vie = -2.0f; continue; }   // morte
+			(k ? combatsActifs : gestionsActives).push_back(g);
+		}
+	// FUN_006261f0 (ActionNodeRequest) : l'intention, puis la vie de la piste.
+	for(DemandeNoeud &d : demandesNoeud){
+		if(!d.vivante || Temps(t) < d.entree) continue;
+		bool vivante;
+		if(!d.vu){
+			intentions.push_back(d.nom);
+			d.vu = juge.JoueNom(d.nom) == 1;
+			if(!d.vu){ d.vivante = d.tenir || d.suivre; continue; }
+		}
+		if(d.suivre){
+			if(juge.JoueNom(d.nom) == 1) continue;
+			d.vu = false;
+		}
+		vivante = d.rendre;
+		d.vivante = vivante;
+	}
+	// FUN_005f8860 / FUN_005f72e0 : les contrôleurs des pistes spawn.
+	for(Lance &l : lances){
+		if(l.morte || Temps(t) < l.entree) continue;
+		if(l.vie >= 0.0f && Temps(t) > l.entree + l.vie){ l.morte = true; l.c.reset(); continue; }
+		if(!l.lancee){
+			l.lancee = true;
+			l.c = std::make_shared<CActionController>();
+			l.c->sousControleurs = true;
+			l.c->arbre = l.boucle ? l.vise : nil;   // +0x29 : redescendre depuis le nœud visé quand le nœud finit
+			l.c->image = image; l.c->graine = graine; l.c->hasard = hasard;
+			if(!l.c->Entrer(b, l.vise, juge, t)){ if(!l.boucle){ l.morte = true; l.c.reset(); } }
+			continue;
+		}
+		l.c->image = image; l.c->graine = graine;
+		if(l.c->joue == nil){ if(l.boucle) l.c->Entrer(b, l.vise, juge, t); continue; }
+		const CActionNode *avant = l.c->joue;
+		l.c->Avancer(b, nil, juge, t);
+		(void)avant;
+	}
 	pourCible.clear();
 	touches.clear();
 	blessures.clear();
@@ -317,6 +420,11 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; parolesLancees.push_back(d); }
 	for(Depart &d : departs)      // FUN_00619950
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; departsLances++; }
+	effacementsLances.clear(); fuitesLancees.clear();
+	for(Effacement &d : effacements)   // FUN_0062a180
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; effacementsLances.push_back(d); }
+	for(Fuite &d : fuites)        // FUN_00628ce0
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; fuitesLancees.push_back(d); }
 	for(Sante &d : santes)        // FUN_00627500
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; santesLancees.push_back(d); }
 	for(PriseCible &d : prisesCible)   // FUN_0062a580
@@ -338,6 +446,14 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(n){ Jouer(b, n, t, &juge); return true; }
 	}
 	bool fini = joue && fin >= 0.0f && t >= fin;
+	if(joue && finParRetenues){   // FUN_005f4230 : plus aucune piste vivante qui retienne le nœud
+		bool retenu = false;
+		for(const Gestion &g : gestions) retenu |= g.retient && g.vie != -2.0f;
+		for(const Gestion &g : combats) retenu |= g.retient && g.vie != -2.0f;
+		for(const DemandeNoeud &g : demandesNoeud) retenu |= g.retient && g.vivante;
+		if(sousControleurs) for(const COpportunite &o : occasions) retenu |= o.retient && !o.arretee;
+		fini = !retenu;
+	}
 	// FUN_005f7030 : les Sequence à la fin du nœud. Le nœud visé (FUN_005f4e30) peut être hors de l'arbre posé : la
 	// poussée de la prise (PushFwd/RCV) envoie la cible dans HitTree/Standing/PostHit/BellyUp/OnGroundBounce.
 	if(fini){
