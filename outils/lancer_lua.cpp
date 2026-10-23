@@ -164,7 +164,8 @@ struct CJugeOutil : CJugeAction {
 		                    kSysteme = ActionHash("PedFightingSystem"), kSante = ActionHash("Health"),
 		                    kPourcent = ActionHash("PercentageHealth"), kEnAttente = ActionHash("DamagePending"),
 		                    kHumiliation = ActionHash("IsHealthAtHumiliationLevel"), kMission = ActionHash("IsMissionSpecific"),
-		                    kTaille = ActionHash("CharacterSize"), kDrapeaux = ActionHash("PedFlags");
+		                    kTaille = ActionHash("CharacterSize"), kDrapeaux = ActionHash("PedFlags"),
+		                    kGroupeHumiliation = ActionHash("HumiliationGroupIs");
 		if(type == kArme) return f.ChaineCitee((uint32)d + 8) == "unarmed";
 		const CScriptPed *moi = pietons.Acceder(ped);
 		float seuil; memcpy(&seuil, &mots[0], 4);
@@ -178,6 +179,8 @@ struct CJugeOutil : CJugeAction {
 		// posture (70 dans la prise, posé par ExecuteNodes/StanceTransition/Give) ne sont pas tous suivis, et la juger
 		// envoie la charge de la prise de 1_02 dans une transition de posture qui ne finit pas (« NOT PedFlags »).
 		if(type == kDrapeaux) return -1;
+		// HumiliationGroupIs (FUN_006039b0) : le groupe d'humiliation du piéton (+0xd44, posé par FUN_0048f5d0) égal à +4.
+		if(type == kGroupeHumiliation) return moi ? moi->groupeHumiliation == (int32)mots[0] : -1;
 		// CharacterSize (FUN_00601460) : la taille du modèle (+0x74 du modelinfo, colonne SIZE de l'IDE) égale à +4.
 		if(type == kTaille){
 			if(moi == nil) return -1;
@@ -1417,11 +1420,34 @@ PedMakeAmbient(lua_State *L)
 	return 0;
 }
 
+// La taille d'un piéton (CharacterSize : modelinfo +0x74, la colonne SIZE de l'IDE), -1 si inconnue.
+static int
+TailleDuPieton(const CScriptPed *p)
+{
+	if(p == nil) return -1;
+	auto it = modeles.tailleDuPieton.find(p->modele);
+	return it == modeles.tailleDuPieton.end() ? -1 : it->second;
+}
+static uint32 graineHumiliation = 1;   // le rand() du CRT que FUN_004925d0 tire (l'outil a sa propre graine)
+
 // Une image des piétons : les gestes avancent, et ce qui aboutit se journalise.
 static void
 AvancerPietons(void)
 {
 	pietons.Avancer(0.033f);
+	// Le groupe d'humiliation d'une victime du joueur (FUN_00492950) : le moteur le choisit au lancement d'une piste
+	// ManageTargets (FUN_00627420) dont la cible est le joueur ; dans 1_02, celle du nœud CombatLoco de l'arbre de l'IA
+	// du bully (AI_FightTutorial), qu'il joue tant qu'il se bat. L'outil ne joue pas les arbres de l'IA : supposé, la
+	// piste se lance à chaque image où le geste PedAttack du piéton vise le joueur.
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
+		CScriptPed *p = pietons.Acceder(i);
+		if(p == nil || i == SCRIPT_PED_JOUEUR || p->mort || p->attaque != SCRIPT_PED_JOUEUR) continue;
+		if(p->groupeHumiliation != -1 && p->groupeHumiliation <= 12) continue;
+		float tirage = (float)RandCrt(graineHumiliation) / 32767.0f;
+		int g = pietons.SurveillerHumiliation(i, TailleDuPieton(p), TailleDuPieton(pietons.Acceder(SCRIPT_PED_JOUEUR)), tirage);
+		if(g >= 0) printf("%6.2f s  le piéton %d (%.0f / %.0f points) reçoit le groupe d'humiliation %d (%s)\n", maintenant / 1000.0, i,
+		                  p->sante, p->santeMax, g, ScriptPedGroupeHumiliation(g));
+	}
 	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
 		const CScriptPed *p = pietons.Acceder(i);
 		if(p == nil || journalRestant <= 0) continue;
