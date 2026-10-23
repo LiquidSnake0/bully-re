@@ -678,3 +678,32 @@ en échec plutôt que de les masquer.
   `RCV` (`AnimationGroupLoaded`, `IsSpeechPreloaded`, `TargetRelativePosition`) ; `PedFlags` non jugée (un chemin à
   cinq `..` vers `ExecuteNodes/StanceTransition/Give` ne se résout pas sans les références montées).
 - **Bilan** : 451 fonctions recréées (3,2 % du code), contre 423 (2,9 %) ce matin.
+
+## 23.10.2026 (soir)
+
+- **`HumiliationGroupIs` élucidée** : +0xd44 n'est pas un champ écrit directement, c'est le +0x200 du composant social du
+  piéton, en +0xb44 (`ecx = piéton + 0xb44` à l'assembleur). Construit à -1 (`FUN_0048e790`), posé par `FUN_0048f5d0`
+  (la table des 22 groupes `HUMIL_` en 0x9113d0), choisi par `FUN_004925d0` selon la taille de la victime (le groupe déjà
+  pris par un piéton de même taille, `FUN_00490ef0`, sinon un tirage), donné par `FUN_00492950` quand la santé passe
+  sous la moitié, au lancement d'une piste `ManageTargets` (`FUN_00627420`) qui vise le joueur. Dans `1_02`, le bully
+  (Medium) reçoit le groupe 0 à 76,16 s : `5-8_NoogieSpit`.
+- **Les conditions propres des `Opportunity`** : le champ 60 vaut 0 dans le fichier, mais la seconde table de renvois le
+  cite (951 des 3 080 du démarrage). Sans elles, l'attente du chargement de l'humiliation abandonnait (`ABORT`) dès la
+  première image ; avec, l'abandon attend 6 s. `ActionNodePlayTimePast` lue (vraie : seuil -1).
+- **Les conditions de `RCV`** : `AnimationGroupLoaded` (`CAnimGroups`, les 550 `.agr`, `LoadAnimationGroup` et
+  `HasAnimGroupLoaded` réels), `IsSpeechPreloaded` (la parole retenue des `SpeechTrack`, lâchée par `SpeechStartTrack`),
+  `TargetRelativePosition` ; et pour s'y trouver, `FaceTarget`, `SeekEntityPosition` (y compris sous un `spawn`) et les
+  partenaires de prise (+0x155c).
+- **`PedFlags` jugée** : la régression d'hier venait d'un nœud qui ne finissait pas. Un `Execute` ne retient pas son nœud
+  (`FUN_005f70f0`, +0x31) ; la transition de posture de la charge vise un chemin qui n'existe pas
+  (`GrappleMoves/ExecuteNodes`, alors qu'`ExecuteNodes` est sous `GrappleStrikes`) et passe aussitôt à `../Give`.
+- **`1_02` se termine réussie à 119,13 s** (`lancer_lua 125`, la commande de docs/missions.md) : à 84,08 s les
+  conditions de `RCV` passent, le joueur joue `GV`, la ligne `HUMILIATION_ANIM` 3 part, `HumiliateFlee` ôte les 5 derniers
+  points, `KnockOuts` à 93,56 s, la rencontre avec Russell (`F_SetupRussellFight`), `MissionSucceed` à 119,10 s.
+- **Lu sans le recréer** : l'objet de porte (+0x394) est posé par `ActivateDoor`, `PropAttemptDoorTransition` et une
+  `PropAnimation` `OPEN` de l'objet que le joueur touche (docs/zones.md) ; la clé des références montées (`DAT_00b0a604`,
+  `FUN_005f6290`).
+- **Ce qui bloque encore** : les arbres de l'IA (`AI_FightTutorial`, son `CombatActions` lancé par `spawn` et une dizaine
+  de conditions non lues) ; la locomotion des arbres (le bully ne fuit pas, les `FRIENDLYHIT` de sa chute touchent le
+  joueur, 0 dégât).
+- **Bilan** : 475 fonctions recréées (3,4 % du code), contre 451 (3,2 %) cet après-midi ; 18 commits.
