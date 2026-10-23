@@ -51,7 +51,9 @@ moteur, ou dit qu'il est un bouchon. Voir `docs/lua.md`, `docs/missions.md`, `do
 
 Chaque chargeur de données a un test hôte (`tests/construire_tests.sh`, puis
 `BULLY_DATA=<racine du jeu> build/tests/test_…`) qui le compare aux fichiers
-du jeu :
+du jeu ; les sept tests qui ne lisent aucun fichier du jeu (`tests/sans_jeu.sh`)
+tournent sur GitHub à chaque push et pull request (`.github/workflows/tests.yml`),
+après la compilation de toutes les sources et de tous les tests :
 
 - `Config/dat/*.dat`, `handling.cfg` complet avec la boîte de vitesses et les
   conversions en unités du jeu ([src/vehicles](src/vehicles)) ;

@@ -71,8 +71,10 @@ No game code is needed to compile what is here:
 BULLY_DATA=/path/to/Bully build/tests/test_nif
 ```
 
-`construire.sh` uses `g++` only, no build system. The tests need a real
-installation of the game to read from; they never write to it.
+`construire.sh` uses `g++` only, no build system. Most tests need a real
+installation of the game to read from; they never write to it. The seven tests
+that read no game file (`tests/sans_jeu.sh`) run on every push and pull request
+(`.github/workflows/tests.yml`), after compiling every source and every test.
 
 ## Method
 
