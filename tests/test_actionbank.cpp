@@ -567,6 +567,67 @@ main(void)
 				VERIF(avant >= 1 && fin);
 			}
 		}
+		// L'arbre de l'IA de 1_02 (AI_FightTutorial) : avec un objectif d'attaque, une cible et une zone, la descente mène à
+		// Combat/…/CombatLoco, dont les pistes ManageTargets et CombatLoco retiennent le nœud et dont la piste spawn fait
+		// jouer CombatActions dans son propre contrôleur (FUN_005f8860) : son ControlNode, retenu 1,03 s, puis redescendu
+		// (l'octet +0x29). Une ActionNodeRequest pose l'intention tant que le nœud nommé n'est pas joué (FUN_006261f0).
+		{
+			CActionBank ia;
+			VERIF(ia.TrouverOuCharger("/Global/AI_FightTutorial", "Act/AI/AI_FightTutorial.act"));
+			struct : CJugeAction {
+				int Juger(const CActionTreeFile &, int32, uint32 type, const uint32 *mots) const override {
+					static const uint32 kObjectif = ActionHash("Objective"), kAcquerir = ActionHash("AcquireTarget"),
+					                    kJoindre = ActionHash("JoinCombatZone"), kPoser = ActionHash("SetPedFlags"),
+					                    kInterdites = ActionHash("AttacksDisabled"), kBranche = ActionHash("OpeningBranchChildHasChild"),
+					                    kHorsPortee = ActionHash("IsTargetOutOfReach");
+					if(type == kObjectif) return mots[0] == 7;
+					if(type == kAcquerir || type == kJoindre || type == kPoser) return 1;
+					if(type == kInterdites || type == kBranche || type == kHorsPortee) return 0;
+					return -1;   // le reste (wait, PostHit, Offense…) ne passe pas
+				}
+			} combat;
+			const CActionNode *racine = ia.Trouver("/Global/AI_FightTutorial");
+			CActionController c;
+			c.sousControleurs = true;
+			VERIF(racine && c.Poser(ia, racine, combat, 0.0f));
+			VERIF(c.joue && (c.joue->hachage & 0x7fffffff) == ActionHash("CombatLoco") && c.gestions.size() == 1 && c.combats.size() == 1 && c.lances.size() == 1);
+			VERIF(c.finParRetenues && c.fin < 0.0f);
+			c.Avancer(ia, nil, combat, 0.033f);
+			VERIF(c.gestionsActives.size() == 1 && c.combatsActifs.size() == 1 && c.lances[0].lancee && c.lances[0].c);
+			const CActionNode *controle = c.lances[0].c ? c.lances[0].c->joue : nil;
+			VERIF(controle && controle->hachage == ActionHash("ControlNode") && c.lances[0].boucle);
+			std::vector<CActionController *> tous;
+			c.Recueillir(tous);
+			VERIF(tous.size() == 2);
+			float debut = c.lances[0].c ? c.lances[0].c->debut : 0.0f;
+			for(float t = 0.066f; t < 1.2f; t += 0.033f) c.Avancer(ia, nil, combat, t);
+			VERIF(c.joue && (c.joue->hachage & 0x7fffffff) == ActionHash("CombatLoco") && c.lances[0].c && c.lances[0].c->debut > debut);   // redescendu
+			// ActionNodeRequest : CombatActions/…/Offense/#4ec3da49/Short/Short demande « Short » (+0x1d : vit tant qu'il le joue).
+			const CActionNode *offense = ia.Trouver("/Global/AI_FightTutorial/CombatActions/CombatActions/Offense");
+			const CActionNode *court = offense && !offense->enfants.empty() && !offense->enfants[0].enfants.empty() ? &offense->enfants[0].enfants[0] : nil;
+			const CActionNode *feuille = court && !court->enfants.empty() ? &court->enfants[0] : nil;
+			if(feuille){
+				struct : CJugeAction {
+					mutable int joue = 0;
+					int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return -1; }
+					int JoueNom(uint32) const override { return joue; }
+				} rien;
+				CActionController d;
+				d.sousControleurs = true;
+				d.Jouer(ia, feuille, 0.0f, &rien);
+				VERIF(d.demandesNoeud.size() == 1 && d.demandesNoeud[0].nom == ActionHash("Short") && d.demandesNoeud[0].suivre && d.finParRetenues);
+				d.Avancer(ia, nil, rien, 0.033f);
+				VERIF(d.intentions.size() == 1 && d.joue == feuille);           // pas encore joué : l'intention, le nœud retenu
+				rien.joue = 1;
+				d.Avancer(ia, nil, rien, 0.066f);
+				VERIF(d.intentions.size() == 1 && d.joue == feuille);           // joué : plus d'intention à l'image suivante
+				d.Avancer(ia, nil, rien, 0.1f);
+				VERIF(d.intentions.empty() && d.joue == feuille && !d.demandesNoeud.empty() && d.demandesNoeud[0].vivante);
+				rien.joue = 0;
+				d.Avancer(ia, nil, rien, 0.133f);                               // fini : la piste meurt (+0x1e nul)
+				VERIF(d.joue != feuille || (!d.demandesNoeud.empty() && !d.demandesNoeud[0].vivante));
+			}else VERIF(false);
+		}
 		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());
 	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");

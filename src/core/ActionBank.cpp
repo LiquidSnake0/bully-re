@@ -304,7 +304,11 @@ CActionBank::Juger(const CActionNode &n, const CJugeAction &juge) const
 {
 	if(n.conditions.empty()) return 1;
 	const CActionTreeFile *f = Fichier(n);
-	return f ? JugerListe(*f, n.conditions, juge) : -1;
+	const CActionNode *avant = juge.noeud;
+	juge.noeud = &n;                     // le contexte +0x34 : le nœud jugé
+	int r = f ? JugerListe(*f, n.conditions, juge) : -1;
+	juge.noeud = avant;
+	return r;
 }
 
 const CActionNode *

@@ -88,6 +88,40 @@ public:
 	std::vector<Regard> regards, regardsActifs;
 	struct Poursuite { float entree, vie; int32 genre; float arrivee; };
 	std::vector<Poursuite> poursuites, poursuitesActives;
+	// Les pistes de l'IA (relevées dans AI_FightTutorial), suivies quand `sousControleurs` est posé :
+	// - ManageTargets (ManageTargetsTrack 0x934d14 ; lancement FUN_006273f0, mise à jour FUN_00627420, à chaque image tant
+	//   qu'elle vit) : l'octet +0x18 (24) fait du joueur la cible du piéton (FUN_004989c0) ; la cible (+0x538, FUN_0048bee0)
+	//   est surveillée : si c'est le joueur, sa victime peut recevoir son groupe d'humiliation (FUN_00492950). Elle vit tant
+	//   que le piéton a une cible.
+	// - CombatLoco (CombatLocoTrack 0x9349e0 ; lancement FUN_0062e9e0, mise à jour FUN_0062ea40) : le piéton gagne sa zone
+	//   de combat autour de sa cible (FUN_006252d0 la rejoint, PedJoinCombatZone ; FUN_006253e0 en prend les rayons dans
+	//   AIButes ; FUN_0062e120 pose l'intention de mouvement). L'octet +0x18 (24) vise le joueur. Elle vit tant que le piéton
+	//   a une cible et une zone.
+	// - ActionNodeRequest (ActionNodeRequestTrack 0x9334dc ; lancement FUN_0061bb40, mise à jour FUN_006262a0 →
+	//   FUN_006261f0) : tant que le piéton ne joue pas le nœud nommé +0x18 (24) dans son contrôleur d'actions, l'intention
+	//   (+0x254 du composant +0x2e0, FUN_005f35e0) reçoit ce nom à chaque image ; une fois joué (l'octet +0x24 en mémoire),
+	//   la piste vit tant qu'il le joue si l'octet +0x1d (29), sinon elle rend l'octet +0x1e (30) ; pas encore joué, elle vit
+	//   si +0x1c (28) ou +0x1d.
+	// L'octet +8 d'une piste retient le nœud (FUN_005f4230 : le nœud finit quand plus aucune piste vivante à l'octet +8 ne
+	// reste ; une piste meurt quand sa mise à jour rend faux ou que sa durée de vie +0x10 est passée). L'outil s'en sert
+	// pour ces trois pistes, quand le nœud n'a pas d'autre fin : il finit quand elles sont toutes mortes.
+	struct Gestion { float entree, vie; bool joueur, retient; };
+	std::vector<Gestion> gestions, gestionsActives, combats, combatsActifs;
+	struct DemandeNoeud { float entree; uint32 nom; bool tenir, suivre, rendre, retient, vu, vivante; };
+	std::vector<DemandeNoeud> demandesNoeud;
+	std::vector<uint32> intentions;               // les noms posés en intention à cette image, rendus par Avancer
+	bool finParRetenues = false;                  // le nœud finit à la mort de ses pistes de l'IA qui le retiennent
+	// Ses pistes spawn (SpawnTrack 0x92de80 ; lancement FUN_005f8860, mise à jour FUN_005f72e0, arrêt FUN_005f7390) : la
+	// piste a son propre contrôleur (+0x84) et son contexte (+0x2c, dont la racine +0x40 est le nœud visé +0x6c, résolu
+	// d'avance) ; au lancement, le contrôleur descend dans le nœud visé et joue ce qu'il trouve ; à chaque image il avance
+	// (FUN_005f49a0), et quand son nœud finit, l'octet +0x29 (41) le fait redescendre depuis le nœud visé (sinon il
+	// s'arrête) ; l'octet +0x28 (40) le fait avancer dès le lancement. La durée de vie +0x10 (16) l'arrête. Suivies quand
+	// `sousControleurs` est posé (les arbres de l'IA) ; sinon l'outil n'en garde que les FaceTarget et SeekEntityPosition.
+	struct Lance { float entree, vie; const CActionNode *vise; bool boucle, lancee, morte; std::shared_ptr<CActionController> c; };
+	std::vector<Lance> lances;
+	bool sousControleurs = false;
+	// Ce contrôleur et ceux de ses pistes spawn vivantes, en profondeur : l'appelant en traite les sorties.
+	void Recueillir(std::vector<CActionController *> &tous);
 	float finExecutees = -1.0f;   // la fin la plus tardive des pistes venues des nœuds exécutés (-1 : aucune)
 	struct Prise { const CActionNode *soi, *cible; bool executerSoi, executerCible; };
 	std::vector<Prise> prises;                    // celles qui se lancent à cette image, rendues par Avancer

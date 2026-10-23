@@ -43,6 +43,7 @@ COpportunite::Lire(const CActionTreeFile &f, const CActionNode &porteur, const C
 	o.fermeture = Reel(p, 40, -1.0f);
 	o.bascule = Reel(p, 44, 0.0f);
 	if(const CActionAttribut *a = p.Champ(48)) o.soiMeme = a->valeur[0] != 0;
+	if(const CActionAttribut *a = p.Champ(8)) o.retient = a->taille >= 1 && a->valeur[0] != 0;
 	o.priorite = (int32)p.Mot(52);
 	o.periode = p.Mot(56);
 	o.conditions = p.Mot(60);

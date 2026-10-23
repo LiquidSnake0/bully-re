@@ -2,6 +2,7 @@
 //
 // Relevé dans bully.exe, la mise à jour de la piste (emplacement 3, FUN_005f7d70) ; la position d'un attribut est son
 // décalage dans l'objet :
+//   +0x08 (8)  un octet commun à toutes les pistes : tant qu'elle vit, la piste retient son nœud (FUN_005f4230) ;
 //   +0x20 (32) le chemin du nœud visé, relatif au nœud qui porte la piste (« ./GroundStomp2 », « ../ ») ;
 //   +0x28 (40) la fermeture : tant qu'elle n'est pas prise, la piste s'arrête quand le temps du nœud dépasse ce champ
 //              (s'il est positif) ;
@@ -39,6 +40,7 @@ struct COpportunite {
 	float fermeture = -1.0f;            // +0x28
 	float bascule = 0.0f;               // +0x2c
 	bool soiMeme = false;               // +0x30
+	bool retient = false;               // +0x08, commun à toutes les pistes : vivante, elle retient le nœud (FUN_005f4230)
 	int32 priorite = 0;                 // +0x34
 	uint32 periode = 0;                 // +0x38
 	uint32 conditions = 0;              // +0x3c, le mot du fichier

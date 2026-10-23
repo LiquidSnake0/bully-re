@@ -15,8 +15,22 @@
 // Ce qu'une condition de nœud d'action vaut pour un piéton : la classe (type, HashString de son nom) et ses mots
 // (mots[i] = champ +4 * (i + 1) de l'objet, voir CActionTreeFile::Condition) ; 1 vrai, 0 faux, -1 classe pas lue.
 // NOT, OR, False et ConditionGroup sont jugés par la banque elle-même.
+// Le contexte d'un jugement (l'objet que FUN_005fb9b0 passe à chaque condition) : son piéton en +8, son contrôleur en
+// +0x10, et en +0x34 le nœud dont on juge les conditions, que la descente pose (la condition ActionNodeRequest,
+// ConditionIntentionActionNodeRequest FUN_005fd620, compare son nom à l'intention du piéton). L'outil les tient ici :
+// `noeud` est posé par CActionBank::Juger, `controleur` par le contrôleur qui juge (nil : celui des actions du piéton).
+struct CActionNode;
+class CActionController;
 struct CJugeAction {
 	virtual int Juger(const CActionTreeFile &f, int32 decalage, uint32 type, const uint32 mots[6]) const = 0;
+	// PedMePlaying sur le contrôleur d'actions du piéton (FUN_005f46a0, ecx = +0x258 du composant +0x2e0) : son nœud joué,
+	// ou un parent, porte ce nom haché. La piste ActionNodeRequest s'en sert (FUN_006261f0). 0 par défaut.
+	virtual int JoueNom(uint32 nom) const { (void)nom; return 0; }
+	// Le piéton a une cible de combat (+0x538, FUN_0048bee0 : un piéton, vivant) : les pistes ManageTargets
+	// (FUN_00627420) et CombatLoco (FUN_00625270) vivent tant qu'il en a une. Vrai par défaut.
+	virtual bool ACible(void) const { return true; }
+	mutable const CActionNode *noeud = nil;
+	mutable const CActionController *controleur = nil;
 	virtual ~CJugeAction(void) {}
 };
 
