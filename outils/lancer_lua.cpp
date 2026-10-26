@@ -253,6 +253,17 @@ struct CJugeOutil : CJugeAction {
 		float seuil; memcpy(&seuil, &mots[0], 4);
 		// IsPlayer (FUN_005ffe40) : le type du piéton (+0x1310) vaut 13 (PLAYER1).
 		if(type == kJoueur) return moi && moi->type == SCRIPT_PED_TYPE_JOUEUR;
+		// IsFemale (FUN_005ffb50) : l'octet +0x50 du modelinfo du piéton (PedIsFemale), la colonne FEMALE de son entrée peds.
+		// IsAuthority (FUN_005ffb20) : son type (+0x1310) est PREFECT (0), COP (7) ou TEACHER (8).
+		// PedType (FUN_005ffac0) : son type est +4.
+		static const uint32 kFemme = ActionHash("IsFemale"), kAutorite = ActionHash("IsAuthority"), kTypePieton = ActionHash("PedType");
+		if(type == kFemme){
+			if(moi == nil) return 0;
+			auto it = modeles.femme.find(moi->modele);
+			return it != modeles.femme.end() && it->second;
+		}
+		if(type == kAutorite) return moi && (moi->type == 0 || moi->type == 7 || moi->type == 8);
+		if(type == kTypePieton) return moi && moi->type == (int32)mots[0];
 		// IsMissionSpecific (FUN_005ffb70) : l'octet +0x1570 vaut 2, ce que le constructeur (FUN_0047ffe0) pose pour un
 		// piéton créé par un script (FUN_005cf6b0 → FUN_0046dea0(modèle, 2)) ; PedMakeAmbient le change (FUN_004770a0).
 		// Dans l'outil : un piéton noté à un objet script.

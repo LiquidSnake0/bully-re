@@ -407,6 +407,17 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
   ne s'arrête plus sur `idle` mais entre dans `Locomotion/Free/idle`, dont l'`Execute` mène aux `ActionOpps` ; le chrono ne
   change pas (119,03 s).
 
+## Les conditions lues le 26.10.2026
+
+Par le registre des conditions (`FUN_0064b090` : pour chaque nom, son créateur, qui pose la table virtuelle ; la fonction
+qui juge est l'emplacement 1), `lancer_lua` dresse à la fin le bilan des classes qu'il juge encore -1.
+
+| Classe | Fonction | Ce qu'elle juge |
+|---|---|---|
+| `IsFemale` | `FUN_005ffb50` | l'octet +0x50 du modelinfo du piéton (la colonne FEMALE) |
+| `IsAuthority` | `FUN_005ffb20` | le type du piéton (+0x1310) est PREFECT, COP ou TEACHER (0, 7, 8) |
+| `PedType` | `FUN_005ffac0` | le type du piéton est +4 |
+
 ## Le chemin d'un nœud (18.10.2026)
 
 Les scripts désignent un nœud par un chemin, `PedSetActionNode(ped, "/Global/1_01/Talking",
