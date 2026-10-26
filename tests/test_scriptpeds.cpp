@@ -15,6 +15,9 @@ main(void)
 {
 	CScriptPedPool p;
 	VERIF(p.Valide(SCRIPT_PED_JOUEUR) && p.Vivants() == 1);
+	// Le type (+0x1310) : PLAYER1 pour le joueur ; un piéton neuf reçoit celui de son modèle à la création (l'appelant,
+	// FUN_0047ffe0), DEFAULT en attendant.
+	VERIF(p.Acceder(SCRIPT_PED_JOUEUR)->type == SCRIPT_PED_TYPE_JOUEUR);
 	VERIF(!p.Valide(-1) && !p.Valide(1) && !p.Valide(SCRIPT_PED_POOL_SIZE));
 	VERIF(p.Acceder(1) == nil && p.Acceder(-1) == nil);
 

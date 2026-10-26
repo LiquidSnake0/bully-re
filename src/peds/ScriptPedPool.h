@@ -40,6 +40,7 @@ static const float SCRIPT_PED_DEGATS = 10.0f;       // points de vie par coup
 // son style en +0x10 (le troisième argument de PedAttack, 0 à 3) ; le type 16 a aussi une cible en +0x14 (la condition
 // Objective les traite ensemble, FUN_00606c00). Le compte de références (+0xc) n'est pas suivi.
 // FleeObjective (le constructeur FUN_0046f940(0x16, piéton), table 0x911894) est le type 22, la cible fuie en +0x10.
+enum { SCRIPT_PED_TYPE_DEFAUT = 12, SCRIPT_PED_TYPE_JOUEUR = 13 };
 enum { OBJECTIF_ATTAQUER_PIETON = 7, OBJECTIF_ATTAQUER_16 = 16, OBJECTIF_FUIR = 22, SCRIPT_PED_OBJECTIFS = 20 };
 struct CObjectifPieton { int32 type = -1; int cible = -1; int32 style = 0; };
 
@@ -54,6 +55,10 @@ struct CScriptPed {
 	float santeMin = 0;          // +0x1ca8, PedSetMinHealth (0x5c8ef0)
 	float regeneration = 0;      // +0x1cac : la colonne G de pedstats.dat (taux de régénération, n/100)
 	int32 stats[64] = {};        // +0x1900 : les 64 colonnes B à BM de son entrée de pedstats.dat (GameGetPedStat)
+	// +0x1310 : le type du piéton (PREFECT 0 … COP 7, TEACHER 8, BULLY 11, DEFAULT 12, PLAYER1 13 ; CModelEnum::typesDePietons),
+	// recopié du modelinfo (+0x4c) par le constructeur de CPed (FUN_0047ffe0), changé par PedSetFaction (0x5cb570, jamais en
+	// 13), lu par PedGetFaction (0x5cb5c0), IsPlayer (FUN_005ffe40 : 13), IsAuthority (FUN_005ffb20) et PedType (FUN_005ffac0).
+	int32 type = SCRIPT_PED_TYPE_DEFAUT;
 	int32 systemeCombat = 0;     // +0x16dc, PedSetFightingSystem (0x5ca590) ; 0 à la création (FUN_00474f50)
 	// +0x1314 : les drapeaux du piéton, un mot chacun (le drapeau n en +0x1314 + 4n) ; les pistes SetPedFlags les posent
 	// (PedFlagsTrack 0x931380, lancement FUN_0060f8e0 : le drapeau +0x1c reçoit l'octet +0x18), la condition PedFlags

@@ -145,6 +145,7 @@ NoeudJoue(int ped)
 	auto it = controleurs.find(ped);
 	return it == controleurs.end() ? nil : it->second.joue;
 }
+static std::map<uint32, int> nonLues;               // les classes de conditions pas encore lues, jugées -1 (le bilan de fin)
 static lua_State *etatLua = nil;        // pour LuaCond : la fonction du script de mission appelée par le contrôleur
 // LuaCond (FUN_006a74d0) : la fonction +0x10 du script +0xc, appelée dans son espace de noms ; -1 si rien n'est appelable.
 static int AppelLuaCond(const std::string &script, const std::string &fonction);
@@ -250,8 +251,8 @@ struct CJugeOutil : CJugeAction {
 		if(type == kArme) return f.ChaineCitee((uint32)d + 8) == "unarmed";
 		const CScriptPed *moi = pietons.Acceder(ped);
 		float seuil; memcpy(&seuil, &mots[0], 4);
-		// IsPlayer (FUN_005ffe40) : le type du piéton (+0x1310) vaut 13 ; dans l'outil, l'entrée 0 du pool.
-		if(type == kJoueur) return ped == SCRIPT_PED_JOUEUR;
+		// IsPlayer (FUN_005ffe40) : le type du piéton (+0x1310) vaut 13 (PLAYER1).
+		if(type == kJoueur) return moi && moi->type == SCRIPT_PED_TYPE_JOUEUR;
 		// IsMissionSpecific (FUN_005ffb70) : l'octet +0x1570 vaut 2, ce que le constructeur (FUN_0047ffe0) pose pour un
 		// piéton créé par un script (FUN_005cf6b0 → FUN_0046dea0(modèle, 2)) ; PedMakeAmbient le change (FUN_004770a0).
 		// Dans l'outil : un piéton noté à un objet script.
@@ -514,6 +515,7 @@ struct CJugeOutil : CJugeAction {
 			const float h = 1.8f;
 			return moi->pos.z + bas * h <= c->pos.z + h && c->pos.z <= moi->pos.z + haut * h;
 		}
+		nonLues[type]++;
 		return -1;
 	}
 };
@@ -1460,6 +1462,8 @@ CreerPed(lua_State *L, const char *quoi, int32 modele, const CVector &pos, float
 	int h = pietons.Creer(modele, pos, cap, scriptCourant);
 	if(h < 0) printf("        %s : le pool des piétons est plein (%d)\n", quoi, SCRIPT_PED_POOL_SIZE);
 	else{
+		auto ty = modeles.typeDuPieton.find(modele);   // FUN_0047ffe0 : le type du modelinfo (+0x4c) en +0x1310
+		if(ty != modeles.typeDuPieton.end() && ty->second >= 0) pietons.Acceder(h)->type = ty->second;
 		auto st = modeles.statDuPieton.find(modele);
 		auto e = st == modeles.statDuPieton.end() ? statsParNom.end() : statsParNom.find(st->second);
 		if(e != statsParNom.end()){
@@ -1470,6 +1474,26 @@ CreerPed(lua_State *L, const char *quoi, int32 modele, const CVector &pos, float
 		}
 	}
 	lua_pushnumber(L, h);
+	return 1;
+}
+
+// PedSetFaction(ped, type) (0x5cb570) : le type du piéton (+0x1310), sauf 13 (PLAYER1), que le moteur refuse.
+static int
+PedSetFaction(lua_State *L)
+{
+	Journal("PedSetFaction", L, 1);
+	CScriptPed *p = pietons.Acceder((int)luaL_checknumber(L, 1));
+	int32 t = (int32)luaL_checknumber(L, 2);
+	if(p && t != SCRIPT_PED_TYPE_JOUEUR) p->type = t;
+	return 0;
+}
+
+// PedGetFaction(ped) (0x5cb5c0) : son type, -1 pour un handle sans piéton.
+static int
+PedGetFaction(lua_State *L)
+{
+	const CScriptPed *p = pietons.Acceder((int)luaL_checknumber(L, 1));
+	lua_pushnumber(L, p ? p->type : -1);
 	return 1;
 }
 
@@ -2664,6 +2688,8 @@ main(int argc, char **argv)
 	lua_register(L, "PedStop", PedStop);
 	lua_register(L, "PedAttack", PedAttack);
 	lua_register(L, "PedSetAITree", PedSetAITree);
+	lua_register(L, "PedSetFaction", PedSetFaction);
+	lua_register(L, "PedGetFaction", PedGetFaction);
 	lua_register(L, "PedSetCombatZoneMask", PedSetCombatZoneMask);
 	lua_register(L, "PedMakeAmbient", PedMakeAmbient);
 	// Les énumérations posées par 0x5db040 : POINTLIST, PATH et TRIGGER cherchent dans les pools.
@@ -2970,6 +2996,14 @@ main(int argc, char **argv)
 		std::vector<std::pair<int, std::string>> tri2;
 		for(auto &a : inconnues) tri2.push_back({-a.second, a.first});
 		std::sort(tri2.begin(), tri2.end());
+	if(!nonLues.empty()){
+		std::vector<std::pair<int, uint32>> v;
+		for(auto &e : nonLues) v.push_back({-e.second, e.first});
+		std::sort(v.begin(), v.end());
+		printf("conditions pas encore lues (jugées -1) :");
+		for(size_t i = 0; i < v.size() && i < 40; i++) printf(" #%08x (%d)", v[i].second, -v[i].first);
+		printf("\n");
+	}
 		printf("globales de script lues avant d'être posées (nil) :");
 		for(size_t i = 0; i < tri2.size() && i < 12; i++) printf(" %s (%d)", tri2[i].second.c_str(), -tri2[i].first);
 		printf("\n");

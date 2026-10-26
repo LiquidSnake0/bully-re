@@ -17,6 +17,7 @@ CScriptPedPool::CScriptPedPool(void)
 	// Le joueur existe toujours, à l'entrée 0.
 	peds[SCRIPT_PED_JOUEUR].vivant = true;
 	peds[SCRIPT_PED_JOUEUR].modele = 0;
+	peds[SCRIPT_PED_JOUEUR].type = SCRIPT_PED_TYPE_JOUEUR;   // le modèle 0 (player) est PLAYER1
 }
 
 int
