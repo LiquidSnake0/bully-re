@@ -417,6 +417,10 @@ qui juge est l'emplacement 1), `lancer_lua` dresse à la fin le bilan des classe
 | `IsFemale` | `FUN_005ffb50` | l'octet +0x50 du modelinfo du piéton (la colonne FEMALE) |
 | `IsAuthority` | `FUN_005ffb20` | le type du piéton (+0x1310) est PREFECT, COP ou TEACHER (0, 7, 8) |
 | `PedType` | `FUN_005ffac0` | le type du piéton est +4 |
+| `PedModelID` | `FUN_00602050` → `FUN_0050e7f0` | le nom haché du modelinfo (+4) est le `HashString` de la chaîne +4 |
+| `IsElderly` | `FUN_006069a0` → `FUN_0044e010` | l'entrée de pedstats.dat du modelinfo (+0x54, nom haché +0x18) est `STAT_CV_MALE_OLD` ou `STAT_CV_FEMALE_OLD` |
+| `HasGrappleTarget` | `FUN_00606490` | un partenaire de prise (+0x155c) |
+| `IsStealthMissionChar` | `FUN_00602cf0` | +0x1398 non nul (`PedSetIsStealthMissionPed`, 0x5d0110 → `FUN_005d0080`) |
 
 ## Le chemin d'un nœud (18.10.2026)
 

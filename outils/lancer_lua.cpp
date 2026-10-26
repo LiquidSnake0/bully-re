@@ -264,6 +264,24 @@ struct CJugeOutil : CJugeAction {
 		}
 		if(type == kAutorite) return moi && (moi->type == 0 || moi->type == 7 || moi->type == 8);
 		if(type == kTypePieton) return moi && moi->type == (int32)mots[0];
+		// PedModelID (FUN_00602050) : le modelinfo du piéton (FUN_00477c70), dont le nom haché (+4) est celui de la chaîne
+		// +4 (FUN_0050e7f0 : HashString). IsElderly (FUN_006069a0 → FUN_0044e010) : l'entrée de pedstats.dat de son modelinfo
+		// (+0x54, son nom haché en +0x18) est STAT_CV_MALE_OLD ou STAT_CV_FEMALE_OLD. HasGrappleTarget (FUN_00606490) : un
+		// partenaire de prise (+0x155c). IsStealthMissionChar (FUN_00602cf0) : +0x1398 non nul.
+		static const uint32 kModele = ActionHash("PedModelID"), kVieux = ActionHash("IsElderly"),
+		                    kPrise = ActionHash("HasGrappleTarget"), kDiscret = ActionHash("IsStealthMissionChar");
+		if(type == kModele){
+			if(moi == nil) return 0;
+			auto it = modeles.nomDuModele.find(moi->modele);
+			return it != modeles.nomDuModele.end() && ActionHash(it->second.c_str()) == ActionHash(f.ChaineCitee((uint32)d + 8).c_str());
+		}
+		if(type == kVieux){
+			if(moi == nil) return 0;
+			auto it = modeles.statDuPieton.find(moi->modele);
+			return it != modeles.statDuPieton.end() && (it->second == "STAT_CV_MALE_OLD" || it->second == "STAT_CV_FEMALE_OLD");
+		}
+		if(type == kPrise) return moi && moi->cibleDePrise >= 0;
+		if(type == kDiscret) return moi && moi->discretion;
 		// IsMissionSpecific (FUN_005ffb70) : l'octet +0x1570 vaut 2, ce que le constructeur (FUN_0047ffe0) pose pour un
 		// piéton créé par un script (FUN_005cf6b0 → FUN_0046dea0(modèle, 2)) ; PedMakeAmbient le change (FUN_004770a0).
 		// Dans l'outil : un piéton noté à un objet script.
@@ -1499,6 +1517,18 @@ PedSetFaction(lua_State *L)
 	return 0;
 }
 
+// PedSetIsStealthMissionPed(ped, oui) (0x5d0110 → FUN_005d0080) : +0x1398 ; le moteur prévient aussi la mémoire des
+// stimuli (FUN_0054a740, FUN_0054a460), que l'outil n'a pas.
+static int
+PedSetIsStealthMissionPed(lua_State *L)
+{
+	Journal("PedSetIsStealthMissionPed", L, 1);
+	CScriptPed *p = pietons.Acceder((int)luaL_checknumber(L, 1));
+	// FUN_005d8fa0(L, 1, 1) : un booléen ou un nombre, sinon vrai par défaut.
+	if(p) p->discretion = lua_isboolean(L, 2) || lua_isnumber(L, 2) ? (lua_isboolean(L, 2) ? lua_toboolean(L, 2) != 0 : lua_tonumber(L, 2) != 0) : true;
+	return 0;
+}
+
 // PedGetFaction(ped) (0x5cb5c0) : son type, -1 pour un handle sans piéton.
 static int
 PedGetFaction(lua_State *L)
@@ -2700,6 +2730,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedAttack", PedAttack);
 	lua_register(L, "PedSetAITree", PedSetAITree);
 	lua_register(L, "PedSetFaction", PedSetFaction);
+	lua_register(L, "PedSetIsStealthMissionPed", PedSetIsStealthMissionPed);
 	lua_register(L, "PedGetFaction", PedGetFaction);
 	lua_register(L, "PedSetCombatZoneMask", PedSetCombatZoneMask);
 	lua_register(L, "PedMakeAmbient", PedMakeAmbient);

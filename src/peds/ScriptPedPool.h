@@ -59,6 +59,8 @@ struct CScriptPed {
 	// recopié du modelinfo (+0x4c) par le constructeur de CPed (FUN_0047ffe0), changé par PedSetFaction (0x5cb570, jamais en
 	// 13), lu par PedGetFaction (0x5cb5c0), IsPlayer (FUN_005ffe40 : 13), IsAuthority (FUN_005ffb20) et PedType (FUN_005ffac0).
 	int32 type = SCRIPT_PED_TYPE_DEFAUT;
+	bool discretion = false;     // +0x1398 : un piéton de mission de discrétion (PedSetIsStealthMissionPed, 0x5d0110 →
+	                             // FUN_005d0080) ; la condition IsStealthMissionChar le lit (FUN_00602cf0)
 	int32 systemeCombat = 0;     // +0x16dc, PedSetFightingSystem (0x5ca590) ; 0 à la création (FUN_00474f50)
 	// +0x1314 : les drapeaux du piéton, un mot chacun (le drapeau n en +0x1314 + 4n) ; les pistes SetPedFlags les posent
 	// (PedFlagsTrack 0x931380, lancement FUN_0060f8e0 : le drapeau +0x1c reçoit l'octet +0x18), la condition PedFlags
