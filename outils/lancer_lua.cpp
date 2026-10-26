@@ -146,6 +146,13 @@ NoeudJoue(int ped)
 	return it == controleurs.end() ? nil : it->second.joue;
 }
 static std::map<uint32, int> nonLues;               // les classes de conditions pas encore lues, jugées -1 (le bilan de fin)
+// Le chapitre en cours (l'octet DAT_00a147e0 : 0 au démarrage), que ChapterSet (0x5c0b70 → FUN_00454470) pose et que
+// ChapterGet (0x5c0ba0) rend ; la saison de chaque chapitre (DAT_00a147ec : 1, 1, 2, 3, 3, 3, 0 ; le chapitre 1 est
+// l'automne, timecycF, le 3 l'hiver) ; et les zones « dehors » (l'octet par zone de 0x901dd0, FUN_004301d0 : 0, 1, 22,
+// 31, 42, 43, 64, 65, 66), toutes lues dans bully.exe.
+static uint8 chapitre = 0;
+static const int32 kSaisonDuChapitre[7] = {1, 1, 2, 3, 3, 3, 0};
+static bool ZoneDehors(int z){ static const int d[] = {0, 1, 22, 31, 42, 43, 64, 65, 66}; for(int x : d) if(x == z) return true; return false; }
 static lua_State *etatLua = nil;        // pour LuaCond : la fonction du script de mission appelée par le contrôleur
 // LuaCond (FUN_006a74d0) : la fonction +0x10 du script +0xc, appelée dans son espace de noms ; -1 si rien n'est appelable.
 static int AppelLuaCond(const std::string &script, const std::string &fonction);
@@ -281,6 +288,13 @@ struct CJugeOutil : CJugeAction {
 			return it != modeles.statDuPieton.end() && (it->second == "STAT_CV_MALE_OLD" || it->second == "STAT_CV_FEMALE_OLD");
 		}
 		if(type == kPrise) return moi && moi->cibleDePrise >= 0;
+		// Season (FUN_005fc8d0) : avec l'octet +4, la zone visible doit être dehors (FUN_004301d0) ; puis la saison du
+		// chapitre en cours est +8.
+		static const uint32 kSaison = ActionHash("Season");
+		if(type == kSaison){
+			if((mots[0] & 0xff) && !ZoneDehors(zones.zoneVisible)) return 0;
+			return chapitre < 7 && kSaisonDuChapitre[chapitre] == (int32)mots[1];
+		}
 		// MotionIntentionSpeed (FUN_005fd810) : la vitesse de l'intention de mouvement (+0x1c du composant +0x2e0) comparée
 		// au seuil +4 par +8 (FUN_005fb750). MotionIntention (ConditionMotionIntentionDirection, FUN_005fd760) : le devant
 		// du piéton, à plat, tourné de +4 radians (FUN_005fbe50), et la direction de l'intention (+0, +4, +8) ont un produit
@@ -1516,6 +1530,23 @@ CreerPed(lua_State *L, const char *quoi, int32 modele, const CVector &pos, float
 		}
 	}
 	lua_pushnumber(L, h);
+	return 1;
+}
+
+// ChapterSet(n) (0x5c0b70 → FUN_00454470) : le chapitre ; si la saison change, le moteur change les modèles de saison
+// (PedSetSeasonalModels) et le temps (FUN_00534780), que l'outil n'a pas. ChapterGet() (0x5c0ba0) le rend.
+static int
+ChapterSet(lua_State *L)
+{
+	Journal("ChapterSet", L, 1);
+	chapitre = (uint8)luaL_checknumber(L, 1);
+	return 0;
+}
+
+static int
+ChapterGet(lua_State *L)
+{
+	lua_pushnumber(L, chapitre);
 	return 1;
 }
 
@@ -2757,6 +2788,8 @@ main(int argc, char **argv)
 	lua_register(L, "PedAttack", PedAttack);
 	lua_register(L, "PedSetAITree", PedSetAITree);
 	lua_register(L, "PedSetFaction", PedSetFaction);
+	lua_register(L, "ChapterSet", ChapterSet);
+	lua_register(L, "ChapterGet", ChapterGet);
 	lua_register(L, "PedSetIsStealthMissionPed", PedSetIsStealthMissionPed);
 	lua_register(L, "PedGetFaction", PedGetFaction);
 	lua_register(L, "PedSetCombatZoneMask", PedSetCombatZoneMask);
