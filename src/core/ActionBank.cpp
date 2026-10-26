@@ -14,6 +14,9 @@ CActionBank::CActionBank(void)
 	global.nom = "Global";
 	global.hachage = ActionHash("Global");
 	racine.enfants.push_back(global);
+	// Les arbres de tête restent à leur place : les arbres montés gardent l'adresse du nœud qui porte leur référence et de
+	// leur banque (la table de FUN_005f6800). 68 fichiers globaux, les missions et les banques des références y tiennent.
+	Global()->enfants.reserve(1024);
 }
 
 // FUN_005f6c50 : un « / » de tête retiré, « .cat » écrit à la place des quatre derniers caractères ;
@@ -135,18 +138,88 @@ CActionBank::Charger(const char *act)
 	std::shared_ptr<Source> src = std::make_shared<Source>();
 	CActionTreeFile &f = src->fichier;
 	if(!LireCat(d, src->donnees) || !f.Load(src->donnees.data(), (uint32)src->donnees.size())) return false;
-	Marquer(f.racine, (int16)sources.size());
+	int16 sourceTete = (int16)sources.size();
+	Marquer(f.racine, sourceTete);
 	sources.push_back(src);
 	Inclure(f.racine);
 	// La banque de tête du fichier (« 1_01 », « Player ») devient un enfant de /Global ; une banque du
 	// même nom déjà là reçoit ses enfants (vtable +0x18 de la racine).
 	CActionNode *cible = nil;
 	for(CActionNode &e : Global()->enfants) if(e.hachage == f.racine.hachage){ cible = &e; break; }
-	if(cible == nil) Global()->enfants.push_back(std::move(f.racine));
+	uint32 tete = f.racine.hachage;
+	if(cible == nil){ Global()->enfants.push_back(std::move(f.racine)); cible = &Global()->enfants.back(); }
 	else for(CActionNode &e : f.racine.enfants) cible->enfants.push_back(std::move(e));
 	fichiers.push_back(cat);
 	hachages.push_back(ActionHash(cat.substr(0, cat.size() - 4).c_str()));
+	// FUN_005f6c50 (greffé sous Global) : la clé devient le nom de l'arbre (FUN_005f4e40), puis FUN_005f6bb0 résout ses
+	// références.
+	cle = tete;
+	Monter(*cible, tete, sourceTete);
 	return true;
+}
+
+void
+CActionBank::PoserParent(CActionNode &m, const CActionNode *p, uint32 k)
+{
+	if(k == 0xffffffffu){ m.parentDefaut = p; return; }
+	for(auto &e : m.parents){
+		if(e.first == k){ e.second = p; return; }
+		if(e.second == p){ e.first = k; return; }
+	}
+	m.parents.push_back({k, p});
+}
+
+const CActionNode *
+CActionBank::ParentMonte(const CActionNode &m, uint32 k) const
+{
+	if(k == 0xffffffffu){ k = cle; if(k == 0xffffffffu) return m.parentDefaut; }
+	for(const auto &e : m.parents) if(e.first == k) return e.second;
+	return m.parentDefaut;
+}
+
+// FUN_005f6bb0 : chaque référence de fichier pas encore résolue (+0xc nul) l'est, puis ses enfants sont parcourus. Une
+// référence 'r' (l'octet +0x28 à 0, FUN_005fafb0) passe par FUN_005f6960 ; les inclusions 'i' (FUN_005f6d90) sont déjà
+// remplacées par leur arbre (Inclure). La clé est celle de l'arbre de tête (FUN_005f4e40 depuis la référence) ; dans un
+// arbre inclus ou monté, résolu avant d'avoir un parent, FUN_005f4e40 tombe sur un parent nul et rend -1.
+void
+CActionBank::Monter(CActionNode &n, uint32 cleArbre, int16 sourceTete, int prof)
+{
+	if(prof > 16) return;
+	for(CActionNode &e : n.enfants){
+		if(e.genre == 'r'){
+			if(e.monte) continue;
+			uint32 k = e.source == sourceTete ? cleArbre : 0xffffffffu;
+			// FUN_005f6960 : la banque /Global/<nom> et son ActionNodeMultiParentReference (le premier enfant, vtable +4).
+			uint32 hb = ActionHash(e.nom.c_str());
+			CActionNode *banque = nil, *m = nil;
+			for(CActionNode &g : Global()->enfants) if(g.hachage == hb){ banque = &g; break; }
+			if(banque && !banque->enfants.empty() && banque->enfants[0].multiParent) m = &banque->enfants[0];
+			if(m == nil){
+				int32 image = ImageAct();
+				const CDirectoryEntry *d = image < 0 ? nil : CdStream::ms_images[image].Find(NomCat(e.nom.c_str()).c_str());
+				std::shared_ptr<Source> src = std::make_shared<Source>();
+				if(d == nil || !LireCat(d, src->donnees) || !src->fichier.Load(src->donnees.data(), (uint32)src->donnees.size()))
+					continue;                                  // le fichier manque : la référence reste non résolue
+				Marquer(src->fichier.racine, (int16)sources.size());
+				sources.push_back(src);
+				Inclure(src->fichier.racine);
+				if(banque == nil){                            // FUN_005f5e10, greffée sous Global (vtable +0x18)
+					CActionNode b;
+					b.genre = 'b'; b.nom = e.nom; b.hachage = hb;
+					Global()->enfants.push_back(std::move(b));
+					banque = &Global()->enfants.back();
+				}
+				banque->enfants.push_back(std::move(src->fichier.racine));
+				m = &banque->enfants.back();
+				m->multiParent = true;
+				m->parentDefaut = banque;                     // FUN_005f6650 : l'ajout pose le parent (+4)
+				PoserParent(*m, banque, banque->hachage);
+				Monter(*m, 0xffffffffu, -1, prof + 1);        // ses propres références, à la clé -1
+			}
+			PoserParent(*m, &n, k);                           // le nœud qui porte la référence, pour sa clé
+			e.monte = m;
+		}else Monter(e, cleArbre, sourceTete, prof + 1);
+	}
 }
 
 // FUN_005f59b0 : la pile des nœuds traversés tient lieu de pointeur de parent pour « .. ».
@@ -165,19 +238,12 @@ CActionBank::Trouver(const char *chemin) const
 		if(segment == ".."){ if(pile.size() > 1) pile.pop_back(); continue; }
 		uint32 h = ActionHash(segment.c_str());
 		const CActionNode *courant = pile.back(), *suivant = nil;
-		for(const CActionNode &x : courant->enfants) if(x.hachage == h){ suivant = &x; break; }
+		for(const CActionNode &x : Enfants(*courant)) if(Nom(x) == h){ suivant = &x; break; }
 		if(suivant == nil) return nil;
 		if(suivant->nom.empty()) suivant->nom = segment;   // un nom haché, appris du chemin qui le désigne (journaux)
 		pile.push_back(suivant);
 	}
 	return pile.back();
-}
-
-static bool
-Contient(const CActionNode &a, const CActionNode *n)
-{
-	for(const CActionNode &e : a.enfants) if(&e == n || Contient(e, n)) return true;
-	return false;
 }
 
 bool
@@ -186,7 +252,25 @@ CActionBank::Joue(const CActionNode *courant, const char *chemin, bool sous) con
 	const CActionNode *n = Trouver(chemin);
 	if(n == nil || courant == nil) return false;
 	if(courant == n) return true;
-	return sous && Contient(*n, courant);   // remonter les parents de `courant` jusqu'à `n` revient à le chercher sous `n`
+	return sous && Sous(n, courant);   // FUN_005f4f80 : remonter les parents de `courant` (ceux de la clé courante)
+}
+
+bool
+CActionBank::Sous(const CActionNode *a, const CActionNode *n) const
+{
+	if(a == nil || n == nil) return false;
+	if(a == n) return true;
+	// Une référence montée vaut sa cible : ses descendants sont ceux de l'arbre monté.
+	const CActionNode *cible = a->monte ? a->monte : a;
+	for(const CActionNode *x : Lignee(n)) if(x == a || x == cible) return true;
+	return false;
+}
+
+uint32
+CActionBank::CleDe(const CActionNode *n) const
+{
+	std::vector<const CActionNode *> l = Lignee(n);
+	return l.size() > 2 ? l[2]->hachage : 0xffffffffu;   // racine, Global, puis l'arbre de tête
 }
 
 bool
@@ -202,6 +286,7 @@ const CActionNode *
 CActionBank::Choisir(const CActionNode *depuis, Conditions conditions, void *contexte) const
 {
 	if(depuis == nil) return nil;
+	if(depuis->monte) return Choisir(depuis->monte, conditions, contexte);   // FUN_005f5470 : la descente de la cible
 	if(!depuis->conditions.empty() && (conditions == nil || !conditions(*depuis, contexte))) return nil;
 	switch(depuis->genre){
 	case 'n': case 'l':
@@ -270,8 +355,8 @@ bool
 CActionBank::JoueHachage(const CActionNode *courant, uint32 h) const
 {
 	if(courant == nil) return false;
-	std::vector<const CActionNode *> pile;
-	if(!Chemin(racine, courant, pile)) return courant->hachage == h;
+	std::vector<const CActionNode *> pile = Lignee(courant);
+	if(pile.empty()) return courant->hachage == h;
 	for(const CActionNode *n : pile) if(n->hachage == h) return true;
 	return false;
 }
@@ -314,6 +399,7 @@ CActionBank::Juger(const CActionNode &n, const CJugeAction &juge) const
 const CActionNode *
 CActionBank::Choisir(const CActionNode *depuis, const CJugeAction &juge) const
 {
+	if(depuis && depuis->monte) return Choisir(depuis->monte, juge);   // FUN_005f5470 : la descente de la cible
 	if(depuis == nil || Juger(*depuis, juge) != 1) return nil;
 	switch(depuis->genre){
 	case 'n': case 'l':
@@ -332,8 +418,8 @@ CActionBank::Choisir(const CActionNode *depuis, const CJugeAction &juge) const
 std::string
 CActionBank::CheminDe(const CActionNode *n) const
 {
-	std::vector<const CActionNode *> pile;
-	if(n == nil || !Chemin(racine, n, pile)) return std::string();
+	std::vector<const CActionNode *> pile = Lignee(n);
+	if(pile.empty()) return std::string();
 	std::string s;
 	for(size_t i = 1; i < pile.size(); i++){
 		char h[12];
@@ -343,11 +429,23 @@ CActionBank::CheminDe(const CActionNode *n) const
 	return s;
 }
 
+// Le chemin rangé (Chemin ne traverse pas les références : leurs arbres sont rangés sous /Global/<nom>), puis, si le nœud est
+// dans un arbre monté, le parent de la clé courante à la place de sa banque (FUN_005f6290) : la lignée par où « .. »
+// remonte.
 std::vector<const CActionNode *>
-CActionBank::Lignee(const CActionNode *n) const
+CActionBank::Lignee(const CActionNode *n, int prof) const
 {
 	std::vector<const CActionNode *> pile;
-	if(n == nil || !Chemin(racine, n, pile)) pile.clear();
+	if(n == nil || !Chemin(racine, n, pile)){ pile.clear(); return pile; }
+	for(size_t i = pile.size(); i-- > 1;){
+		if(!pile[i]->multiParent) continue;
+		const CActionNode *p = ParentMonte(*pile[i]);
+		if(p == nil || p == pile[i - 1] || prof > 8) break;
+		std::vector<const CActionNode *> haut = Lignee(p, prof + 1);
+		if(haut.empty()) break;
+		haut.insert(haut.end(), pile.begin() + (long)i, pile.end());
+		return haut;
+	}
 	return pile;
 }
 
@@ -368,7 +466,7 @@ CActionBank::Relatif(const CActionNode *depuis, const char *chemin) const
 		if(segment == ".."){ if(pile.size() > 1) pile.pop_back(); continue; }
 		uint32 h = ActionHash(segment.c_str());
 		const CActionNode *suivant = nil;
-		for(const CActionNode &x : pile.back()->enfants) if(x.hachage == h){ suivant = &x; break; }
+		for(const CActionNode &x : Enfants(*pile.back())) if(Nom(x) == h){ suivant = &x; break; }
 		if(suivant == nil) return nil;
 		if(suivant->nom.empty()) suivant->nom = segment;
 		pile.push_back(suivant);

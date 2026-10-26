@@ -293,14 +293,6 @@ CActionController::Poser(const CActionBank &b, const CActionNode *a, const CJuge
 	return true;
 }
 
-// n est `a` ou un de ses descendants.
-static bool
-Sous(const CActionNode &a, const CActionNode *n)
-{
-	if(&a == n) return true;
-	for(const CActionNode &e : a.enfants) if(Sous(e, n)) return true;
-	return false;
-}
 
 const CActionNode *
 CActionController::Occasions(const CActionBank &b, const CJugeAction &juge, float t)
@@ -334,8 +326,8 @@ CActionController::Occasions(const CActionBank &b, const CJugeAction &juge, floa
 				size_t montees = 0;
 				for(size_t k = 0; o.chemin.compare(k, 2, "..") == 0; k += 3) montees++;
 				bool versGlobal = lignee.size() > 2 && montees + 2 >= lignee.size();
-				bool dedans = arbre == nil || Sous(*arbre, d) || versGlobal || (d && lignee.size() > 2 && Sous(*lignee[2], d));
-				if(d && dedans && !Sous(*d, joue) && (d != joue || o.soiMeme)){ o.cible = d; o.prise = true; }
+				bool dedans = arbre == nil || b.Sous(arbre, d) || versGlobal || (d && lignee.size() > 2 && b.Sous(lignee[2], d));
+				if(d && dedans && !b.Sous(d, joue) && (d != joue || o.soiMeme)){ o.cible = d; o.prise = true; }
 			}
 		}
 		if(!arret){

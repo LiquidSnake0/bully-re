@@ -475,9 +475,9 @@ struct CJugeOutil : CJugeAction {
 		if(type == kBranche){
 			auto it = controleurs.find(ped);
 			if(it == controleurs.end() || it->second.arbre == nil) return 0;
-			for(const CActionNode &e : it->second.arbre->enfants)
-				if((e.hachage & 0x7fffffff) == (mots[0] & 0x7fffffff)){
-					for(const CActionNode &g : e.enfants) if((g.hachage & 0x7fffffff) == (mots[1] & 0x7fffffff)) return 1;
+			for(const CActionNode &e : CActionBank::Enfants(*it->second.arbre))
+				if((CActionBank::Nom(e) & 0x7fffffff) == (mots[0] & 0x7fffffff)){
+					for(const CActionNode &g : CActionBank::Enfants(e)) if((CActionBank::Nom(g) & 0x7fffffff) == (mots[1] & 0x7fffffff)) return 1;
 					return 0;
 				}
 			return 0;

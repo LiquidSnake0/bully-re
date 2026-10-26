@@ -358,16 +358,55 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
   (`DAT_01b649dc`, en remontant par l'emplacement +0x34 avec -1). Une référence montée à plusieurs endroits
   (`ActionNodeMultiParentReference`) rend son parent par `FUN_005f6290` : avec la clé -1, celle de `DAT_00b0a604` ; si
   elle vaut aussi -1, le parent par défaut (+4) ; sinon le parent rangé pour cette clé dans sa table (+0x30, +0x38 paires).
-  Reste à établir qui remplit cette table au chargement et ce que vaut la clé pour `Fight_Tutorial` (toutes les banques
-  étant greffées sous `/Global`, `FUN_005f4e40` semble rendre `Global` pour tout arbre).
+  Établi le 26.10 (« Les références montées » ci-dessous) : `FUN_005f6960` remplit cette table au chargement, et la clé est
+  le nom de l'arbre de tête (`DAT_01b649dc` est `Global`), `Fight_Tutorial` pour le bully.
+
+## Les références montées (26.10.2026)
+
+- **`DAT_01b649dc` est la banque `Global` elle-même** (`FUN_005f6f20` la crée sous ce nom et la range là) ; « / » seul la
+  désigne. `FUN_005f4e40(n)` remonte donc jusqu'à l'ancêtre dont le parent est `Global` : l'**arbre de tête** (`Fight_Tutorial`,
+  `B_Striker_A`, `GlobalLoco`…), et rend son nom haché. Ce n'est pas toujours `Global` : la supposition du 23.10 tombe.
+- **La clé des parents** (`DAT_00b0a604`) : `FUN_005f6c50`, quand il greffe un fichier sous `Global`, la pose au nom de
+  l'arbre (`FUN_005f4e40`) puis résout ses références (`FUN_005f6bb0`).
+- **Une référence 'r'** (`ActionNodeFileReference`, l'octet +0x28 à 0, `FUN_005fafb0` ; nom +0x18, dossier +0x1c) se résout
+  par `FUN_005f6960` : clé = `FUN_005f4e40(référence)` ; si `/Global/<nom>` (« Locomotion.act ») existe et que son premier
+  enfant est une `ActionNodeMultiParentReference`, elle sert ; sinon une neuve (`FUN_005f66b0`, 0x40 octets : la table des
+  parents en +0x30, sa place +0x34, son nombre +0x38) reçoit l'arbre du fichier (`FUN_005f6c50` avec un porteur : pas greffé
+  sous `Global`), dont les enfants prennent la référence multiple pour parent (vtable +0x1c) ; la banque `/Global/<nom>` est
+  créée au besoin (`FUN_005f5e10`), la référence multiple y est ajoutée (`FUN_005f6650` : son parent par défaut +4 devient
+  la banque) et `FUN_005f6800(banque, nom de la banque)`. Puis, toujours : `FUN_005f6800(parent de la référence, clé)`, et la
+  référence prend l'arbre pour cible (+0xc, `FUN_005f5450`). Vérifié à l'assembleur (0x5f6a7e, 0x5f6b16 : `ecx` = la
+  référence multiple).
+- **`FUN_005f6800(parent, clé)`** : clé -1, le parent par défaut (+4) ; sinon une paire de la même clé change de parent, une
+  paire du même parent change de clé, ou la paire s'ajoute (la table double, `FUN_005f56b0`). **`FUN_005f6290(clé)`**, le
+  parent (vtable +0x34) d'une référence multiple : -1 prend `DAT_00b0a604` ; -1 encore, ou aucune paire, le parent par défaut.
+- **Une référence vaut sa cible** : son nom (+8, `FUN_005f5da0`, « UNRESOLVED_NODE » sans cible), ses enfants (+0x2c, +0x30 :
+  `FUN_005f5340`, `FUN_005f5360`), ses conditions (+0x50, `FUN_005f5320`) et sa descente (+0x4c, `FUN_005f5470`) sont ceux de
+  l'arbre visé. Le chemin `SimpleLoco/Default_KEY/Locomotion/GlobalLoco/Locomotion/Idle/Turn/FacingIntended` (une piste
+  `SPAWN` de `Locomotion.act`) passe ainsi par la référence `GlobalLoco.act`, nommée `GlobalLoco`.
+- **Une référence dans un arbre monté ou inclus** se résout avant que l'arbre ait un parent : `FUN_005f4e40` y tombe sur un
+  parent nul et rend -1, donc le parent par défaut. `FUN_005f5050` (qui refait les clés de tous les arbres de tête) n'est
+  appelé que par le chargement du ballon prisonnier (`FUN_0067c140`).
+- **`FUN_005f59b0(chemin, départ)`** : avec un nœud de départ, chaque « .. » prend le parent pour `DAT_00b0a604`
+  (vtable +0x34) ; sans départ, la clé -1. `FUN_005f4f30` / `FUN_005f4f80` (`PedMePlaying`, `PedIsPlaying` avec « sous »)
+  remontent les parents à la clé du haut de la pile du contexte.
+- **Locomotion.act** est référencé par 42 fichiers (`Fight_Tutorial`, `B_Striker_A`, `Authority`, `CV_Female_A`…), et
+  n'existe qu'une fois, sous `/Global/Locomotion.act` (28 parents une fois les 68 arbres globaux et `Fight_Tutorial`
+  chargés). Ses `ActionOpps` (`../../../Offense`, `../../../Defense`, `../../ExecuteNodes/CustomActionOps`) visent donc
+  l'arbre de la clé : pour `Fight_Tutorial`, `/Global/Fight_Tutorial/Offense`.
+- **Dans l'outil** (`CActionBank::Monter`, `PoserParent`, `ParentMonte`, `CleDe`, `Lignee`) : l'arbre lu tient lieu de la
+  référence multiple, rangé sous `/Global/<nom>` ; la lignée d'un nœud remplace sa banque par le parent de la clé `cle` ;
+  `Trouver`, `Relatif`, `Choisir`, `Sous` traversent les références. Dans `1_02`, la descente de `Fight_Tutorial/Default_KEY`
+  ne s'arrête plus sur `idle` mais entre dans `Locomotion/Free/idle`, dont l'`Execute` mène aux `ActionOpps` ; le chrono ne
+  change pas (119,03 s).
 
 ## Le chemin d'un nœud (18.10.2026)
 
 Les scripts désignent un nœud par un chemin, `PedSetActionNode(ped, "/Global/1_01/Talking",
 "Act/Conv/1_01.act")`. Dans le moteur :
 
-- `FUN_005f6f20` crée la banque **`Global`** sous une racine sans nom (`DAT_01b649dc`, celle que
-  `/` seul désigne) ; `FUN_005f6c50("Act/Conv/1_01.act")` retire un `/` de tête, écrit `.cat` à
+- `FUN_005f6f20` crée la banque **`Global`** et la range en `DAT_01b649dc` (« / » seul la désigne ; l'outil
+  la met sous une racine sans nom) ; `FUN_005f6c50("Act/Conv/1_01.act")` retire un `/` de tête, écrit `.cat` à
   la place de l'extension, charge le fichier (`FUN_005fb3f0`) et greffe sa banque de tête sous
   `Global` (vtable +0x18 de la racine) : `1_01` devient `/Global/1_01`. `FUN_005dbe60` dit si un
   fichier est déjà chargé, par le hachage de son nom sans dossier.

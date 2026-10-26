@@ -5,15 +5,15 @@ Combien des fonctions de `bully.exe` le dépôt a recréées. Généré par
 
 | | Fonctions | % du nombre | Octets de code | % du code |
 |---|---:|---:|---:|---:|
-| **Recréées** (citées dans `src/`) | 513 | 2,5 % | 155 558 | **3,5 %** |
-| Comprises (code, docs, outils, noms) | 1 265 | 6,1 % | 343 945 | 7,7 % |
+| **Recréées** (citées dans `src/`) | 528 | 2,5 % | 157 016 | **3,5 %** |
+| Comprises (code, docs, outils, noms) | 1 280 | 6,1 % | 346 284 | 7,7 % |
 | Total de l'exe | 20 819 | 100 % | 4 480 993 | 100 % |
 
 ## Par sous-système (fonctions citées dans `src/`)
 
 | Dossier | Fonctions | Octets |
 |---|---:|---:|
-| `src/core` | 294 | 80 395 |
+| `src/core` | 309 | 81 853 |
 | `src/peds` | 96 | 25 487 |
 | `src/vehicles` | 46 | 12 299 |
 | `src/anim` | 26 | 11 618 |
@@ -25,4 +25,4 @@ Combien des fonctions de `bully.exe` le dépôt a recréées. Généré par
 | `src/gamebryo` | 1 | 230 |
 | `src/common.h` | 1 | 174 |
 
-Relevé du 23.10.2026.
+Relevé du 26.10.2026.
