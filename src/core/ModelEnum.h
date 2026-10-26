@@ -25,5 +25,15 @@ public:
 	// FUN_0073ab40, strcmp, -1 sinon), que LoadPeds (0x42bfd0) range au modelinfo en +0x74 (FUN_00522220) et que la
 	// condition CharacterSize lit (FUN_00601460 → FUN_00522230). Indice du modèle → rang.
 	std::map<int32, int32> tailleDuPieton;
+	// La colonne TYPE des entrées peds : son rang parmi les 15 types de piétons (PREFECT, NERD, JOCK, DROPOUT, GREASER,
+	// PREPPY, STUDENT, COP, TEACHER, TOWNPERSON, SHOPKEEP, BULLY, DEFAULT, PLAYER1, PLAYER2 ; la table 0x90e7d0, par
+	// FUN_004889c0 → FUN_0073ab40, strcmp, -1 sinon), que LoadPeds range au modelinfo en +0x4c et que le constructeur de
+	// CPed (FUN_0047ffe0) recopie dans le piéton (+0x1310). La colonne FEMALE, non nulle, devient l'octet +0x50 du
+	// modelinfo (la condition IsFemale, FUN_005ffb50). Indice du modèle → rang, → vrai.
+	std::map<int32, int32> typeDuPieton;
+	std::map<int32, bool> femme;
+	// Le nom du modèle tel que l'IDE l'écrit (le HashString de ce nom est le +4 du modelinfo, que PedModelID compare).
+	std::map<int32, std::string> nomDuModele;
+	static const char *const typesDePietons[15];
 	int32 doublons = 0;                    // un même nom sous deux indices : le premier gagne
 };

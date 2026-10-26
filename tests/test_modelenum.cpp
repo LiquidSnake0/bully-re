@@ -32,6 +32,19 @@ main(int argc, char **argv)
 	VERIF(m.statDuPieton.count(102) && m.statDuPieton.at(102) == "STAT_B_STRIKER_B");
 	// La colonne SIZE : son rang dans Small, Medium, Large, Fat, Huge (le bully de 1_02 : Medium).
 	VERIF(m.tailleDuPieton.count(146) && m.tailleDuPieton.at(146) == 1);
+	// TYPE (FUN_004889c0, table 0x90e7d0) et FEMALE : le bully de 1_02 (146) est un BULLY, la secrétaire de 1_01 (59) une
+	// femme, le joueur (0) PLAYER1.
+	VERIF(m.typeDuPieton.count(146) && m.typeDuPieton.at(146) == 11 && m.femme.count(146) && !m.femme.at(146));
+	VERIF(m.femme.count(59) && m.femme.at(59) && m.typeDuPieton.count(0) && m.typeDuPieton.at(0) == 13);
+	VERIF(m.nomDuModele.count(146) && m.nomDuModele.at(146) == "GN_Bully05");
+	{
+		int types[16] = {0};
+		for(auto &e : m.typeDuPieton) types[e.second >= 0 && e.second < 15 ? e.second : 15]++;
+		printf("  types des %zu piétons :", m.typeDuPieton.size());
+		for(int i = 0; i < 15; i++) if(types[i]) printf(" %s %d", CModelEnum::typesDePietons[i], types[i]);
+		printf(", inconnus %d\n", types[15]);
+		VERIF(types[15] == 0);
+	}
 	printf("test_modelenum : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }
