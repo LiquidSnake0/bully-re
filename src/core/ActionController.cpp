@@ -18,6 +18,14 @@ Reel(const CActionTrack &p, uint16 position, float defaut)
 	return r;
 }
 
+// La clé du contexte (le haut de sa pile, +0x48 + 4 × +0x44) devient celle des parents (DAT_00b0a604) le temps d'un appel,
+// comme FUN_005f3e20 et FUN_005f70f0 avant de résoudre les chemins des pistes.
+struct CGardeCle {
+	const CActionBank &b; uint32 avant;
+	CGardeCle(const CActionBank &banque, uint32 k) : b(banque), avant(banque.cle) { if(k != 0xffffffffu) b.cle = k; }
+	~CGardeCle(void){ b.cle = avant; }
+};
+
 // AnimationTrack, mise à jour FUN_0060ae00 : en mode 0 (position 32), la piste finit quand le temps joué dépasse la
 // fin : la position 44 si elle est positive et ne dépasse pas la durée de l'animation, sinon cette durée (HXD +0xc).
 // Le temps part de la position 40 et avance à la vitesse 48 (la stat 0x14 du piéton n'est pas suivie). Les modes 1
@@ -180,6 +188,7 @@ CActionController::PistesLancees(const CActionBank &b, const CActionNode &n, flo
 void
 CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, const CJugeAction *juge)
 {
+	CGardeCle gardeCle(b, Cle());
 	for(Drapeau &d : drapeaux)    // FUN_005f3fb0 à l'arrêt du nœud : les entrées négatives se lancent
 		if(!d.fait && d.entree < 0.0f){ d.fait = true; drapeauxPoses.push_back(d); }
 	drapeaux.clear();
@@ -252,6 +261,20 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 }
 
 void
+CActionController::Racine(const CActionBank &b, const CActionNode *r)
+{
+	if(r == nil) return;                  // FUN_005f36d0 : sans racine, la pile ne change pas
+	pile.clear();
+	pile.push_back(b.CleDe(r));           // FUN_005f4e40 de la racine
+}
+
+void
+CActionController::Empiler(uint32 k)
+{
+	if(pile.size() < 2) pile.push_back(k);   // FUN_005f3700 : deux places au plus
+}
+
+void
 CActionController::Recueillir(std::vector<CActionController *> &tous)
 {
 	tous.push_back(this);
@@ -276,6 +299,7 @@ CActionController::Entrer(const CActionBank &b, const CActionNode *n, const CJug
 {
 	if(n == nil) return false;
 	CGardeControleur garde(juge, this);
+	CGardeCle gardeCle(b, Cle());
 	const CActionNode *r = n->genre == 'b' ? b.Choisir(n, juge) : n;
 	if(r == nil) return false;
 	Jouer(b, r, t, &juge);
@@ -286,21 +310,15 @@ bool
 CActionController::Poser(const CActionBank &b, const CActionNode *a, const CJugeAction &juge, float t)
 {
 	arbre = a;
+	Racine(b, a);
 	CGardeControleur garde(juge, this);
+	CGardeCle gardeCle(b, Cle());
 	const CActionNode *n = Descendre(b, a, juge);
 	if(n == nil) return false;
 	Jouer(b, n, t, &juge);
 	return true;
 }
 
-// n est `a` ou un de ses descendants.
-static bool
-Sous(const CActionNode &a, const CActionNode *n)
-{
-	if(&a == n) return true;
-	for(const CActionNode &e : a.enfants) if(Sous(e, n)) return true;
-	return false;
-}
 
 const CActionNode *
 CActionController::Occasions(const CActionBank &b, const CJugeAction &juge, float t)
@@ -334,8 +352,8 @@ CActionController::Occasions(const CActionBank &b, const CJugeAction &juge, floa
 				size_t montees = 0;
 				for(size_t k = 0; o.chemin.compare(k, 2, "..") == 0; k += 3) montees++;
 				bool versGlobal = lignee.size() > 2 && montees + 2 >= lignee.size();
-				bool dedans = arbre == nil || Sous(*arbre, d) || versGlobal || (d && lignee.size() > 2 && Sous(*lignee[2], d));
-				if(d && dedans && !Sous(*d, joue) && (d != joue || o.soiMeme)){ o.cible = d; o.prise = true; }
+				bool dedans = arbre == nil || b.Sous(arbre, d) || versGlobal || (d && lignee.size() > 2 && b.Sous(lignee[2], d));
+				if(d && dedans && !b.Sous(d, joue) && (d != joue || o.soiMeme)){ o.cible = d; o.prise = true; }
 			}
 		}
 		if(!arret){
@@ -357,6 +375,7 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 {
 	(void)depuisRacine;
 	CGardeControleur garde(juge, this);
+	CGardeCle gardeCle(b, Cle());
 	intentions.clear();
 	// FUN_00627420 (ManageTargets) et FUN_0062ea40 (CombatLoco), à chaque image, tant que le piéton a une cible.
 	gestionsActives.clear(); combatsActifs.clear();
@@ -391,6 +410,7 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 			l.c = std::make_shared<CActionController>();
 			l.c->sousControleurs = true;
 			l.c->arbre = l.boucle ? l.vise : nil;   // +0x29 : redescendre depuis le nœud visé quand le nœud finit
+			l.c->Racine(b, l.vise);                 // FUN_005f8860 : la racine du contexte de la piste (+0x40)
 			l.c->image = image; l.c->graine = graine; l.c->hasard = hasard;
 			if(!l.c->Entrer(b, l.vise, juge, t)){ if(!l.boucle){ l.morte = true; l.c.reset(); } }
 			continue;

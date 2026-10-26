@@ -320,7 +320,7 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
 | `TargetConditionGroup` | `FUN_00601cc0` | le groupe +4 jugé pour la cible (le partenaire de prise si l'octet +8) |
 | `InAttackCone` | `FUN_004865a0` | la cible à portée et devant (`AIButes` +0x54, +0x58) |
 | `TargetRelativeHeight` | `FUN_00603170` | les hauteurs se recouvrent (l'outil : 1,8 m depuis les pieds, supposé) |
-| `LuaCond` | `FUN_006a74d0` → `FUN_005d80a0` | le résultat de la fonction du script lu par `lua_tonumber` (0x73b0d0), positif ; `0.0` est faux |
+| `LuaCond` | `FUN_006a74d0` → `FUN_005d80a0` | la fonction +0x10 du script +0xc (« mission » : celui de la mission en cours ; sinon par nom, `FUN_005dbb60`, ou main), appelée par `NSCall` dans son espace de noms (`FUN_005d8000`) ; le résultat lu par `lua_tonumber` (0x73b0d0), positif ; `0.0` est faux |
 
 - **Pistes lues** : `ManageTargets` (0x934d14 : `FUN_006273f0`, `FUN_00627420`) ; `CombatLoco` (0x9349e0 : `FUN_0062e9e0`,
   `FUN_0062ea40` : la zone prise par `FUN_006252d0`, ses rayons par `FUN_006253e0`, l'intention de mouvement par
@@ -358,16 +358,94 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
   (`DAT_01b649dc`, en remontant par l'emplacement +0x34 avec -1). Une référence montée à plusieurs endroits
   (`ActionNodeMultiParentReference`) rend son parent par `FUN_005f6290` : avec la clé -1, celle de `DAT_00b0a604` ; si
   elle vaut aussi -1, le parent par défaut (+4) ; sinon le parent rangé pour cette clé dans sa table (+0x30, +0x38 paires).
-  Reste à établir qui remplit cette table au chargement et ce que vaut la clé pour `Fight_Tutorial` (toutes les banques
-  étant greffées sous `/Global`, `FUN_005f4e40` semble rendre `Global` pour tout arbre).
+  Établi le 26.10 (« Les références montées » ci-dessous) : `FUN_005f6960` remplit cette table au chargement, et la clé est
+  le nom de l'arbre de tête (`DAT_01b649dc` est `Global`), `Fight_Tutorial` pour le bully.
+
+## Les références montées (26.10.2026)
+
+- **`DAT_01b649dc` est la banque `Global` elle-même** (`FUN_005f6f20` la crée sous ce nom et la range là) ; « / » seul la
+  désigne. `FUN_005f4e40(n)` remonte donc jusqu'à l'ancêtre dont le parent est `Global` : l'**arbre de tête** (`Fight_Tutorial`,
+  `B_Striker_A`, `GlobalLoco`…), et rend son nom haché. Ce n'est pas toujours `Global` : la supposition du 23.10 tombe.
+- **La clé des parents** (`DAT_00b0a604`) : `FUN_005f6c50`, quand il greffe un fichier sous `Global`, la pose au nom de
+  l'arbre (`FUN_005f4e40`) puis résout ses références (`FUN_005f6bb0`).
+- **Une référence 'r'** (`ActionNodeFileReference`, l'octet +0x28 à 0, `FUN_005fafb0` ; nom +0x18, dossier +0x1c) se résout
+  par `FUN_005f6960` : clé = `FUN_005f4e40(référence)` ; si `/Global/<nom>` (« Locomotion.act ») existe et que son premier
+  enfant est une `ActionNodeMultiParentReference`, elle sert ; sinon une neuve (`FUN_005f66b0`, 0x40 octets : la table des
+  parents en +0x30, sa place +0x34, son nombre +0x38) reçoit l'arbre du fichier (`FUN_005f6c50` avec un porteur : pas greffé
+  sous `Global`), dont les enfants prennent la référence multiple pour parent (vtable +0x1c) ; la banque `/Global/<nom>` est
+  créée au besoin (`FUN_005f5e10`), la référence multiple y est ajoutée (`FUN_005f6650` : son parent par défaut +4 devient
+  la banque) et `FUN_005f6800(banque, nom de la banque)`. Puis, toujours : `FUN_005f6800(parent de la référence, clé)`, et la
+  référence prend l'arbre pour cible (+0xc, `FUN_005f5450`). Vérifié à l'assembleur (0x5f6a7e, 0x5f6b16 : `ecx` = la
+  référence multiple).
+- **`FUN_005f6800(parent, clé)`** : clé -1, le parent par défaut (+4) ; sinon une paire de la même clé change de parent, une
+  paire du même parent change de clé, ou la paire s'ajoute (la table double, `FUN_005f56b0`). **`FUN_005f6290(clé)`**, le
+  parent (vtable +0x34) d'une référence multiple : -1 prend `DAT_00b0a604` ; -1 encore, ou aucune paire, le parent par défaut.
+- **Une référence vaut sa cible** : son nom (+8, `FUN_005f5da0`, « UNRESOLVED_NODE » sans cible), ses enfants (+0x2c, +0x30 :
+  `FUN_005f5340`, `FUN_005f5360`), ses conditions (+0x50, `FUN_005f5320`) et sa descente (+0x4c, `FUN_005f5470`) sont ceux de
+  l'arbre visé. Le chemin `SimpleLoco/Default_KEY/Locomotion/GlobalLoco/Locomotion/Idle/Turn/FacingIntended` (une piste
+  `SPAWN` de `Locomotion.act`) passe ainsi par la référence `GlobalLoco.act`, nommée `GlobalLoco`.
+- **Une référence dans un arbre monté ou inclus** se résout avant que l'arbre ait un parent : `FUN_005f4e40` y tombe sur un
+  parent nul et rend -1, donc le parent par défaut. `FUN_005f5050` (qui refait les clés de tous les arbres de tête) n'est
+  appelé que par le chargement du ballon prisonnier (`FUN_0067c140`).
+- **`FUN_005f59b0(chemin, départ)`** : avec un nœud de départ, chaque « .. » prend le parent pour `DAT_00b0a604`
+  (vtable +0x34) ; sans départ, la clé -1. `FUN_005f4f30` / `FUN_005f4f80` (`PedMePlaying`, `PedIsPlaying` avec « sous »)
+  remontent les parents à la clé du haut de la pile du contexte.
+- **Locomotion.act** est référencé par 42 fichiers (`Fight_Tutorial`, `B_Striker_A`, `Authority`, `CV_Female_A`…), et
+  n'existe qu'une fois, sous `/Global/Locomotion.act` (28 parents une fois les 68 arbres globaux et `Fight_Tutorial`
+  chargés). Ses `ActionOpps` (`../../../Offense`, `../../../Defense`, `../../ExecuteNodes/CustomActionOps`) visent donc
+  l'arbre de la clé : pour `Fight_Tutorial`, `/Global/Fight_Tutorial/Offense`.
+- **La pile du contexte** (+0x44 le haut, +0x48 les clés) : `FUN_005f36d0` pose la racine (+0x40), remet la pile à zéro et y
+  met `FUN_005f4e40(racine)` ; `FUN_005f3700` empile une seconde clé (deux places au plus), quand un partenaire de prise
+  joue un nœud de l'arbre de son meneur (`FUN_005f7c70`, si sa clé diffère). `FUN_005f3e20` (les pistes d'un nœud exécuté)
+  et `FUN_005f70f0` (la mise à jour d'un `Execute`) recopient le haut de la pile dans `DAT_00b0a604` avant de résoudre les
+  chemins des pistes (vtable +0x14, `FUN_005f5df0` : `FUN_005f59b0(chemin, porteur)` rangé en +0xc ; `FUN_005f4e30` le rend).
+  Dans l'outil, `CActionController::pile`, `Racine` (posée par `Poser`, `PedSetAITree` et le lancement d'un `spawn`,
+  `FUN_005f8860`), `Empiler` ; la clé est posée le temps de `Jouer`, `Entrer`, `Poser` et `Avancer`.
+- **Dans l'outil** (`CActionBank::Monter`, `PoserParent`, `ParentMonte`, `CleDe`, `Lignee`) : l'arbre lu tient lieu de la
+  référence multiple, rangé sous `/Global/<nom>` ; la lignée d'un nœud remplace sa banque par le parent de la clé `cle` ;
+  `Trouver`, `Relatif`, `Choisir`, `Sous` traversent les références. Dans `1_02`, la descente de `Fight_Tutorial/Default_KEY`
+  ne s'arrête plus sur `idle` mais entre dans `Locomotion/Free/idle`, dont l'`Execute` mène aux `ActionOpps` ; le chrono ne
+  change pas (119,03 s).
+
+## Les conditions lues le 26.10.2026
+
+Par le registre des conditions (`FUN_0064b090` : pour chaque nom, son créateur, qui pose la table virtuelle ; la fonction
+qui juge est l'emplacement 1), `lancer_lua` dresse à la fin le bilan des classes qu'il juge encore -1.
+
+| Classe | Fonction | Ce qu'elle juge |
+|---|---|---|
+| `IsFemale` | `FUN_005ffb50` | l'octet +0x50 du modelinfo du piéton (la colonne FEMALE) |
+| `IsAuthority` | `FUN_005ffb20` | le type du piéton (+0x1310) est PREFECT, COP ou TEACHER (0, 7, 8) |
+| `PedType` | `FUN_005ffac0` | le type du piéton est +4 |
+| `PedModelID` | `FUN_00602050` → `FUN_0050e7f0` | le nom haché du modelinfo (+4) est le `HashString` de la chaîne +4 |
+| `IsElderly` | `FUN_006069a0` → `FUN_0044e010` | l'entrée de pedstats.dat du modelinfo (+0x54, nom haché +0x18) est `STAT_CV_MALE_OLD` ou `STAT_CV_FEMALE_OLD` |
+| `HasGrappleTarget` | `FUN_00606490` | un partenaire de prise (+0x155c) |
+| `IsStealthMissionChar` | `FUN_00602cf0` | +0x1398 non nul (`PedSetIsStealthMissionPed`, 0x5d0110 → `FUN_005d0080`) |
+| `MotionIntentionSpeed` | `FUN_005fd810` | la vitesse de l'intention de mouvement (+0x1c du composant +0x2e0) comparée à +4 par +8 (`FUN_005fb750`) ; Locomotion.act : walk ≥ 0,1, RUN ≥ 0,5, Sprint ≥ 1,05 |
+| `MotionIntention` | `FUN_005fd760` (`ConditionMotionIntentionDirection`) | le devant du piéton à plat, tourné de +4 radians (`FUN_005fbe50`), et la direction de l'intention (+0, +4, +8) : produit scalaire ≥ cos(+8) |
+
+| `TargetRelativeOrientation` | `FUN_005ff420` | l'autre (le partenaire de prise si l'octet +4, sinon +0x434 du piéton, sinon la cible du composant de visée +0x1c8, `FUN_004d7630`) : 2 × |acos(devant · devant de l'autre) − (+8)| ≤ +0xc |
+| `Sprint` | `FUN_005fda70` | la réserve de sprint (+0x18d0 : à la création la colonne R de pedstats.dat, +0x5c, `FUN_00478e30` ; remplie par `FUN_0047cde0`, dépensée par `FUN_0047cee0`) comparée à +4 par +8 |
+| `IsPlayerTired` | `FUN_005fc3b0` | l'état physique du joueur (`DAT_00c1af4c`, `PlayerGetPhysicalState` 0x5d1ee0) vaut 2 |
+| `WeaponDesired` | `FUN_0065b4b0` (`ConditionWeaponDesired`) | sans arme voulue (+0x18 du composant +0x2e0 nul), vrai si l'octet +8 est nul ; sinon l'arme voulue est celle du nom +4 (`FUN_0051ad50`), ou « LastWeapon » |
+| `WeaponIsInventory` | `FUN_0065b7e0` | l'objet arme du piéton (+0x1d0) a un modèle (+0x10e ≠ -1) et `FUN_0055ba80` le trouve dans l'inventaire |
+| `Season` | `FUN_005fc8d0` | avec l'octet +4, la zone visible est dehors (`FUN_004301d0`, l'octet par zone de 0x901dd0) ; la saison du chapitre (`DAT_00a147ec[DAT_00a147e0]` : 1, 1, 2, 3, 3, 3, 0) est +8 |
+
+**L'intention de mouvement** (+0, +4, +8 la direction ; +0xc … +0x14 le cap voulu ; +0x1c la vitesse, dans le composant
++0x2e0) : la navigation la pose à chaque image (`FUN_004a4a50`) et en remet la vitesse à 0 sans but (`FUN_004a45c0`) ;
+`SetMotionIntention` (lancement `FUN_00611c50`) n'en pose que la direction (le devant tourné de +0x18 degrés). Les allures
+des scripts (`PedMoveToXYZ` 0x5c7c90, `PedMoveToPoint`) passent par `FUN_005c6180` : 0 → 0,3, 1 → 0,7, 2 → 1,1, 3 → 1,5,
+4 → -1, sans argument 0,7 (le `MoveToPosObjective` de `FUN_00470460` la porte). Dans l'outil : la vitesse de l'allure pour
+un piéton qui marche, 0 arrivé ou arrêté, 0,7 vers la cible dans `CombatLoco` (supposé), 0 à chaque image pour un piéton
+de l'IA qui n'a pas de geste.
 
 ## Le chemin d'un nœud (18.10.2026)
 
 Les scripts désignent un nœud par un chemin, `PedSetActionNode(ped, "/Global/1_01/Talking",
 "Act/Conv/1_01.act")`. Dans le moteur :
 
-- `FUN_005f6f20` crée la banque **`Global`** sous une racine sans nom (`DAT_01b649dc`, celle que
-  `/` seul désigne) ; `FUN_005f6c50("Act/Conv/1_01.act")` retire un `/` de tête, écrit `.cat` à
+- `FUN_005f6f20` crée la banque **`Global`** et la range en `DAT_01b649dc` (« / » seul la désigne ; l'outil
+  la met sous une racine sans nom) ; `FUN_005f6c50("Act/Conv/1_01.act")` retire un `/` de tête, écrit `.cat` à
   la place de l'extension, charge le fichier (`FUN_005fb3f0`) et greffe sa banque de tête sous
   `Global` (vtable +0x18 de la racine) : `1_01` devient `/Global/1_01`. `FUN_005dbe60` dit si un
   fichier est déjà chargé, par le hachage de son nom sans dossier.

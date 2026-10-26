@@ -23,6 +23,17 @@ ChercherOpportunite(const CActionBank &b, const CActionNode &n, const char *chem
 	return false;
 }
 
+// Le chemin du nœud joué, vu avec la clé du contrôleur.
+static std::string
+CheminVu(const CActionBank &b, const CActionController &c)
+{
+	uint32 avant = b.cle;
+	b.cle = c.Cle();
+	std::string r = b.CheminDe(c.joue);
+	b.cle = avant;
+	return r;
+}
+
 struct CJugeAction_Rien : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return 0; } };
 
 int
@@ -53,7 +64,8 @@ main(void)
 	// FUN_004849a0 : trouver, sinon charger le fichier donné.
 	VERIF(!b.EstCharge("Act/Player.act"));
 	VERIF(b.TrouverOuCharger("/Global/Player", "Act/Player.act"));
-	VERIF(b.EstCharge("Act/Player.act") && b.fichiers.size() == 2 && b.Global()->enfants.size() == 2);
+	// Player.act monte des références ('r', GlobalLoco.act…) : leurs banques s'ajoutent sous /Global (FUN_005f6960).
+	VERIF(b.EstCharge("Act/Player.act") && b.fichiers.size() == 2 && b.Global()->enfants.size() > 2);
 	VERIF(b.Trouver("/Global/Player/Default_KEY/Locomotion") != nil);
 	VERIF(!b.TrouverOuCharger("/Global/1_02/Talking/Talk", nil) && !b.TrouverOuCharger("/Global/Nope", "Act/Player.act"));
 	VERIF(b.TrouverOuCharger("/Global/1_02/Talking/Talk", "Act/Conv/1_02.act") && b.fichiers.size() == 3);
@@ -633,6 +645,67 @@ main(void)
 			}else VERIF(false);
 		}
 		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());
+		// Les références montées (FUN_005f6bb0 → FUN_005f6960) : Locomotion.act, référencé par B_Striker_A (un des arbres
+		// globaux) et par Fight_Tutorial, n'est lu qu'une fois, sous /Global/Locomotion.act ; chaque référence le prend pour
+		// cible (son nom, ses enfants) et son parent dépend de la clé (FUN_005f6800, FUN_005f6290).
+		VERIF(g.Charger("Act/AI/Fight_Tutorial.act"));
+		const CActionNode *banque = g.Trouver("/Global/Locomotion.act");
+		const CActionNode *monte = banque && !banque->enfants.empty() ? &banque->enfants[0] : nil;
+		VERIF(monte && monte->multiParent && monte->hachage == ActionHash("Locomotion") && monte->parentDefaut == banque);
+		const CActionNode *refFT = g.Trouver("/Global/Fight_Tutorial/Default_KEY/Locomotion");
+		const CActionNode *refBS = g.Trouver("/Global/B_Striker_A/Default_KEY/Locomotion");
+		VERIF(refFT && refBS && refFT != refBS && refFT->genre == 'r' && refFT->monte == monte && refBS->monte == monte);
+		const CActionNode *defautFT = g.Trouver("/Global/Fight_Tutorial/Default_KEY"), *defautBS = g.Trouver("/Global/B_Striker_A/Default_KEY");
+		if(monte){
+			VERIF(g.ParentMonte(*monte, ActionHash("Fight_Tutorial")) == defautFT && g.ParentMonte(*monte, ActionHash("B_Striker_A")) == defautBS);
+			VERIF(g.ParentMonte(*monte, ActionHash("Locomotion.act")) == banque && g.ParentMonte(*monte, ActionHash("Personne")) == banque);
+		}
+		// Un chemin qui traverse la référence : ses enfants sont ceux de l'arbre monté (FUN_005f5340 / FUN_005f5360).
+		const CActionNode *opps = g.Trouver("/Global/Fight_Tutorial/Default_KEY/Locomotion/ActionOpps");
+		VERIF(opps && opps == g.Trouver("/Global/B_Striker_A/Default_KEY/Locomotion/ActionOpps") && opps == g.Trouver("/Global/Locomotion.act/Locomotion/ActionOpps"));
+		// « .. » suit le parent de la clé courante (DAT_00b0a604) : les ActionOpps de Locomotion (« ../../../Offense »)
+		// mènent à l'Offense de l'arbre où l'on est.
+		if(opps){
+			g.cle = ActionHash("Fight_Tutorial");
+			VERIF(g.Relatif(opps, "../../../Offense") == g.Trouver("/Global/Fight_Tutorial/Offense") && g.CleDe(opps) == ActionHash("Fight_Tutorial"));
+			VERIF(g.CheminDe(opps) == "/Global/Fight_Tutorial/Default_KEY/Locomotion/ActionOpps" && g.Sous(defautFT, opps) && !g.Sous(defautBS, opps));
+			g.cle = ActionHash("B_Striker_A");
+			VERIF(g.Relatif(opps, "../../../Offense") == g.Trouver("/Global/B_Striker_A/Offense") && g.CleDe(opps) == ActionHash("B_Striker_A"));
+			g.cle = 0xffffffffu;   // sans clé : le parent par défaut, la banque
+			VERIF(g.CheminDe(opps) == "/Global/Locomotion.act/Locomotion/ActionOpps");
+		}
+		// La descente traverse la référence (FUN_005f5470) : la banque Default_KEY de Fight_Tutorial ne tombe plus sur son
+		// premier enfant jouable (idle) mais dans Locomotion, si ses conditions passent.
+		if(defautFT){
+			struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return 0; } } non;
+			g.cle = ActionHash("Fight_Tutorial");
+			const CActionNode *d = g.Choisir(refFT, non);
+			VERIF(d && g.Sous(refFT, d) && g.CheminDe(d).compare(0, 46, "/Global/Fight_Tutorial/Default_KEY/Locomotion/") == 0);
+			printf("  références montées : /Global/Locomotion.act lu une fois, %zu parents ; la descente de Fight_Tutorial/Default_KEY : %s\n",
+			       monte ? monte->parents.size() : 0, g.CheminDe(d).c_str());
+			g.cle = 0xffffffffu;
+		}
+		// La pile du contexte (FUN_005f36d0) : un contrôleur posé sur /Global/Fight_Tutorial a pour clé le nom de l'arbre
+		// (FUN_005f4e40), qui devient DAT_00b0a604 le temps de ses jugements et de ses chemins (FUN_005f3e20), puis la
+		// clé d'avant revient. FUN_005f3700 empile une seconde clé, deux au plus.
+		if(const CActionNode *ft = g.Trouver("/Global/Fight_Tutorial")){
+			struct : CJugeAction {
+				const CActionBank *b = nil; mutable uint32 vue = 0;
+				int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { vue = b->cle; return 0; }
+			} temoin;
+			temoin.b = &g;
+			g.cle = ActionHash("Personne");
+			CActionController c;
+			VERIF(c.Poser(g, ft, temoin, 0.0f) && c.Cle() == ActionHash("Fight_Tutorial") && c.pile.size() == 1);
+			VERIF(temoin.vue == ActionHash("Fight_Tutorial") && g.cle == ActionHash("Personne"));
+			std::string vu = CheminVu(g, c);
+			VERIF(vu.compare(0, 46, "/Global/Fight_Tutorial/Default_KEY/Locomotion/") == 0);
+			printf("  pile du contexte : %s joué avec la clé Fight_Tutorial\n", vu.c_str());
+			c.Empiler(ActionHash("Player")); c.Empiler(ActionHash("HitTree"));
+			VERIF(c.pile.size() == 2 && c.Cle() == ActionHash("Player"));
+			VERIF(CheminVu(g, c).compare(0, 25, "/Global/Locomotion.act/Lo") == 0);   // une clé sans paire : la banque
+			g.cle = 0xffffffffu;
+		}
 	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;

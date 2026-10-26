@@ -45,6 +45,15 @@ struct CActionNode {
 	std::string cible;                 // une référence : le chemin du nœud visé
 	std::vector<CActionNode> enfants;
 	int16 source = -1;                 // dans CActionBank : le fichier .cat d'où vient le nœud (ses conditions s'y lisent)
+	// Une référence 'r' montée (CActionBank::Monter, FUN_005f6960) : l'arbre de son fichier (+0xc, FUN_005f5450), rangé une
+	// seule fois sous /Global/<nom du fichier>. Son nom (+8, FUN_005f5da0), ses enfants (+0x2c / +0x30) et sa descente
+	// (+0x4c, FUN_005f5470) sont ceux de cet arbre.
+	const CActionNode *monte = nil;
+	// L'arbre monté tient lieu de l'ActionNodeMultiParentReference (FUN_005f66b0) : ses parents, un par clé (la table
+	// +0x30, son nombre +0x38 ; FUN_005f6800), et le parent par défaut (+4), que FUN_005f6290 rend.
+	bool multiParent = false;
+	std::vector<std::pair<uint32, const CActionNode *>> parents;
+	const CActionNode *parentDefaut = nil;
 };
 
 struct CActionRenvoi { uint32 valeur; std::vector<uint32> decalages; };

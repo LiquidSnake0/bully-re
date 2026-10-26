@@ -115,7 +115,19 @@ static CActionBank arbres;
 // Par piéton, son contrôleur d'actions (src/core/ActionController.h) : l'arbre posé par PedSetActionTree, le nœud
 // joué (+0x10) que PedSetActionNode pose, que PedIsPlaying compare, et qui avance à chaque image.
 static std::map<int, CActionController> controleurs;
+// Le chemin d'un nœud pour le journal, vu du contrôleur qui le joue : la clé de son contexte choisit le parent des arbres
+// montés (DAT_00b0a604, FUN_005f6290).
+static std::string CheminVu(const CActionController &c, const CActionNode *n);
 static std::map<int, CActionController> controleursIA;   // le contrôleur de l'IA (+0x290 du composant +0x2e0), PedSetAITree
+static std::string
+CheminVu(const CActionController &c, const CActionNode *n)
+{
+	uint32 avant = arbres.cle;
+	if(c.Cle() != 0xffffffffu) arbres.cle = c.Cle();
+	std::string r = arbres.CheminDe(n);
+	arbres.cle = avant;
+	return r;
+}
 static int journalIA = 80;   // les passages du contrôleur de l'IA journalisés (les premiers)
 // Les groupes d'animations (src/anim/AnimGroups.h) : les .agr de Stream/World.img, que les scripts chargent
 // (LoadAnimationGroup) et que la condition AnimationGroupLoaded demande ; une demande est servie à l'image suivante.
@@ -133,7 +145,18 @@ NoeudJoue(int ped)
 	auto it = controleurs.find(ped);
 	return it == controleurs.end() ? nil : it->second.joue;
 }
+static std::map<uint32, int> nonLues;               // les classes de conditions pas encore lues, jugées -1 (le bilan de fin)
+// Le chapitre en cours (l'octet DAT_00a147e0 : 0 au démarrage), que ChapterSet (0x5c0b70 → FUN_00454470) pose et que
+// ChapterGet (0x5c0ba0) rend ; la saison de chaque chapitre (DAT_00a147ec : 1, 1, 2, 3, 3, 3, 0 ; le chapitre 1 est
+// l'automne, timecycF, le 3 l'hiver) ; et les zones « dehors » (l'octet par zone de 0x901dd0, FUN_004301d0 : 0, 1, 22,
+// 31, 42, 43, 64, 65, 66), toutes lues dans bully.exe.
+static uint8 chapitre = 0;
+static uint8 etatPhysiqueJoueur = 0;   // DAT_00c1af4c : 0, 1, 2 (fatigué) ; PlayerGetPhysicalState (0x5d1ee0)
+static const int32 kSaisonDuChapitre[7] = {1, 1, 2, 3, 3, 3, 0};
+static bool ZoneDehors(int z){ static const int d[] = {0, 1, 22, 31, 42, 43, 64, 65, 66}; for(int x : d) if(x == z) return true; return false; }
 static lua_State *etatLua = nil;        // pour LuaCond : la fonction du script de mission appelée par le contrôleur
+// LuaCond (FUN_006a74d0) : la fonction +0x10 du script +0xc, appelée dans son espace de noms ; -1 si rien n'est appelable.
+static int AppelLuaCond(const std::string &script, const std::string &fonction);
 // --demander N@s : une ActionRequest du joueur (la manette) en attente jusqu'à cet instant (ms).
 static std::map<uint32, uint32> demandes;
 
@@ -236,8 +259,87 @@ struct CJugeOutil : CJugeAction {
 		if(type == kArme) return f.ChaineCitee((uint32)d + 8) == "unarmed";
 		const CScriptPed *moi = pietons.Acceder(ped);
 		float seuil; memcpy(&seuil, &mots[0], 4);
-		// IsPlayer (FUN_005ffe40) : le type du piéton (+0x1310) vaut 13 ; dans l'outil, l'entrée 0 du pool.
-		if(type == kJoueur) return ped == SCRIPT_PED_JOUEUR;
+		// IsPlayer (FUN_005ffe40) : le type du piéton (+0x1310) vaut 13 (PLAYER1).
+		if(type == kJoueur) return moi && moi->type == SCRIPT_PED_TYPE_JOUEUR;
+		// IsFemale (FUN_005ffb50) : l'octet +0x50 du modelinfo du piéton (PedIsFemale), la colonne FEMALE de son entrée peds.
+		// IsAuthority (FUN_005ffb20) : son type (+0x1310) est PREFECT (0), COP (7) ou TEACHER (8).
+		// PedType (FUN_005ffac0) : son type est +4.
+		static const uint32 kFemme = ActionHash("IsFemale"), kAutorite = ActionHash("IsAuthority"), kTypePieton = ActionHash("PedType");
+		if(type == kFemme){
+			if(moi == nil) return 0;
+			auto it = modeles.femme.find(moi->modele);
+			return it != modeles.femme.end() && it->second;
+		}
+		if(type == kAutorite) return moi && (moi->type == 0 || moi->type == 7 || moi->type == 8);
+		if(type == kTypePieton) return moi && moi->type == (int32)mots[0];
+		// PedModelID (FUN_00602050) : le modelinfo du piéton (FUN_00477c70), dont le nom haché (+4) est celui de la chaîne
+		// +4 (FUN_0050e7f0 : HashString). IsElderly (FUN_006069a0 → FUN_0044e010) : l'entrée de pedstats.dat de son modelinfo
+		// (+0x54, son nom haché en +0x18) est STAT_CV_MALE_OLD ou STAT_CV_FEMALE_OLD. HasGrappleTarget (FUN_00606490) : un
+		// partenaire de prise (+0x155c). IsStealthMissionChar (FUN_00602cf0) : +0x1398 non nul.
+		static const uint32 kModele = ActionHash("PedModelID"), kVieux = ActionHash("IsElderly"),
+		                    kPrise = ActionHash("HasGrappleTarget"), kDiscret = ActionHash("IsStealthMissionChar");
+		if(type == kModele){
+			if(moi == nil) return 0;
+			auto it = modeles.nomDuModele.find(moi->modele);
+			return it != modeles.nomDuModele.end() && ActionHash(it->second.c_str()) == ActionHash(f.ChaineCitee((uint32)d + 8).c_str());
+		}
+		if(type == kVieux){
+			if(moi == nil) return 0;
+			auto it = modeles.statDuPieton.find(moi->modele);
+			return it != modeles.statDuPieton.end() && (it->second == "STAT_CV_MALE_OLD" || it->second == "STAT_CV_FEMALE_OLD");
+		}
+		if(type == kPrise) return moi && moi->cibleDePrise >= 0;
+		// TargetRelativeOrientation (FUN_005ff420, lue à l'assembleur) : l'autre est le partenaire de prise (+0x155c) si
+		// l'octet +4, sinon +0x434 du piéton s'il est posé (l'outil ne le pose pas), sinon la cible du composant de visée
+		// (+0x1c8, FUN_004d7630 : la cible verrouillée d'abord) ; vrai si 2 × |acos(devant · devant de l'autre) - (+8)|,
+		// ramené dans [-π, π] (FUN_00432d90), ne dépasse pas +0xc.
+		static const uint32 kOrientation = ActionHash("TargetRelativeOrientation");
+		if(type == kOrientation){
+			if(moi == nil) return 0;
+			const CScriptPed *autre = pietons.Acceder((mots[0] & 0xff) ? moi->cibleDePrise : CibleDe(ped));
+			if(autre == nil || autre == moi) return 0;
+			float a = moi->cap * 3.14159265f / 180.0f, b = autre->cap * 3.14159265f / 180.0f;
+			float produit = cosf(a) * cosf(b) + sinf(a) * sinf(b);
+			float angle = produit >= 1.0f ? 0.0f : produit <= -1.0f ? 3.14159265f : acosf(produit);   // FUN_00413c10
+			float vise, tolerance; memcpy(&vise, &mots[1], 4); memcpy(&tolerance, &mots[2], 4);
+			float e = fabsf(angle - vise);
+			while(e > 3.14159265f) e -= 2.0f * 3.14159265f;
+			return e + e <= tolerance;
+		}
+		// Sprint (FUN_005fda70) : la réserve de sprint (+0x18d0) comparée à +4 par +8 (FUN_005fb750). IsPlayerTired
+		// (FUN_005fc3b0) : l'état physique du joueur (DAT_00c1af4c, que PlayerGetPhysicalState rend) vaut 2 ; l'outil le
+		// laisse à 0.
+		static const uint32 kSprint = ActionHash("Sprint"), kFatigue = ActionHash("IsPlayerTired");
+		if(type == kSprint) return moi ? ComparerCondition(moi->sprint, seuil, mots[1]) : -1;
+		if(type == kFatigue) return etatPhysiqueJoueur == 2;
+		// L'outil n'a pas d'armes (seul « unarmed » est vrai pour WeaponEquiped) : l'arme voulue du composant d'actions
+		// (+0x18 du composant +0x2e0) reste 0 et l'objet arme du piéton (+0x1d0) n'a pas de modèle (+0x10e à -1).
+		// WeaponDesired (ConditionWeaponDesired, FUN_0065b4b0) : sans arme voulue, vrai si l'octet +8 est nul.
+		// WeaponIsInventory (FUN_0065b7e0) : sans modèle d'arme, faux.
+		static const uint32 kArmeVoulue = ActionHash("WeaponDesired"), kArmeInventaire = ActionHash("WeaponIsInventory");
+		if(type == kArmeVoulue) return (mots[1] & 0xff) == 0;
+		if(type == kArmeInventaire) return 0;
+		// Season (FUN_005fc8d0) : avec l'octet +4, la zone visible doit être dehors (FUN_004301d0) ; puis la saison du
+		// chapitre en cours est +8.
+		static const uint32 kSaison = ActionHash("Season");
+		if(type == kSaison){
+			if((mots[0] & 0xff) && !ZoneDehors(zones.zoneVisible)) return 0;
+			return chapitre < 7 && kSaisonDuChapitre[chapitre] == (int32)mots[1];
+		}
+		// MotionIntentionSpeed (FUN_005fd810) : la vitesse de l'intention de mouvement (+0x1c du composant +0x2e0) comparée
+		// au seuil +4 par +8 (FUN_005fb750). MotionIntention (ConditionMotionIntentionDirection, FUN_005fd760) : le devant
+		// du piéton, à plat, tourné de +4 radians (FUN_005fbe50), et la direction de l'intention (+0, +4, +8) ont un produit
+		// scalaire d'au moins cos(+8) (vérifié à l'assembleur, 0x5fd7ef : vrai si cos(+8) ≤ le produit).
+		static const uint32 kVitesseIntention = ActionHash("MotionIntentionSpeed"), kDirectionIntention = ActionHash("MotionIntention");
+		if(type == kVitesseIntention) return moi ? ComparerCondition(moi->intentionVitesse, seuil, mots[1]) : -1;
+		if(type == kDirectionIntention){
+			if(moi == nil) return -1;
+			float tour, ouverture; memcpy(&tour, &mots[0], 4); memcpy(&ouverture, &mots[1], 4);
+			float a = moi->cap * 3.14159265f / 180.0f + tour;
+			float produit = cosf(a) * moi->intention.x + sinf(a) * moi->intention.y;
+			return cosf(ouverture) <= produit;
+		}
+		if(type == kDiscret) return moi && moi->discretion;
 		// IsMissionSpecific (FUN_005ffb70) : l'octet +0x1570 vaut 2, ce que le constructeur (FUN_0047ffe0) pose pour un
 		// piéton créé par un script (FUN_005cf6b0 → FUN_0046dea0(modèle, 2)) ; PedMakeAmbient le change (FUN_004770a0).
 		// Dans l'outil : un piéton noté à un objet script.
@@ -365,18 +467,8 @@ struct CJugeOutil : CJugeAction {
 			return arbres.JoueHachage(NoeudJoue(p->verrou), mots[0] & 0x7fffffff);
 		}
 		if(type == kLua){
-			std::string fonction = f.ChaineCitee((uint32)d + 0x14);
-			if(etatLua == nil || fonction.empty()) return -1;
-			lua_getglobal(etatLua, fonction.c_str());
-			if(!lua_isfunction(etatLua, -1)){ lua_pop(etatLua, 1); return 0; }
-			if(lua_pcall(etatLua, 0, 1, 0) != 0){ lua_pop(etatLua, 1); return -1; }
-			// FUN_006a74d0 → FUN_005d80a0 : le résultat est lu par lua_tonumber (0x73b0d0 : un nombre, ou une chaîne
-			// convertible, sinon 0), tronqué en entier (0x85c6f0), et la condition est vraie s'il est positif. Les
-			// fonctions des scripts rendent 1.0 ou 0.0 (F_CanBullyAttack, F_PlayerGroundKicks…) : 0.0 est faux, et un
-			// booléen, faute d'être un nombre, l'est aussi.
-			int r = (int)lua_tonumber(etatLua, -1) > 0;
-			lua_pop(etatLua, 1);
-			return r;
+			// L'enregistrement : +0xc (le mot +0x10) le script, +0x10 (le mot +0x14) la fonction (« mission », « F_CanBlock »).
+			return AppelLuaCond(f.ChaineCitee((uint32)d + 0x10), f.ChaineCitee((uint32)d + 0x14));
 		}
 		return JugerIA(f, d, type, mots, seuil);
 	}
@@ -475,9 +567,9 @@ struct CJugeOutil : CJugeAction {
 		if(type == kBranche){
 			auto it = controleurs.find(ped);
 			if(it == controleurs.end() || it->second.arbre == nil) return 0;
-			for(const CActionNode &e : it->second.arbre->enfants)
-				if((e.hachage & 0x7fffffff) == (mots[0] & 0x7fffffff)){
-					for(const CActionNode &g : e.enfants) if((g.hachage & 0x7fffffff) == (mots[1] & 0x7fffffff)) return 1;
+			for(const CActionNode &e : CActionBank::Enfants(*it->second.arbre))
+				if((CActionBank::Nom(e) & 0x7fffffff) == (mots[0] & 0x7fffffff)){
+					for(const CActionNode &g : CActionBank::Enfants(e)) if((CActionBank::Nom(g) & 0x7fffffff) == (mots[1] & 0x7fffffff)) return 1;
 					return 0;
 				}
 			return 0;
@@ -510,6 +602,7 @@ struct CJugeOutil : CJugeAction {
 			const float h = 1.8f;
 			return moi->pos.z + bas * h <= c->pos.z + h && c->pos.z <= moi->pos.z + haut * h;
 		}
+		nonLues[type]++;
 		return -1;
 	}
 };
@@ -572,6 +665,45 @@ static struct {
 	std::string nom;                     // le nom demandé par le script, ou le titre quand le gestionnaire la lance
 	bool reussie = false;
 } mission;
+
+// FUN_006a74d0 : le script « mission » est celui de la mission en cours (FUN_006aa630, MissionGetName +0x1c ; aucune :
+// faux) ; un autre nom est cherché parmi les objets script sans la casse, « \ » lu « / » (FUN_005dbb60), sinon le premier
+// (FUN_005db770(0), main.lua). FUN_005d80a0 en fait le script courant (FUN_005dbc40) et appelle, par FUN_005d8000,
+// NSCall(fichier, fonction, false) de util.lua : la fonction de cet espace de noms (CreateNameSpace : les noms des scripts
+// de mission n'y sont pas dans _G), 0.0 si elle n'existe pas (le troisième argument faux). Le résultat est lu par
+// lua_tonumber (0x73b0d0 : un nombre, ou une chaîne convertible, sinon 0), tronqué en entier (0x85c6f0), et la condition
+// est vraie s'il est positif : F_CanBullyAttack et F_CanBlock rendent 1.0 ou 0.0, et un booléen vaut faux.
+static int
+AppelLuaCond(const std::string &script, const std::string &fonction)
+{
+	if(etatLua == nil || fonction.empty() || scripts.empty()) return -1;
+	int s = -1;
+	if(script == "mission"){
+		if(mission.etat == AUCUNE || mission.script < 0) return 0;
+		s = mission.script;
+	}else{
+		std::string voulu = script;
+		for(char &c : voulu) if(c == '\\') c = '/';
+		for(size_t i = 0; i < scripts.size() && s < 0; i++){
+			std::string nom = scripts[i].fichier;
+			for(char &c : nom) if(c == '\\') c = '/';
+			if(strcasecmp(nom.c_str(), voulu.c_str()) == 0) s = (int)i;
+		}
+		if(s < 0) s = 0;
+	}
+	lua_State *L = etatLua;
+	int avant = scriptCourant;
+	scriptCourant = s;
+	lua_getglobal(L, "NSCall");
+	lua_pushstring(L, scripts[s].fichier.c_str());
+	lua_pushstring(L, fonction.c_str());
+	lua_pushboolean(L, 0);
+	int r = -1;
+	if(lua_pcall(L, 3, 1, 0) == 0) r = (int)lua_tonumber(L, -1) > 0;
+	lua_pop(L, 1);
+	scriptCourant = avant;
+	return r;
+}
 // Le gestionnaire de missions (objet 0x020c3ca0, FUN_006ad130 à chaque image), réduit : une mission
 // dont les conditions sont vraies est « activée » (son corona existe) ; activée, elle démarre seule
 // si son champ 51 le dit, ou, une fois le gestionnaire autorisé (+0x77d, posé par gamemain avec
@@ -1417,6 +1549,8 @@ CreerPed(lua_State *L, const char *quoi, int32 modele, const CVector &pos, float
 	int h = pietons.Creer(modele, pos, cap, scriptCourant);
 	if(h < 0) printf("        %s : le pool des piétons est plein (%d)\n", quoi, SCRIPT_PED_POOL_SIZE);
 	else{
+		auto ty = modeles.typeDuPieton.find(modele);   // FUN_0047ffe0 : le type du modelinfo (+0x4c) en +0x1310
+		if(ty != modeles.typeDuPieton.end() && ty->second >= 0) pietons.Acceder(h)->type = ty->second;
 		auto st = modeles.statDuPieton.find(modele);
 		auto e = st == modeles.statDuPieton.end() ? statsParNom.end() : statsParNom.find(st->second);
 		if(e != statsParNom.end()){
@@ -1427,6 +1561,63 @@ CreerPed(lua_State *L, const char *quoi, int32 modele, const CVector &pos, float
 		}
 	}
 	lua_pushnumber(L, h);
+	return 1;
+}
+
+// PlayerGetPhysicalState() (0x5d1ee0) : DAT_00c1af4c.
+static int
+PlayerGetPhysicalState(lua_State *L)
+{
+	lua_pushnumber(L, etatPhysiqueJoueur);
+	return 1;
+}
+
+// ChapterSet(n) (0x5c0b70 → FUN_00454470) : le chapitre ; si la saison change, le moteur change les modèles de saison
+// (PedSetSeasonalModels) et le temps (FUN_00534780), que l'outil n'a pas. ChapterGet() (0x5c0ba0) le rend.
+static int
+ChapterSet(lua_State *L)
+{
+	Journal("ChapterSet", L, 1);
+	chapitre = (uint8)luaL_checknumber(L, 1);
+	return 0;
+}
+
+static int
+ChapterGet(lua_State *L)
+{
+	lua_pushnumber(L, chapitre);
+	return 1;
+}
+
+// PedSetFaction(ped, type) (0x5cb570) : le type du piéton (+0x1310), sauf 13 (PLAYER1), que le moteur refuse.
+static int
+PedSetFaction(lua_State *L)
+{
+	Journal("PedSetFaction", L, 1);
+	CScriptPed *p = pietons.Acceder((int)luaL_checknumber(L, 1));
+	int32 t = (int32)luaL_checknumber(L, 2);
+	if(p && t != SCRIPT_PED_TYPE_JOUEUR) p->type = t;
+	return 0;
+}
+
+// PedSetIsStealthMissionPed(ped, oui) (0x5d0110 → FUN_005d0080) : +0x1398 ; le moteur prévient aussi la mémoire des
+// stimuli (FUN_0054a740, FUN_0054a460), que l'outil n'a pas.
+static int
+PedSetIsStealthMissionPed(lua_State *L)
+{
+	Journal("PedSetIsStealthMissionPed", L, 1);
+	CScriptPed *p = pietons.Acceder((int)luaL_checknumber(L, 1));
+	// FUN_005d8fa0(L, 1, 1) : un booléen ou un nombre, sinon vrai par défaut.
+	if(p) p->discretion = lua_isboolean(L, 2) || lua_isnumber(L, 2) ? (lua_isboolean(L, 2) ? lua_toboolean(L, 2) != 0 : lua_tonumber(L, 2) != 0) : true;
+	return 0;
+}
+
+// PedGetFaction(ped) (0x5cb5c0) : son type, -1 pour un handle sans piéton.
+static int
+PedGetFaction(lua_State *L)
+{
+	const CScriptPed *p = pietons.Acceder((int)luaL_checknumber(L, 1));
+	lua_pushnumber(L, p ? p->type : -1);
 	return 1;
 }
 
@@ -1638,7 +1829,11 @@ PedMoveToPoint(lua_State *L)
 {
 	Journal("PedMoveToPoint", L, 1);
 	const CTriggerPointPoint *pt = PointArg(L, "PedMoveToPoint", 3, 4);
-	if(pt && lua_isnumber(L, 1)) pietons.Aller((int)lua_tonumber(L, 1), pt->pos, (int)luaL_optnumber(L, 2, ALLURE_MARCHE));
+	if(pt && lua_isnumber(L, 1)){
+		pietons.Aller((int)lua_tonumber(L, 1), pt->pos, (int)luaL_optnumber(L, 2, ALLURE_MARCHE));
+		// FUN_005c6180 : la vitesse d'intention de l'allure, 0,7 sans argument.
+		if(CScriptPed *p = pietons.Acceder((int)lua_tonumber(L, 1))) p->intentionVitesse = ScriptPedIntentionVitesse(lua_isnumber(L, 2) ? (int)lua_tonumber(L, 2) : -1);
+	}
 	return 0;
 }
 
@@ -1648,7 +1843,10 @@ PedMoveToXYZ(lua_State *L)
 {
 	Journal("PedMoveToXYZ", L, 1);
 	CVector cible((float)luaL_checknumber(L, 3), (float)luaL_checknumber(L, 4), (float)luaL_checknumber(L, 5));
-	if(lua_isnumber(L, 1)) pietons.Aller((int)lua_tonumber(L, 1), cible, (int)luaL_optnumber(L, 2, ALLURE_MARCHE));
+	if(lua_isnumber(L, 1)){
+		pietons.Aller((int)lua_tonumber(L, 1), cible, (int)luaL_optnumber(L, 2, ALLURE_MARCHE));
+		if(CScriptPed *p = pietons.Acceder((int)lua_tonumber(L, 1))) p->intentionVitesse = ScriptPedIntentionVitesse(lua_isnumber(L, 2) ? (int)lua_tonumber(L, 2) : -1);
+	}
 	return 0;
 }
 
@@ -1764,7 +1962,11 @@ CombatLoco(int ped, bool joueur, bool premiere)
 	int z = p->zoneCombat < 0 || p->zoneCombat > 3 ? 3 : p->zoneCombat;
 	float rayon = ButeIA(kGrands[z], 1.5f);
 	float dx = q->pos.x - p->pos.x, dy = q->pos.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
-	if(d <= rayon) return;
+	if(d > 0) p->intention = CVector(dx / d, dy / d, 0);
+	if(d <= rayon){ p->intentionVitesse = 0; return; }
+	// L'intention de mouvement vers la cible : la vitesse de course de FUN_005c6180 (0,7), supposée (le moteur la tire de
+	// la navigation, FUN_004a4a50, sur le point que FUN_0061b430 range).
+	p->intentionVitesse = 0.7f;
 	float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f, k = d - rayon < pas ? (d - rayon) / d : pas / d;
 	p->pos.x += dx * k; p->pos.y += dy * k;
 	p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
@@ -1779,16 +1981,19 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 	if(p == nil || p->mort || c.arbre == nil) return;
 	float t = maintenant / 1000.0f;
 	c.image = images; c.graine = (uint16)ped;
+	// La navigation repose l'intention de mouvement à chaque image ; sans but, sa vitesse retombe à 0 (FUN_004a45c0). Les
+	// pistes de l'IA (CombatLoco) la reposent ensuite.
+	if(!p->enMarche) p->intentionVitesse = 0;
 	const CActionNode *avant = c.joue;
 	if(c.joue == nil) c.Poser(arbres, c.arbre, CJugeOutil(ped, t), t);   // FUN_00483ec0
 	else c.Avancer(arbres, nil, CJugeOutil(ped, t), t);
-	if(c.joue != avant && journalIA > 0){ journalIA--; printf("%6.2f s  IA de %d : %s\n", t, ped, arbres.CheminDe(c.joue).c_str()); }
+	if(c.joue != avant && journalIA > 0){ journalIA--; printf("%6.2f s  IA de %d : %s\n", t, ped, CheminVu(c, c.joue).c_str()); }
 	std::vector<CActionController *> tous;
 	c.Recueillir(tous);
 	static std::map<const CActionController *, const CActionNode *> vus;   // LANCER_IA : les passages des contrôleurs des spawn
 	if(getenv("LANCER_IA"))
 		for(size_t i = 1; i < tous.size(); i++)
-			if(vus[tous[i]] != tous[i]->joue){ vus[tous[i]] = tous[i]->joue; printf("%6.2f s  IA de %d, spawn : %s\n", t, ped, arbres.CheminDe(tous[i]->joue).c_str()); }
+			if(vus[tous[i]] != tous[i]->joue){ vus[tous[i]] = tous[i]->joue; printf("%6.2f s  IA de %d, spawn : %s\n", t, ped, CheminVu(*tous[i], tous[i]->joue).c_str()); }
 	for(CActionController *k : tous){
 		for(uint32 n : k->intentions) intentionsPietons[ped] = n;
 		for(const CActionController::Gestion &g : k->gestionsActives) GererCibles(ped, g.joueur);
@@ -1921,6 +2126,7 @@ PedSetAITree(lua_State *L)
 	c.sousControleurs = true;
 	p->arbreIA = true;
 	c.arbre = arbres.Trouver(arbre);
+	c.Racine(arbres, c.arbre);   // FUN_00484290 → FUN_005f36d0 : la racine du contexte et sa clé
 	return 0;
 }
 
@@ -2620,6 +2826,12 @@ main(int argc, char **argv)
 	lua_register(L, "PedStop", PedStop);
 	lua_register(L, "PedAttack", PedAttack);
 	lua_register(L, "PedSetAITree", PedSetAITree);
+	lua_register(L, "PedSetFaction", PedSetFaction);
+	lua_register(L, "ChapterSet", ChapterSet);
+	lua_register(L, "PlayerGetPhysicalState", PlayerGetPhysicalState);
+	lua_register(L, "ChapterGet", ChapterGet);
+	lua_register(L, "PedSetIsStealthMissionPed", PedSetIsStealthMissionPed);
+	lua_register(L, "PedGetFaction", PedGetFaction);
 	lua_register(L, "PedSetCombatZoneMask", PedSetCombatZoneMask);
 	lua_register(L, "PedMakeAmbient", PedMakeAmbient);
 	// Les énumérations posées par 0x5db040 : POINTLIST, PATH et TRIGGER cherchent dans les pools.
@@ -2688,7 +2900,7 @@ main(int argc, char **argv)
 					c.Jouer(arbres, d ? d : n, maintenant / 1000.0f);
 				}
 				c.parLaManette = false;
-				printf("%6.2f s  le joueur joue %s%s\n", maintenant / 1000.0, chemin.c_str(), c.joue != n ? (" → " + arbres.CheminDe(c.joue)).c_str() : "");
+				printf("%6.2f s  le joueur joue %s%s\n", maintenant / 1000.0, chemin.c_str(), c.joue != n ? (" → " + CheminVu(c, c.joue)).c_str() : "");
 			}
 			e.second.clear();
 		}
@@ -2713,9 +2925,9 @@ main(int argc, char **argv)
 			bool d = c.first == SCRIPT_PED_JOUEUR && (demande || !demandes.empty());
 			if(c.second.Avancer(arbres, nil, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f, d) && c.second.joue != avant){
 				if(c.first == SCRIPT_PED_JOUEUR)
-					printf("%6.2f s  contrôleur du joueur : %s\n", maintenant / 1000.0, arbres.CheminDe(c.second.joue).c_str());
+					printf("%6.2f s  contrôleur du joueur : %s\n", maintenant / 1000.0, CheminVu(c.second, c.second.joue).c_str());
 				else if(tousLesControleurs)
-					printf("%6.2f s  contrôleur de %d : %s\n", maintenant / 1000.0, c.first, arbres.CheminDe(c.second.joue).c_str());
+					printf("%6.2f s  contrôleur de %d : %s\n", maintenant / 1000.0, c.first, CheminVu(c.second, c.second.joue).c_str());
 			}
 			// Les coups qui portent (pistes Collision, FUN_005f9e70) : l'outil n'a pas les sphères des os, le coup touche la
 			// cible verrouillée. La cible reçoit le coup (slot 15 de CPed, FUN_0047b810) : son drapeau tient une seconde
@@ -2738,7 +2950,7 @@ main(int argc, char **argv)
 					float dx = q->pos.x - p->pos.x, dy = q->pos.y - p->pos.y, a = p->cap * 3.14159265f / 180.0f;
 					float n = sqrtf(dx * dx + dy * dy), cosinus = n > 0.0f ? (cosf(a) * dx + sinf(a) * dy) / n : 1.0f;
 					if(cosinus <= 0.0f){
-						printf("%6.2f s  le coup de %d (%s) manque %d, dans son dos\n", maintenant / 1000.0, c.first, arbres.CheminDe(k.porteur).c_str(), cible);
+						printf("%6.2f s  le coup de %d (%s) manque %d, dans son dos\n", maintenant / 1000.0, c.first, CheminVu(c.second, k.porteur).c_str(), cible);
 						continue;
 					}
 				}
@@ -2762,8 +2974,8 @@ main(int argc, char **argv)
 				bool aTerre = arbres.JoueHachage(NoeudJoue(cible), ActionHash("On_Ground"));
 				const CActionNode *arbreCoups = arbres.Trouver(aTerre ? "/Global/HitTree/GroundAndWallHits/On_Ground" : "/Global/HitTree");
 				bool pris = arbreCoups && v.Entrer(arbres, arbreCoups, CJugeOutil(cible, maintenant / 1000.0f), maintenant / 1000.0f);
-				printf("%6.2f s  le coup de %d porte sur %d (%s)%s%s\n", maintenant / 1000.0, c.first, cible, arbres.CheminDe(k.porteur).c_str(),
-				       pris ? " : il joue " : "", pris ? arbres.CheminDe(v.joue).c_str() : "");
+				printf("%6.2f s  le coup de %d porte sur %d (%s)%s%s\n", maintenant / 1000.0, c.first, cible, CheminVu(c.second, k.porteur).c_str(),
+				       pris ? " : il joue " : "", pris ? CheminVu(v, v.joue).c_str() : "");
 				if(!k.surCoup.empty())
 					if(const CActionNode *n = arbres.Relatif(k.porteur, k.surCoup.c_str()))
 						c.second.Entrer(arbres, n, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f);
@@ -2851,8 +3063,8 @@ main(int argc, char **argv)
 				bool b = e.cible && !e.executerCible && controleurs[cible].Entrer(arbres, e.cible, CJugeOutil(cible, maintenant / 1000.0f), maintenant / 1000.0f);
 				partenaires[cible] = {c.first, maintenant + 2000};
 				printf("%6.2f s  prise de %d sur %d : %s %s, %s %s\n", maintenant / 1000.0, c.first, cible,
-				       a ? "il joue" : "rien pour lui", a ? arbres.CheminDe(c.second.joue).c_str() : "",
-				       b ? "la cible joue" : "rien pour la cible", b ? arbres.CheminDe(controleurs[cible].joue).c_str() : (e.cible ? arbres.CheminDe(e.cible).c_str() : ""));
+				       a ? "il joue" : "rien pour lui", a ? CheminVu(c.second, c.second.joue).c_str() : "",
+				       b ? "la cible joue" : "rien pour la cible", b ? CheminVu(controleurs[cible], controleurs[cible].joue).c_str() : (e.cible ? arbres.CheminDe(e.cible).c_str() : ""));
 			}
 			// PlayOnTarget : la cible du piéton (FUN_004d5980 ; dans l'outil, celle de PedLockTarget) joue le nœud.
 			for(const CActionNode *n : c.second.pourCible){
@@ -2861,7 +3073,7 @@ main(int argc, char **argv)
 				CActionController &cible = controleurs[p->verrou];
 				if(!cible.Entrer(arbres, n, CJugeOutil(p->verrou, maintenant / 1000.0f), maintenant / 1000.0f)) cible.Jouer(arbres, n, maintenant / 1000.0f);
 				partenaires[p->verrou] = {c.first, maintenant + 2000};
-				printf("%6.2f s  la cible de %d (%d) joue %s\n", maintenant / 1000.0, c.first, p->verrou, arbres.CheminDe(cible.joue).c_str());
+				printf("%6.2f s  la cible de %d (%d) joue %s\n", maintenant / 1000.0, c.first, p->verrou, CheminVu(cible, cible.joue).c_str());
 			}
 		}
 		intentionsPietons.clear();   // FUN_005f3720 : l'intention ne vaut que pour l'image
@@ -2926,6 +3138,14 @@ main(int argc, char **argv)
 		std::vector<std::pair<int, std::string>> tri2;
 		for(auto &a : inconnues) tri2.push_back({-a.second, a.first});
 		std::sort(tri2.begin(), tri2.end());
+	if(!nonLues.empty()){
+		std::vector<std::pair<int, uint32>> v;
+		for(auto &e : nonLues) v.push_back({-e.second, e.first});
+		std::sort(v.begin(), v.end());
+		printf("conditions pas encore lues (jugées -1) :");
+		for(size_t i = 0; i < v.size() && i < 40; i++) printf(" #%08x (%d)", v[i].second, -v[i].first);
+		printf("\n");
+	}
 		printf("globales de script lues avant d'être posées (nil) :");
 		for(size_t i = 0; i < tri2.size() && i < 12; i++) printf(" %s (%d)", tri2[i].second.c_str(), -tri2[i].first);
 		printf("\n");

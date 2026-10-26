@@ -732,3 +732,31 @@ en échec plutôt que de les masquer.
   reste à comprendre) ; la course de `RunStart` (l'intention de mouvement que la piste `Locomotion` exécute, que rien ne
   pose pour l'objectif 22 dans `AI_FightTutorial`).
 - **Bilan** : 513 fonctions recréées (3,5 % du code), contre 475 (3,4 %) ce soir ; 1 265 comprises (7,7 %) ; 14 commits.
+
+## 26.10.2026 (nuit)
+
+- **Les références montées** : `DAT_01b649dc` est la banque `Global` elle-même, donc `FUN_005f4e40` rend le nom de l'arbre de
+  tête (`Fight_Tutorial`), pas `Global` : c'est la clé. Une référence 'r' (`FUN_005f6bb0` → `FUN_005f6960`, vérifié à
+  l'assembleur en 0x5f6a7e et 0x5f6b16) lit son fichier une fois sous `/Global/<nom>`, dans une
+  `ActionNodeMultiParentReference` (`FUN_005f66b0`) dont le parent dépend de la clé (`FUN_005f6800`, `FUN_005f6290`) ; une
+  référence vaut sa cible (`FUN_005f5da0`, `FUN_005f5340`, `FUN_005f5360`, `FUN_005f5470`). `Locomotion.act` (42 fichiers)
+  n'existe qu'une fois, avec 28 parents.
+- **La pile du contexte** (`FUN_005f36d0`, `FUN_005f3700`) : sa clé devient `DAT_00b0a604` le temps des chemins, comme
+  `FUN_005f3e20` et `FUN_005f70f0`.
+- **`LuaCond` dans l'espace de noms** (`FUN_006a74d0` → `FUN_005d80a0` → `FUN_005d8000` : `NSCall(fichier, fonction,
+  false)`) : `F_CanBullyAttack` valait nil dans `_G`. Dans `1_02`, de 31,12 à 42,60 s, le bully attaque le joueur pendant la
+  leçon de parade (`Offense/Short/Strikes`, par l'`Opportunity` `../../../Offense` des `ActionOpps` montées) : le blocage
+  « l'intention `Short` ne mène pas à `Offense` » est levé.
+- **Les piétons** : le type (+0x1310, la table 0x90e7d0, `FUN_004889c0`, `FUN_0047ffe0`), le sexe (+0x50 du modelinfo),
+  `PedSetFaction`, `PedGetFaction`, `PedSetIsStealthMissionPed`, la réserve de sprint (+0x18d0), l'intention de mouvement
+  (+0 la direction, +0x1c la vitesse ; les allures de `FUN_005c6180` : 0,3 / 0,7 / 1,1 / 1,5) ; le chapitre
+  (`DAT_00a147e0`, `ChapterSet`, `ChapterGet`) et la saison (`DAT_00a147ec`).
+- **Seize conditions** par le registre `FUN_0064b090` : `IsFemale`, `IsAuthority`, `PedType`, `PedModelID`, `IsElderly`,
+  `HasGrappleTarget`, `IsStealthMissionChar`, `MotionIntentionSpeed`, `MotionIntention`, `Season`,
+  `TargetRelativeOrientation`, `Sprint`, `IsPlayerTired`, `WeaponDesired`, `WeaponIsInventory`, et `IsPlayer` par le type ;
+  `lancer_lua` dresse le bilan des conditions encore jugées -1.
+- **`1_02` reste réussie à 119,03 s**, `1_01` à 10,46 s, à chaque commit.
+- **Ce qui bloque encore** : `CollisionStart` (+0x4e5, posé par `FUN_005f9480`, sa remise à zéro introuvable) et
+  `AttackPhase`, donc la parade du bully ; la course de `RunStart` (pas avancé) ; `HudComponentVisible`, les conditions
+  sociales. Séance close avant l'objectif de 40 commits, à la demande : 12 commits de code et un de docs.
+- **Bilan** : 549 fonctions recréées (3,6 % du code), contre 513 (3,5 %) ; 1 319 comprises (7,8 %).

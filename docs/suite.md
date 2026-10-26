@@ -40,18 +40,19 @@ chantier. Un point fini passe en bas, avec son commit.
    L'arbre de l'IA est joué (docs/cat.md, « Les arbres de l'IA ») : `PedSetAITree`, la file des objectifs, dix-huit
    conditions, `ManageTargets`, `CombatLoco`, `ActionNodeRequest`, `spawn`, `ClearCurrentObjective`, `FleeObjective`, la
    règle de l'octet +8 ; `1_02` reste réussie (119,03 s).
+   Les références montées et la pile du contexte sont lues (docs/cat.md, « Les références montées ») ; `LuaCond` appelle dans
+   l'espace de noms de la mission : le bully attaque pendant la leçon de parade. `1_02` reste réussie (119,03 s).
    Suite, dans l'ordre :
-   - **la pile du contexte et les références montées** (+0x44 / +0x48 ; `FUN_005f36d0`, `FUN_005f4e40`, `FUN_005f6290`,
-     la clé `DAT_00b0a604`) : trouver qui remplit la table des parents d'une `ActionNodeMultiParentReference` au
-     chargement (+0x30, +0x38) et ce que vaut la clé, pour suivre les références `r` (`Locomotion.act` sous
-     `Fight_Tutorial/Default_KEY`) ; c'est ce qui bloque l'intention `Short` de `CombatActions` : les passages vers
-     `Offense` viennent des `ActionOpps` que les nœuds de `Locomotion` exécutent (`../../ActionOpps`), relatifs à
-     l'endroit où la référence est montée. Blocage du 23.10 au soir : `FUN_005f4e40` semble rendre `Global` pour tout
-     arbre greffé sous `/Global`, la clé reste donc à comprendre (lire le chargeur des références, `FUN_005f6960` ?) ;
    - **la course de `RunStart`** (la piste `Locomotion`, `FUN_00613480`, exécute l'intention de mouvement +0 / +0x1c du
      composant +0x2e0) : qui la pose pour un piéton dont l'objectif est `FleeObjective` (22), alors
      qu'`AI_FightTutorial` n'a aucune branche pour cet objectif (seules `CombatLoco` et la piste `flee` des `Reactions`
      la posent) ; peut-être l'animation `PLAYERRUN_START` elle-même (le déplacement de la racine) ;
+   - **`CollisionStart` et `AttackPhase`** (la parade `Block` de `CombatActions`, maintenant que le bully frappe) : la piste
+     `Collision` pose au lancement (`FUN_005f9480`) la phase +0x71c à 1, l'octet +0x4e5 et l'échéance +0x720, sa mise à jour
+     (`FUN_005f9e70`) la phase 2 dans la fenêtre et 3 après, son arrêt (`FUN_005f8240`) 0 ; reste à trouver qui remet +0x4e5
+     à zéro (aucune écriture d'un octet nul trouvée hors de `FUN_006f2d10`) ;
+   - les conditions encore jugées -1 dans `1_02` (le bilan de fin de `lancer_lua`) : `HudComponentVisible`,
+     `CollisionStart`, `IsSocialStateWait` (+0xbb0 / +0xbb4), `CollisionWeaponType` (le +0x10 du contexte), `Controller`… ;
    - le choix d'une cible (`FUN_004992a0`, `FUN_004988b0`, `FUN_00496b60`), `CollisionStart` et `AttackPhase` (la parade
      `Block` de `CombatActions`), les sphères des os des coups (au lieu du demi-espace avant) ;
    - les `SpeechTrack` sans tenue ; puis la mission suivante, `1_03`.
@@ -84,6 +85,13 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- Les références montées (26.10 ; 1c47e48, 69a6f31, d514cc1, d8c1143, 48dc774, f35ee03, 5a1c5c7, dae1733, 00ee22f, de1f206,
+  e036e1a, 53b5636) : `FUN_005f6960` et la table des parents (`FUN_005f6800`, `FUN_005f6290`), `DAT_01b649dc` = `Global`, la
+  clé = le nom de l'arbre de tête (`FUN_005f4e40`) ; la pile du contexte (`FUN_005f36d0`, `FUN_005f3700`) ; `LuaCond` par
+  `NSCall` dans l'espace de noms ; le type et le sexe des piétons (0x90e7d0, +0x1310) ; l'intention de mouvement (+0, +0x1c ;
+  `FUN_005c6180`) ; le chapitre et la saison ; seize conditions. **`1_02` reste réussie à 119,03 s**, le bully frappe pendant
+  la leçon de parade (31,12 à 42,60 s).
 
 - Les arbres de l'IA (23.10, nuit ; aa2b85d, cf1c182, fccc685, b5f3ef3, 4d2d23f, e9205d8, 495f738, a287497, fc9349b) :
   `LuaCond` lue par `lua_tonumber` ; la file des objectifs et `AttackPedObjective` (`PedAttack`) ; le contrôleur de l'IA

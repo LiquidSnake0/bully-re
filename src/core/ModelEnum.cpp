@@ -31,12 +31,29 @@ Taille(const char *s)
 	return -1;
 }
 
+// PTR_s_PREFECT_0090e7d0 : les 15 types de piétons, dans l'ordre de la table.
+const char *const CModelEnum::typesDePietons[15] = {
+	"PREFECT", "NERD", "JOCK", "DROPOUT", "GREASER", "PREPPY", "STUDENT", "COP", "TEACHER", "TOWNPERSON", "SHOPKEEP",
+	"BULLY", "DEFAULT", "PLAYER1", "PLAYER2"
+};
+
+// FUN_004889c0 : FUN_0073ab40(table, 15, nom, -1, 0), une recherche par strcmp (le cinquième argument n'est pas 1).
+static int32
+TypeDePieton(const char *s)
+{
+	for(int32 i = 0; i < 15; i++) if(strcmp(CModelEnum::typesDePietons[i], s) == 0) return i;
+	return -1;
+}
+
 static int32
 Ped(const CPedIdeEntry &e)
 {
 	Noter(e.model, e.id);
 	if(e.stat[0]) gEnCours->statDuPieton.insert({e.id, e.stat});
 	gEnCours->tailleDuPieton.insert({e.id, Taille(e.size)});
+	gEnCours->typeDuPieton.insert({e.id, TypeDePieton(e.type)});   // modelinfo +0x4c
+	gEnCours->femme.insert({e.id, e.female != 0});                   // modelinfo +0x50
+	gEnCours->nomDuModele.insert({e.id, e.model});
 	return 0;
 }
 static int32 Obj(const CObjIdeEntry &e){ Noter(e.model, e.id); return 0; }

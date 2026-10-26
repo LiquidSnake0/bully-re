@@ -80,7 +80,9 @@ public:
 	int Juger(const CActionNode &n, const CJugeAction &juge) const;
 	int JugerListe(const CActionTreeFile &f, const std::vector<int32> &liste, const CJugeAction &juge, int prof = 0) const;
 	// Les ancêtres d'un nœud, la racine en tête et le nœud en dernier ; vide s'il n'est pas dans l'arbre.
-	std::vector<const CActionNode *> Lignee(const CActionNode *n) const;
+	std::vector<const CActionNode *> Lignee(const CActionNode *n, int prof = 0) const;
+	// Le nom haché d'un nœud (+8) : celui de sa cible pour une référence montée (FUN_005f5da0).
+	static uint32 Nom(const CActionNode &n) { return n.monte ? n.monte->hachage : n.hachage; }
 	// FUN_005f59b0 pour un chemin relatif au nœud qui porte une piste (la référence d'une Opportunity, d'un Execute,
 	// d'une Sequence : « ./GroundStomp2 », « ../ », « ../../Attacks ») : « . » est ce nœud, « .. » son parent, un
 	// autre segment l'enfant de ce nom haché. Un chemin qui commence par « / » part de la racine. Nil si un segment manque.
@@ -90,7 +92,33 @@ public:
 	// La descente avec les conditions jugées : un nœud est pris si Juger rend 1.
 	const CActionNode *Choisir(const CActionNode *depuis, const CJugeAction &juge) const;
 
-	CActionNode racine;                      // DAT_01b649dc : sans nom, son seul enfant est la banque « Global »
+	// Les références montées ('r', FUN_005f6bb0 → FUN_005f6960). Au chargement d'un arbre greffé sous /Global, chaque
+	// référence de fichier est résolue : son fichier est lu une seule fois et rangé sous la banque /Global/<nom> (créée au
+	// besoin, FUN_005f5e10), dans une ActionNodeMultiParentReference (FUN_005f66b0) dont les enfants sont ceux de l'arbre lu
+	// (vtable +0x1c) ; la référence prend cet arbre pour cible (+0xc, FUN_005f5450). Le parent de l'arbre monté dépend de la
+	// clé (FUN_005f6800) : pour la clé de l'arbre où la référence se trouve, le nœud qui la porte ; pour celle de sa banque,
+	// la banque. Une référence imbriquée (dans un fichier monté) se résout à la clé -1 et pose le parent par défaut.
+	// Locomotion.act, monté sous Fight_Tutorial/Default_KEY, GlobalLoco, TrainingPlayer…, n'existe qu'une fois.
+	void Monter(CActionNode &arbreLu, uint32 cleArbre, int16 sourceTete, int prof = 0);   // sourceTete : le fichier de l'arbre
+	// FUN_005f6800 : le parent `p` pour la clé `k` (-1 : le parent par défaut, +4). Une clé déjà là change de parent, un
+	// parent déjà là change de clé, sinon la paire s'ajoute.
+	static void PoserParent(CActionNode &monte, const CActionNode *p, uint32 k);
+	// FUN_005f6290 : le parent d'un arbre monté pour la clé `k` ; -1 prend la clé courante (DAT_00b0a604), et si elle
+	// vaut aussi -1, ou qu'aucune paire ne la porte, le parent par défaut.
+	const CActionNode *ParentMonte(const CActionNode &monte, uint32 k = 0xffffffffu) const;
+	// DAT_00b0a604, la clé des parents : le nom haché de l'arbre de tête (sous /Global) où l'on se trouve. Le chargement
+	// la pose (FUN_005f6c50), le contrôleur la reprend de son contexte avant de résoudre un chemin (FUN_005f3e20,
+	// FUN_005f70f0). « .. » à travers un arbre monté suit le parent de cette clé (FUN_005f59b0 avec un nœud de départ).
+	mutable uint32 cle = 0xffffffffu;
+	// FUN_005f4e40 : le nom haché de l'ancêtre de `n` placé juste sous /Global (DAT_01b649dc est la banque Global), en
+	// remontant par les parents de la clé courante ; -1 hors de l'arbre. La clé d'un contexte (FUN_005f36d0).
+	uint32 CleDe(const CActionNode *n) const;
+	// Les enfants d'un nœud, ceux de sa cible pour une référence montée (FUN_005f5340, FUN_005f5360).
+	static const std::vector<CActionNode> &Enfants(const CActionNode &n) { return n.monte ? n.monte->enfants : n.enfants; }
+	// `n` est `a` ou un de ses descendants, en remontant les parents de la clé courante (FUN_005f4f80).
+	bool Sous(const CActionNode *a, const CActionNode *n) const;
+
+	CActionNode racine;                      // sans nom, son seul enfant est la banque « Global » (DAT_01b649dc)
 	CActionNode *Global(void){ return &racine.enfants[0]; }
 	const CActionNode *Global(void) const { return &racine.enfants[0]; }
 	std::vector<std::string> fichiers;       // les .cat chargés, dans l'ordre

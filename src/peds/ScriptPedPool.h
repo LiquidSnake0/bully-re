@@ -21,6 +21,10 @@ enum { SCRIPT_PED_DRAPEAUX = 128, DRAPEAU_INTOUCHABLE = 12, DRAPEAU_INVULNERABLE
 // le jeu (docs/missions.md).
 enum eScriptPedAllure { ALLURE_MARCHE = 0, ALLURE_MARCHE_VITE = 1, ALLURE_COURSE = 2, ALLURE_SPRINT = 3 };
 float ScriptPedVitesse(int allure);   // m/s
+// FUN_005c6180 : l'allure d'un script (le deuxième argument de PedMoveToXYZ, PedMoveToPoint…) en vitesse d'intention de
+// mouvement : 0 → 0,3 (marche), 1 → 0,7 (course), 2 → 1,1 (sprint), 3 → 1,5, 4 → -1 ; une autre valeur, ou pas
+// d'argument (FUN_005d8240 rend -1), la vitesse par défaut de l'appelant (0,7 pour PedMoveToXYZ, _DAT_00900e00).
+float ScriptPedIntentionVitesse(int allure, float defaut = 0.7f);
 
 // Les 22 groupes d'animations d'humiliation (0x9113d0, 32 octets par nom) : « HUMIL_5-8_A » pour 0 … « HUMIL_6-1V6-1 »
 // pour 21. Le groupe 0 à 12 est celui d'une victime du joueur, rangé par sa taille (CharacterSize) : 0 à 2 Medium
@@ -40,6 +44,7 @@ static const float SCRIPT_PED_DEGATS = 10.0f;       // points de vie par coup
 // son style en +0x10 (le troisième argument de PedAttack, 0 à 3) ; le type 16 a aussi une cible en +0x14 (la condition
 // Objective les traite ensemble, FUN_00606c00). Le compte de références (+0xc) n'est pas suivi.
 // FleeObjective (le constructeur FUN_0046f940(0x16, piéton), table 0x911894) est le type 22, la cible fuie en +0x10.
+enum { SCRIPT_PED_TYPE_DEFAUT = 12, SCRIPT_PED_TYPE_JOUEUR = 13 };
 enum { OBJECTIF_ATTAQUER_PIETON = 7, OBJECTIF_ATTAQUER_16 = 16, OBJECTIF_FUIR = 22, SCRIPT_PED_OBJECTIFS = 20 };
 struct CObjectifPieton { int32 type = -1; int cible = -1; int32 style = 0; };
 
@@ -54,6 +59,16 @@ struct CScriptPed {
 	float santeMin = 0;          // +0x1ca8, PedSetMinHealth (0x5c8ef0)
 	float regeneration = 0;      // +0x1cac : la colonne G de pedstats.dat (taux de régénération, n/100)
 	int32 stats[64] = {};        // +0x1900 : les 64 colonnes B à BM de son entrée de pedstats.dat (GameGetPedStat)
+	// +0x1310 : le type du piéton (PREFECT 0 … COP 7, TEACHER 8, BULLY 11, DEFAULT 12, PLAYER1 13 ; CModelEnum::typesDePietons),
+	// recopié du modelinfo (+0x4c) par le constructeur de CPed (FUN_0047ffe0), changé par PedSetFaction (0x5cb570, jamais en
+	// 13), lu par PedGetFaction (0x5cb5c0), IsPlayer (FUN_005ffe40 : 13), IsAuthority (FUN_005ffb20) et PedType (FUN_005ffac0).
+	int32 type = SCRIPT_PED_TYPE_DEFAUT;
+	// +0x18d0 : la réserve de sprint, posée à la création à la colonne R de l'entrée de pedstats.dat (+0x5c de l'entrée,
+	// FUN_00478e30), son maximum ; FUN_0047cde0 la remplit à chaque image (jusqu'à ce maximum), FUN_0047cee0 la dépense.
+	// La condition Sprint la compare (FUN_005fda70). L'outil ne la fait pas varier.
+	float sprint = 0;
+	bool discretion = false;     // +0x1398 : un piéton de mission de discrétion (PedSetIsStealthMissionPed, 0x5d0110 →
+	                             // FUN_005d0080) ; la condition IsStealthMissionChar le lit (FUN_00602cf0)
 	int32 systemeCombat = 0;     // +0x16dc, PedSetFightingSystem (0x5ca590) ; 0 à la création (FUN_00474f50)
 	// +0x1314 : les drapeaux du piéton, un mot chacun (le drapeau n en +0x1314 + 4n) ; les pistes SetPedFlags les posent
 	// (PedFlagsTrack 0x931380, lancement FUN_0060f8e0 : le drapeau +0x1c reçoit l'octet +0x18), la condition PedFlags
@@ -83,6 +98,13 @@ struct CScriptPed {
 	                             // condition Objective pose quand elle passe (FUN_0048c330)
 	bool mort = false;
 	// Le geste en cours.
+	// L'intention de mouvement du composant d'actions (+0x2e0) : sa direction (+0, +4, +8) et sa vitesse (+0x1c), que la
+	// navigation pose à chaque image (FUN_004a4a50) et remet à zéro sans but (FUN_004a45c0) ; les conditions
+	// MotionIntentionSpeed (FUN_005fd810) et MotionIntention (ConditionMotionIntentionDirection, FUN_005fd760) la lisent.
+	// Les seuils de Locomotion.act (Free) : walk ≥ 0,1, RUN ≥ 0,5, Sprint ≥ 1,05. L'outil la pose quand il fait marcher
+	// un piéton (Aller : la vitesse de son allure ; arrivé, arrêté : 0) et dans CombatLoco (lancer_lua).
+	CVector intention;
+	float intentionVitesse = 0;
 	bool enMarche = false;       // va vers `cible` à `vitesse`
 	CVector cible;
 	float vitesse = 0;

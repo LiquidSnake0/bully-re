@@ -42,6 +42,13 @@ le nom de l'entrée de pedstats.dat que le modelinfo garde en +0x54 (docs/pedsta
 modelinfo (`FUN_00522220`), que la condition `CharacterSize` lit ; `CModelEnum::statDuPieton` et `tailleDuPieton`,
 tests/test_modelenum (le modèle 146 : `STAT_B_STRIKER_A`, Medium).
 
+Le 26.10.2026, deux autres : TYPE, rangée par `FUN_004889c0` (→ `FUN_0073ab40`, `strcmp`) parmi les 15 types de la table
+0x90e7d0 (PREFECT, NERD, JOCK, DROPOUT, GREASER, PREPPY, STUDENT, COP, TEACHER, TOWNPERSON, SHOPKEEP, BULLY, DEFAULT,
+PLAYER1, PLAYER2), posée en +0x4c du modelinfo et recopiée par le constructeur de `CPed` (`FUN_0047ffe0`) dans le type du
+piéton (+0x1310) ; et FEMALE, non nulle, l'octet +0x50 (que `PedIsFemale` et la condition `IsFemale` lisent). Les 289
+piétons : 42 STUDENT, 49 TOWNPERSON, 37 PREPPY, 11 BULLY (dont `GN_Bully05`, 146), le joueur seul en PLAYER1, aucun PLAYER2 ;
+`CModelEnum::typeDuPieton`, `femme`, `nomDuModele`, tests/test_modelenum.
+
 Ordre des sections dans `default.idb` : peds (259), cars (27), weap (146),
 cash (2), item (67), scnd (6), objs (6), peds (30), clth (1). Les 75
 fichiers monde commencent par objs ; `access.idb` par accs.
