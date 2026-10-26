@@ -115,7 +115,19 @@ static CActionBank arbres;
 // Par piéton, son contrôleur d'actions (src/core/ActionController.h) : l'arbre posé par PedSetActionTree, le nœud
 // joué (+0x10) que PedSetActionNode pose, que PedIsPlaying compare, et qui avance à chaque image.
 static std::map<int, CActionController> controleurs;
+// Le chemin d'un nœud pour le journal, vu du contrôleur qui le joue : la clé de son contexte choisit le parent des arbres
+// montés (DAT_00b0a604, FUN_005f6290).
+static std::string CheminVu(const CActionController &c, const CActionNode *n);
 static std::map<int, CActionController> controleursIA;   // le contrôleur de l'IA (+0x290 du composant +0x2e0), PedSetAITree
+static std::string
+CheminVu(const CActionController &c, const CActionNode *n)
+{
+	uint32 avant = arbres.cle;
+	if(c.Cle() != 0xffffffffu) arbres.cle = c.Cle();
+	std::string r = arbres.CheminDe(n);
+	arbres.cle = avant;
+	return r;
+}
 static int journalIA = 80;   // les passages du contrôleur de l'IA journalisés (les premiers)
 // Les groupes d'animations (src/anim/AnimGroups.h) : les .agr de Stream/World.img, que les scripts chargent
 // (LoadAnimationGroup) et que la condition AnimationGroupLoaded demande ; une demande est servie à l'image suivante.
@@ -1782,13 +1794,13 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 	const CActionNode *avant = c.joue;
 	if(c.joue == nil) c.Poser(arbres, c.arbre, CJugeOutil(ped, t), t);   // FUN_00483ec0
 	else c.Avancer(arbres, nil, CJugeOutil(ped, t), t);
-	if(c.joue != avant && journalIA > 0){ journalIA--; printf("%6.2f s  IA de %d : %s\n", t, ped, arbres.CheminDe(c.joue).c_str()); }
+	if(c.joue != avant && journalIA > 0){ journalIA--; printf("%6.2f s  IA de %d : %s\n", t, ped, CheminVu(c, c.joue).c_str()); }
 	std::vector<CActionController *> tous;
 	c.Recueillir(tous);
 	static std::map<const CActionController *, const CActionNode *> vus;   // LANCER_IA : les passages des contrôleurs des spawn
 	if(getenv("LANCER_IA"))
 		for(size_t i = 1; i < tous.size(); i++)
-			if(vus[tous[i]] != tous[i]->joue){ vus[tous[i]] = tous[i]->joue; printf("%6.2f s  IA de %d, spawn : %s\n", t, ped, arbres.CheminDe(tous[i]->joue).c_str()); }
+			if(vus[tous[i]] != tous[i]->joue){ vus[tous[i]] = tous[i]->joue; printf("%6.2f s  IA de %d, spawn : %s\n", t, ped, CheminVu(*tous[i], tous[i]->joue).c_str()); }
 	for(CActionController *k : tous){
 		for(uint32 n : k->intentions) intentionsPietons[ped] = n;
 		for(const CActionController::Gestion &g : k->gestionsActives) GererCibles(ped, g.joueur);
@@ -1921,6 +1933,7 @@ PedSetAITree(lua_State *L)
 	c.sousControleurs = true;
 	p->arbreIA = true;
 	c.arbre = arbres.Trouver(arbre);
+	c.Racine(arbres, c.arbre);   // FUN_00484290 → FUN_005f36d0 : la racine du contexte et sa clé
 	return 0;
 }
 
@@ -2688,7 +2701,7 @@ main(int argc, char **argv)
 					c.Jouer(arbres, d ? d : n, maintenant / 1000.0f);
 				}
 				c.parLaManette = false;
-				printf("%6.2f s  le joueur joue %s%s\n", maintenant / 1000.0, chemin.c_str(), c.joue != n ? (" → " + arbres.CheminDe(c.joue)).c_str() : "");
+				printf("%6.2f s  le joueur joue %s%s\n", maintenant / 1000.0, chemin.c_str(), c.joue != n ? (" → " + CheminVu(c, c.joue)).c_str() : "");
 			}
 			e.second.clear();
 		}
@@ -2713,9 +2726,9 @@ main(int argc, char **argv)
 			bool d = c.first == SCRIPT_PED_JOUEUR && (demande || !demandes.empty());
 			if(c.second.Avancer(arbres, nil, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f, d) && c.second.joue != avant){
 				if(c.first == SCRIPT_PED_JOUEUR)
-					printf("%6.2f s  contrôleur du joueur : %s\n", maintenant / 1000.0, arbres.CheminDe(c.second.joue).c_str());
+					printf("%6.2f s  contrôleur du joueur : %s\n", maintenant / 1000.0, CheminVu(c.second, c.second.joue).c_str());
 				else if(tousLesControleurs)
-					printf("%6.2f s  contrôleur de %d : %s\n", maintenant / 1000.0, c.first, arbres.CheminDe(c.second.joue).c_str());
+					printf("%6.2f s  contrôleur de %d : %s\n", maintenant / 1000.0, c.first, CheminVu(c.second, c.second.joue).c_str());
 			}
 			// Les coups qui portent (pistes Collision, FUN_005f9e70) : l'outil n'a pas les sphères des os, le coup touche la
 			// cible verrouillée. La cible reçoit le coup (slot 15 de CPed, FUN_0047b810) : son drapeau tient une seconde
@@ -2738,7 +2751,7 @@ main(int argc, char **argv)
 					float dx = q->pos.x - p->pos.x, dy = q->pos.y - p->pos.y, a = p->cap * 3.14159265f / 180.0f;
 					float n = sqrtf(dx * dx + dy * dy), cosinus = n > 0.0f ? (cosf(a) * dx + sinf(a) * dy) / n : 1.0f;
 					if(cosinus <= 0.0f){
-						printf("%6.2f s  le coup de %d (%s) manque %d, dans son dos\n", maintenant / 1000.0, c.first, arbres.CheminDe(k.porteur).c_str(), cible);
+						printf("%6.2f s  le coup de %d (%s) manque %d, dans son dos\n", maintenant / 1000.0, c.first, CheminVu(c.second, k.porteur).c_str(), cible);
 						continue;
 					}
 				}
@@ -2762,8 +2775,8 @@ main(int argc, char **argv)
 				bool aTerre = arbres.JoueHachage(NoeudJoue(cible), ActionHash("On_Ground"));
 				const CActionNode *arbreCoups = arbres.Trouver(aTerre ? "/Global/HitTree/GroundAndWallHits/On_Ground" : "/Global/HitTree");
 				bool pris = arbreCoups && v.Entrer(arbres, arbreCoups, CJugeOutil(cible, maintenant / 1000.0f), maintenant / 1000.0f);
-				printf("%6.2f s  le coup de %d porte sur %d (%s)%s%s\n", maintenant / 1000.0, c.first, cible, arbres.CheminDe(k.porteur).c_str(),
-				       pris ? " : il joue " : "", pris ? arbres.CheminDe(v.joue).c_str() : "");
+				printf("%6.2f s  le coup de %d porte sur %d (%s)%s%s\n", maintenant / 1000.0, c.first, cible, CheminVu(c.second, k.porteur).c_str(),
+				       pris ? " : il joue " : "", pris ? CheminVu(v, v.joue).c_str() : "");
 				if(!k.surCoup.empty())
 					if(const CActionNode *n = arbres.Relatif(k.porteur, k.surCoup.c_str()))
 						c.second.Entrer(arbres, n, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f);
@@ -2851,8 +2864,8 @@ main(int argc, char **argv)
 				bool b = e.cible && !e.executerCible && controleurs[cible].Entrer(arbres, e.cible, CJugeOutil(cible, maintenant / 1000.0f), maintenant / 1000.0f);
 				partenaires[cible] = {c.first, maintenant + 2000};
 				printf("%6.2f s  prise de %d sur %d : %s %s, %s %s\n", maintenant / 1000.0, c.first, cible,
-				       a ? "il joue" : "rien pour lui", a ? arbres.CheminDe(c.second.joue).c_str() : "",
-				       b ? "la cible joue" : "rien pour la cible", b ? arbres.CheminDe(controleurs[cible].joue).c_str() : (e.cible ? arbres.CheminDe(e.cible).c_str() : ""));
+				       a ? "il joue" : "rien pour lui", a ? CheminVu(c.second, c.second.joue).c_str() : "",
+				       b ? "la cible joue" : "rien pour la cible", b ? CheminVu(controleurs[cible], controleurs[cible].joue).c_str() : (e.cible ? arbres.CheminDe(e.cible).c_str() : ""));
 			}
 			// PlayOnTarget : la cible du piéton (FUN_004d5980 ; dans l'outil, celle de PedLockTarget) joue le nœud.
 			for(const CActionNode *n : c.second.pourCible){
@@ -2861,7 +2874,7 @@ main(int argc, char **argv)
 				CActionController &cible = controleurs[p->verrou];
 				if(!cible.Entrer(arbres, n, CJugeOutil(p->verrou, maintenant / 1000.0f), maintenant / 1000.0f)) cible.Jouer(arbres, n, maintenant / 1000.0f);
 				partenaires[p->verrou] = {c.first, maintenant + 2000};
-				printf("%6.2f s  la cible de %d (%d) joue %s\n", maintenant / 1000.0, c.first, p->verrou, arbres.CheminDe(cible.joue).c_str());
+				printf("%6.2f s  la cible de %d (%d) joue %s\n", maintenant / 1000.0, c.first, p->verrou, CheminVu(cible, cible.joue).c_str());
 			}
 		}
 		intentionsPietons.clear();   // FUN_005f3720 : l'intention ne vaut que pour l'image

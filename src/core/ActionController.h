@@ -143,6 +143,14 @@ public:
 	const CActionNode *demandeNoeud = nil;   // la demande retenue à cette image (FUN_005f3bc0 : +0x14)
 	int32 demandePriorite = -1;              // sa priorité (+4)
 
+	// La pile du contexte (+0x44 le haut, +0x48 les clés) : FUN_005f36d0 pose la racine (+0x40) et y met sa clé
+	// (FUN_005f4e40, le nom haché de l'arbre de tête de la racine) ; FUN_005f3700 en empile une seconde (le partenaire de
+	// prise qui joue un nœud de l'arbre de son meneur, FUN_005f7c70). Le haut est la clé des parents (DAT_00b0a604) quand
+	// le contrôleur résout un chemin. Vide : -1.
+	std::vector<uint32> pile;
+	uint32 Cle(void) const { return pile.empty() ? 0xffffffffu : pile.back(); }
+	void Racine(const CActionBank &b, const CActionNode *r);
+	void Empiler(uint32 k);
 	// PedSetActionTree : l'arbre posé, la descente faite tout de suite. Faux si rien n'aboutit (le nœud ne change pas).
 	bool Poser(const CActionBank &b, const CActionNode *a, const CJugeAction &juge, float t);
 	// Ce nœud devient le nœud joué. Ses pistes Execute (lancement FUN_005f7070) font descendre le nœud visé (+0x4c, avec

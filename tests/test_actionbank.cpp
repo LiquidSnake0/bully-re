@@ -23,6 +23,17 @@ ChercherOpportunite(const CActionBank &b, const CActionNode &n, const char *chem
 	return false;
 }
 
+// Le chemin du nœud joué, vu avec la clé du contrôleur.
+static std::string
+CheminVu(const CActionBank &b, const CActionController &c)
+{
+	uint32 avant = b.cle;
+	b.cle = c.Cle();
+	std::string r = b.CheminDe(c.joue);
+	b.cle = avant;
+	return r;
+}
+
 struct CJugeAction_Rien : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return 0; } };
 
 int
@@ -672,6 +683,27 @@ main(void)
 			VERIF(d && g.Sous(refFT, d) && g.CheminDe(d).compare(0, 46, "/Global/Fight_Tutorial/Default_KEY/Locomotion/") == 0);
 			printf("  références montées : /Global/Locomotion.act lu une fois, %zu parents ; la descente de Fight_Tutorial/Default_KEY : %s\n",
 			       monte ? monte->parents.size() : 0, g.CheminDe(d).c_str());
+			g.cle = 0xffffffffu;
+		}
+		// La pile du contexte (FUN_005f36d0) : un contrôleur posé sur /Global/Fight_Tutorial a pour clé le nom de l'arbre
+		// (FUN_005f4e40), qui devient DAT_00b0a604 le temps de ses jugements et de ses chemins (FUN_005f3e20), puis la
+		// clé d'avant revient. FUN_005f3700 empile une seconde clé, deux au plus.
+		if(const CActionNode *ft = g.Trouver("/Global/Fight_Tutorial")){
+			struct : CJugeAction {
+				const CActionBank *b = nil; mutable uint32 vue = 0;
+				int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { vue = b->cle; return 0; }
+			} temoin;
+			temoin.b = &g;
+			g.cle = ActionHash("Personne");
+			CActionController c;
+			VERIF(c.Poser(g, ft, temoin, 0.0f) && c.Cle() == ActionHash("Fight_Tutorial") && c.pile.size() == 1);
+			VERIF(temoin.vue == ActionHash("Fight_Tutorial") && g.cle == ActionHash("Personne"));
+			std::string vu = CheminVu(g, c);
+			VERIF(vu.compare(0, 46, "/Global/Fight_Tutorial/Default_KEY/Locomotion/") == 0);
+			printf("  pile du contexte : %s joué avec la clé Fight_Tutorial\n", vu.c_str());
+			c.Empiler(ActionHash("Player")); c.Empiler(ActionHash("HitTree"));
+			VERIF(c.pile.size() == 2 && c.Cle() == ActionHash("Player"));
+			VERIF(CheminVu(g, c).compare(0, 25, "/Global/Locomotion.act/Lo") == 0);   // une clé sans paire : la banque
 			g.cle = 0xffffffffu;
 		}
 	}

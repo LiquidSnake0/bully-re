@@ -394,6 +394,13 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
   n'existe qu'une fois, sous `/Global/Locomotion.act` (28 parents une fois les 68 arbres globaux et `Fight_Tutorial`
   chargés). Ses `ActionOpps` (`../../../Offense`, `../../../Defense`, `../../ExecuteNodes/CustomActionOps`) visent donc
   l'arbre de la clé : pour `Fight_Tutorial`, `/Global/Fight_Tutorial/Offense`.
+- **La pile du contexte** (+0x44 le haut, +0x48 les clés) : `FUN_005f36d0` pose la racine (+0x40), remet la pile à zéro et y
+  met `FUN_005f4e40(racine)` ; `FUN_005f3700` empile une seconde clé (deux places au plus), quand un partenaire de prise
+  joue un nœud de l'arbre de son meneur (`FUN_005f7c70`, si sa clé diffère). `FUN_005f3e20` (les pistes d'un nœud exécuté)
+  et `FUN_005f70f0` (la mise à jour d'un `Execute`) recopient le haut de la pile dans `DAT_00b0a604` avant de résoudre les
+  chemins des pistes (vtable +0x14, `FUN_005f5df0` : `FUN_005f59b0(chemin, porteur)` rangé en +0xc ; `FUN_005f4e30` le rend).
+  Dans l'outil, `CActionController::pile`, `Racine` (posée par `Poser`, `PedSetAITree` et le lancement d'un `spawn`,
+  `FUN_005f8860`), `Empiler` ; la clé est posée le temps de `Jouer`, `Entrer`, `Poser` et `Avancer`.
 - **Dans l'outil** (`CActionBank::Monter`, `PoserParent`, `ParentMonte`, `CleDe`, `Lignee`) : l'arbre lu tient lieu de la
   référence multiple, rangé sous `/Global/<nom>` ; la lignée d'un nœud remplace sa banque par le parent de la clé `cle` ;
   `Trouver`, `Relatif`, `Choisir`, `Sous` traversent les références. Dans `1_02`, la descente de `Fight_Tutorial/Default_KEY`
