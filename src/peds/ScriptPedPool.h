@@ -63,6 +63,10 @@ struct CScriptPed {
 	// recopié du modelinfo (+0x4c) par le constructeur de CPed (FUN_0047ffe0), changé par PedSetFaction (0x5cb570, jamais en
 	// 13), lu par PedGetFaction (0x5cb5c0), IsPlayer (FUN_005ffe40 : 13), IsAuthority (FUN_005ffb20) et PedType (FUN_005ffac0).
 	int32 type = SCRIPT_PED_TYPE_DEFAUT;
+	// +0x18d0 : la réserve de sprint, posée à la création à la colonne R de l'entrée de pedstats.dat (+0x5c de l'entrée,
+	// FUN_00478e30), son maximum ; FUN_0047cde0 la remplit à chaque image (jusqu'à ce maximum), FUN_0047cee0 la dépense.
+	// La condition Sprint la compare (FUN_005fda70). L'outil ne la fait pas varier.
+	float sprint = 0;
 	bool discretion = false;     // +0x1398 : un piéton de mission de discrétion (PedSetIsStealthMissionPed, 0x5d0110 →
 	                             // FUN_005d0080) ; la condition IsStealthMissionChar le lit (FUN_00602cf0)
 	int32 systemeCombat = 0;     // +0x16dc, PedSetFightingSystem (0x5ca590) ; 0 à la création (FUN_00474f50)

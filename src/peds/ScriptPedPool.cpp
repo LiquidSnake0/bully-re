@@ -257,6 +257,7 @@ CScriptPedPool::PoserStats(int h, const int32 colonnes[64])
 	p->santeMin = 0;
 	p->regeneration = (float)colonnes[5];
 	p->sante = p->santeMax;
+	p->sprint = (float)colonnes[16];        // FUN_00478e30 : +0x18d0 = la colonne R (+0x5c)
 	return true;
 }
 

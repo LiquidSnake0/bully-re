@@ -151,6 +151,7 @@ static std::map<uint32, int> nonLues;               // les classes de conditions
 // l'automne, timecycF, le 3 l'hiver) ; et les zones « dehors » (l'octet par zone de 0x901dd0, FUN_004301d0 : 0, 1, 22,
 // 31, 42, 43, 64, 65, 66), toutes lues dans bully.exe.
 static uint8 chapitre = 0;
+static uint8 etatPhysiqueJoueur = 0;   // DAT_00c1af4c : 0, 1, 2 (fatigué) ; PlayerGetPhysicalState (0x5d1ee0)
 static const int32 kSaisonDuChapitre[7] = {1, 1, 2, 3, 3, 3, 0};
 static bool ZoneDehors(int z){ static const int d[] = {0, 1, 22, 31, 42, 43, 64, 65, 66}; for(int x : d) if(x == z) return true; return false; }
 static lua_State *etatLua = nil;        // pour LuaCond : la fonction du script de mission appelée par le contrôleur
@@ -305,6 +306,12 @@ struct CJugeOutil : CJugeAction {
 			while(e > 3.14159265f) e -= 2.0f * 3.14159265f;
 			return e + e <= tolerance;
 		}
+		// Sprint (FUN_005fda70) : la réserve de sprint (+0x18d0) comparée à +4 par +8 (FUN_005fb750). IsPlayerTired
+		// (FUN_005fc3b0) : l'état physique du joueur (DAT_00c1af4c, que PlayerGetPhysicalState rend) vaut 2 ; l'outil le
+		// laisse à 0.
+		static const uint32 kSprint = ActionHash("Sprint"), kFatigue = ActionHash("IsPlayerTired");
+		if(type == kSprint) return moi ? ComparerCondition(moi->sprint, seuil, mots[1]) : -1;
+		if(type == kFatigue) return etatPhysiqueJoueur == 2;
 		// Season (FUN_005fc8d0) : avec l'octet +4, la zone visible doit être dehors (FUN_004301d0) ; puis la saison du
 		// chapitre en cours est +8.
 		static const uint32 kSaison = ActionHash("Season");
@@ -1547,6 +1554,14 @@ CreerPed(lua_State *L, const char *quoi, int32 modele, const CVector &pos, float
 		}
 	}
 	lua_pushnumber(L, h);
+	return 1;
+}
+
+// PlayerGetPhysicalState() (0x5d1ee0) : DAT_00c1af4c.
+static int
+PlayerGetPhysicalState(lua_State *L)
+{
+	lua_pushnumber(L, etatPhysiqueJoueur);
 	return 1;
 }
 
@@ -2806,6 +2821,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedSetAITree", PedSetAITree);
 	lua_register(L, "PedSetFaction", PedSetFaction);
 	lua_register(L, "ChapterSet", ChapterSet);
+	lua_register(L, "PlayerGetPhysicalState", PlayerGetPhysicalState);
 	lua_register(L, "ChapterGet", ChapterGet);
 	lua_register(L, "PedSetIsStealthMissionPed", PedSetIsStealthMissionPed);
 	lua_register(L, "PedGetFaction", PedGetFaction);
