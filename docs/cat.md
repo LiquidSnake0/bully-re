@@ -424,6 +424,7 @@ qui juge est l'emplacement 1), `lancer_lua` dresse à la fin le bilan des classe
 | `MotionIntentionSpeed` | `FUN_005fd810` | la vitesse de l'intention de mouvement (+0x1c du composant +0x2e0) comparée à +4 par +8 (`FUN_005fb750`) ; Locomotion.act : walk ≥ 0,1, RUN ≥ 0,5, Sprint ≥ 1,05 |
 | `MotionIntention` | `FUN_005fd760` (`ConditionMotionIntentionDirection`) | le devant du piéton à plat, tourné de +4 radians (`FUN_005fbe50`), et la direction de l'intention (+0, +4, +8) : produit scalaire ≥ cos(+8) |
 
+| `TargetRelativeOrientation` | `FUN_005ff420` | l'autre (le partenaire de prise si l'octet +4, sinon +0x434 du piéton, sinon la cible du composant de visée +0x1c8, `FUN_004d7630`) : 2 × |acos(devant · devant de l'autre) − (+8)| ≤ +0xc |
 | `Season` | `FUN_005fc8d0` | avec l'octet +4, la zone visible est dehors (`FUN_004301d0`, l'octet par zone de 0x901dd0) ; la saison du chapitre (`DAT_00a147ec[DAT_00a147e0]` : 1, 1, 2, 3, 3, 3, 0) est +8 |
 
 **L'intention de mouvement** (+0, +4, +8 la direction ; +0xc … +0x14 le cap voulu ; +0x1c la vitesse, dans le composant

@@ -288,6 +288,23 @@ struct CJugeOutil : CJugeAction {
 			return it != modeles.statDuPieton.end() && (it->second == "STAT_CV_MALE_OLD" || it->second == "STAT_CV_FEMALE_OLD");
 		}
 		if(type == kPrise) return moi && moi->cibleDePrise >= 0;
+		// TargetRelativeOrientation (FUN_005ff420, lue à l'assembleur) : l'autre est le partenaire de prise (+0x155c) si
+		// l'octet +4, sinon +0x434 du piéton s'il est posé (l'outil ne le pose pas), sinon la cible du composant de visée
+		// (+0x1c8, FUN_004d7630 : la cible verrouillée d'abord) ; vrai si 2 × |acos(devant · devant de l'autre) - (+8)|,
+		// ramené dans [-π, π] (FUN_00432d90), ne dépasse pas +0xc.
+		static const uint32 kOrientation = ActionHash("TargetRelativeOrientation");
+		if(type == kOrientation){
+			if(moi == nil) return 0;
+			const CScriptPed *autre = pietons.Acceder((mots[0] & 0xff) ? moi->cibleDePrise : CibleDe(ped));
+			if(autre == nil || autre == moi) return 0;
+			float a = moi->cap * 3.14159265f / 180.0f, b = autre->cap * 3.14159265f / 180.0f;
+			float produit = cosf(a) * cosf(b) + sinf(a) * sinf(b);
+			float angle = produit >= 1.0f ? 0.0f : produit <= -1.0f ? 3.14159265f : acosf(produit);   // FUN_00413c10
+			float vise, tolerance; memcpy(&vise, &mots[1], 4); memcpy(&tolerance, &mots[2], 4);
+			float e = fabsf(angle - vise);
+			while(e > 3.14159265f) e -= 2.0f * 3.14159265f;
+			return e + e <= tolerance;
+		}
 		// Season (FUN_005fc8d0) : avec l'octet +4, la zone visible doit être dehors (FUN_004301d0) ; puis la saison du
 		// chapitre en cours est +8.
 		static const uint32 kSaison = ActionHash("Season");
