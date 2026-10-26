@@ -146,6 +146,8 @@ NoeudJoue(int ped)
 	return it == controleurs.end() ? nil : it->second.joue;
 }
 static lua_State *etatLua = nil;        // pour LuaCond : la fonction du script de mission appelée par le contrôleur
+// LuaCond (FUN_006a74d0) : la fonction +0x10 du script +0xc, appelée dans son espace de noms ; -1 si rien n'est appelable.
+static int AppelLuaCond(const std::string &script, const std::string &fonction);
 // --demander N@s : une ActionRequest du joueur (la manette) en attente jusqu'à cet instant (ms).
 static std::map<uint32, uint32> demandes;
 
@@ -377,18 +379,8 @@ struct CJugeOutil : CJugeAction {
 			return arbres.JoueHachage(NoeudJoue(p->verrou), mots[0] & 0x7fffffff);
 		}
 		if(type == kLua){
-			std::string fonction = f.ChaineCitee((uint32)d + 0x14);
-			if(etatLua == nil || fonction.empty()) return -1;
-			lua_getglobal(etatLua, fonction.c_str());
-			if(!lua_isfunction(etatLua, -1)){ lua_pop(etatLua, 1); return 0; }
-			if(lua_pcall(etatLua, 0, 1, 0) != 0){ lua_pop(etatLua, 1); return -1; }
-			// FUN_006a74d0 → FUN_005d80a0 : le résultat est lu par lua_tonumber (0x73b0d0 : un nombre, ou une chaîne
-			// convertible, sinon 0), tronqué en entier (0x85c6f0), et la condition est vraie s'il est positif. Les
-			// fonctions des scripts rendent 1.0 ou 0.0 (F_CanBullyAttack, F_PlayerGroundKicks…) : 0.0 est faux, et un
-			// booléen, faute d'être un nombre, l'est aussi.
-			int r = (int)lua_tonumber(etatLua, -1) > 0;
-			lua_pop(etatLua, 1);
-			return r;
+			// L'enregistrement : +0xc (le mot +0x10) le script, +0x10 (le mot +0x14) la fonction (« mission », « F_CanBlock »).
+			return AppelLuaCond(f.ChaineCitee((uint32)d + 0x10), f.ChaineCitee((uint32)d + 0x14));
 		}
 		return JugerIA(f, d, type, mots, seuil);
 	}
@@ -584,6 +576,45 @@ static struct {
 	std::string nom;                     // le nom demandé par le script, ou le titre quand le gestionnaire la lance
 	bool reussie = false;
 } mission;
+
+// FUN_006a74d0 : le script « mission » est celui de la mission en cours (FUN_006aa630, MissionGetName +0x1c ; aucune :
+// faux) ; un autre nom est cherché parmi les objets script sans la casse, « \ » lu « / » (FUN_005dbb60), sinon le premier
+// (FUN_005db770(0), main.lua). FUN_005d80a0 en fait le script courant (FUN_005dbc40) et appelle, par FUN_005d8000,
+// NSCall(fichier, fonction, false) de util.lua : la fonction de cet espace de noms (CreateNameSpace : les noms des scripts
+// de mission n'y sont pas dans _G), 0.0 si elle n'existe pas (le troisième argument faux). Le résultat est lu par
+// lua_tonumber (0x73b0d0 : un nombre, ou une chaîne convertible, sinon 0), tronqué en entier (0x85c6f0), et la condition
+// est vraie s'il est positif : F_CanBullyAttack et F_CanBlock rendent 1.0 ou 0.0, et un booléen vaut faux.
+static int
+AppelLuaCond(const std::string &script, const std::string &fonction)
+{
+	if(etatLua == nil || fonction.empty() || scripts.empty()) return -1;
+	int s = -1;
+	if(script == "mission"){
+		if(mission.etat == AUCUNE || mission.script < 0) return 0;
+		s = mission.script;
+	}else{
+		std::string voulu = script;
+		for(char &c : voulu) if(c == '\\') c = '/';
+		for(size_t i = 0; i < scripts.size() && s < 0; i++){
+			std::string nom = scripts[i].fichier;
+			for(char &c : nom) if(c == '\\') c = '/';
+			if(strcasecmp(nom.c_str(), voulu.c_str()) == 0) s = (int)i;
+		}
+		if(s < 0) s = 0;
+	}
+	lua_State *L = etatLua;
+	int avant = scriptCourant;
+	scriptCourant = s;
+	lua_getglobal(L, "NSCall");
+	lua_pushstring(L, scripts[s].fichier.c_str());
+	lua_pushstring(L, fonction.c_str());
+	lua_pushboolean(L, 0);
+	int r = -1;
+	if(lua_pcall(L, 3, 1, 0) == 0) r = (int)lua_tonumber(L, -1) > 0;
+	lua_pop(L, 1);
+	scriptCourant = avant;
+	return r;
+}
 // Le gestionnaire de missions (objet 0x020c3ca0, FUN_006ad130 à chaque image), réduit : une mission
 // dont les conditions sont vraies est « activée » (son corona existe) ; activée, elle démarre seule
 // si son champ 51 le dit, ou, une fois le gestionnaire autorisé (+0x77d, posé par gamemain avec

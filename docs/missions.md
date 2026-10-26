@@ -367,6 +367,15 @@ pose dans `AI_FightTutorial` pour l'objectif 22) ; l'intention `Short` de `Comba
 `Offense/Short` à son arbre d'actions (les passages viennent des `ActionOpps` des références montées, la pile du
 contexte) ; un coup ne touche qu'une cible devant l'attaquant (supposé, faute des sphères des os).
 
+Le 26.10 (docs/cat.md, « Les références montées ») : `LuaCond` appelait la fonction dans `_G`, où les noms d'une mission
+n'existent pas (`CreateNameSpace`) : `F_CanBullyAttack` et `F_CanBlock` valaient toujours nil, donc 0. Appelée par `NSCall` dans
+l'espace de noms de `1_02.lua`, comme `FUN_005d8000`, `F_CanBullyAttack` rend 1 pendant la leçon de parade : de 31,12 s à
+42,60 s, l'intention `Short` de `CombatActions` fait passer l'`Opportunity` `../../../Offense` des `ActionOpps` de
+`Locomotion.act` (montées sous `Fight_Tutorial/Default_KEY`) et le bully enchaîne `Offense/Short/Strikes` : le moulinet
+(`WINDMILL_R`, puis `Windmill_L`, puis le coup lourd `WINDMILL_HEAVY_R`), dont les coups portent sur le joueur (invulnérable,
+il réagit dans `HitTree/Standing`) ; la leçon passe ensuite à la prise (`F_CanBullyAttack` à 0). `1_02` reste réussie à
+119,03 s.
+
 ## Suite
 
 1. Ce que `1_01` ne joue pas encore pour de vrai : les nœuds d'action (`PedSetActionNode` cherche le nœud dans

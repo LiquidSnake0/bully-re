@@ -320,7 +320,7 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
 | `TargetConditionGroup` | `FUN_00601cc0` | le groupe +4 jugé pour la cible (le partenaire de prise si l'octet +8) |
 | `InAttackCone` | `FUN_004865a0` | la cible à portée et devant (`AIButes` +0x54, +0x58) |
 | `TargetRelativeHeight` | `FUN_00603170` | les hauteurs se recouvrent (l'outil : 1,8 m depuis les pieds, supposé) |
-| `LuaCond` | `FUN_006a74d0` → `FUN_005d80a0` | le résultat de la fonction du script lu par `lua_tonumber` (0x73b0d0), positif ; `0.0` est faux |
+| `LuaCond` | `FUN_006a74d0` → `FUN_005d80a0` | la fonction +0x10 du script +0xc (« mission » : celui de la mission en cours ; sinon par nom, `FUN_005dbb60`, ou main), appelée par `NSCall` dans son espace de noms (`FUN_005d8000`) ; le résultat lu par `lua_tonumber` (0x73b0d0), positif ; `0.0` est faux |
 
 - **Pistes lues** : `ManageTargets` (0x934d14 : `FUN_006273f0`, `FUN_00627420`) ; `CombatLoco` (0x9349e0 : `FUN_0062e9e0`,
   `FUN_0062ea40` : la zone prise par `FUN_006252d0`, ses rayons par `FUN_006253e0`, l'intention de mouvement par
