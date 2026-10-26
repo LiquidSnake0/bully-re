@@ -50,8 +50,12 @@ main(void)
 	CScriptPedPool q;
 	int m = q.Creer(85, CVector(0, 0, 0), 0, 1);
 	VERIF(q.Aller(m, CVector(7, 0, 0), ALLURE_MARCHE) && q.Acceder(m)->enMarche);
+	// L'intention de mouvement (+0x2e0 : +0 la direction, +0x1c la vitesse) : l'allure 0 vaut 0,3 (FUN_005c6180), vers +x.
+	VERIF(fabsf(q.Acceder(m)->intentionVitesse - 0.3f) < 1e-6f && q.Acceder(m)->intention.x == 1.0f);
+	VERIF(ScriptPedIntentionVitesse(1) == 0.7f && ScriptPedIntentionVitesse(2) == 1.1f && ScriptPedIntentionVitesse(-1) == 0.7f);
 	int images = 0; bool arrive = false;
 	for(; images < 400 && !arrive; images++){ q.Avancer(0.033f); arrive = q.Acceder(m)->arrive; }
+	VERIF(q.Acceder(m)->intentionVitesse == 0.0f);   // arrivé : plus d'intention (FUN_004a45c0)
 	VERIF(arrive && images >= 150 && images <= 153);
 	VERIF(!q.Acceder(m)->enMarche && q.Acceder(m)->pos.x == 7 && q.Acceder(m)->pos.y == 0);
 	q.Avancer(0.033f);

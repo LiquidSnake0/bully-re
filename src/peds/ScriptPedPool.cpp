@@ -12,6 +12,19 @@ ScriptPedVitesse(int allure)
 	}
 }
 
+float
+ScriptPedIntentionVitesse(int allure, float defaut)
+{
+	switch(allure){
+	case 0: return 0.3f;       // _DAT_00911e30
+	case 1: return 0.7f;       // _DAT_00900e00
+	case 2: return 1.1f;       // _DAT_0090cec8
+	case 3: return 1.5f;       // _DAT_0090fb9c
+	case 4: return -1.0f;      // _DAT_009009ac
+	default: return defaut;
+	}
+}
+
 CScriptPedPool::CScriptPedPool(void)
 {
 	// Le joueur existe toujours, à l'entrée 0.
@@ -99,6 +112,11 @@ CScriptPedPool::Aller(int h, const CVector &cible, int allure)
 	p->vitesse = ScriptPedVitesse(allure);
 	p->attaque = -1;
 	p->cap = atan2f(cible.y - p->pos.y, cible.x - p->pos.x) * 180.0f / 3.14159265f;
+	{
+		float dx = cible.x - p->pos.x, dy = cible.y - p->pos.y, n = sqrtf(dx * dx + dy * dy);
+		if(n > 0) p->intention = CVector(dx / n, dy / n, 0);
+	}
+	p->intentionVitesse = ScriptPedIntentionVitesse(allure);
 	return true;
 }
 
@@ -109,6 +127,7 @@ CScriptPedPool::Arreter(int h)
 	if(p == nil) return false;
 	p->enMarche = false;
 	p->attaque = -1;
+	p->intentionVitesse = 0;              // FUN_004a45c0
 	return true;
 }
 
@@ -313,7 +332,7 @@ CScriptPedPool::Avancer(float dt)
 			Blesser(p.attaque, SCRIPT_PED_DEGATS, (int)(&p - peds));
 			if(c->mort) p.attaque = -1;
 		}else if(p.enMarche){
-			if(Pas(p, p.cible, p.vitesse * dt, 0)){ p.enMarche = false; p.arrive = true; }
+			if(Pas(p, p.cible, p.vitesse * dt, 0)){ p.enMarche = false; p.arrive = true; p.intentionVitesse = 0; }
 		}
 	}
 }

@@ -21,6 +21,10 @@ enum { SCRIPT_PED_DRAPEAUX = 128, DRAPEAU_INTOUCHABLE = 12, DRAPEAU_INVULNERABLE
 // le jeu (docs/missions.md).
 enum eScriptPedAllure { ALLURE_MARCHE = 0, ALLURE_MARCHE_VITE = 1, ALLURE_COURSE = 2, ALLURE_SPRINT = 3 };
 float ScriptPedVitesse(int allure);   // m/s
+// FUN_005c6180 : l'allure d'un script (le deuxième argument de PedMoveToXYZ, PedMoveToPoint…) en vitesse d'intention de
+// mouvement : 0 → 0,3 (marche), 1 → 0,7 (course), 2 → 1,1 (sprint), 3 → 1,5, 4 → -1 ; une autre valeur, ou pas
+// d'argument (FUN_005d8240 rend -1), la vitesse par défaut de l'appelant (0,7 pour PedMoveToXYZ, _DAT_00900e00).
+float ScriptPedIntentionVitesse(int allure, float defaut = 0.7f);
 
 // Les 22 groupes d'animations d'humiliation (0x9113d0, 32 octets par nom) : « HUMIL_5-8_A » pour 0 … « HUMIL_6-1V6-1 »
 // pour 21. Le groupe 0 à 12 est celui d'une victime du joueur, rangé par sa taille (CharacterSize) : 0 à 2 Medium
@@ -90,6 +94,13 @@ struct CScriptPed {
 	                             // condition Objective pose quand elle passe (FUN_0048c330)
 	bool mort = false;
 	// Le geste en cours.
+	// L'intention de mouvement du composant d'actions (+0x2e0) : sa direction (+0, +4, +8) et sa vitesse (+0x1c), que la
+	// navigation pose à chaque image (FUN_004a4a50) et remet à zéro sans but (FUN_004a45c0) ; les conditions
+	// MotionIntentionSpeed (FUN_005fd810) et MotionIntention (ConditionMotionIntentionDirection, FUN_005fd760) la lisent.
+	// Les seuils de Locomotion.act (Free) : walk ≥ 0,1, RUN ≥ 0,5, Sprint ≥ 1,05. L'outil la pose quand il fait marcher
+	// un piéton (Aller : la vitesse de son allure ; arrivé, arrêté : 0) et dans CombatLoco (lancer_lua).
+	CVector intention;
+	float intentionVitesse = 0;
 	bool enMarche = false;       // va vers `cible` à `vitesse`
 	CVector cible;
 	float vitesse = 0;

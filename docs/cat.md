@@ -421,6 +421,16 @@ qui juge est l'emplacement 1), `lancer_lua` dresse à la fin le bilan des classe
 | `IsElderly` | `FUN_006069a0` → `FUN_0044e010` | l'entrée de pedstats.dat du modelinfo (+0x54, nom haché +0x18) est `STAT_CV_MALE_OLD` ou `STAT_CV_FEMALE_OLD` |
 | `HasGrappleTarget` | `FUN_00606490` | un partenaire de prise (+0x155c) |
 | `IsStealthMissionChar` | `FUN_00602cf0` | +0x1398 non nul (`PedSetIsStealthMissionPed`, 0x5d0110 → `FUN_005d0080`) |
+| `MotionIntentionSpeed` | `FUN_005fd810` | la vitesse de l'intention de mouvement (+0x1c du composant +0x2e0) comparée à +4 par +8 (`FUN_005fb750`) ; Locomotion.act : walk ≥ 0,1, RUN ≥ 0,5, Sprint ≥ 1,05 |
+| `MotionIntention` | `FUN_005fd760` (`ConditionMotionIntentionDirection`) | le devant du piéton à plat, tourné de +4 radians (`FUN_005fbe50`), et la direction de l'intention (+0, +4, +8) : produit scalaire ≥ cos(+8) |
+
+**L'intention de mouvement** (+0, +4, +8 la direction ; +0xc … +0x14 le cap voulu ; +0x1c la vitesse, dans le composant
++0x2e0) : la navigation la pose à chaque image (`FUN_004a4a50`) et en remet la vitesse à 0 sans but (`FUN_004a45c0`) ;
+`SetMotionIntention` (lancement `FUN_00611c50`) n'en pose que la direction (le devant tourné de +0x18 degrés). Les allures
+des scripts (`PedMoveToXYZ` 0x5c7c90, `PedMoveToPoint`) passent par `FUN_005c6180` : 0 → 0,3, 1 → 0,7, 2 → 1,1, 3 → 1,5,
+4 → -1, sans argument 0,7 (le `MoveToPosObjective` de `FUN_00470460` la porte). Dans l'outil : la vitesse de l'allure pour
+un piéton qui marche, 0 arrivé ou arrêté, 0,7 vers la cible dans `CombatLoco` (supposé), 0 à chaque image pour un piéton
+de l'IA qui n'a pas de geste.
 
 ## Le chemin d'un nœud (18.10.2026)
 

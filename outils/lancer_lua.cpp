@@ -281,6 +281,19 @@ struct CJugeOutil : CJugeAction {
 			return it != modeles.statDuPieton.end() && (it->second == "STAT_CV_MALE_OLD" || it->second == "STAT_CV_FEMALE_OLD");
 		}
 		if(type == kPrise) return moi && moi->cibleDePrise >= 0;
+		// MotionIntentionSpeed (FUN_005fd810) : la vitesse de l'intention de mouvement (+0x1c du composant +0x2e0) comparée
+		// au seuil +4 par +8 (FUN_005fb750). MotionIntention (ConditionMotionIntentionDirection, FUN_005fd760) : le devant
+		// du piéton, à plat, tourné de +4 radians (FUN_005fbe50), et la direction de l'intention (+0, +4, +8) ont un produit
+		// scalaire d'au moins cos(+8) (vérifié à l'assembleur, 0x5fd7ef : vrai si cos(+8) ≤ le produit).
+		static const uint32 kVitesseIntention = ActionHash("MotionIntentionSpeed"), kDirectionIntention = ActionHash("MotionIntention");
+		if(type == kVitesseIntention) return moi ? ComparerCondition(moi->intentionVitesse, seuil, mots[1]) : -1;
+		if(type == kDirectionIntention){
+			if(moi == nil) return -1;
+			float tour, ouverture; memcpy(&tour, &mots[0], 4); memcpy(&ouverture, &mots[1], 4);
+			float a = moi->cap * 3.14159265f / 180.0f + tour;
+			float produit = cosf(a) * moi->intention.x + sinf(a) * moi->intention.y;
+			return cosf(ouverture) <= produit;
+		}
 		if(type == kDiscret) return moi && moi->discretion;
 		// IsMissionSpecific (FUN_005ffb70) : l'octet +0x1570 vaut 2, ce que le constructeur (FUN_0047ffe0) pose pour un
 		// piéton créé par un script (FUN_005cf6b0 → FUN_0046dea0(modèle, 2)) ; PedMakeAmbient le change (FUN_004770a0).
@@ -1746,7 +1759,11 @@ PedMoveToPoint(lua_State *L)
 {
 	Journal("PedMoveToPoint", L, 1);
 	const CTriggerPointPoint *pt = PointArg(L, "PedMoveToPoint", 3, 4);
-	if(pt && lua_isnumber(L, 1)) pietons.Aller((int)lua_tonumber(L, 1), pt->pos, (int)luaL_optnumber(L, 2, ALLURE_MARCHE));
+	if(pt && lua_isnumber(L, 1)){
+		pietons.Aller((int)lua_tonumber(L, 1), pt->pos, (int)luaL_optnumber(L, 2, ALLURE_MARCHE));
+		// FUN_005c6180 : la vitesse d'intention de l'allure, 0,7 sans argument.
+		if(CScriptPed *p = pietons.Acceder((int)lua_tonumber(L, 1))) p->intentionVitesse = ScriptPedIntentionVitesse(lua_isnumber(L, 2) ? (int)lua_tonumber(L, 2) : -1);
+	}
 	return 0;
 }
 
@@ -1756,7 +1773,10 @@ PedMoveToXYZ(lua_State *L)
 {
 	Journal("PedMoveToXYZ", L, 1);
 	CVector cible((float)luaL_checknumber(L, 3), (float)luaL_checknumber(L, 4), (float)luaL_checknumber(L, 5));
-	if(lua_isnumber(L, 1)) pietons.Aller((int)lua_tonumber(L, 1), cible, (int)luaL_optnumber(L, 2, ALLURE_MARCHE));
+	if(lua_isnumber(L, 1)){
+		pietons.Aller((int)lua_tonumber(L, 1), cible, (int)luaL_optnumber(L, 2, ALLURE_MARCHE));
+		if(CScriptPed *p = pietons.Acceder((int)lua_tonumber(L, 1))) p->intentionVitesse = ScriptPedIntentionVitesse(lua_isnumber(L, 2) ? (int)lua_tonumber(L, 2) : -1);
+	}
 	return 0;
 }
 
@@ -1872,7 +1892,11 @@ CombatLoco(int ped, bool joueur, bool premiere)
 	int z = p->zoneCombat < 0 || p->zoneCombat > 3 ? 3 : p->zoneCombat;
 	float rayon = ButeIA(kGrands[z], 1.5f);
 	float dx = q->pos.x - p->pos.x, dy = q->pos.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
-	if(d <= rayon) return;
+	if(d > 0) p->intention = CVector(dx / d, dy / d, 0);
+	if(d <= rayon){ p->intentionVitesse = 0; return; }
+	// L'intention de mouvement vers la cible : la vitesse de course de FUN_005c6180 (0,7), supposée (le moteur la tire de
+	// la navigation, FUN_004a4a50, sur le point que FUN_0061b430 range).
+	p->intentionVitesse = 0.7f;
 	float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f, k = d - rayon < pas ? (d - rayon) / d : pas / d;
 	p->pos.x += dx * k; p->pos.y += dy * k;
 	p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
@@ -1887,6 +1911,9 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 	if(p == nil || p->mort || c.arbre == nil) return;
 	float t = maintenant / 1000.0f;
 	c.image = images; c.graine = (uint16)ped;
+	// La navigation repose l'intention de mouvement à chaque image ; sans but, sa vitesse retombe à 0 (FUN_004a45c0). Les
+	// pistes de l'IA (CombatLoco) la reposent ensuite.
+	if(!p->enMarche) p->intentionVitesse = 0;
 	const CActionNode *avant = c.joue;
 	if(c.joue == nil) c.Poser(arbres, c.arbre, CJugeOutil(ped, t), t);   // FUN_00483ec0
 	else c.Avancer(arbres, nil, CJugeOutil(ped, t), t);
