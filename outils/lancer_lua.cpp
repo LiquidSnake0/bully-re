@@ -312,6 +312,13 @@ struct CJugeOutil : CJugeAction {
 		static const uint32 kSprint = ActionHash("Sprint"), kFatigue = ActionHash("IsPlayerTired");
 		if(type == kSprint) return moi ? ComparerCondition(moi->sprint, seuil, mots[1]) : -1;
 		if(type == kFatigue) return etatPhysiqueJoueur == 2;
+		// L'outil n'a pas d'armes (seul « unarmed » est vrai pour WeaponEquiped) : l'arme voulue du composant d'actions
+		// (+0x18 du composant +0x2e0) reste 0 et l'objet arme du piéton (+0x1d0) n'a pas de modèle (+0x10e à -1).
+		// WeaponDesired (ConditionWeaponDesired, FUN_0065b4b0) : sans arme voulue, vrai si l'octet +8 est nul.
+		// WeaponIsInventory (FUN_0065b7e0) : sans modèle d'arme, faux.
+		static const uint32 kArmeVoulue = ActionHash("WeaponDesired"), kArmeInventaire = ActionHash("WeaponIsInventory");
+		if(type == kArmeVoulue) return (mots[1] & 0xff) == 0;
+		if(type == kArmeInventaire) return 0;
 		// Season (FUN_005fc8d0) : avec l'octet +4, la zone visible doit être dehors (FUN_004301d0) ; puis la saison du
 		// chapitre en cours est +8.
 		static const uint32 kSaison = ActionHash("Season");

@@ -427,6 +427,8 @@ qui juge est l'emplacement 1), `lancer_lua` dresse à la fin le bilan des classe
 | `TargetRelativeOrientation` | `FUN_005ff420` | l'autre (le partenaire de prise si l'octet +4, sinon +0x434 du piéton, sinon la cible du composant de visée +0x1c8, `FUN_004d7630`) : 2 × |acos(devant · devant de l'autre) − (+8)| ≤ +0xc |
 | `Sprint` | `FUN_005fda70` | la réserve de sprint (+0x18d0 : à la création la colonne R de pedstats.dat, +0x5c, `FUN_00478e30` ; remplie par `FUN_0047cde0`, dépensée par `FUN_0047cee0`) comparée à +4 par +8 |
 | `IsPlayerTired` | `FUN_005fc3b0` | l'état physique du joueur (`DAT_00c1af4c`, `PlayerGetPhysicalState` 0x5d1ee0) vaut 2 |
+| `WeaponDesired` | `FUN_0065b4b0` (`ConditionWeaponDesired`) | sans arme voulue (+0x18 du composant +0x2e0 nul), vrai si l'octet +8 est nul ; sinon l'arme voulue est celle du nom +4 (`FUN_0051ad50`), ou « LastWeapon » |
+| `WeaponIsInventory` | `FUN_0065b7e0` | l'objet arme du piéton (+0x1d0) a un modèle (+0x10e ≠ -1) et `FUN_0055ba80` le trouve dans l'inventaire |
 | `Season` | `FUN_005fc8d0` | avec l'octet +4, la zone visible est dehors (`FUN_004301d0`, l'octet par zone de 0x901dd0) ; la saison du chapitre (`DAT_00a147ec[DAT_00a147e0]` : 1, 1, 2, 3, 3, 3, 0) est +8 |
 
 **L'intention de mouvement** (+0, +4, +8 la direction ; +0xc … +0x14 le cap voulu ; +0x1c la vitesse, dans le composant
