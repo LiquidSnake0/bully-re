@@ -321,6 +321,17 @@ struct CJugeOutil : CJugeAction {
 		static const uint32 kArmeVoulue = ActionHash("WeaponDesired"), kArmeInventaire = ActionHash("WeaponIsInventory");
 		if(type == kArmeVoulue) return (mots[1] & 0xff) == 0;
 		if(type == kArmeInventaire) return 0;
+		// CollisionStart (FUN_00602260) : l'octet +0x4e5 du piéton, que le lancement d'une piste Collision pose et que rien
+		// ne remet à 0. AttackPhase (FUN_00601fc0) : la phase +0x71c est +4, et, si +8 est positif, l'échéance +0x720
+		// tombe plus de +8 secondes après maintenant (src/core/ActionController).
+		static const uint32 kCollisionStart = ActionHash("CollisionStart"), kPhase = ActionHash("AttackPhase");
+		if(type == kCollisionStart || type == kPhase){
+			auto it = controleurs.find(ped);
+			if(it == controleurs.end()) return 0;
+			if(type == kCollisionStart) return ConditionCollisionStart(it->second);
+			float delai; memcpy(&delai, &mots[1], 4);
+			return ConditionAttackPhase(it->second, (int32)mots[0], delai, (uint32)lrintf(t * 1000.0f));
+		}
 		// HudComponentVisible (FUN_0065aee0) : l'emplacement 4 du composant +4 de la table du HUD (DAT_00c674a0), l'octet
 		// +8 pour tous ceux que les arbres relevés testent (14, 18, 19, 23 à 37 ; HUDMoney et HUDClockWarnings ont le leur).
 		static const uint32 kHud = ActionHash("HudComponentVisible");

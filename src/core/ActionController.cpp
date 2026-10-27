@@ -1,4 +1,5 @@
 #include "ActionController.h"
+#include <cmath>
 #include <cstring>
 
 static bool
@@ -102,6 +103,9 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			Contact c{&n, entree + Reel(p, 24, 0.0f), entree + Reel(p, 28, -1.0f),
 			          dr ? ActionHash(f->ChaineCitee(dr->decalage).c_str()) : 0u, Reel(p, 52, 0.0f),
 			          sur ? f->ChaineCitee(sur->decalage) : std::string(), false};
+			c.entree = a; c.vie = Reel(p, 16, -1.0f);
+			c.debutBrut = Reel(p, 24, 0.0f); c.finBrut = Reel(p, 28, -1.0f);
+			c.debutFenetre = entree + c.debutBrut; c.finFenetre = c.finBrut >= 0.0f ? entree + c.finBrut : -1.0f;
 			contacts.push_back(c);
 		}else if(p.type == kDegats){
 			{ const CActionAttribut *fx = p.Champ(28); degats.push_back({&n, a, Reel(p, 24, 0.0f), fx && fx->taille >= 1 && fx->valeur[0] != 0, false}); }
@@ -198,6 +202,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	departs.clear();
 	regards.clear();
 	poursuites.clear();
+	ArreterCollisions();
 	joue = n;
 	debut = t;
 	occasions = n ? COpportunite::DuNoeud(b, *n) : std::vector<COpportunite>();
@@ -454,6 +459,7 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 			const CActionNode *c = d.cible.empty() ? nil : b.Relatif(d.porteur, d.cible.c_str());
 			if(a || c) prises.push_back({a, c, d.executerSoi, d.executerCible});
 		}
+	PhasesCollision(t);
 	for(Contact &c : contacts)    // FUN_005f9e70 : la fenêtre du coup
 		if(!c.fait && Temps(t) >= c.debut && (c.fin < 0.0f || Temps(t) <= c.fin)){ c.fait = true; touches.push_back(c); }
 	for(SurCible &c : surCible)   // FUN_006615f0
@@ -511,4 +517,62 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(n && (n != joue || fini)){ Jouer(b, n, t, &juge); return true; }
 	}
 	return false;
+}
+
+// Les millisecondes du jeu (DAT_00c1a9b4) plus `s` secondes, arrondies comme le fistp du moteur (le double 1000 de 0x900138).
+static uint32
+EcheanceMs(float t, float s)
+{
+	return (uint32)lrintf(t * 1000.0f + s * 1000.0f);
+}
+
+void
+CActionController::PhasesCollision(float t)
+{
+	float temps = Temps(t);
+	for(Contact &c : contacts){
+		if(c.arretee) continue;
+		if(!c.lancee){
+			if(temps < c.entree) continue;
+			// FUN_005f9480 : la phase 1, l'octet +0x4e5 et l'échéance au début de la fenêtre (+0x18, relatif au nœud).
+			c.lancee = true;
+			phaseAttaque = 1;
+			collisionDemarree = true;
+			echeanceAttaque = EcheanceMs(t, c.debutBrut);
+		}
+		// La durée de vie (+0x10) passée, la piste meurt : son arrêt (FUN_005f8240).
+		if(c.vie >= 0.0f && temps > c.entree + c.vie){ c.arretee = true; phaseAttaque = 0; continue; }
+		// FUN_005f9e70.
+		if(temps < c.debutFenetre) continue;
+		if(c.finFenetre >= 0.0f && temps > c.finFenetre){
+			phaseAttaque = 3;
+			float reste = c.vie > 0.0f ? c.vie : fin >= 0.0f && fin > t ? fin - t : 0.0f;
+			echeanceAttaque = EcheanceMs(t, reste);
+		}else{
+			phaseAttaque = 2;
+			echeanceAttaque = EcheanceMs(t, c.finBrut);
+		}
+	}
+}
+
+void
+CActionController::ArreterCollisions(void)
+{
+	for(Contact &c : contacts)
+		if(c.lancee && !c.arretee){ c.arretee = true; phaseAttaque = 0; }
+}
+
+bool
+ConditionCollisionStart(const CActionController &c)
+{
+	return c.collisionDemarree;
+}
+
+bool
+ConditionAttackPhase(const CActionController &c, int32 phase, float delai, uint32 maintenantMs)
+{
+	if(phase != c.phaseAttaque) return false;
+	if(delai <= 0.0f) return true;
+	if(c.echeanceAttaque == 0) return false;
+	return (uint32)lrintf((float)maintenantMs + delai * 1000.0f) < c.echeanceAttaque;
 }

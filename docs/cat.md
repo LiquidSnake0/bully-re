@@ -443,7 +443,20 @@ de l'IA qui n'a pas de geste.
 
 | Classe | Fonction | Ce qu'elle juge |
 |---|---|---|
+| `CollisionStart` | `FUN_00602260` | l'octet +0x4e5 du piéton : posé à 1 par le lancement d'une piste `Collision` (`FUN_005f9480`, 0x5f94aa) ou `WeaponCollision` (`FUN_00661660`, 0x661694) ; aucune instruction ne le remet à 0 (la seule autre écriture, 0x6f2d68, est dans `FUN_006f2d10`, sur un autre objet) : vrai pour tout piéton qui a déjà lancé un coup |
+| `AttackPhase` | `FUN_00601fc0` | la phase de l'attaque (+0x71c) est +4 ; si +8 est positif, l'échéance (+0x720, en ms de `DAT_00c1a9b4`) est posée et tombe plus de +8 s après maintenant |
 | `HudComponentVisible` | `FUN_0065aee0` | l'emplacement 4 (+0x10) du composant +4 de la table du HUD (`DAT_00c674a0`, 48 places remplies par la fabrique `FUN_0053cee0` depuis `FUN_00514920`) : l'octet +8 de `HUDComponent` (`FUN_00538f80`), sauf `HUDMoney` (13, `FUN_00542740`) et `HUDClockWarnings` (15, `FUN_0053c820`) |
+
+**La phase de l'attaque** (`CActionController::PhasesCollision`) : le lancement de la piste `Collision` (`FUN_005f9480`) pose la
+phase 1, l'octet +0x4e5, +0x4e8 et +0xe4 à 1, et l'échéance à maintenant + (+0x18) s ; sa mise à jour (`FUN_005f9e70`), une fois
+le temps du nœud à +0x18, la phase 2 et l'échéance à maintenant + (+0x1c) s (la fenêtre, ou +0x1c négatif), puis après +0x1c la
+phase 3 et l'échéance à maintenant + la durée de vie (+0x10) si elle est positive, sinon + ce qui reste de l'animation
+(`FUN_006b1df0` ; l'outil prend la fin du nœud) ; l'arrêt (`FUN_005f8240`) remet la phase et +0xe4 à 0. Les valeurs +0x18 et
++0x1c sont des temps du nœud, ajoutés tels quels à l'horloge (pas ce qui reste à attendre). Dans `AI_FightTutorial`, `BLOCK`
+demande `CollisionStart` à la cible et `F_CanBlock`, et la contre-attaque `AttackPhase[3, 0,567]` à la cible ; dans `1_02`, les
+1 171 jugements de `CollisionStart` se décident ; `F_CanBlock` rend 1 par moments (85 fois sur 435 à partir de 69 s), mais le bully
+ne pare pas : la feuille `BLOCK` demande que le joueur joue `LightAttacks` ou `HeavyAttacks`, et la banque `CombatActions` du
+bully ne redescend qu'à la fin de son `ControlNode` (1,03 s), jamais pendant le jab du joueur.
 
 **Le HUD** (`src/hud/HudComponents`) : `HUDComponent` (`FUN_0053cc70`) naît caché ; l'emplacement 5 (`FUN_0053cd60`) le montre
 ou le cache (caché, il ne clignote plus) ; `ToggleHUDComponentVisibility` (0x5bd500), `ToggleHUDComponentLocked` (0x5bd560,
