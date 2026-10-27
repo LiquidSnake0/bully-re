@@ -439,6 +439,20 @@ des scripts (`PedMoveToXYZ` 0x5c7c90, `PedMoveToPoint`) passent par `FUN_005c618
 un piéton qui marche, 0 arrivé ou arrêté, 0,7 vers la cible dans `CombatLoco` (supposé), 0 à chaque image pour un piéton
 de l'IA qui n'a pas de geste.
 
+## Les conditions lues le 27.10.2026
+
+| Classe | Fonction | Ce qu'elle juge |
+|---|---|---|
+| `HudComponentVisible` | `FUN_0065aee0` | l'emplacement 4 (+0x10) du composant +4 de la table du HUD (`DAT_00c674a0`, 48 places remplies par la fabrique `FUN_0053cee0` depuis `FUN_00514920`) : l'octet +8 de `HUDComponent` (`FUN_00538f80`), sauf `HUDMoney` (13, `FUN_00542740`) et `HUDClockWarnings` (15, `FUN_0053c820`) |
+
+**Le HUD** (`src/hud/HudComponents`) : `HUDComponent` (`FUN_0053cc70`) naît caché ; l'emplacement 5 (`FUN_0053cd60`) le montre
+ou le cache (caché, il ne clignote plus) ; `ToggleHUDComponentVisibility` (0x5bd500), `ToggleHUDComponentLocked` (0x5bd560,
+l'octet +0x15), `HUDComponentGetVisibility` (0x5bd590), `HUDClearAllElements` (0x5bdb80), `HUDSaveVisibility` /
+`HUDRestoreVisibility` (`FUN_00514080`, `FUN_005140c0`, la copie `DAT_00c66d98`) sont réels dans `lancer_lua`. Les arbres
+testent les invites sociales (23 à 36 : `HUDSocialApologize` … `HUDSocialBurn`), `HUDSocial` (37), `HUDClothing` (14),
+`HUDBarber` (18), `HUDTattoo` (19) ; dans `1_02`, `main` ne fait que cacher la santé, le radar et la retenue (4, 11, 0) et
+montrer l'historique des boutons (21) : les 1 306 jugements se décident, faux.
+
 ## Le chemin d'un nœud (18.10.2026)
 
 Les scripts désignent un nœud par un chemin, `PedSetActionNode(ped, "/Global/1_01/Talking",

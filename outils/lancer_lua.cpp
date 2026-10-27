@@ -44,6 +44,7 @@
 #include "../src/audio/SpeechBank.h"
 #include "../src/cutscene/CutsceneFiles.h"
 #include "../src/peds/ScriptPedPool.h"
+#include "../src/hud/HudComponents.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
 #include "../tests/hote/Chemins.h"
@@ -103,6 +104,7 @@ static CModelEnum modeles;
 // demandé par PlayerSetPos… et joué image par image comme FUN_00416e30 : fondu au noir, scripts de zone
 // retirés puis celui de la nouvelle zone chargé avec son main, zone visible et joueur posés à l'arrivée.
 static CAreaManager zones;
+static CHudComponents hud;   // DAT_00c674a0 : les 48 composants du HUD, tous cachés au démarrage (FUN_0053cc70)
 // Le fondu de la caméra (CameraFade, 0x4f1980), réduit à ce que la machine des zones et les scripts en
 // attendent : une durée, un sens, et « fini ». Les durées par défaut sont celles d'AreaTransitionButes (DAT_020c8910,
 // lue dans Globals.cat au démarrage) : +0x18 pour le fondu au noir (0,65 s), +0x1c pour le retour (0,5 s) ;
@@ -319,6 +321,10 @@ struct CJugeOutil : CJugeAction {
 		static const uint32 kArmeVoulue = ActionHash("WeaponDesired"), kArmeInventaire = ActionHash("WeaponIsInventory");
 		if(type == kArmeVoulue) return (mots[1] & 0xff) == 0;
 		if(type == kArmeInventaire) return 0;
+		// HudComponentVisible (FUN_0065aee0) : l'emplacement 4 du composant +4 de la table du HUD (DAT_00c674a0), l'octet
+		// +8 pour tous ceux que les arbres relevés testent (14, 18, 19, 23 à 37 ; HUDMoney et HUDClockWarnings ont le leur).
+		static const uint32 kHud = ActionHash("HudComponentVisible");
+		if(type == kHud) return HudComponentVisible(hud, (int32)mots[0]);
 		// Season (FUN_005fc8d0) : avec l'octet +4, la zone visible doit être dehors (FUN_004301d0) ; puis la saison du
 		// chapitre en cours est +8.
 		static const uint32 kSaison = ActionHash("Season");
@@ -1589,6 +1595,74 @@ ChapterGet(lua_State *L)
 	return 1;
 }
 
+// Les composants du HUD (src/hud/HudComponents.h). ToggleHUDComponentVisibility(n, oui) (0x5bd500 : l'emplacement 5 du
+// composant n), ToggleHUDComponentLocked(n, oui) (0x5bd560 : l'octet +0x15), HUDComponentGetVisibility(n) (0x5bd590 :
+// l'emplacement 4), HUDComponentGetLocked (0x5bd5f0), HUDComponentGetFlashing (0x5bd5c0), HUDClearAllElements
+// (0x5bdb80), HUDSaveVisibility (0x5bdb70) et HUDRestoreVisibility (0x5bdba0). Le booléen des scripts passe par
+// FUN_005d8f20 : un nombre tronqué non nul, sinon lua_toboolean.
+static bool
+BooleenArg(lua_State *L, int i)
+{
+	return lua_isnumber(L, i) ? (int)lua_tonumber(L, i) != 0 : lua_toboolean(L, i) != 0;
+}
+
+static int
+ToggleHUDComponentVisibility(lua_State *L)
+{
+	Journal("ToggleHUDComponentVisibility", L, 1);
+	hud.Basculer((int)luaL_checknumber(L, 1), BooleenArg(L, 2));
+	return 0;
+}
+
+static int
+ToggleHUDComponentLocked(lua_State *L)
+{
+	hud.Verrouiller((int)luaL_checknumber(L, 1), BooleenArg(L, 2));
+	return 0;
+}
+
+static int
+HUDComponentGetVisibility(lua_State *L)
+{
+	lua_pushboolean(L, hud.Visible((int)luaL_checknumber(L, 1)));
+	return 1;
+}
+
+static int
+HUDComponentGetLocked(lua_State *L)
+{
+	lua_pushboolean(L, hud.Verrouille((int)luaL_checknumber(L, 1)));
+	return 1;
+}
+
+static int
+HUDComponentGetFlashing(lua_State *L)
+{
+	lua_pushboolean(L, hud.Clignote((int)luaL_checknumber(L, 1)));
+	return 1;
+}
+
+static int
+HUDClearAllElements(lua_State *L)
+{
+	hud.ToutCacher();
+	return 0;
+}
+
+static int
+HUDSaveVisibility(lua_State *L)
+{
+	hud.Sauver();
+	return 0;
+}
+
+static int
+HUDRestoreVisibility(lua_State *L)
+{
+	hud.Restaurer();
+	return 0;
+}
+
 // PedSetFaction(ped, type) (0x5cb570) : le type du piéton (+0x1310), sauf 13 (PLAYER1), que le moteur refuse.
 static int
 PedSetFaction(lua_State *L)
@@ -2830,6 +2904,14 @@ main(int argc, char **argv)
 	lua_register(L, "ChapterSet", ChapterSet);
 	lua_register(L, "PlayerGetPhysicalState", PlayerGetPhysicalState);
 	lua_register(L, "ChapterGet", ChapterGet);
+	lua_register(L, "ToggleHUDComponentVisibility", ToggleHUDComponentVisibility);
+	lua_register(L, "ToggleHUDComponentLocked", ToggleHUDComponentLocked);
+	lua_register(L, "HUDComponentGetVisibility", HUDComponentGetVisibility);
+	lua_register(L, "HUDComponentGetLocked", HUDComponentGetLocked);
+	lua_register(L, "HUDComponentGetFlashing", HUDComponentGetFlashing);
+	lua_register(L, "HUDClearAllElements", HUDClearAllElements);
+	lua_register(L, "HUDSaveVisibility", HUDSaveVisibility);
+	lua_register(L, "HUDRestoreVisibility", HUDRestoreVisibility);
 	lua_register(L, "PedSetIsStealthMissionPed", PedSetIsStealthMissionPed);
 	lua_register(L, "PedGetFaction", PedGetFaction);
 	lua_register(L, "PedSetCombatZoneMask", PedSetCombatZoneMask);
