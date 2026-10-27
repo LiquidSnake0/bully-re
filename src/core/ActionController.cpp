@@ -108,6 +108,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			c.entree = a; c.vie = Reel(p, 16, -1.0f);
 			c.debutBrut = Reel(p, 24, 0.0f); c.finBrut = Reel(p, 28, -1.0f);
 			c.debutFenetre = entree + c.debutBrut; c.finFenetre = c.finBrut >= 0.0f ? entree + c.finBrut : -1.0f;
+			c.agresseur = Octet(p, 532);
 			contacts.push_back(c);
 		}else if(p.type == kDegats){
 			{ const CActionAttribut *fx = p.Champ(28); degats.push_back({&n, a, Reel(p, 24, 0.0f), fx && fx->taille >= 1 && fx->valeur[0] != 0, false}); }

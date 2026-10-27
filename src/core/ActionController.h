@@ -47,7 +47,8 @@ public:
 	// WeaponCollisionTrack (0x9382f0, lancement FUN_00661660) fait de même pour une arme.
 	struct Contact { const CActionNode *porteur; float debut, fin; uint32 drapeau; float degats; std::string surCoup; bool fait;
 	                 float entree = 0.0f, vie = -1.0f, debutFenetre = 0.0f, finFenetre = -1.0f, debutBrut = 0.0f, finBrut = -1.0f;
-	                 bool lancee = false, arretee = false; };
+	                 bool lancee = false, arretee = false;
+	                 bool agresseur = false; };   // l'octet +0x214 (532) : la cible retient l'attaquant (FUN_004973d0)
 	std::vector<Contact> contacts;
 	int32 phaseAttaque = 0;          // +0x71c du piéton
 	uint32 echeanceAttaque = 0;      // +0x720

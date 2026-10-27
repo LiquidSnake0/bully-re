@@ -174,6 +174,17 @@ struct CScriptPed {
 	int cibleObjectif = -1;      // +0x540 (+0x184 du composant de visée en +0x3bc) : la cible d'un objectif d'attaque, que la
 	                             // condition Objective pose quand elle passe (FUN_0048c330)
 	bool mort = false;           // +0x1c98 : posé par la piste Death (FUN_00479110), lu par PedIsDead (0x5c8f30)
+	// Le composant de vue (+0xa64, son piéton en +0) : l'angle total du cône (+0xa68, la colonne D de pedstats.dat en
+	// degrés, × π / 180 par FUN_00478e30) et la portée (+0xa6c, la colonne E, en mètres) ; un cache de 16 piétons (+0xa74 :
+	// le piéton, l'octet vu, le nombre d'images à vivre) que FUN_0048ccf0 fait vieillir à chaque image (CPed, FUN_004812d0).
+	float visionAngle = 0, visionPortee = 0;
+	struct Vu { int ped = -1; bool vu = false; int32 images = 0; };
+	Vu vus[16];
+	// +0x1dbc et +0x1dc0 : le dernier piéton qui l'a frappé (FUN_004973d0, depuis la méthode du coup FUN_0047b810 quand son
+	// 15e argument, l'octet +0x214 de la piste Collision, est posé) et le temps écoulé depuis, en secondes (FUN_00499340 : 0
+	// sans agresseur).
+	int dernierAgresseur = -1;
+	float tempsAgresseur = 0;
 	bool immortel = false;       // +0x13fc : PedSetImmortalFlag (0x5ce6e0) / PedGetImmortalFlag (0x5ce730)
 	uint32 instantMort = 0;      // +0x18b8 : l'horloge (ms) à la mort d'un autre que le joueur
 	// Le geste en cours.
@@ -315,6 +326,18 @@ public:
 	// FUN_00486c00), FUN_0048c330 la cible de son objectif (+0x540), FUN_00606b40 son agresseur (+0x544). Vrai si
 	// quelque chose a été posé.
 	bool PrendreAttaquant(int handle, int attaquant);
+	// FUN_0048d320 (le composant de vue +0xa64) : le piéton voit-il `cible` ? Lui-même, oui ; le dernier piéton qui l'a frappé
+	// (+0x1dbc), depuis moins de 5 s et à moins de 5 m (_DAT_00900188, FUN_00487d00), oui ; sinon la réponse du cache, ou, à
+	// défaut, FUN_0048d0e0 (mise en cache pour 4 à 8 images, rand() × 5 / 0x7fff + 4) : la cible à portée à plat et dans le
+	// cône (FUN_0048cf50 : produit scalaire du devant et de la direction, à plat, strictement au-dessus du cosinus du
+	// demi-angle), puis la ligne de vue (FUN_00461d50, un rayon dans le monde) : l'outil n'a pas de monde, elle est dégagée.
+	// Les cas du joueur (l'octet +0x1e91, la hauteur d'un piéton discret +0x1398) ne sont pas suivis. `tirer` : le rand().
+	bool Voit(int handle, int cible, int (*tirer)(void *), void *ctx);
+	// L'image de la vue et du dernier agresseur : FUN_0048ccf0 (le cache vieillit d'une image) et FUN_00499340 (+0x1dc0
+	// avance du pas, en secondes, s'il y a un agresseur, sinon 0).
+	void AvancerVue(float dt);
+	// FUN_004973d0 : `attaquant` devient le dernier piéton qui a frappé `handle`, le temps repart de 0.
+	void Agresse(int handle, int attaquant);
 	// FUN_005f38e0 (ecx = le composant d'actions +0x2e0) : vide les entrées du piéton : les 47 boutons (+0x20, 12 octets
 	// chacun : la valeur passe en précédente puis à 0, l'octet d'appui à 0), l'intention (+0x254) et la vitesse de
 	// l'intention de mouvement (+0x1c) ; la direction (+0) reste. Le lancement d'une piste IDLE (FUN_0061d8e0), l'IA qui

@@ -2358,12 +2358,14 @@ GererCibles(int ped, bool joueur)
 // point (FUN_0062e120, ScriptPedCombatLocoChoisir) ; le pas (FUN_00625970) : la vitesse du mode (ScriptPedVitesseDuPas),
 // le point qui suit la cible aux images de tirage (cible + le décalage +0x38, s'il est à plus de 0,5 m du piéton,
 // _DAT_009055a0), et, sauf aux modes 3, 7 et 12, le cap voulu vers la cible ; la navigation (FUN_004a4eb0, le rayon
-// d'arrivée 0,2 m, _DAT_00900484) en fait la vitesse de l'intention (FUN_005e4a60). Supposé : la cible toujours vue
-// (FUN_0048d320), le point toujours valable (FUN_006254c0), tout droit (sans la recherche de chemin, FUN_005e9df0), à
+// d'arrivée 0,2 m, _DAT_00900484) en fait la vitesse de l'intention (FUN_005e4a60). La cible vue : FUN_0048d320
+// (CScriptPedPool::Voit, sans monde à traverser). Supposé : le point toujours valable (FUN_006254c0), tout droit (sans la recherche de chemin, FUN_005e9df0), à
 // l'allure de course de l'outil réduite dans le rapport de la vitesse de l'intention à 1,5.
 static std::map<int, CCombatLoco> etatsCombat;
 static uint32 graineCombat = 1;   // le rand() du CRT que la piste tire (l'outil a sa propre graine)
 static int TirerCombat(void *){ return RandCrt(graineCombat); }
+static uint32 graineVue = 7;      // le rand() du cache de la vue (FUN_0048d320)
+static int TirerVue(void *){ return RandCrt(graineVue); }
 
 static void
 CombatLoco(int ped, bool joueur, bool premiere)
@@ -2384,7 +2386,7 @@ CombatLoco(int ped, bool joueur, bool premiere)
 	int z = p->zoneCombat < 0 || p->zoneCombat > 3 ? 3 : p->zoneCombat;
 	float petit = ButeIA(kPetits[z], 0.9f), grand = ButeIA(kGrands[z], 1.5f);
 	int32 avant = e.sousEtat;
-	ScriptPedCombatLocoChoisir(e, p->pos, q->pos, petit, grand, 33, true, TirerCombat, nil);
+	ScriptPedCombatLocoChoisir(e, p->pos, q->pos, petit, grand, 33, pietons.Voit(ped, c, TirerVue, nil), TirerCombat, nil);   // FUN_0048d320
 	if(e.sousEtat != avant && journalIA > 0){
 		journalIA--;
 		printf("%6.2f s  CombatLoco de %d : sous-état %d → %d, mode %d vers (%.2f, %.2f)\n", maintenant / 1000.0, ped, avant, e.sousEtat, e.mode, e.point.x, e.point.y);
@@ -2474,6 +2476,7 @@ static void
 AvancerPietons(void)
 {
 	pietons.Avancer(0.033f);
+	pietons.AvancerVue(0.033f);   // CPed (FUN_004812d0) : FUN_0048ccf0, FUN_00499340
 	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
 		const CScriptPed *p = pietons.Acceder(i);
 		if(p == nil || journalRestant <= 0) continue;
@@ -3463,6 +3466,7 @@ main(int argc, char **argv)
 				r.precedent = r.instant >= 0.0f ? t - r.instant : -1.0f;  // FUN_00472b70 : +0x434 passe en +0x438 (-1 sans coup)
 				r.instant = t;
 				r.drapeau = k.drapeau & 0x7fffffff; r.jusqua = t + 1.0f; r.degats = degats; r.attaquant = c.first;
+				if(k.agresseur) pietons.Agresse(cible, c.first);   // FUN_0047b810 → FUN_004973d0 (le 15e argument, +0x214)
 				CActionController &v = controleurs[cible];
 				// Un piéton à terre (son nœud joué s'appelle On_Ground, ou un parent) : dans le moteur, la réaction passe par
 				// HitTree/BASE/HitTreeBase/…/On_Ground (« si MePlaying… », joué par un Execute des nœuds de coup), dont

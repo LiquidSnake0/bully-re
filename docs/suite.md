@@ -50,7 +50,7 @@ chantier. Un point fini passe en bas, avec son commit.
    fait finir son nœud même sans nœud visé ; `ActionRequest` lit le bouton brut (`FUN_005fd570`) ; huit conditions de plus (armes,
    conversation, missions, tenues, `AttackerConditionGroup`). `1_02` est réussie à 121,94 s (quinze jabs, docs/missions.md).
    Suite, dans l'ordre :
-   - ce qui reste supposé dans `CombatLoco` : la cible vue (`FUN_0048d320`), le point valable (`FUN_006254c0`), la recherche de chemin ;
+   - ce qui reste supposé dans `CombatLoco` : le point valable (`FUN_006254c0`), la recherche de chemin ;
    - le choix d'une cible (`FUN_004992a0`, `FUN_004988b0`, `FUN_00496b60`), les sphères des os des coups (au lieu du demi-espace
      avant) ;
    - les `SpeechTrack` sans tenue ; puis la mission suivante, `1_03`.

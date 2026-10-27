@@ -327,6 +327,35 @@ main(void)
 		q.Mourir(b);
 		VERIF(!q.IAAvance(b) && !q.IAAvance(-1));
 	}
+	// FUN_0048d320, FUN_0048cf50, FUN_0048ccf0 : la vue (le cône de la colonne D, la portée de la colonne E), son cache et
+	// le dernier agresseur (+0x1dbc, +0x1dc0).
+	{
+		CScriptPedPool q;
+		int a = q.Creer(146, CVector(0, 0, 0), 0, 1), b = q.Creer(85, CVector(5, 0, 0), 0, 1);
+		int32 col[64] = {};
+		col[2] = 100; col[3] = 12; col[4] = 100;              // STAT_B_STRIKER_A : 100 degrés, 12 m
+		VERIF(q.PoserStats(a, col) && fabsf(q.Acceder(a)->visionAngle - 1.745329f) < 1e-4f && q.Acceder(a)->visionPortee == 12);
+		auto zero = [](void *) { return 0; };                 // rand() = 0 : 4 images en cache
+		VERIF(q.Voit(a, a, zero, nil) && !q.Voit(a, 23, zero, nil));
+		VERIF(q.Voit(a, b, zero, nil));                       // devant, à 5 m
+		q.Acceder(b)->pos = CVector(-5, 0, 0);
+		VERIF(q.Voit(a, b, zero, nil));                       // le cache répond encore
+		for(int i = 0; i < 4; i++) q.AvancerVue(0.033f);
+		VERIF(!q.Voit(a, b, zero, nil));                      // derrière : hors du cône
+		q.Acceder(b)->pos = CVector(3, 3.5f, 0);              // à 49,4 degrés du devant, dans le demi-angle de 50
+		for(int i = 0; i < 4; i++) q.AvancerVue(0.033f);
+		VERIF(q.Voit(a, b, zero, nil));
+		q.Acceder(b)->pos = CVector(12.5f, 0, 0);             // au-delà de la portée
+		for(int i = 0; i < 4; i++) q.AvancerVue(0.033f);
+		VERIF(!q.Voit(a, b, zero, nil));
+		// Le dernier agresseur, à moins de 5 m et depuis moins de 5 s, est vu même dans le dos.
+		q.Acceder(b)->pos = CVector(-4, 0, 0);
+		for(int i = 0; i < 4; i++) q.AvancerVue(0.033f);
+		q.Agresse(a, b);
+		VERIF(q.Voit(a, b, zero, nil));
+		for(int i = 0; i < 152; i++) q.AvancerVue(0.033f);   // 5,02 s
+		VERIF(q.Acceder(a)->tempsAgresseur > 5.0f && !q.Voit(a, b, zero, nil));
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }

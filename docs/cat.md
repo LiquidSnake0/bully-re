@@ -583,8 +583,7 @@ Chaque changement de sous-état force le tirage de l'image suivante (+0x79). Les
 cible + le décalage +0x38, s'il tombe à plus de 0,5 m du piéton, `_DAT_009055a0`) et, sauf aux modes 3, 7 et 12, tourne le cap voulu
 vers la cible : le piéton tourne autour de sa cible en lui faisant face, et la navigation le ralentit (cos de l'écart). Dans `1_02`, le
 bully arrive par le retour (mode 12, de 30,10 à 31,32 s) puis enchaîne les points tirés autour du joueur (sous-états 1 et 2, toutes
-les 1,5 à 3 s) ; ses coups pendant la leçon de parade sont les mêmes, et `1_02` reste réussie à 118,93 s. Supposés : la cible toujours
-vue, le point toujours valable, l'arme à distance (+0x7a, `FUN_00625540`), la hauteur (le mode 1 au-delà de 2 m d'écart, 0x900bfc).
+les 1,5 à 3 s) ; ses coups pendant la leçon de parade sont les mêmes, et `1_02` reste réussie à 118,93 s. Supposés : le point toujours valable (la vue est lue depuis le 27.10 dans la nuit, plus bas), l'arme à distance (+0x7a, `FUN_00625540`), la hauteur (le mode 1 au-delà de 2 m d'écart, 0x900bfc).
 
 **La parade du bully** (lue le 27.10 au soir). La feuille `Block` de `CombatActions` (`AI_FightTutorial`) porte une piste
 `ActionRequest` (`ActionRequestTrack` 0x9348a0 : lancement `FUN_0061ba70`, mise à jour `FUN_006260d0`, arrêt `FUN_00626160`) : à
@@ -675,6 +674,20 @@ En la jugeant, un écart de `HitTime` est apparu : le bully de `1_02`, qu'aucun 
 comme l'outil le supposait : le constructeur du relevé (`FUN_005f3ab0`, ecx = le composant + 0x408, 0x484b5f) pose +0x434 et +0x438 à
 -1, que `FUN_004850b0` ne fait pas avancer. Corrigé, la prise tient comme avant ; `1_02` reste réussie à 121,94 s et n'a plus aucune
 condition jugée -1.
+
+**La vue d'un piéton** (`CScriptPedPool::Voit`), que la garde de `CombatLoco` (`FUN_0062c540`) et son retour (0x6257c0) demandent
+pour la cible : `FUN_0048d320`, sur le composant de vue (+0xa64 du piéton, vérifié à l'assembleur en 0x62c5aa ; son piéton en +0).
+Lui-même, oui. Le **dernier agresseur** (+0x1dbc, posé par la méthode du coup `FUN_0047b810` → `FUN_004973d0` quand son 15e
+argument est posé : relu à l'assembleur de l'appel en 0x5fa464 … 0x5fa4d9, c'est l'octet +0x214 de la piste `Collision`, le champ
+532, à 1 dans 189 pistes sur 218), depuis moins de 5 s (+0x1dc0, que `FUN_00499340` fait avancer chaque image) et à moins de 5 m
+(`_DAT_00900188`, `FUN_00487d00`), oui. Sinon le cache de 16 piétons (+0x10 du composant, 12 octets : le piéton, l'octet vu, les
+images à vivre, tirées entre 4 et 8 par `rand() × 5 / 0x7fff + 4`, que `FUN_0048ccf0` décompte depuis `CPed`, `FUN_004812d0`) ; à
+défaut `FUN_0048d0e0` : `FUN_0048cf50` (la cible à moins de la portée, +8 du composant, à plat ; puis le produit scalaire du devant et
+de la direction, à plat, strictement au-dessus du cosinus de la moitié de l'angle +4 : `_DAT_008ff1f8` = 0,5), puis la ligne de vue
+(`FUN_00461d50`, un rayon dans le monde, depuis la tête, `PedGetHeadPos`), que l'outil, sans monde, tient pour dégagée. L'angle et
+la portée sont les colonnes D et E de `pedstats.dat` (`FUN_00478e30` : +0xa68 = D × π / 180, +0xa6c = E ; l'en-tête du fichier les
+nomme : « Vision Yaw (in degrees) - total yaw », « Vision Range (in metres) ») : 100 degrés et 12 m pour `STAT_B_STRIKER_A`. Dans
+`1_02`, le bully fait face au joueur dans `CombatLoco` : il le voit toujours, rien ne change.
 
 ## Le chemin d'un nœud (18.10.2026)
 

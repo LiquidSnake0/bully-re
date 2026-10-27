@@ -287,6 +287,8 @@ CScriptPedPool::PoserStats(int h, const int32 colonnes[64])
 	p->santeMin = 0;
 	p->regeneration = (float)colonnes[5];
 	p->sante = p->santeMax;
+	p->visionAngle = (float)colonnes[2] * 3.14159265f / 180.0f;   // +0xa68 = la colonne D (+0x24) × π / 180
+	p->visionPortee = (float)colonnes[3];   // +0xa6c = la colonne E (+0x28)
 	p->sprint = (float)colonnes[16];        // FUN_00478e30 : +0x18d0 = la colonne R (+0x5c)
 	p->classeCombat = colonnes[17];         // +0x714 = la colonne S (+0x60)
 	return true;
@@ -613,4 +615,49 @@ CScriptPedPool::PrendreAttaquant(int h, int attaquant)
 	p.cibleObjectif = attaquant;
 	p.agresseur = attaquant;
 	return true;
+}
+
+bool
+CScriptPedPool::Voit(int h, int cible, int (*tirer)(void *), void *ctx)
+{
+	CScriptPed *p = Acceder(h);
+	const CScriptPed *c = Acceder(cible);
+	if(p == nil || c == nil) return false;
+	if(h == cible) return true;
+	float dx = c->pos.x - p->pos.x, dy = c->pos.y - p->pos.y, dz = c->pos.z - p->pos.z;
+	if(p->dernierAgresseur == cible && p->tempsAgresseur < 5.0f && dx * dx + dy * dy + dz * dz - 25.0f < 0.0f)
+		return true;
+	for(const CScriptPed::Vu &v : p->vus)
+		if(v.ped == cible) return v.vu;
+	// FUN_0048cf50 : à portée, à plat (z mis à 0) ; puis dans le cône du devant.
+	bool vu = false;
+	if(dx * dx + dy * dy - p->visionPortee * p->visionPortee <= 0.0f){
+		float n = sqrtf(dx * dx + dy * dy), a = p->cap * 3.14159265f / 180.0f;
+		float produit = n > 0.0f ? (cosf(a) * dx + sinf(a) * dy) / n : 1.0f;
+		vu = produit > cosf(p->visionAngle * 0.5f);
+	}
+	// FUN_0048d0e0 : la ligne de vue (FUN_00461d50) n'a rien à traverser dans l'outil.
+	for(CScriptPed::Vu &v : p->vus)
+		if(v.ped < 0){ v.ped = cible; v.vu = vu; v.images = tirer(ctx) * 5 / 0x7fff + 4; break; }
+	return vu;
+}
+
+void
+CScriptPedPool::AvancerVue(float dt)
+{
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
+		CScriptPed &p = peds[i];
+		for(CScriptPed::Vu &v : p.vus)   // FUN_0048ccf0
+			if(v.ped >= 0 && --v.images < 1){ v.ped = -1; v.vu = false; v.images = 0; }
+		p.tempsAgresseur = p.dernierAgresseur >= 0 ? p.tempsAgresseur + dt : 0.0f;   // FUN_00499340
+	}
+}
+
+void
+CScriptPedPool::Agresse(int h, int attaquant)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return;
+	p->dernierAgresseur = attaquant;
+	p->tempsAgresseur = 0;
 }
