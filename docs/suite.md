@@ -50,8 +50,7 @@ chantier. Un point fini passe en bas, avec son commit.
    lit le bouton brut (`FUN_005fd570`). `1_02` est réussie à 118,93 s.
    Suite, dans l'ordre :
    - les conditions encore jugées -1 dans `1_02` : `AttackerConditionGroup`, `PedIsInOutfit` (`FUN_005fbf70` → `FUN_006ca890` :
-     la tenue courante de la garde-robe 0x20c5f70, +0x178c, et les `Clothing…` des scripts), `OnMission` (`FUN_005fc940` : les états de mission du
-     moteur, 0, 1 et 11, à faire correspondre à ceux de l'outil), `MissionCond` dans les arbres d'actions, `ParametricTime`
+     la tenue courante de la garde-robe 0x20c5f70, +0x178c, et les `Clothing…` des scripts), `ParametricTime`
      (le +0x38 du contexte), `PropTargetInteractive` ;
    - la mort d'un piéton par la piste `Death` (`FUN_0060fdc0` → `FUN_00479110`, +0x1c98) au lieu de la santé nulle ;
    - ce qui reste supposé dans `CombatLoco` : la cible vue (`FUN_0048d320`), le point valable (`FUN_006254c0`), la recherche de chemin ;

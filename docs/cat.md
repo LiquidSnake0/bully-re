@@ -606,12 +606,18 @@ la cible, plus de 0,567 s avant l'échéance ; la cible hors du cône ; ou la ci
 |---|---|---|
 | `WeaponNeedInit` | `FUN_0065b7b0` (0x9366a4) | le +0x120 de l'objet arme (+0x1d0, un `CWeapon`) vaut -1 : posé à -1 par le constructeur (`FUN_004da610`, 0x4da696) et les remises (`FUN_004d92c0`, `FUN_004d9940`, `FUN_004d9fa0`), à son champ +0x2c par le lancement d'une piste `SetWeaponInfo` (`FUN_00660f50`, 7 à mains nues) : la banque `NeedInit` de `Weapons.cat` ne passe qu'une fois |
 | `ConversationActive` | `FUN_00685940` (0x937318) | lue à l'assembleur (0x685940 … 0x685953) : `setne` / `sub 1` / `and` avec `DAT_00b9db1c` ; avec un piéton dans le contexte (+8), faux ; sans piéton, l'octet de la conversation en cours |
+| `OnMission` | `FUN_005fc940` (0x92e6f0) | +4 nul : `MissionActive` ; sinon l'indice de la mission de ce nom (`FUN_006a9e70`, -1 sans elle) est celui de l'un des deux emplacements du gestionnaire (+0x4bc, +0x5a0 : `FUN_006aa520`, `FUN_006aa530`) dont l'état (+8) n'est ni 0, ni 1, ni 11 (`FUN_006aa290`, `FUN_006aa2b0`). Les états de `FUN_006ad3e0` : 1 demandée, 2 `MissionSetup`, 4 `main`, 12, 8 et 9 la fin de `main`, 10 `MissionCleanup`, 11 finie, puis 0 |
+| `MissionCond` | `FUN_006a7db0` (0x94173c, créateur 0x63a140 → `FUN_006a7d50`) | la même classe que dans `Missions.cat` : la mission +4 a au moins une réussite (`CMissionBank::Evaluer`) |
 | `BlockTimer` | `FUN_00600160` (0x936a08) | maintenant comparé par +0xc à l'instant de la parade (+0x4d0) + 1000 × (+4) ; si elle passe, l'octet +8 la relance |
 
 `SetWeaponInfo` (`SetWeaponInfoTrack` 0x935d04) pose aussi, sur le composant de visée (+0x1c8), des angles (+0x18, +0x20, +0x30, en
 degrés passés en radians par π / 180) et des distances (non suivis). Dans `1_02`, la banque `NeedInit` passe une fois pour chaque
 piéton qui joue `Weapons.cat` ; les 762 jugements de `WeaponNeedInit` et les 19 de `ConversationActive` se décident, et
-`AttackerConditionGroup` (#5106e3f5, 10 jugements) apparaît au bilan, derrière `NeedInit`.
+`AttackerConditionGroup` (#5106e3f5, 10 jugements) apparaît au bilan, derrière `NeedInit`. Les banques `release` des charges de
+prise (`Grapples.cat`, `GrappleStrikes/HitC/Charge`…) demandent `NOT(MissionCond[C_Wrestling_1] OR OnMission[C_Wrestling_1])`
+(0x1df0f8cb, le premier cours de lutte) : tant que le joueur n'a pas réussi ce cours, la charge se lâche d'elle-même. Dans `1_02`, la
+charge de 57 s passe donc par `Charge/Release/#3fecfdea` (57,09 s) au lieu de `Charge_Pt2/Give` (57,59 s) ; la partie reste réussie
+à 118,93 s.
 
 **La course de `RunStart` est donc établie : il n'y en a pas.** À 89,33 s le joueur est à 0,75 m, sous le petit rayon : le pas de
 `CombatLoco` est le mode 10, sur place, et la navigation, arrivée, laisse la vitesse à 0 (`FUN_004a4eb0` la pose à 0 quand

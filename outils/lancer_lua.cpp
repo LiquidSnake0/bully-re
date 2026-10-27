@@ -162,6 +162,11 @@ static bool ZoneDehors(int z){ static const int d[] = {0, 1, 22, 31, 42, 43, 64,
 static lua_State *etatLua = nil;        // pour LuaCond : la fonction du script de mission appelée par le contrôleur
 // LuaCond (FUN_006a74d0) : la fonction +0x10 du script +0xc, appelée dans son espace de noms ; -1 si rien n'est appelable.
 static int AppelLuaCond(const std::string &script, const std::string &fonction);
+// OnMission (ConditionOnMission 0x92e6f0, FUN_005fc940) : la mission en cours a le nom haché +4 ; +4 nul : une mission en cours.
+static int SurMission(uint32 hachage);
+// MissionCond (CMissionCond 0x94173c, FUN_006a7db0) dans un arbre d'actions : la même classe que dans Missions.cat (le
+// créateur 0x63a140 → FUN_006a7d50) ; la mission +4 a au moins une réussite (CMissionBank::Evaluer).
+static int ConditionMission(const uint32 mots[6]);
 // --demander N@s : une ActionRequest du joueur (la manette) en attente jusqu'à cet instant (ms).
 static std::map<uint32, uint32> demandes;
 // L'état des 47 boutons bruts des autres piétons (+0x20 du composant +0x2e0, 12 octets par bouton : l'octet d'état en +0),
@@ -354,7 +359,11 @@ struct CJugeOutil : CJugeAction {
 		// ConversationActive (CConversationActiveCond 0x937318, FUN_00685940, lue à l'assembleur de 0x685940 à 0x685953) :
 		// setne / sub 1 / and : l'octet de DAT_00b9db1c (une conversation en cours) seulement quand le contexte n'a pas de
 		// piéton (+8) ; avec un piéton, faux.
-		static const uint32 kArmeInit = ActionHash("WeaponNeedInit"), kConversation = ActionHash("ConversationActive");
+		static const uint32 kArmeInit = ActionHash("WeaponNeedInit"), kConversation = ActionHash("ConversationActive"),
+		                    kSurMission = ActionHash("OnMission");
+		if(type == kSurMission) return SurMission(mots[0]);
+		static const uint32 kCondMission = ActionHash("MissionCond");
+		if(type == kCondMission) return ConditionMission(mots);
 		if(type == kArmeInit) return moi && moi->armeInit == -1.0f;
 		if(type == kConversation) return 0;
 		// WeaponDesiredIsEquiped (FUN_0065b5b0) : sans arme voulue, vrai ; sinon l'objet arme (+0x1d0) doit en avoir le
@@ -806,6 +815,19 @@ static struct {
 	bool reussie = false;
 } mission;
 
+// FUN_005fc940 : +4 nul, MissionActive ; sinon l'indice de la mission de ce nom (FUN_006a9e70, -1 sans elle) doit être celui
+// de l'un des deux emplacements du gestionnaire (+0x4bc, puis +0x5a0 : FUN_006aa520, FUN_006aa530), dont l'état (+8) n'est
+// ni 0 (aucune), ni 1 (demandée), ni 11 (finie) (FUN_006aa290, FUN_006aa2b0). Les états de FUN_006ad3e0 : 2 MissionSetup,
+// 4 main, 12, 8 et 9 la fin de main, 10 MissionCleanup, 11 finie, puis 0 : ceux de l'outil (PREPARATION, DEROULEMENT,
+// NETTOYAGE) sont tous « en mission ». L'outil n'a qu'un emplacement.
+static int
+SurMission(uint32 hachage)
+{
+	if(hachage == 0) return mission.etat != AUCUNE;
+	if(mission.etat == AUCUNE || mission.indice < 0 || mission.indice >= (int)banque.missions.size()) return 0;
+	return (banque.missions[mission.indice].hachage & 0x7fffffff) == (hachage & 0x7fffffff);
+}
+
 // FUN_006a74d0 : le script « mission » est celui de la mission en cours (FUN_006aa630, MissionGetName +0x1c ; aucune :
 // faux) ; un autre nom est cherché parmi les objets script sans la casse, « \ » lu « / » (FUN_005dbb60), sinon le premier
 // (FUN_005db770(0), main.lua). FUN_005d80a0 en fait le script courant (FUN_005dbc40) et appelle, par FUN_005d8000,
@@ -859,6 +881,16 @@ static struct {
 	CEtatMissions etat;                  // le mot +2 de chaque entrée (réussites) et l'heure, que les conditions lisent
 	bool deplacerJoueur = true;          // SystemShouldMovePlayer : vrai une fois à la nouvelle partie
 } gestionnaire;
+
+static int
+ConditionMission(const uint32 mots[6])
+{
+	CMissionCondition c;
+	c.type = ActionHash("MissionCond") & 0x7fffffff;
+	for(int i = 0; i < 6; i++) c.mots[i] = mots[i];
+	if(gestionnaire.etat.reussites.size() != banque.missions.size()) gestionnaire.etat.reussites.assign(banque.missions.size(), 0);
+	return banque.Evaluer(c, gestionnaire.etat);
+}
 
 // Le nom d'une mission pour le journal : en clair quand le fichier le donne, sinon son titre.
 static const char *

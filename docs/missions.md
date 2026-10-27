@@ -388,7 +388,9 @@ est large de 22,80 à 29,40 s. `1_02` reste réussie à 119,03 s, `1_01` à 10,4
 Le 27.10 au soir (docs/cat.md, « La vitesse de l'intention, lue le 27.10.2026 (soir) ») : l'approche de `CombatLoco` s'arrête au
 petit rayon (0,9 m, `FUN_0062c740`), plus au grand ; le bully se tient plus près du joueur, qui le rejoint plus tôt pour
 l'humiliation (`GV` à 84,12 s, `RCV/END` à 89,33 s) : **`1_02` se termine réussie à 118,93 s**. Pendant `RunStart`, le joueur est sous
-le petit rayon : la vitesse de l'intention est 0 dans le jeu aussi, le bully tombe sur place.
+le petit rayon : la vitesse de l'intention est 0 dans le jeu aussi, le bully tombe sur place. `MissionCond` et `OnMission` sont jugées dans les arbres
+d'actions : la charge de la prise (57 s) se lâche d'elle-même (`Charge/Release`, 57,09 s), le cours de lutte `C_Wrestling_1` n'étant
+pas réussi.
 
 ## Suite
 
