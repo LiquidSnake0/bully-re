@@ -321,6 +321,34 @@ struct CJugeOutil : CJugeAction {
 		static const uint32 kArmeVoulue = ActionHash("WeaponDesired"), kArmeInventaire = ActionHash("WeaponIsInventory");
 		if(type == kArmeVoulue) return (mots[1] & 0xff) == 0;
 		if(type == kArmeInventaire) return 0;
+		// WeaponDesiredIsEquiped (FUN_0065b5b0) : sans arme voulue, vrai ; sinon l'objet arme (+0x1d0) doit en avoir le
+		// modèle (+0x10e), et l'arme voulue « dernière » (-1) est alors effacée. IsWeaponFiredWhenDropped (FUN_0065bbe0) :
+		// l'octet +0x2b du type de l'arme tenue (WeaponGetType), faux sans arme.
+		static const uint32 kArmeTenue = ActionHash("WeaponDesiredIsEquiped"), kArmeLachee = ActionHash("IsWeaponFiredWhenDropped");
+		if(type == kArmeTenue) return 1;
+		// WeaponAmmo (FUN_0065b290) : les munitions (FUN_00486130 : 0 pour une arme sous 1) de l'arme tenue (FUN_00474aa0 :
+		// le modèle +0x10e de l'objet arme +0x1d0, sinon 0), ou avec l'octet +0xc celles de l'arme du HUD (HUDWeapons, le
+		// composant 20, +0xc0) pour le joueur seulement, comparées à +4 par +8 (FUN_005fb750). Sans arme : 0.
+		static const uint32 kMunitions = ActionHash("WeaponAmmo");
+		if(type == kMunitions){
+			if((mots[2] & 0xff) && (moi == nil || moi->type != SCRIPT_PED_TYPE_JOUEUR)) return 0;
+			return ComparerCondition(0.0f, seuil, mots[1]);
+		}
+		if(type == kArmeLachee) return 0;
+		// CollisionWeaponType (FUN_0065aa30) : sur le relevé du dernier coup reçu (le +0x10 du contexte, +0x408 du composant
+		// +0x2e0), l'arme du coup (+0x5e, un mot : +0x466 ; -1 à mains nues) et son genre (+0x60 : +0x468), que la méthode
+		// du coup pose (FUN_0047b810, ses 5e et 19e arguments). Avec l'octet +8, l'arme du nom +0xc (FUN_0051ad50 : -1 pour
+		// « unarmed » ou un nom inconnu, gardée en +0x10) doit être celle du coup ; sans lui, une arme est requise, puis le
+		// genre +4 (0 à 3) juge son type (+0x68, +0x69) et le genre du coup. Les coups de l'outil sont à mains nues (-1) :
+		// seul un nom sans modèle d'arme passe (l'outil cherche le nom parmi tous les modèles des .idb, le moteur parmi les
+		// 146 armes de ms_weaponModelStore, DAT_00c735e8 ; les huit noms des arbres de 1_02, W_Itch, dodgeball, Banana…,
+		// sont des armes).
+		static const uint32 kArmeDuCoup = ActionHash("CollisionWeaponType");
+		if(type == kArmeDuCoup){
+			if((mots[1] & 0xff) == 0) return 0;
+			std::string nom = f.ChaineCitee((uint32)d + 16);
+			return strcasecmp(nom.c_str(), "unarmed") == 0 || modeles.Index(nom.c_str()) < 0;
+		}
 		// CollisionStart (FUN_00602260) : l'octet +0x4e5 du piéton, que le lancement d'une piste Collision pose et que rien
 		// ne remet à 0. AttackPhase (FUN_00601fc0) : la phase +0x71c est +4, et, si +8 est positif, l'échéance +0x720
 		// tombe plus de +8 secondes après maintenant (src/core/ActionController).
