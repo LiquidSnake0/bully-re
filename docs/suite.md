@@ -53,7 +53,10 @@ chantier. Un point fini passe en bas, avec son commit.
    - ce qui reste supposé dans `CombatLoco` : le point valable (`FUN_006254c0`), la recherche de chemin ;
    - le choix d'une cible (`FUN_004992a0`, `FUN_004988b0`, `FUN_00496b60`), les sphères des os des coups (au lieu du demi-espace
      avant) ;
-   - les `SpeechTrack` sans tenue ; puis la mission suivante, `1_03`.
+   - les `SpeechTrack` sans tenue ;
+   - `1_03` (docs/missions.md, « 1_03 ») : `PedFollowPath` pose l'objectif et les règles du suivi sont recréées ; reste la piste
+     `FollowPath` elle-même, bloquée sur le rayon d'arrivée par défaut (+0x51c du piéton, introuvable à l'assembleur hors de
+     `PedPathNodeReachedDistance`) : le chercher par REA (les références à +0x51c, une copie de structure) ou sur le jeu en marche.
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
    directement au lieu des exports headless. Prérequis : Ghidra 12.1.4 et

@@ -356,6 +356,33 @@ main(void)
 		for(int i = 0; i < 152; i++) q.AvancerVue(0.033f);   // 5,02 s
 		VERIF(q.Acceder(a)->tempsAgresseur > 5.0f && !q.Voit(a, b, zero, nil));
 	}
+	// FUN_0061acc0, FUN_0061ad60, FUN_0061afa0, FUN_0062eaa0 : le suivi d'un trajet (le nœud suivant selon le mode, les
+	// nœuds d'arrêt, le plan de passage d'un nœud et son franchissement).
+	{
+		CSuiviTrajet s;
+		int32 n = 2;
+		s.mode = 0; VERIF(!ScriptPedSuiviSuivant(s, 3, n) && n == 3);   // une fois : fini après le dernier
+		n = 2; s.mode = 1; VERIF(ScriptPedSuiviSuivant(s, 3, n) && n == 0);   // en boucle
+		n = 2; s.mode = 2; s.sens = 1; VERIF(ScriptPedSuiviSuivant(s, 3, n) && n == 1 && s.sens == -1);   // aller-retour
+		n = 0; VERIF(ScriptPedSuiviSuivant(s, 3, n) && n == 1 && s.sens == 1);
+		n = 1; s.mode = 3; VERIF(ScriptPedSuiviSuivant(s, 3, n) && n == 1);
+		s.mode = 7; VERIF(!ScriptPedSuiviSuivant(s, 3, n));
+		std::vector<CNoeudTrajet> t(4);
+		t[0].pos = CVector(0, 0, 0); t[1].pos = CVector(10, 0, 0); t[2].pos = CVector(10, 10, 0); t[3].pos = CVector(20, 10, 0);
+		s.mode = 0;
+		VERIF(!ScriptPedSuiviArret(s, t, 1) && ScriptPedSuiviArret(s, t, 3));
+		t[2].attente = 2.0f; VERIF(ScriptPedSuiviArret(s, t, 2)); t[2].attente = 0;
+		s.mode = 1; VERIF(!ScriptPedSuiviArret(s, t, 3));
+		s.mode = 2; VERIF(ScriptPedSuiviArret(s, t, 0) && ScriptPedSuiviArret(s, t, 3) && !ScriptPedSuiviArret(s, t, 2));
+		s.mode = 0; s.sens = 1;
+		ScriptPedSuiviPoserPlan(s, t, -1, 1);                 // sans précédent : la normale va vers le nœud 2
+		VERIF(s.plan == 1 && fabsf(s.planNormale.y - 1.0f) < 1e-5f);
+		ScriptPedSuiviPoserPlan(s, t, 0, 1);                  // un virage à 90 degrés : la bissectrice
+		VERIF(s.plan == 1 && fabsf(s.planNormale.x - 0.7071068f) < 1e-4f && fabsf(s.planNormale.y - 0.7071068f) < 1e-4f);
+		VERIF(!ScriptPedSuiviPlanPasse(s, CVector(9, -1, 0)) && ScriptPedSuiviPlanPasse(s, CVector(10, 0.5f, 0)));
+		ScriptPedSuiviPoserPlan(s, t, 2, 3);                  // le dernier nœud est un arrêt : pas de plan
+		VERIF(s.plan == -1 && !ScriptPedSuiviPlanPasse(s, CVector(30, 10, 0)));
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }

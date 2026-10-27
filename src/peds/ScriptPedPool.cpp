@@ -661,3 +661,78 @@ CScriptPedPool::Agresse(int h, int attaquant)
 	p->dernierAgresseur = attaquant;
 	p->tempsAgresseur = 0;
 }
+
+bool
+ScriptPedSuiviSuivant(CSuiviTrajet &s, int nombre, int32 &noeud)
+{
+	if(nombre == 0) return false;
+	switch(s.mode){
+	case 0:
+		noeud++;
+		return noeud < nombre;
+	case 1:
+		noeud++;
+		if(noeud >= nombre) noeud = 0;
+		return true;
+	case 2:
+		noeud += s.sens;
+		if(noeud >= nombre){ s.sens = -1; noeud = nombre - 2; return true; }
+		if(noeud < 0){ noeud = 1; s.sens = 1; }
+		return true;
+	case 3:
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool
+ScriptPedSuiviArret(const CSuiviTrajet &s, const std::vector<CNoeudTrajet> &noeuds, int32 noeud)
+{
+	int nombre = (int)noeuds.size();
+	if(noeud < 0 || noeud >= nombre) return true;
+	const CNoeudTrajet &n = noeuds[noeud];
+	if(n.actions || n.attente > 0.0f) return true;
+	if(s.mode == 2) return noeud == nombre - 1 || noeud == 0;
+	if(s.mode == 0 || s.mode == 3) return noeud == nombre - 1;
+	return false;
+}
+
+static CVector
+Unitaire(const CVector &v)
+{
+	float n = sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
+	return n > 0.0f ? CVector(v.x / n, v.y / n, v.z / n) : CVector(0, 0, 0);
+}
+
+void
+ScriptPedSuiviPoserPlan(CSuiviTrajet &s, const std::vector<CNoeudTrajet> &noeuds, int32 precedent, int32 noeud)
+{
+	int32 suivant = noeud;
+	if(ScriptPedSuiviArret(s, noeuds, noeud) || !ScriptPedSuiviSuivant(s, (int)noeuds.size(), suivant) ||
+	   suivant < 0 || suivant >= (int)noeuds.size()){
+		s.plan = -1;
+		return;
+	}
+	const CVector &p = noeuds[noeud].pos, &q = noeuds[suivant].pos;
+	CVector vers = Unitaire(CVector(q.x - p.x, q.y - p.y, q.z - p.z));
+	s.planPoint = p;
+	s.plan = noeud;
+	s.planNormale = vers;
+	if(precedent < 0 || precedent >= (int)noeuds.size()) return;
+	const CVector &r = noeuds[precedent].pos;
+	CVector depuis = Unitaire(CVector(r.x - p.x, r.y - p.y, r.z - p.z));
+	CVector somme(depuis.x + vers.x, depuis.y + vers.y, depuis.z + vers.z);
+	if(somme.x * somme.x + somme.y * somme.y + somme.z * somme.z < 0.05f) return;   // _DAT_00900c18 (0,05) : presque droit
+	CVector n = Unitaire(CVector(-somme.y, somme.x, 0.0f));
+	if(n.x * vers.x + n.y * vers.y + n.z * vers.z < 0.0f) n = CVector(-n.x, -n.y, -n.z);
+	s.planNormale = n;
+}
+
+bool
+ScriptPedSuiviPlanPasse(const CSuiviTrajet &s, const CVector &pos)
+{
+	if(s.plan < 0) return false;
+	CVector v(s.planPoint.x - pos.x, s.planPoint.y - pos.y, s.planPoint.z - pos.z);
+	return s.planNormale.x * v.x + s.planNormale.y * v.y + s.planNormale.z * v.z <= 0.0f;
+}

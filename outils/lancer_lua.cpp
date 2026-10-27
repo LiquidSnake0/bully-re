@@ -2246,6 +2246,53 @@ PedMoveToPoint(lua_State *L)
 	return 0;
 }
 
+// PedFollowPath(ped, trajet, mode, allure, rappel, départ, rappel2, rappel3) (0x5cfbf0) : rien sans piéton, sans trajet
+// (FUN_005ed240), pour un trajet vide, ou d'un seul nœud hors du mode 3. Avec plus de cinq arguments, ou si l'objectif
+// FollowPath de sa file (FUN_005cf670 : le premier de type 12) suit un autre trajet : le contrôleur de l'IA s'arrête
+// (FUN_005f3f40 sur +0x290), la file se vide (FUN_00470200) et un objectif FollowPath neuf (FUN_0046fc20) va au bout
+// (CPed::PushObjective), son nœud de départ pris au sixième argument (0 sinon). L'objectif passe ensuite devant (FUN_00471be0),
+// reçoit le mode (+0x24) et la vitesse de l'allure (+0x3c, FUN_005c6180, 0,3 par défaut, _DAT_00911e30). Les trois rappels
+// (+0x2c au nœud atteint, FUN_0062e640 ; +0x30 au nœud quitté, FUN_0062df60 ; +0x34) ne sont pas encore gardés : la piste
+// FollowPath qui avance le piéton n'est pas jouée (docs/missions.md, « 1_03 »).
+static int
+PedFollowPath(lua_State *L)
+{
+	Journal("PedFollowPath", L, 1);
+	CScriptPed *p = lua_isnumber(L, 1) ? pietons.Acceder((int)lua_tonumber(L, 1)) : nil;
+	if(p == nil || !lua_isnumber(L, 2)) return 0;
+	int ped = (int)lua_tonumber(L, 1), trajet = (int)lua_tonumber(L, 2), mode = (int)luaL_optnumber(L, 3, 0);
+	const CTriggerPath *t = donnees.TrajetParHandle(trajet);
+	if(t == nil || t->points.empty() || (t->points.size() == 1 && mode != 3)) return 0;
+	int arguments = lua_gettop(L), courant = -1;
+	for(int i = 0; i < p->nombreObjectifs; i++) if(p->objectifs[i].type == OBJECTIF_SUIVRE_TRAJET){ courant = i; break; }
+	if(arguments > 5 || courant < 0 || p->objectifs[courant].trajet != trajet){
+		if(controleursIA.count(ped)) controleursIA[ped].Jouer(arbres, nil, maintenant / 1000.0f);   // FUN_005f3f40
+		p->nombreObjectifs = 0;                                                                     // FUN_00470200
+		CObjectifPieton o;
+		o.type = OBJECTIF_SUIVRE_TRAJET; o.trajet = trajet;
+		o.noeudDepart = arguments > 5 ? (int)luaL_optnumber(L, 6, 0) : 0;
+		pietons.PousserObjectif(ped, o, false);
+		courant = p->nombreObjectifs - 1;
+	}
+	CObjectifPieton o = p->objectifs[courant];   // FUN_00471be0 : devant
+	for(int i = courant; i > 0; i--) p->objectifs[i] = p->objectifs[i - 1];
+	p->objectifs[0] = o;
+	p->objectifs[0].mode = mode;
+	p->objectifs[0].vitesse = ScriptPedIntentionVitesse(lua_isnumber(L, 4) ? (int)lua_tonumber(L, 4) : -1, 0.3f);
+	return 0;
+}
+
+// PathGetLastNode(trajet) (0x5bc600) : le dernier nœud (le nombre moins 1, FUN_005ec510), nil sans trajet ou pour un trajet vide.
+static int
+PathGetLastNode(lua_State *L)
+{
+	appels["PathGetLastNode"]++;
+	const CTriggerPath *t = lua_isnumber(L, 1) ? donnees.TrajetParHandle((int)lua_tonumber(L, 1)) : nil;
+	if(t && !t->points.empty()) lua_pushnumber(L, (lua_Number)(t->points.size() - 1));
+	else lua_pushnil(L);
+	return 1;
+}
+
 // PedMoveToXYZ(ped, allure, x, y, z) (0x5c7c90).
 static int
 PedMoveToXYZ(lua_State *L)
@@ -3315,6 +3362,8 @@ main(int argc, char **argv)
 	lua_register(L, "PedIsDead", PedIsDead);
 	lua_register(L, "PedGetHealth", PedGetHealth);
 	lua_register(L, "PedSetHealth", PedSetHealth);
+	lua_register(L, "PedFollowPath", PedFollowPath);
+	lua_register(L, "PathGetLastNode", PathGetLastNode);
 	lua_register(L, "MissionForceCompleted", MissionForceCompleted);
 	lua_register(L, "PedSetImmortalFlag", PedSetImmortalFlag);
 	lua_register(L, "PedGetImmortalFlag", PedGetImmortalFlag);

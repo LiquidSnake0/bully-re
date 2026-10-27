@@ -79,6 +79,35 @@ struct CCombatLoco {
 	bool tirage = false;         // +0x78 : FUN_00465910(8) à cette image
 	bool forcer = false;         // +0x79 : la prochaine image tire
 };
+// Le suivi d'un trajet (PATH) : l'objectif FollowPath (FollowPathObjective, table 0x90ca24, type 12 ; constructeur
+// FUN_0046fc20, posé par PedFollowPath 0x5cfbf0 : le trajet +0x10, le nœud de départ +0x14, le mode +0x24, le sens +0x28 à 1,
+// la vitesse +0x3c par FUN_005c6180, les rappels Lua +0x2c, +0x30, +0x34) et la piste FollowPath (FollowPathTrack 0x93800c :
+// lancement FUN_0062c290, mise à jour FUN_0062eb70, arrêt FUN_0062c2e0, fin FUN_00621c80 qui retire l'objectif, pas
+// FUN_0062ee20), qui en recopie les champs (FUN_0062c1e0).
+struct CSuiviTrajet {
+	int32 noeud = 0;             // +0x20 : le nœud visé
+	int32 precedent = -1;        // +0x24
+	int32 mode = 1;              // +0x30 : 0 une fois, 1 en boucle, 2 aller-retour, 3 sur place
+	int32 sens = 1;              // +0x34 : le pas de l'aller-retour
+	int32 plan = -1;             // +0x44 : le nœud dont on guette le passage, -1 aucun
+	CVector planPoint;           // +0x48 : ce nœud
+	CVector planNormale;         // +0x54 : la normale du plan de passage, vers la suite du trajet
+};
+// Un nœud du trajet tel que la piste le lit (FUN_005ec760) : sa position, son attente (+0x1c, en secondes) et ses actions (+0x20).
+struct CNoeudTrajet { CVector pos; float attente = 0; bool actions = false; };
+// FUN_0061acc0 : le nœud qui suit `noeud` selon le mode (le sens change aux bouts de l'aller-retour) ; faux à la fin du mode 0,
+// pour un mode inconnu ou un trajet vide. Le mode 3 garde le nœud.
+bool ScriptPedSuiviSuivant(CSuiviTrajet &s, int nombre, int32 &noeud);
+// FUN_0061ad60 : le piéton doit-il s'arrêter à ce nœud ? Oui s'il a des actions ou une attente, au dernier nœud des modes 0
+// et 3, aux deux bouts du mode 2 ; jamais en boucle (mode 1).
+bool ScriptPedSuiviArret(const CSuiviTrajet &s, const std::vector<CNoeudTrajet> &noeuds, int32 noeud);
+// FUN_0061afa0(precedent, noeud) : le plan de passage du nœud, sauf pour un nœud d'arrêt (alors plus de plan) ou sans suite :
+// sa normale est la direction vers le nœud suivant ; avec un précédent et un virage (la somme des deux directions unitaires
+// au carré au moins _DAT_00900c18), la perpendiculaire à plat de leur bissectrice, tournée vers la suite.
+void ScriptPedSuiviPoserPlan(CSuiviTrajet &s, const std::vector<CNoeudTrajet> &noeuds, int32 precedent, int32 noeud);
+// FUN_0062eaa0 : le piéton a-t-il passé le plan (le produit de la normale et du nœud moins le piéton ≤ 0) ?
+bool ScriptPedSuiviPlanPasse(const CSuiviTrajet &s, const CVector &pos);
+
 // `tirer` rend un rand() du CRT (0 à 32767) ; les positions sont lues à plat.
 void ScriptPedCombatLocoChoisir(CCombatLoco &c, const CVector &soi, const CVector &cible, float petit, float grand,
                                 int32 pasMs, bool cibleVue, int (*tirer)(void *), void *ctx);
@@ -102,8 +131,14 @@ static const float SCRIPT_PED_DEGATS = 10.0f;       // points de vie par coup
 // Objective les traite ensemble, FUN_00606c00). Le compte de références (+0xc) n'est pas suivi.
 // FleeObjective (le constructeur FUN_0046f940(0x16, piéton), table 0x911894) est le type 22, la cible fuie en +0x10.
 enum { SCRIPT_PED_TYPE_DEFAUT = 12, SCRIPT_PED_TYPE_JOUEUR = 13 };
-enum { OBJECTIF_ATTAQUER_PIETON = 7, OBJECTIF_ATTAQUER_16 = 16, OBJECTIF_FUIR = 22, SCRIPT_PED_OBJECTIFS = 20 };
-struct CObjectifPieton { int32 type = -1; int cible = -1; int32 style = 0; };
+enum { OBJECTIF_ATTAQUER_PIETON = 7, OBJECTIF_SUIVRE_TRAJET = 12, OBJECTIF_ATTAQUER_16 = 16, OBJECTIF_FUIR = 22, SCRIPT_PED_OBJECTIFS = 20 };
+struct CObjectifPieton {
+	int32 type = -1; int cible = -1; int32 style = 0;
+	// FollowPath (type 12, FUN_0046fc20) : le trajet (+0x10, -1 au départ), le nœud de départ (+0x14), le mode (+0x24, 1 au
+	// départ), la vitesse (+0x3c, _DAT_00911e30 au départ, puis l'allure de FUN_005c6180).
+	int32 trajet = -1, noeudDepart = 0, mode = 1;
+	float vitesse = 0.3f;
+};
 
 struct CScriptPed {
 	bool vivant = false;         // l'entrée est prise
