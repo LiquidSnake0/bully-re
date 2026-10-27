@@ -88,6 +88,13 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- La vitesse de l'IA et la parade (27.10, soir ; 5e778b1, 9d2108e, 85a3bd9, 0d5f9fc, 70ebb21, 7c260a7, 36fca42, 379089e, 004063b) :
+  les entrées vidées (`FUN_005f38e0`, `IDLE`, la garde `FUN_00484490`), la vitesse de la navigation (`FUN_005e4a60`), l'arrêt de
+  `CombatLoco` au petit rayon et ses quatre sous-états (`FUN_0062e120`), la course de `RunStart` établie (il n'y en a pas), les boutons
+  des piétons de l'IA (`ActionRequest` = `FUN_005fd570`, la piste `FUN_006260d0`), `SetWeaponInfo` et `WeaponNeedInit`,
+  `ConversationActive`, `OnMission`, `MissionCond`, la garde-robe (`PedIsInOutfit`), `AttackerConditionGroup`, la fin demandée par une
+  `Opportunity` prise : **le bully pare, `1_02` reste réussie à 121,94 s** en quinze jabs.
+
 - Les conditions du 27.10 (1a93702, c2d4361, 435c68a, 49ca373, 786e4c3, 79bece1, 30ac742, 0678b57, 2e9d430) : le HUD (48
   composants, `HudComponentVisible`), `CollisionStart` (+0x4e5, jamais remis à 0) et `AttackPhase` (la phase +0x71c et son
   échéance, `FUN_005f9480`, `FUN_005f9e70`, `FUN_005f8240`), les manettes et `Controller`, quatre conditions d'armes, l'état social
