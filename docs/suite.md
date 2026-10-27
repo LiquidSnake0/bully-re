@@ -42,19 +42,23 @@ chantier. Un point fini passe en bas, avec son commit.
    règle de l'octet +8 ; `1_02` reste réussie (119,03 s).
    Les références montées et la pile du contexte sont lues (docs/cat.md, « Les références montées ») ; `LuaCond` appelle dans
    l'espace de noms de la mission : le bully attaque pendant la leçon de parade. `1_02` reste réussie (119,03 s).
+   Les conditions de la parade, des armes, du social, des caméras, du HUD et des manettes sont lues (docs/cat.md, « Les
+   conditions lues le 27.10.2026 ») ; la vitesse de `CombatLoco` vient du pas (`FUN_00625970`). `1_02` reste réussie (119,03 s).
    Suite, dans l'ordre :
-   - **la course de `RunStart`** (la piste `Locomotion`, `FUN_00613480`, exécute l'intention de mouvement +0 / +0x1c du
-     composant +0x2e0) : qui la pose pour un piéton dont l'objectif est `FleeObjective` (22), alors
-     qu'`AI_FightTutorial` n'a aucune branche pour cet objectif (seules `CombatLoco` et la piste `flee` des `Reactions`
-     la posent) ; peut-être l'animation `PLAYERRUN_START` elle-même (le déplacement de la racine) ;
-   - **`CollisionStart` et `AttackPhase`** (la parade `Block` de `CombatActions`, maintenant que le bully frappe) : la piste
-     `Collision` pose au lancement (`FUN_005f9480`) la phase +0x71c à 1, l'octet +0x4e5 et l'échéance +0x720, sa mise à jour
-     (`FUN_005f9e70`) la phase 2 dans la fenêtre et 3 après, son arrêt (`FUN_005f8240`) 0 ; reste à trouver qui remet +0x4e5
-     à zéro (aucune écriture d'un octet nul trouvée hors de `FUN_006f2d10`) ;
-   - les conditions encore jugées -1 dans `1_02` (le bilan de fin de `lancer_lua`) : `HudComponentVisible`,
-     `CollisionStart`, `IsSocialStateWait` (+0xbb0 / +0xbb4), `CollisionWeaponType` (le +0x10 du contexte), `Controller`… ;
-   - le choix d'une cible (`FUN_004992a0`, `FUN_004988b0`, `FUN_00496b60`), `CollisionStart` et `AttackPhase` (la parade
-     `Block` de `CombatActions`), les sphères des os des coups (au lieu du demi-espace avant) ;
+   - **la course de `RunStart`** : la piste `Locomotion` (`FUN_00613480`) lit l'intention, aucune piste de `RunStart` ne l'écrit ;
+     reste à savoir ce que vaut la vitesse à 89,43 s, c'est-à-dire qui l'a posée en dernier (les 35 écritures de +0x1c relevées :
+     navigation, pistes de locomotion de l'IA, `FUN_004812d0` en 0x481603) et si `CPed` la remet à 0 à chaque image ;
+   - **le reste de `CombatLoco`** : le point tiré entre les deux rayons aux images de tirage (`FUN_0062c740` →
+     `FUN_0062c4f0`, mode 8), les sous-états 1 à 3 (`FUN_0061b700`, `FUN_00625740`, `FUN_0062c540`, `FUN_0061b6a0`) et le petit
+     rayon (+0x6c) comme arrêt, au lieu du grand ;
+   - les conditions encore jugées -1 dans `1_02` : `WeaponNeedInit` (+0x120 de l'objet arme +0x1d0, sa valeur pour un piéton
+     sans arme), `ConversationActive`, `PedIsInOutfit` (`FUN_006ca890`), `OnMission` (`FUN_005fc940` : les états de mission du
+     moteur, 0, 1 et 11, à faire correspondre à ceux de l'outil), `MissionCond` dans les arbres d'actions, `ParametricTime`
+     (le +0x38 du contexte), `PropTargetInteractive` ;
+   - la parade du bully (`BLOCK` de `CombatActions` : `F_CanBlock` rend 1 par moments, mais la banque ne redescend qu'à la fin
+     du `ControlNode`) ;
+   - le choix d'une cible (`FUN_004992a0`, `FUN_004988b0`, `FUN_00496b60`), les sphères des os des coups (au lieu du demi-espace
+     avant) ;
    - les `SpeechTrack` sans tenue ; puis la mission suivante, `1_03`.
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
@@ -85,6 +89,13 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- Les conditions du 27.10 (1a93702, c2d4361, 435c68a, 49ca373, 786e4c3, 79bece1, 30ac742, 0678b57, 2e9d430) : le HUD (48
+  composants, `HudComponentVisible`), `CollisionStart` (+0x4e5, jamais remis à 0) et `AttackPhase` (la phase +0x71c et son
+  échéance, `FUN_005f9480`, `FUN_005f9e70`, `FUN_005f8240`), les manettes et `Controller`, quatre conditions d'armes, l'état social
+  (`IsSocialStateWait`, `IsSocializing`), la vitesse de `CombatLoco` par le pas (`FUN_00625970`), le gestionnaire de caméras
+  (`CameraActive`, `CameraInWidescreen`), `AttackTimer` et `Attacked`, `FightClass` et `RangeToFocus`. **`1_02` reste réussie à
+  119,03 s**, le bully gagne sa zone en `Sprint`.
 
 - Les références montées (26.10 ; 1c47e48, 69a6f31, d514cc1, d8c1143, 48dc774, f35ee03, 5a1c5c7, dae1733, 00ee22f, de1f206,
   e036e1a, 53b5636) : `FUN_005f6960` et la table des parents (`FUN_005f6800`, `FUN_005f6290`), `DAT_01b649dc` = `Global`, la

@@ -760,3 +760,31 @@ en échec plutôt que de les masquer.
   `AttackPhase`, donc la parade du bully ; la course de `RunStart` (pas avancé) ; `HudComponentVisible`, les conditions
   sociales. Séance close avant l'objectif de 40 commits, à la demande : 12 commits de code et un de docs.
 - **Bilan** : 549 fonctions recréées (3,6 % du code), contre 513 (3,5 %) ; 1 319 comprises (7,8 %).
+
+## 27.10.2026 (nuit)
+
+- **`CollisionStart` et `AttackPhase`** : la piste `Collision` tient la phase de l'attaque du piéton (+0x71c) et son échéance
+  (+0x720) : 1 au lancement (`FUN_005f9480`), 2 dans la fenêtre et 3 après (`FUN_005f9e70`), 0 à l'arrêt (`FUN_005f8240`). L'octet
+  +0x4e5 n'est jamais remis à 0 : à l'assembleur, seuls 0x5f94aa et 0x661694 (`WeaponCollisionTrack`) l'écrivent, à 1 ; la
+  troisième écriture (0x6f2d68) est dans un autre objet. `CollisionStart` est donc vraie pour tout piéton qui a déjà frappé.
+  L'arrêt pose aussi la minuterie du dernier coup (+0x550, `FUN_0048c040(0)`), que lit `AttackTimer`.
+- **Le HUD** : 48 composants (`DAT_00c674a0`, la fabrique `FUN_0053cee0`), cachés à la naissance (`FUN_0053cc70`) ;
+  `ToggleHUDComponentVisibility` et ses voisines sont réelles, `HudComponentVisible` lit l'octet +8.
+- **Les caméras** : `DAT_00c3ccf8` est le mode courant (+0x90) du gestionnaire en 0xc3cc68 ; `CameraSetActive` et
+  `CameraReturnToPlayer` ne rangent qu'une demande (+0x270), que seules deux pistes appliquent (`FUN_004f1740`).
+- **Les manettes** : `DAT_00c2b120` (le joueur, posé par le constructeur de `CPlayerPed`) et `DAT_00c2b124` ; `Controller` passe par
+  un octet du .data qui vaut 1 et qu'aucune instruction n'écrit.
+- **La vitesse de `CombatLoco`** : le pas (`FUN_00625970`) donne à la navigation une vitesse selon le mode (2 et 4 : 0, 7 et 9,
+  12 : deux formules, sinon 1,5) ; l'approche est le mode 11 : le 0,7 supposé tombe, le bully gagne sa zone en `Sprint`.
+- **La course de `RunStart`** : pas résolue. La piste `Locomotion` lit l'intention ; aucune piste du nœud ne l'écrit ; les 35
+  écritures de la vitesse relevées à l'assembleur sont dans la navigation et les pistes de locomotion de l'IA.
+- **Seize conditions** : `HudComponentVisible`, `CollisionStart`, `AttackPhase`, `Controller`, `WeaponDesiredIsEquiped`,
+  `WeaponAmmo`, `IsWeaponFiredWhenDropped`, `CollisionWeaponType` (le +0x10 du contexte est le relevé du coup reçu : +0x5e l'arme,
+  +0x60 le genre), `IsSocialStateWait`, `IsSocializing` (+0xbb0 / +0xbb4, le composant social), `CameraActive`,
+  `CameraInWidescreen`, `AttackTimer`, `Attacked`, `FightClass` (la colonne S de pedstats.dat), `RangeToFocus`. Au bilan de
+  `1_02` ne restent que sept classes, dont `WeaponNeedInit` (762 jugements).
+- **`1_02` reste réussie à 119,03 s**, `1_01` à 10,46 s, à chaque commit. Le joueur passe par `GrappleOpps` et
+  `CombatIdle_Out`, le bully par `Sprint`, sans changer le chrono.
+- **Ce qui bloque encore** : la vitesse de `RunStart` ; le reste de `CombatLoco` (le point tiré, les sous-états) ; la parade du
+  bully (`BLOCK` attend la fin du `ControlNode`) ; `WeaponNeedInit`, `OnMission`, `ConversationActive`.
+- **Bilan** : 614 fonctions recréées (4,1 % du code), contre 549 (3,6 %) ; 1 388 comprises (8,4 %) ; 10 commits.

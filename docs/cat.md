@@ -436,7 +436,7 @@ qui juge est l'emplacement 1), `lancer_lua` dresse à la fin le bilan des classe
 `SetMotionIntention` (lancement `FUN_00611c50`) n'en pose que la direction (le devant tourné de +0x18 degrés). Les allures
 des scripts (`PedMoveToXYZ` 0x5c7c90, `PedMoveToPoint`) passent par `FUN_005c6180` : 0 → 0,3, 1 → 0,7, 2 → 1,1, 3 → 1,5,
 4 → -1, sans argument 0,7 (le `MoveToPosObjective` de `FUN_00470460` la porte). Dans l'outil : la vitesse de l'allure pour
-un piéton qui marche, 0 arrivé ou arrêté, 0,7 vers la cible dans `CombatLoco` (supposé), 0 à chaque image pour un piéton
+un piéton qui marche, 0 arrivé ou arrêté, 1,5 vers la cible dans `CombatLoco` (le mode 11 du pas, `FUN_00625970`, depuis le 27.10), 0 à chaque image pour un piéton
 de l'IA qui n'a pas de geste.
 
 ## Les conditions lues le 27.10.2026
