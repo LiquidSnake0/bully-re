@@ -619,6 +619,39 @@ points (la commande de docs/missions.md tape jusqu'à 86 s et humilie à 87 s), 
 à santé nulle (le jeu attend la piste `Death`) et coupe son IA, et il ne joue pas les images de tirage (le point tiré entre les deux
 rayons, mode 8, et les sous-états 1 à 3).
 
+## La mort et les dernières conditions, lues le 27.10.2026 (nuit, 2)
+
+**La mort d'un piéton** (`CScriptPedPool::Mourir`). Un piéton n'est mort que par la piste `Death` (`DeathTrack` 0x934aa0, lancement
+`FUN_0060fdc0` : l'emplacement 42 de `CPed`, +0xa8, avec l'octet +0x18 de la piste), dont l'effet est `FUN_00479110`, lu à
+l'assembleur de 0x479110 à 0x479406 :
+
+- rien si le piéton est déjà mort (+0x1c98) ;
+- un **immortel** (+0x13fc : `PedSetImmortalFlag` 0x5ce6e0, `PedGetImmortalFlag` 0x5ce730, remis à 0 par `FUN_00474f50` et
+  `FUN_006e63b0`) ne meurt pas : seul son rappel Lua est appelé (+0x141c, la fonction rangée en +0x18e8, non suivi) ;
+- sinon, si le dernier coup a un attaquant (+0x40c du composant +0x2e0), celui-ci reçoit l'octet en +0x13f0, un stimulus 7 part
+  (`PedCreateStimulus`) et, si c'est le joueur, ses statistiques (`FUN_00458330` selon le type de la victime : 0x54 … 0x60, non
+  suivies) ; puis la santé passe à **-100** (`_DAT_00906520`, 0xc2c80000 dans le .rdata) et +0x1c98 à 1 ; trois messages au pool
+  (`FUN_0054a740` 2, 0xd, 6), +0x135c, +0x1708, +0x170c à 0 ; pour le joueur (type 13) la partie perdue (`FUN_004311e0`), pour un
+  autre l'instant de la mort (+0x18b8 = `DAT_00c1a9b4`), `FUN_004441f0` et la cible lâchée (`FUN_004989c0(0)`).
+
+Une **santé nulle ne tue pas** : `FUN_00478190` (`PedSetHealth` 0x5c8e80, la piste `SetHealth` au mode poser) et `FUN_004782a0`
+(un coup, `SetHealth` au mode ôter) ne font, à 0, qu'appeler le même rappel Lua ; `PedSetHealth` relève aussi le maximum (+0x1ca4)
+s'il est dépassé. `PedIsDead` (0x5c8f30) lit +0x1c98 (vrai sans piéton). La piste `Death` est dans onze arbres ; dans `HitTree`,
+`Base/DeadCleanup` (#37bc920c) la porte, à 0, et les feuilles `…/Dead/KOReactions/…` de `PostHit/BellyUp`, `BellyDown` et des
+nages l'exécutent quand la santé est nulle (`dead si HEALTH`) ; dans `Player.act`, les feuilles `MISSION` des humiliations ôtent 500
+points puis meurent à l'arrêt du nœud (entrée -1). L'outil tenait un piéton pour mort dès que sa santé tombait à 0 ; il suit
+maintenant la piste (`CActionController::morts`, `AppliquerMorts`). Seul le geste `PedAttack` de l'outil, qui n'a pas d'arbre
+d'actions, tue encore sa cible à santé nulle, à la place de `HitTree/…/Dead` (supposé pour ce geste).
+
+Dans `1_02`, le bully passe à 0 point à 92,33 s (`HumiliateFlee`, ôter 500) mais reste vivant : son IA continue. L'`Opportunity`
+`../../../` de la feuille `CombatLoco` (prise dès que la descente depuis la racine mène ailleurs) le fait passer à 92,37 s dans
+`AMBIENT/Idle`, la banque `Combat` ne passant plus (`objective` 7 ou 16 : l'objectif courant est le `FleeObjective`) ; la piste `IDLE`
+vide ses entrées, la vitesse de l'intention reste 0 (ce qu'écrivait la section précédente, « son contrôleur de l'IA reste dans
+`CombatLoco` », ne valait que tant que l'outil le tenait pour mort). Il court sur place (`RunStart`, 95,50 s), tombe
+(`KnockOuts/Rear/Rear`, 96,36 s), rebondit (`BellyDown/OnGroundBounce`) et meurt à **97,61 s**, par `BellyDown/Dead/KOReactions` qui
+exécute `Base/DeadCleanup` (-100 points). `1_02` reste réussie à 121,94 s : le script attend une santé nulle (`0 < PedGetHealth`),
+puis `KnockOuts`.
+
 ## Le chemin d'un nœud (18.10.2026)
 
 Les scripts désignent un nœud par un chemin, `PedSetActionNode(ped, "/Global/1_01/Talking",

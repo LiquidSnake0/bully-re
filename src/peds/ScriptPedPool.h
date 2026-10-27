@@ -168,7 +168,9 @@ struct CScriptPed {
 	                             // un FleeObjective le fuit avec l'octet +0x19 de sa piste
 	int cibleObjectif = -1;      // +0x540 (+0x184 du composant de visée en +0x3bc) : la cible d'un objectif d'attaque, que la
 	                             // condition Objective pose quand elle passe (FUN_0048c330)
-	bool mort = false;
+	bool mort = false;           // +0x1c98 : posé par la piste Death (FUN_00479110), lu par PedIsDead (0x5c8f30)
+	bool immortel = false;       // +0x13fc : PedSetImmortalFlag (0x5ce6e0) / PedGetImmortalFlag (0x5ce730)
+	uint32 instantMort = 0;      // +0x18b8 : l'horloge (ms) à la mort d'un autre que le joueur
 	// Le geste en cours.
 	// L'intention de mouvement du composant d'actions (+0x2e0) : sa direction (+0, +4, +8) et sa vitesse (+0x1c), que la
 	// navigation pose à chaque image (FUN_004a4a50) et remet à zéro sans but (FUN_004a45c0) ; les conditions
@@ -231,8 +233,17 @@ public:
 	// lua_PedLockTarget (0x5cb060) : rien si le piéton n'existe pas ; cible -1 lève le verrou (FUN_004989c0(0)) ;
 	// sinon, si la cible existe, FUN_00497d20 la verrouille avec le mode donné. Vrai si quelque chose a changé.
 	bool Verrouiller(int handle, int cible, int mode);
-	// lua_PedSetHealth : la santé ; à zéro, le piéton meurt et lâche son geste.
+	// FUN_00478190 (lua_PedSetHealth, la piste SetHealth) : la santé (+0x1cb8), jamais sous la santé minimale (+0x1ca8).
+	// Une santé nulle ne tue pas : seul le rappel Lua du piéton (+0x141c, rangé en +0x18e8, non suivi) est appelé. Le
+	// piéton ne meurt que par Mourir, la piste Death.
 	void Sante(int handle, float sante);
+	// L'emplacement 42 de CPed (FUN_00479110), que lance la piste Death (DeathTrack 0x934aa0, FUN_0060fdc0 : l'octet
+	// +0x18 de la piste en argument). Rien pour un piéton déjà mort (+0x1c98) ; rien non plus pour un immortel (+0x13fc,
+	// PedSetImmortalFlag 0x5ce6e0), dont seul le rappel Lua est appelé. Sinon la santé passe à -100 (_DAT_00906520),
+	// +0x1c98 à 1 ; pour un autre que le joueur, la cible est lâchée (FUN_004989c0(0)) et l'instant de la mort posé
+	// (+0x18b8). Les stimulus, les statistiques du tueur (FUN_00458330, le joueur seul) et la partie perdue du joueur
+	// (FUN_004311e0) ne sont pas suivis. Vrai si le piéton meurt.
+	bool Mourir(int handle, uint32 maintenantMs = 0);
 	// FUN_00478e30 (lua_PedSetStatsType, et la création avec l'entrée du modèle, modelinfo +0x54) : les 64 colonnes de
 	// l'entrée de pedstats.dat copiées en +0x1900, la santé maximale = colonne F (entrée +0x2c), la santé = le maximum,
 	// la santé minimale à 0, la régénération = colonne G (+0x30). Le reste (vision, armes, vitesse) n'est pas suivi.

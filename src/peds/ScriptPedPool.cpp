@@ -256,8 +256,25 @@ CScriptPedPool::Sante(int h, float sante)
 {
 	CScriptPed *p = Acceder(h);
 	if(p == nil) return;
-	p->sante = sante;
-	if(sante <= 0 && !p->mort){ p->mort = true; p->vientDeMourir = true; p->enMarche = false; p->attaque = -1; }
+	p->sante = sante < p->santeMin ? p->santeMin : sante;
+}
+
+bool
+CScriptPedPool::Mourir(int h, uint32 maintenantMs)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil || p->mort || p->immortel) return false;
+	p->sante = -100.0f;                       // _DAT_00906520
+	p->mort = true;
+	p->vientDeMourir = true;
+	p->enMarche = false;
+	p->attaque = -1;
+	p->intentionVitesse = 0;
+	if(h != SCRIPT_PED_JOUEUR){
+		p->instantMort = maintenantMs;        // +0x18b8 = DAT_00c1a9b4
+		p->verrou = -1; p->verrouMode = 0;    // FUN_004989c0(0)
+	}
+	return true;
 }
 
 bool
@@ -345,6 +362,9 @@ CScriptPedPool::Avancer(float dt)
 			p.aFrappe = true;
 			p.dernierFrappe = p.attaque;
 			Blesser(p.attaque, SCRIPT_PED_DEGATS, (int)(&p - peds));
+			// Le geste de l'outil n'a pas d'arbre d'actions : la cible à santé nulle meurt sur le coup, à la place de
+			// HitTree/…/Dead, qui exécute Base/DeadCleanup et sa piste Death (supposé pour ce geste seulement).
+			if(c->sante <= 0) Mourir(p.attaque);
 			if(c->mort) p.attaque = -1;
 		}else if(p.enMarche){
 			if(Pas(p, p.cible, p.vitesse * dt, 0)){ p.enMarche = false; p.arrive = true; p.intentionVitesse = 0; }

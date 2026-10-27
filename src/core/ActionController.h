@@ -84,6 +84,12 @@ public:
 	// Ses pistes SetPedFlags (PedFlagsTrack 0x931380, lancement FUN_0060f8e0) : le drapeau +0x1c (28) du piéton reçoit
 	// l'octet +0x18 (24). Une entrée négative (-1) se lance quand le nœud s'arrête (FUN_005f3fb0 avec son troisième
 	// argument). Les lancées s'accumulent dans `drapeauxPoses`, que l'appelant applique et vide.
+	// Ses pistes Death (DeathTrack 0x934aa0, lancement FUN_0060fdc0) : le piéton meurt (l'emplacement 42 de CPed,
+	// FUN_00479110, avec l'octet +0x18), y compris celles des nœuds exécutés (HitTree/…/Dead exécute Base/DeadCleanup,
+	// dont la piste Death est à 0) ; une entrée négative se lance à l'arrêt du nœud (Player.act, Humiliate_Me/…/MISSION).
+	// Les lancées s'accumulent dans `mortsLancees`, que l'appelant applique et vide.
+	struct Mort { float entree; uint8 octet; bool fait; };
+	std::vector<Mort> morts, mortsLancees;
 	struct Drapeau { float entree; uint32 numero; int32 valeur; bool fait; };
 	std::vector<Drapeau> drapeaux;
 	std::vector<Drapeau> drapeauxPoses;

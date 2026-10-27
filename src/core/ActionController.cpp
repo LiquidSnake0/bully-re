@@ -79,7 +79,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kGestion = ActionHash("ManageTargets"), kCombatLoco = ActionHash("CombatLoco"),
 	                    kDemandeNoeud = ActionHash("ActionNodeRequest"), kEffacer = ActionHash("ClearCurrentObjective"),
 	                    kFuite = ActionHash("FleeObjective"), kRepos = ActionHash("IDLE"), kBouton = ActionHash("ActionRequest"),
-	                    kInfoArme = ActionHash("SetWeaponInfo");
+	                    kInfoArme = ActionHash("SetWeaponInfo"), kMort = ActionHash("Death");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -130,6 +130,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			effacements.push_back({a, (int32)p.Mot(24), false});
 		}else if(p.type == kFuite){
 			fuites.push_back({a, Octet(p, 24), Octet(p, 25), false});
+		}else if(p.type == kMort){
+			morts.push_back({Reel(p, 12, 0.0f) < 0.0f ? -1.0f : a, Octet(p, 24), false});
 		}else if(p.type == kRepos){
 			repos.push_back({a, false});
 		}else if(p.type == kInfoArme){
@@ -204,6 +206,9 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	for(Drapeau &d : drapeaux)    // FUN_005f3fb0 à l'arrêt du nœud : les entrées négatives se lancent
 		if(!d.fait && d.entree < 0.0f){ d.fait = true; drapeauxPoses.push_back(d); }
 	drapeaux.clear();
+	for(Mort &d : morts)          // FUN_0060fdc0, à l'arrêt du nœud
+		if(!d.fait && d.entree < 0.0f){ d.fait = true; mortsLancees.push_back(d); }
+	morts.clear();
 	for(Parole &d : paroles)
 		if(!d.fait && d.entree < 0.0f){ d.fait = true; parolesLancees.push_back(d); }
 	paroles.clear();
@@ -455,6 +460,8 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 	prises.clear();
 	for(Blessure &d : degats)     // FUN_0060fc70 : au lancement de la piste
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; blessures.push_back(d); }
+	for(Mort &d : morts)          // FUN_0060fdc0
+		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; mortsLancees.push_back(d); }
 	for(Drapeau &d : drapeaux)    // FUN_0060f8e0
 		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; drapeauxPoses.push_back(d); }
 	regardsActifs.clear();

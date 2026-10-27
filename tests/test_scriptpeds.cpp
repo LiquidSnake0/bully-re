@@ -91,12 +91,22 @@ main(void)
 	VERIF(mortA * 0.033f > 9.5f && mortA * 0.033f < 10.5f);
 	q.Avancer(0.033f);
 	VERIF(!q.Acceder(ci)->vientDeMourir && q.Acceder(ci)->mort);
-	// Un mort ne marche plus, n'attaque plus ; PedSetHealth à 0 tue et lâche le geste.
+	// Un mort ne marche plus, n'attaque plus. PedSetHealth à 0 ne tue pas (FUN_00478190) : seule la piste Death
+	// (FUN_00479110) tue, met la santé à -100 et lâche le geste ; un immortel (+0x13fc) n'en meurt pas.
 	VERIF(!q.Aller(ci, CVector(), ALLURE_MARCHE) && !q.Attaquer(ci, at));
+	VERIF(q.Acceder(ci)->sante == -100.0f);
 	int c = q.Creer(99, CVector(0, 5, 0), 0, 1);
 	VERIF(q.Aller(c, CVector(0, 9, 0), ALLURE_MARCHE));
 	q.Sante(c, 0);
+	VERIF(!q.Acceder(c)->mort && q.Acceder(c)->sante == 0 && q.Acceder(c)->enMarche);
+	q.Acceder(c)->immortel = true;
+	VERIF(!q.Mourir(c, 5000) && !q.Acceder(c)->mort);
+	q.Acceder(c)->immortel = false;
+	q.Verrouiller(c, at, 1);
+	VERIF(q.Mourir(c, 5000) && !q.Mourir(c, 6000));
 	VERIF(q.Acceder(c)->mort && q.Acceder(c)->vientDeMourir && !q.Acceder(c)->enMarche);
+	VERIF(q.Acceder(c)->sante == -100.0f && q.Acceder(c)->instantMort == 5000 && q.Acceder(c)->verrou == -1);
+	VERIF(!q.Blesser(c, 10, at));                          // un mort ne prend plus de coups
 	// PedMakeAmbient : le piéton reste, mais n'est plus ramassé avec son script ; pas le joueur.
 	VERIF(!q.RendreAmbiant(SCRIPT_PED_JOUEUR) && q.RendreAmbiant(at) && q.Acceder(at)->script == -1);
 	VERIF(q.SupprimerDuScript(1) == 3 && q.Valide(at));   // m, ci et c libérés, a reste
@@ -114,10 +124,10 @@ main(void)
 		pa->santeMin = 75;                                    // plus bas que la santé actuelle : elle remonte au plancher
 		VERIF(q.Blesser(a, 10, b) && pa->sante == 75 && !pa->mort);
 		pa->santeMin = 0;
-		VERIF(q.Blesser(a, 500, b) && pa->sante == 0 && pa->mort);
+		VERIF(q.Blesser(a, 500, b) && pa->sante == 0 && !pa->mort);   // à zéro, pas mort : la piste Death décide
 		pj->drapeaux[DRAPEAU_INVULNERABLE] = 1;
 		VERIF(!q.Blesser(SCRIPT_PED_JOUEUR, 10, b) && pj->sante == 100);
-		pa->santeMin = 0; pa->mort = false; pa->sante = 50; pa->drapeaux[DRAPEAU_INVULNERABLE_JOUEUR] = 0;
+		pa->santeMin = 0; pa->sante = 50; pa->drapeaux[DRAPEAU_INVULNERABLE_JOUEUR] = 0;
 		pa->drapeaux[DRAPEAU_INTOUCHABLE] = 1;                // le drapeau 12 (+0x1344) : aucun coup
 		VERIF(!q.Blesser(a, 10, b) && pa->sante == 50);
 	}
@@ -313,6 +323,8 @@ main(void)
 		q.Acceder(b)->endormi = false; q.sommeilGeneral = true;
 		VERIF(!q.IAAvance(b));
 		q.sommeilGeneral = false; q.Sante(b, 0);
+		VERIF(q.IAAvance(b));                              // à santé nulle, l'IA tourne encore (FUN_00484490 lit +0x1c98)
+		q.Mourir(b);
 		VERIF(!q.IAAvance(b) && !q.IAAvance(-1));
 	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");

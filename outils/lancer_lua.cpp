@@ -2086,7 +2086,7 @@ PedFaceXYZ(lua_State *L)
 }
 
 static int
-PedIsDead(lua_State *L)
+PedIsDead(lua_State *L)   // 0x5c8f30 : +0x1c98, vrai sans piéton
 {
 	appels["PedIsDead"]++;
 	const CScriptPed *p = PedArg(L, 1);
@@ -2103,12 +2103,37 @@ PedGetHealth(lua_State *L)
 	return 1;
 }
 
+// PedSetHealth(ped, pv) (0x5c8e80) : FUN_00478190 (la santé, pas sous la santé minimale ; nulle, le piéton ne meurt
+// pas), et le maximum (+0x1ca4) relevé s'il est dépassé.
 static int
 PedSetHealth(lua_State *L)
 {
 	Journal("PedSetHealth", L, 1);
-	if(lua_isnumber(L, 1)) pietons.Sante((int)lua_tonumber(L, 1), (float)luaL_checknumber(L, 2));
+	if(!lua_isnumber(L, 1)) return 0;
+	int h = (int)lua_tonumber(L, 1);
+	float v = (float)luaL_checknumber(L, 2);
+	pietons.Sante(h, v);
+	if(CScriptPed *p = pietons.Acceder(h)) if(p->santeMax < v) p->santeMax = v;
 	return 0;
+}
+
+// PedSetImmortalFlag(ped, oui) (0x5ce6e0) et PedGetImmortalFlag(ped) (0x5ce730, faux sans piéton) : +0x13fc, qui
+// empêche la mort par la piste Death (FUN_00479110).
+static int
+PedSetImmortalFlag(lua_State *L)
+{
+	Journal("PedSetImmortalFlag", L, 1);
+	if(CScriptPed *p = lua_isnumber(L, 1) ? pietons.Acceder((int)lua_tonumber(L, 1)) : nil) p->immortel = lua_toboolean(L, 2) != 0;
+	return 0;
+}
+
+static int
+PedGetImmortalFlag(lua_State *L)
+{
+	appels["PedGetImmortalFlag"]++;
+	const CScriptPed *p = lua_isnumber(L, 1) ? pietons.Acceder((int)lua_tonumber(L, 1)) : nil;
+	lua_pushboolean(L, p && p->immortel);
+	return 1;
 }
 
 // PedSetInvulnerable(ped, oui) (0x5c9160) : +0x138c ; PedSetInvulnerableToPlayer(ped, oui) (0x5c9200) : +0x1364 ;
@@ -2373,6 +2398,18 @@ CombatLoco(int ped, bool joueur, bool premiere)
 	else if(d2Cible > 0) p->cap = atan2f(q->pos.y - p->pos.y, q->pos.x - p->pos.x) * 180.0f / 3.14159265f;
 }
 
+// Les pistes Death qui se lancent (FUN_0060fdc0 → l'emplacement 42 de CPed, FUN_00479110) : le piéton meurt
+// (CScriptPedPool::Mourir), sauf déjà mort ou immortel.
+static void
+AppliquerMorts(int ped, CActionController &c)
+{
+	for(const CActionController::Mort &d : c.mortsLancees)
+		if(pietons.Mourir(ped, maintenant))
+			printf("%6.2f s  piéton %d : piste Death (%d), il meurt, %.0f points de vie\n", maintenant / 1000.0, ped, d.octet,
+			       pietons.Acceder(ped)->sante);
+	c.mortsLancees.clear();
+}
+
 // Une image du contrôleur de l'IA d'un piéton (FUN_00484490), puis ce que font ses pistes et celles des contrôleurs de
 // ses pistes spawn : l'intention (ActionNodeRequest), ManageTargets, CombatLoco, FaceTarget, SetPedFlags.
 static void
@@ -2414,6 +2451,7 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 		}
 		for(const CActionController::Drapeau &d : k->drapeauxPoses) if(d.numero < SCRIPT_PED_DRAPEAUX) p->drapeaux[d.numero] = d.valeur;
 		k->drapeauxPoses.clear();
+		AppliquerMorts(ped, *k);
 		for(const CActionController::InfoArme &d : k->infosArmeLancees) p->armeInit = d.init;   // FUN_00660f50
 		AppliquerObjectifs(ped, *k);
 	}
@@ -3231,6 +3269,8 @@ main(int argc, char **argv)
 	lua_register(L, "PedIsDead", PedIsDead);
 	lua_register(L, "PedGetHealth", PedGetHealth);
 	lua_register(L, "PedSetHealth", PedSetHealth);
+	lua_register(L, "PedSetImmortalFlag", PedSetImmortalFlag);
+	lua_register(L, "PedGetImmortalFlag", PedGetImmortalFlag);
 	lua_register(L, "PlayerGetHealth", PlayerGetHealth);
 	lua_register(L, "PedMoveToPoint", PedMoveToPoint);
 	lua_register(L, "PedMoveToXYZ", PedMoveToXYZ);
@@ -3428,6 +3468,7 @@ main(int argc, char **argv)
 			if(CScriptPed *p = pietons.Acceder(c.first))
 				for(const CActionController::Drapeau &d : c.second.drapeauxPoses) if(d.numero < SCRIPT_PED_DRAPEAUX) p->drapeaux[d.numero] = d.valeur;
 			c.second.drapeauxPoses.clear();
+			AppliquerMorts(c.first, c.second);
 			// SetWeaponInfo (FUN_00660f50) : le +0x120 de l'objet arme du piéton.
 			if(CScriptPed *p = pietons.Acceder(c.first))
 				for(const CActionController::InfoArme &d : c.second.infosArmeLancees) p->armeInit = d.init;
