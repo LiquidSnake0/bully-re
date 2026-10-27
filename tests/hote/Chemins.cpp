@@ -31,8 +31,13 @@ ResoudreCasse(char *chemin)
 void
 CheminHote(const char *cheminJeu, char *sortie, int taille)
 {
+	// Un chemin absolu de la machine (build/tests/test_surface /…/Config/dat/surface.dat) est gardé tel quel ; les
+	// chemins du jeu (Config\Dat\SURFACE.DAT) partent de BULLY_DATA. Sans cela, le test lisait « ./home/… », ne
+	// trouvait rien, et CSurfaceTable::Initialise (0x45b250), qui suppose le fichier lu, parcourait le tampon vide
+	// au-delà de sa fin : c'était le plantage de test_surface.
 	const char *racine = getenv("BULLY_DATA");
-	snprintf(sortie, taille, "%s/%s", racine ? racine : ".", cheminJeu);
+	if(cheminJeu[0] == '/') snprintf(sortie, taille, "%s", cheminJeu);
+	else snprintf(sortie, taille, "%s/%s", racine ? racine : ".", cheminJeu);
 	for(char *c = sortie; *c; c++) if(*c == '\\') *c = '/';
 	ResoudreCasse(sortie);
 }
