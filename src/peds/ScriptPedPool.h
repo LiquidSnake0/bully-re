@@ -47,6 +47,42 @@ float ScriptPedVitesseDuPas(int mode, float d2Cible, float d2Point, float rayonB
 // qu'FUN_005e4c60 simule (FUN_005f3930(4)) à l'octet +0x551.
 float ScriptPedVitesseDuTrajet(float vitesse, float d2Point, float ecartCap, float rayonArrivee, bool immobile = false);
 
+// Le choix du point d'une piste CombatLoco (CombatLocoTrack 0x9349e0), à chaque image de sa mise à jour (FUN_0062ea40) :
+// FUN_0062e120 appelle FUN_0062c540, puis joue le sous-état (+0x28) :
+// - la garde FUN_0062c540 (hors du sous-état 3) : plus loin de la cible que le grand rayon + 2 m (le double 0x900980), ou
+//   le piéton à +0x1448 (non suivi), FUN_0061b6a0 ; sinon une minuterie (+0x4c) court tant que la cible n'est pas vue
+//   (FUN_0048d320), et passé 1 000 ms, FUN_0061b6a0. FUN_0061b6a0 : le sous-état 3, un tirage forcé (+0x78, +0x79) et un
+//   angle tiré entre ±π/4 (+0x58, DAT_00b0c0a0) ;
+// - 0, l'approche (FUN_0062c740) : à l'image de tirage (+0x78), un point tiré autour de la cible, à une distance entre les
+//   deux rayons et à un angle de π/8 à 3π/8 (DAT_00b0c0a4, DAT_00b0c0a0) d'un côté ou de l'autre du cap de la cible vers
+//   le piéton (FUN_00433200) ; s'il est valable (FUN_006254c0 : la navigation, non suivie, supposé vrai), le mode 8 vers
+//   lui et le sous-état 1. Sinon, plus près de la cible que le petit rayon, le mode 10 sur place ; plus loin, le mode 11
+//   vers la cible ;
+// - 1, l'aller (FUN_0061b700) : une minuterie (+0x44) ; à moins de 0,3 m du point (le double 0x933490 = 0,09), le
+//   sous-état 2 ; passé 10 000 ms, le sous-état 0 ;
+// - 2, l'attente (FUN_00625740) : une minuterie (+0x48) ; passé 300 ms, un rand() impair ramène au sous-état 0, sinon la
+//   minuterie repart ;
+// - 3, le retour (FUN_0062e120 en 0x6257c0) : dans le grand rayon et la cible vue, le sous-état 0 ; sinon le mode 12 vers la
+//   cible (la recherche de chemin FUN_005e9df0 n'est pas suivie).
+// Chaque changement de sous-état force le tirage de l'image suivante (+0x79). Les minuteries comptent le pas de l'image en
+// ms (FUN_00446720 : 0,02 × CTimer::ms_fTimeStep × 1000). Non suivis : l'arme à distance (+0x7a, FUN_00625540), le vélo,
+// la hauteur (|dz| > 2 m, le mode 1), les piétons à +0x9b4 / +0x9b8.
+struct CCombatLoco {
+	int32 sousEtat = 0;          // +0x28
+	int32 mode = 11;             // +0x24 (FUN_0061b430)
+	CVector point;               // +0x2c
+	CVector decalage;            // +0x38 : le point moins la cible
+	int32 minuterieAller = 0;    // +0x44
+	int32 minuterieAttente = 0;  // +0x48
+	int32 minuterieVue = 0;      // +0x4c
+	float angle = 0;             // +0x58
+	bool tirage = false;         // +0x78 : FUN_00465910(8) à cette image
+	bool forcer = false;         // +0x79 : la prochaine image tire
+};
+// `tirer` rend un rand() du CRT (0 à 32767) ; les positions sont lues à plat.
+void ScriptPedCombatLocoChoisir(CCombatLoco &c, const CVector &soi, const CVector &cible, float petit, float grand,
+                                int32 pasMs, bool cibleVue, int (*tirer)(void *), void *ctx);
+
 // Les 22 groupes d'animations d'humiliation (0x9113d0, 32 octets par nom) : « HUMIL_5-8_A » pour 0 … « HUMIL_6-1V6-1 »
 // pour 21. Le groupe 0 à 12 est celui d'une victime du joueur, rangé par sa taille (CharacterSize) : 0 à 2 Medium
 // (5-8), 3 et 4 Fat (5-8F), 5 à 7 Large (6-1), 8 et 9 Small (4-10), 10 à 12 Huge (6-5). nil hors de la table.

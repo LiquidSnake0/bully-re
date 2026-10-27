@@ -263,6 +263,43 @@ main(void)
 	VERIF(fabsf(ScriptPedVitesseDuTrajet(1.5f, 0.0625f, 0, 0.2f) - 1.25f) < 1e-5f);    // 0,25 m : × 0,25 / 0,3
 	VERIF(fabsf(ScriptPedVitesseDuTrajet(1.5f, 0.94f, 3.1f, 0.2f) - 0.1f) < 1e-6f);    // de dos : au moins 0,1
 	VERIF(ScriptPedVitesseDuTrajet(1.5f, 0.94f, 3.2f, 0.2f) == 0.0f);
+	// Le choix du point de CombatLoco (FUN_0062e120, FUN_0062c540, FUN_0062c740, FUN_0061b700, FUN_00625740, FUN_0061b6a0).
+	{
+		struct Des { int v[8]; int i; } des = {{16383, 0, 32767, 1, 2, 3, 4, 5}, 0};
+		auto tirer = [](void *x) -> int { Des *d = (Des *)x; return d->v[d->i++ % 8]; };
+		CCombatLoco c;
+		CVector cible(0, 0, 0);
+		ScriptPedCombatLocoChoisir(c, CVector(10, 0, 0), cible, 0.9f, 1.5f, 33, true, tirer, &des);   // trop loin : le retour
+		VERIF(c.sousEtat == 3 && c.forcer && c.tirage && fabsf(c.angle) < 1e-3f);
+		c.tirage = false;
+		ScriptPedCombatLocoChoisir(c, CVector(10, 0, 0), cible, 0.9f, 1.5f, 33, true, tirer, &des);
+		VERIF(c.sousEtat == 3 && c.mode == 12 && c.point.x == 0.0f);
+		ScriptPedCombatLocoChoisir(c, CVector(1.2f, 0, 0), cible, 0.9f, 1.5f, 33, true, tirer, &des);   // dans le grand rayon
+		VERIF(c.sousEtat == 0 && c.forcer);
+		c.tirage = false;
+		ScriptPedCombatLocoChoisir(c, CVector(1.2f, 0, 0), cible, 0.9f, 1.5f, 33, true, tirer, &des);
+		VERIF(c.sousEtat == 0 && c.mode == 11 && c.point.x == 0.0f);
+		ScriptPedCombatLocoChoisir(c, CVector(0.5f, 0, 0), cible, 0.9f, 1.5f, 33, true, tirer, &des);
+		VERIF(c.mode == 10 && c.point.x == 0.5f);                                                      // sur place
+		des.i = 2;   // la distance tirée 32767 (le grand rayon), l'angle 1 (≈ -π/4) : 3π/8 sous le cap de la cible au piéton
+		c.tirage = true;
+		ScriptPedCombatLocoChoisir(c, CVector(1.2f, 0, 0), cible, 0.9f, 1.5f, 33, true, tirer, &des);
+		VERIF(c.sousEtat == 1 && c.mode == 8 && fabsf(c.point.x - 1.5f * cosf(-3.0f * 3.14159265f / 8.0f)) < 1e-3f && c.point.y < 0.0f);
+		c.tirage = false;
+		ScriptPedCombatLocoChoisir(c, c.point, cible, 0.9f, 1.5f, 33, true, tirer, &des);              // arrivé au point
+		VERIF(c.sousEtat == 2 && c.minuterieAttente == 0);
+		for(int k = 0; k < 9; k++) ScriptPedCombatLocoChoisir(c, c.point, cible, 0.9f, 1.5f, 33, true, tirer, &des);
+		VERIF(c.sousEtat == 2);                                                                         // 297 ms
+		des.i = 4;   // 2 : pair, l'attente repart
+		ScriptPedCombatLocoChoisir(c, c.point, cible, 0.9f, 1.5f, 33, true, tirer, &des);
+		VERIF(c.sousEtat == 2 && c.minuterieAttente == 0);
+		des.i = 5;   // 3 : impair, retour à l'approche
+		for(int k = 0; k < 10; k++) ScriptPedCombatLocoChoisir(c, c.point, cible, 0.9f, 1.5f, 33, true, tirer, &des);
+		VERIF(c.sousEtat == 0);
+		c.minuterieVue = 990;   // la cible pas vue plus d'une seconde : le retour
+		ScriptPedCombatLocoChoisir(c, CVector(1.2f, 0, 0), cible, 0.9f, 1.5f, 33, false, tirer, &des);
+		VERIF(c.sousEtat == 3 && c.minuterieVue == 0);
+	}
 	// FUN_005f38e0 et la garde de FUN_00484490 : mort, endormi (+0x1358) ou tous endormis (DAT_00c2b108), l'IA n'avance pas.
 	{
 		CScriptPedPool q;

@@ -515,6 +515,71 @@ ScriptPedVitesseDuTrajet(float vitesse, float d2Point, float ecartCap, float ray
 	return v > 0.1f ? v : 0.1f;                                      // FUN_00414340
 }
 
+static float
+Plat2(const CVector &a, const CVector &b)
+{
+	float dx = a.x - b.x, dy = a.y - b.y;
+	return dx * dx + dy * dy;
+}
+
+// FUN_0061b430 : le point visé, son décalage depuis la cible et le mode.
+static void
+PoserPoint(CCombatLoco &c, const CVector &point, const CVector &cible, int32 mode)
+{
+	c.point = point;
+	c.decalage = CVector(point.x - cible.x, point.y - cible.y, point.z - cible.z);
+	c.mode = mode;
+}
+
+void
+ScriptPedCombatLocoChoisir(CCombatLoco &c, const CVector &soi, const CVector &cible, float petit, float grand,
+                           int32 pasMs, bool cibleVue, int (*tirer)(void *), void *ctx)
+{
+	const float kPi = 3.14159265f, kQuart = kPi / 4.0f, kHuitieme = kPi / 8.0f;   // DAT_00b0c0a0, DAT_00b0c0a4
+	auto retour = [&](void){   // FUN_0061b6a0
+		c.sousEtat = 3; c.tirage = true; c.forcer = true;
+		c.angle = (float)tirer(ctx) / 32767.0f * (kQuart + kQuart) - kQuart;
+	};
+	// FUN_0062c540
+	if(c.sousEtat != 3){
+		float r = grand + 2.0f;
+		if(!(Plat2(cible, soi) - r * r < 0.0f)){ retour(); return; }
+		c.minuterieVue = cibleVue ? 0 : c.minuterieVue + pasMs;
+		if(c.minuterieVue > 1000){ c.minuterieVue = 0; retour(); return; }
+	}
+	switch(c.sousEtat){
+	case 0:   // FUN_0062c740
+		if(c.tirage){
+			float d = (float)tirer(ctx) / 32767.0f * (grand - petit) + petit;
+			float cap = atan2f(soi.y - cible.y, soi.x - cible.x);
+			float a = (float)tirer(ctx) / 32767.0f * (kQuart + kQuart) - kQuart;
+			cap = a < 0.0f ? cap - (kHuitieme - a) : a + kHuitieme + cap;
+			PoserPoint(c, CVector(cible.x + cosf(cap) * d, cible.y + sinf(cap) * d, cible.z), cible, 8);   // FUN_0062c4f0
+			c.minuterieAller = 0; c.sousEtat = 1; c.forcer = true;
+			return;
+		}
+		if(Plat2(cible, soi) - petit * petit < 0.0f) PoserPoint(c, soi, cible, 10);
+		else PoserPoint(c, cible, cible, 11);
+		return;
+	case 1:   // FUN_0061b700
+		c.minuterieAller += pasMs;
+		if(Plat2(soi, c.point) - 0.09f < 0.0f){ c.minuterieAttente = 0; c.sousEtat = 2; c.forcer = true; }
+		if(c.minuterieAller >= 10000){ c.forcer = true; c.sousEtat = 0; }
+		return;
+	case 2:   // FUN_00625740
+		c.minuterieAttente += pasMs;
+		if(c.minuterieAttente > 300){
+			if(tirer(ctx) & 1){ c.sousEtat = 0; c.forcer = true; return; }
+			c.minuterieAttente = 0;
+		}
+		return;
+	case 3:   // 0x6257c0
+		if(Plat2(cible, soi) - grand * grand < 0.0f && cibleVue){ c.sousEtat = 0; c.forcer = true; return; }
+		PoserPoint(c, cible, cible, 12);
+		return;
+	}
+}
+
 bool
 CScriptPedPool::PrendreAttaquant(int h, int attaquant)
 {

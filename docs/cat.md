@@ -566,6 +566,26 @@ au grand rayon (+0x70, 1,5 m pour la zone 0) ; il s'arrête maintenant au petit 
 tient à 0,9 m du joueur ; l'humiliation commence plus tôt (le joueur arrive à 0,75 m par `SeekEntityPosition` à 84,08 s, `GV` à
 84,12 s au lieu de 84,22 s, `RCV/END` à 89,33 s) et **`1_02` se termine réussie à 118,93 s** (119,03 s avant).
 
+**Les sous-états de `CombatLoco`** (`ScriptPedCombatLocoChoisir`), lus dans `FUN_0062e120` : avant chaque image, la garde
+`FUN_0062c540` (hors du sous-état 3) renvoie au retour (`FUN_0061b6a0` : le sous-état 3, un tirage forcé, un angle tiré entre ±π/4,
+`DAT_00b0c0a0`) si le piéton est plus loin de la cible que le grand rayon + 2 m (le double 0x900980) ou si la cible n'est pas vue
+(`FUN_0048d320`) depuis plus de 1 000 ms (+0x4c). Puis :
+
+| Sous-état | Fonction | Ce qu'il fait |
+|---|---|---|
+| 0, l'approche | `FUN_0062c740` | à l'image de tirage, un point tiré autour de la cible : distance rand × (grand − petit) + petit, angle de π/8 à 3π/8 (`DAT_00b0c0a4`, `DAT_00b0c0a0`) d'un côté ou de l'autre du cap de la cible vers le piéton (`FUN_00433200`, `FUN_00432ca0`) ; s'il est valable (`FUN_006254c0` : `FUN_004996f0`, `FUN_0048a5b0`, `FUN_005eb050`), le mode 8 et le sous-état 1 ; sinon le mode 10 sur place sous le petit rayon, le mode 11 vers la cible au-delà |
+| 1, l'aller | `FUN_0061b700` | une minuterie (+0x44) ; à moins de 0,3 m du point (le double 0x933490), le sous-état 2 ; passé 10 000 ms, le sous-état 0 (à vélo, plus tôt : `FUN_004ce540`, non suivi) |
+| 2, l'attente | `FUN_00625740` | une minuterie (+0x48) ; passé 300 ms, un `rand()` impair ramène au sous-état 0, sinon elle repart |
+| 3, le retour | `FUN_0062e120` (0x6257c0) | dans le grand rayon, la cible vue, le sous-état 0 ; sinon le mode 12 vers la cible (`FUN_0061b820` ralentit près d'elle), par la recherche de chemin (`FUN_005e9df0`, non suivie) |
+
+Chaque changement de sous-état force le tirage de l'image suivante (+0x79). Les minuteries comptent le pas de l'image en ms
+(`FUN_00446720`, 0,02 × `CTimer::ms_fTimeStep` × 1000). Le pas (`FUN_00625970`) fait suivre la cible au point aux images de tirage (la
+cible + le décalage +0x38, s'il tombe à plus de 0,5 m du piéton, `_DAT_009055a0`) et, sauf aux modes 3, 7 et 12, tourne le cap voulu
+vers la cible : le piéton tourne autour de sa cible en lui faisant face, et la navigation le ralentit (cos de l'écart). Dans `1_02`, le
+bully arrive par le retour (mode 12, de 30,10 à 31,32 s) puis enchaîne les points tirés autour du joueur (sous-états 1 et 2, toutes
+les 1,5 à 3 s) ; ses coups pendant la leçon de parade sont les mêmes, et `1_02` reste réussie à 118,93 s. Supposés : la cible toujours
+vue, le point toujours valable, l'arme à distance (+0x7a, `FUN_00625540`), la hauteur (le mode 1 au-delà de 2 m d'écart, 0x900bfc).
+
 **La course de `RunStart` est donc établie : il n'y en a pas.** À 89,33 s le joueur est à 0,75 m, sous le petit rayon : le pas de
 `CombatLoco` est le mode 10, sur place, et la navigation, arrivée, laisse la vitesse à 0 (`FUN_004a4eb0` la pose à 0 quand
 `FUN_005e4c60` échoue). `Locomotion` ne fait pas bouger le bully, qui se retourne (`FaceTarget` à 180 degrés) et tombe sur place

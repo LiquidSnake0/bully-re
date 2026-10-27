@@ -2161,17 +2161,21 @@ GererCibles(int ped, bool joueur)
 	                  maintenant / 1000.0, ped, p->sante, p->santeMax, g, ScriptPedGroupeHumiliation(g));
 }
 
-// La mise à jour d'une piste CombatLoco (FUN_0062ea40) : la cible (FUN_00625270 : le joueur si l'octet +0x18, sinon
-// +0x538) ; une image sur le tirage de période 8, ou à la première, le piéton prend une zone de combat autour d'elle
-// (FUN_006252d0 : PedJoinCombatZone, la zone 0, sinon 1, sinon 2) ; les rayons de sa zone (FUN_006253e0 : +0x66c, AIButes
-// +0x28 / +0x2c pour la zone 0, +0x2c / +0x30, +0x30 / +0x34, sinon +0x34 / +0x38, rangés en +0x6c et +0x70 de la piste ;
-// un demi-mètre de plus si son émotion envers la cible est 4 à 6, non suivie) ; puis le choix du point (FUN_0062e120) et le
-// pas (FUN_00625970). Le sous-état 0 (+0x28), hors des images de tirage, est l'approche de FUN_0062c740 (lue de 0x62c98b à
-// la fin) : à plat, plus près de la cible que le petit rayon (FUN_0041a380(cible, soi, +0x6c) < 0), le mode 10 sur sa propre
-// position, où la navigation le dit arrivé (vitesse 0) ; sinon le mode 11 vers la cible elle-même, à 1,5, avec le rayon
-// d'arrivée 0,2 m : le piéton ne s'arrête donc qu'au petit rayon. Supposé : tout droit (le moteur passe par la recherche
-// de chemin, FUN_005e9df0) ; aux images de tirage, le point tiré entre les deux rayons (FUN_0062c4f0, mode 8) et les
-// sous-états 1 à 3 qui suivent (FUN_0061b700, FUN_00625740, l'arrêt) ne sont pas joués : l'outil reste au sous-état 0.
+// La mise à jour d'une piste CombatLoco (FUN_0062ea40) : le tirage de période 8 (FUN_00465910, +0x78), forcé par +0x79 ;
+// la cible (FUN_00625270 : le joueur si l'octet +0x18, sinon +0x538) ; aux images de tirage, ou à la première, le piéton
+// prend une zone de combat autour d'elle (FUN_006252d0 : PedJoinCombatZone, la zone 0, sinon 1, sinon 2) ; les rayons de
+// sa zone (FUN_006253e0 : +0x66c, AIButes +0x28 / +0x2c pour la zone 0, +0x2c / +0x30, +0x30 / +0x34, sinon +0x34 / +0x38,
+// rangés en +0x6c et +0x70 ; un demi-mètre de plus si son émotion envers la cible est 4 à 6, non suivie) ; le choix du
+// point (FUN_0062e120, ScriptPedCombatLocoChoisir) ; le pas (FUN_00625970) : la vitesse du mode (ScriptPedVitesseDuPas),
+// le point qui suit la cible aux images de tirage (cible + le décalage +0x38, s'il est à plus de 0,5 m du piéton,
+// _DAT_009055a0), et, sauf aux modes 3, 7 et 12, le cap voulu vers la cible ; la navigation (FUN_004a4eb0, le rayon
+// d'arrivée 0,2 m, _DAT_00900484) en fait la vitesse de l'intention (FUN_005e4a60). Supposé : la cible toujours vue
+// (FUN_0048d320), le point toujours valable (FUN_006254c0), tout droit (sans la recherche de chemin, FUN_005e9df0), à
+// l'allure de course de l'outil réduite dans le rapport de la vitesse de l'intention à 1,5.
+static std::map<int, CCombatLoco> etatsCombat;
+static uint32 graineCombat = 1;   // le rand() du CRT que la piste tire (l'outil a sa propre graine)
+static int TirerCombat(void *){ return RandCrt(graineCombat); }
+
 static void
 CombatLoco(int ped, bool joueur, bool premiere)
 {
@@ -2181,21 +2185,40 @@ CombatLoco(int ped, bool joueur, bool premiere)
 	int c = CibleDe(ped);
 	const CScriptPed *q = pietons.Acceder(c);
 	if(q == nil) return;
-	if(premiere || TirageOpportunite(8, (uint16)ped, imageCourante))
+	CCombatLoco &e = etatsCombat[ped];
+	if(premiere) e = CCombatLoco();
+	e.tirage = TirageOpportunite(8, (uint16)ped, imageCourante) || e.forcer || premiere;
+	e.forcer = false;
+	if(e.tirage)
 		for(int z = 0; z < 3; z++) if(pietons.JoindreZoneCombat(ped, c, z, false)) break;
-	static const uint16 kPetits[5] = {40, 44, 48, 52, 52};
+	static const uint16 kPetits[5] = {40, 44, 48, 52, 52}, kGrands[5] = {44, 48, 52, 56, 56};
 	int z = p->zoneCombat < 0 || p->zoneCombat > 3 ? 3 : p->zoneCombat;
-	float petit = ButeIA(kPetits[z], 0.9f);
-	float dx = q->pos.x - p->pos.x, dy = q->pos.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
-	if(d > 0) p->intention = CVector(dx / d, dy / d, 0);
-	if(d * d - petit * petit < 0.0f){ p->intentionVitesse = 0; return; }   // mode 10 : arrivé sur place
-	// Le mode 11 : le pas (FUN_00625970) donne 1,5, la navigation (FUN_005e4a60) la ralentit par l'écart entre le cap du
-	// piéton et la direction de la cible.
+	float petit = ButeIA(kPetits[z], 0.9f), grand = ButeIA(kGrands[z], 1.5f);
+	int32 avant = e.sousEtat;
+	ScriptPedCombatLocoChoisir(e, p->pos, q->pos, petit, grand, 33, true, TirerCombat, nil);
+	if(e.sousEtat != avant && journalIA > 0){
+		journalIA--;
+		printf("%6.2f s  CombatLoco de %d : sous-état %d → %d, mode %d vers (%.2f, %.2f)\n", maintenant / 1000.0, ped, avant, e.sousEtat, e.mode, e.point.x, e.point.y);
+	}
+	// FUN_00625970
+	float d2Cible = (q->pos.x - p->pos.x) * (q->pos.x - p->pos.x) + (q->pos.y - p->pos.y) * (q->pos.y - p->pos.y);
+	if(e.tirage){
+		CVector suivi(q->pos.x + e.decalage.x, q->pos.y + e.decalage.y, q->pos.z + e.decalage.z);
+		float sx = suivi.x - p->pos.x, sy = suivi.y - p->pos.y;
+		if(sx * sx + sy * sy - 0.25f > 0.0f) e.point = suivi;
+	}
+	float dx = e.point.x - p->pos.x, dy = e.point.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
+	float vitesse = ScriptPedVitesseDuPas(e.mode, d2Cible, d * d, ButeIA(44, 1.5f));
 	float ecart = remainderf(atan2f(dy, dx) - p->cap * 3.14159265f / 180.0f, 2.0f * 3.14159265f);
-	p->intentionVitesse = ScriptPedVitesseDuTrajet(ScriptPedVitesseDuPas(PAS_VERS_CIBLE, d * d, d * d, ButeIA(44, 1.5f)), d * d, ecart, 0.2f);
-	float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f, k = d - petit < pas ? (d - petit) / d : pas / d;
-	p->pos.x += dx * k; p->pos.y += dy * k;
-	p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
+	p->intentionVitesse = ScriptPedVitesseDuTrajet(vitesse, d * d, ecart, 0.2f);
+	if(d > 0 && p->intentionVitesse > 0) p->intention = CVector(dx / d, dy / d, 0);
+	if(p->intentionVitesse > 0){
+		float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f * p->intentionVitesse / 1.5f;
+		float k = d - 0.2f < pas ? (d - 0.2f) / d : pas / d;
+		p->pos.x += dx * k; p->pos.y += dy * k;
+	}
+	if(e.mode == 3 || e.mode == 7 || e.mode == 12){ if(d > 0 && p->intentionVitesse > 0) p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f; }
+	else if(d2Cible > 0) p->cap = atan2f(q->pos.y - p->pos.y, q->pos.x - p->pos.x) * 180.0f / 3.14159265f;
 }
 
 // Une image du contrôleur de l'IA d'un piéton (FUN_00484490), puis ce que font ses pistes et celles des contrôleurs de
