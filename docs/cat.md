@@ -608,6 +608,7 @@ la cible, plus de 0,567 s avant l'échéance ; la cible hors du cône ; ou la ci
 | `ConversationActive` | `FUN_00685940` (0x937318) | lue à l'assembleur (0x685940 … 0x685953) : `setne` / `sub 1` / `and` avec `DAT_00b9db1c` ; avec un piéton dans le contexte (+8), faux ; sans piéton, l'octet de la conversation en cours |
 | `OnMission` | `FUN_005fc940` (0x92e6f0) | +4 nul : `MissionActive` ; sinon l'indice de la mission de ce nom (`FUN_006a9e70`, -1 sans elle) est celui de l'un des deux emplacements du gestionnaire (+0x4bc, +0x5a0 : `FUN_006aa520`, `FUN_006aa530`) dont l'état (+8) n'est ni 0, ni 1, ni 11 (`FUN_006aa290`, `FUN_006aa2b0`). Les états de `FUN_006ad3e0` : 1 demandée, 2 `MissionSetup`, 4 `main`, 12, 8 et 9 la fin de `main`, 10 `MissionCleanup`, 11 finie, puis 0 |
 | `MissionCond` | `FUN_006a7db0` (0x94173c, créateur 0x63a140 → `FUN_006a7d50`) | la même classe que dans `Missions.cat` : la mission +4 a au moins une réussite (`CMissionBank::Evaluer`) |
+| `PedIsInOutfit` | `FUN_005fbf70` (0x936c50) | ecx = la garde-robe 0x20c5f70, puis `FUN_006ca890(+4)` : la tenue portée (+0x178c, 0x20c76fc, -1 aucune) a le nom haché +4, quel que soit le piéton jugé |
 | `BlockTimer` | `FUN_00600160` (0x936a08) | maintenant comparé par +0xc à l'instant de la parade (+0x4d0) + 1000 × (+4) ; si elle passe, l'octet +8 la relance |
 
 `SetWeaponInfo` (`SetWeaponInfoTrack` 0x935d04) pose aussi, sur le composant de visée (+0x1c8), des angles (+0x18, +0x20, +0x30, en
@@ -618,6 +619,15 @@ prise (`Grapples.cat`, `GrappleStrikes/HitC/Charge`…) demandent `NOT(MissionCo
 (0x1df0f8cb, le premier cours de lutte) : tant que le joueur n'a pas réussi ce cours, la charge se lâche d'elle-même. Dans `1_02`, la
 charge de 57 s passe donc par `Charge/Release/#3fecfdea` (57,09 s) au lieu de `Charge_Pt2/Give` (57,59 s) ; la partie reste réussie
 à 118,93 s.
+
+**La garde-robe du joueur** (`src/peds/Clothing`, le gestionnaire en 0x20c5f70) : 35 tenues de 0x54 octets à partir de +0xc10 (le
+nom haché, le second nom, six pièces, l'octet +0x50 dont le bit 0 marque la place prise), la tenue portée en +0x178c.
+`ClothingOverlay(true)` (0x5baf70) ouvre la garde-robe (`FUN_006cb3f0`, l'objet `DAT_020c5f68`), `false` la ferme (`FUN_006cb4c0`) ;
+`ClothingDefineOutfit` (0x5ba900 → `FUN_006cbf70`) ne définit rien la garde-robe fermée ; `ClothingSetPlayerOutfit(nom, b)`
+(0x5baa40 → `FUN_006cb5c0`) met la tenue, et le booléen la laisse « pièce à pièce » (+0x178c = -1) ; `ClothingIsWearingOutfit`
+(0x5bac40) et `ClothingIsWearingAnyOutfit` (0x5bac80) le disent. Dans `1_02`, `gamemain` ouvre la garde-robe, définit ses 30 tenues,
+donne `Underwear`, `Starting`, `PJ` et `Uniform`, puis `ClothingSetPlayerOutfit("Starting", true)` : le joueur porte les pièces de
+`Starting` sans tenue, les 210 `ClothingIsWearingOutfit("Mascot")` et les 17 jugements de `PedIsInOutfit` sont faux.
 
 **La course de `RunStart` est donc établie : il n'y en a pas.** À 89,33 s le joueur est à 0,75 m, sous le petit rayon : le pas de
 `CombatLoco` est le mode 10, sur place, et la navigation, arrivée, laisse la vitesse à 0 (`FUN_004a4eb0` la pose à 0 quand

@@ -44,6 +44,7 @@
 #include "../src/audio/SpeechBank.h"
 #include "../src/cutscene/CutsceneFiles.h"
 #include "../src/peds/ScriptPedPool.h"
+#include "../src/peds/Clothing.h"
 #include "../src/hud/HudComponents.h"
 #include "../src/render/CameraMgr.h"
 #include "../src/peds/PedStats.h"
@@ -167,6 +168,9 @@ static int SurMission(uint32 hachage);
 // MissionCond (CMissionCond 0x94173c, FUN_006a7db0) dans un arbre d'actions : la même classe que dans Missions.cat (le
 // créateur 0x63a140 → FUN_006a7d50) ; la mission +4 a au moins une réussite (CMissionBank::Evaluer).
 static int ConditionMission(const uint32 mots[6]);
+// PedIsInOutfit (ConditionPedIsInOutfit 0x936c50, FUN_005fbf70 : ecx = 0x20c5f70, puis FUN_006ca890(+4)) : la tenue que le
+// joueur porte a le nom haché +4, quel que soit le piéton jugé.
+static int ConditionTenue(uint32 nom);
 // --demander N@s : une ActionRequest du joueur (la manette) en attente jusqu'à cet instant (ms).
 static std::map<uint32, uint32> demandes;
 // L'état des 47 boutons bruts des autres piétons (+0x20 du composant +0x2e0, 12 octets par bouton : l'octet d'état en +0),
@@ -362,6 +366,8 @@ struct CJugeOutil : CJugeAction {
 		static const uint32 kArmeInit = ActionHash("WeaponNeedInit"), kConversation = ActionHash("ConversationActive"),
 		                    kSurMission = ActionHash("OnMission");
 		if(type == kSurMission) return SurMission(mots[0]);
+		static const uint32 kTenue = ActionHash("PedIsInOutfit");
+		if(type == kTenue) return ConditionTenue(mots[0]);
 		static const uint32 kCondMission = ActionHash("MissionCond");
 		if(type == kCondMission) return ConditionMission(mots);
 		if(type == kArmeInit) return moi && moi->armeInit == -1.0f;
@@ -1874,6 +1880,57 @@ PedSetControllerID(lua_State *L)
 	return 0;
 }
 
+// La garde-robe du joueur (src/peds/Clothing, 0x20c5f70). ClothingOverlay(oui) (0x5baf70) l'ouvre ou la ferme ;
+// ClothingDefineOutfit(nom, second, six pièces, b, b) (0x5ba900 → FUN_006cbf70) y définit une tenue ;
+// ClothingSetPlayerOutfit(nom ou nombre[, pièce à pièce]) (0x5baa40 → FUN_006cb5c0) la met ; ClothingIsWearingOutfit(nom)
+// (0x5bac40 → FUN_006ca890) et ClothingIsWearingAnyOutfit() (0x5bac80) le disent. Les noms passent par HashString.
+static CClothingManager gardeRobe;
+static int
+ClothingOverlay(lua_State *L)
+{
+	Journal("ClothingOverlay", L, 1);
+	gardeRobe.Ouvrir(BooleenArg(L, 1));
+	return 0;
+}
+
+static int
+ClothingDefineOutfit(lua_State *L)
+{
+	Journal("ClothingDefineOutfit", L, 1);
+	auto nom = [&](int i){ return lua_isstring(L, i) ? ActionHash(lua_tostring(L, i)) : 0u; };
+	uint32 pieces[GARDE_ROBE_PIECES];
+	for(int k = 0; k < GARDE_ROBE_PIECES; k++) pieces[k] = nom(3 + k);
+	gardeRobe.Definir(nom(1), nom(2), pieces, BooleenArg(L, 10));
+	return 0;
+}
+
+static int
+ClothingSetPlayerOutfit(lua_State *L)
+{
+	Journal("ClothingSetPlayerOutfit", L, 1);
+	uint32 h = lua_type(L, 1) == LUA_TNUMBER ? (uint32)lua_tonumber(L, 1) : lua_isstring(L, 1) ? ActionHash(lua_tostring(L, 1)) : 0u;
+	gardeRobe.Mettre(h, lua_gettop(L) >= 2 && BooleenArg(L, 2));
+	return 0;
+}
+
+static int
+ClothingIsWearingOutfit(lua_State *L)
+{
+	appels["ClothingIsWearingOutfit"]++;
+	lua_pushboolean(L, lua_isstring(L, 1) && gardeRobe.Porte(ActionHash(lua_tostring(L, 1))));
+	return 1;
+}
+
+static int
+ClothingIsWearingAnyOutfit(lua_State *L)
+{
+	appels["ClothingIsWearingAnyOutfit"]++;
+	lua_pushboolean(L, gardeRobe.PorteUneTenue());
+	return 1;
+}
+
+static int ConditionTenue(uint32 nom){ return gardeRobe.Porte(nom); }
+
 // PedSetAsleep(ped, oui) (0x5caa30) : +0x1358 du piéton ; PedSetGlobalSleep(oui) (0x5c6e40) : DAT_00c2b108. L'un ou
 // l'autre arrête l'arbre de l'IA (FUN_00484490).
 static int
@@ -3174,6 +3231,11 @@ main(int argc, char **argv)
 	lua_register(L, "ChapterGet", ChapterGet);
 	lua_register(L, "PedSetControllerID", PedSetControllerID);
 	lua_register(L, "PedSetAsleep", PedSetAsleep);
+	lua_register(L, "ClothingOverlay", ClothingOverlay);
+	lua_register(L, "ClothingDefineOutfit", ClothingDefineOutfit);
+	lua_register(L, "ClothingSetPlayerOutfit", ClothingSetPlayerOutfit);
+	lua_register(L, "ClothingIsWearingOutfit", ClothingIsWearingOutfit);
+	lua_register(L, "ClothingIsWearingAnyOutfit", ClothingIsWearingAnyOutfit);
 	lua_register(L, "PedSetGlobalSleep", PedSetGlobalSleep);
 	lua_register(L, "CameraGetActive", CameraGetActive);
 	lua_register(L, "CameraSetActive", CameraSetActive);
