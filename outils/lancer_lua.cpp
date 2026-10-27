@@ -2282,6 +2282,18 @@ PedFollowPath(lua_State *L)
 	return 0;
 }
 
+// PedPathNodeReachedDistance(ped, rayon) (0x5cd930) : le rayon d'arrivée aux nœuds de trajet (+0x51c) et l'octet +0x520.
+static int
+PedPathNodeReachedDistance(lua_State *L)
+{
+	Journal("PedPathNodeReachedDistance", L, 1);
+	if(CScriptPed *p = lua_isnumber(L, 1) ? pietons.Acceder((int)lua_tonumber(L, 1)) : nil){
+		p->rayonNoeud = (float)luaL_optnumber(L, 2, 0);
+		p->rayonNoeudPose = true;
+	}
+	return 0;
+}
+
 // PathGetLastNode(trajet) (0x5bc600) : le dernier nœud (le nombre moins 1, FUN_005ec510), nil sans trajet ou pour un trajet vide.
 static int
 PathGetLastNode(lua_State *L)
@@ -3364,6 +3376,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedSetHealth", PedSetHealth);
 	lua_register(L, "PedFollowPath", PedFollowPath);
 	lua_register(L, "PathGetLastNode", PathGetLastNode);
+	lua_register(L, "PedPathNodeReachedDistance", PedPathNodeReachedDistance);
 	lua_register(L, "MissionForceCompleted", MissionForceCompleted);
 	lua_register(L, "PedSetImmortalFlag", PedSetImmortalFlag);
 	lua_register(L, "PedGetImmortalFlag", PedGetImmortalFlag);

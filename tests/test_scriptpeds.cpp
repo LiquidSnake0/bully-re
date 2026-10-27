@@ -382,6 +382,16 @@ main(void)
 		VERIF(!ScriptPedSuiviPlanPasse(s, CVector(9, -1, 0)) && ScriptPedSuiviPlanPasse(s, CVector(10, 0.5f, 0)));
 		ScriptPedSuiviPoserPlan(s, t, 2, 3);                  // le dernier nœud est un arrêt : pas de plan
 		VERIF(s.plan == -1 && !ScriptPedSuiviPlanPasse(s, CVector(30, 10, 0)));
+		// FUN_0062eb70 : l'arrivée à plat sous le rayon (× 3 à vélo, sauf au dernier nœud d'un trajet suivi une fois),
+		// l'échéance d'une attente et le cap pris au nœud (FUN_0062c300).
+		s.mode = 0; s.noeud = 1;
+		VERIF(ScriptPedSuiviAtteint(s, 4, CVector(9.5f, 0, 5), t[1].pos, 0.6f, false));     // la hauteur ne compte pas
+		VERIF(!ScriptPedSuiviAtteint(s, 4, CVector(9, 0, 0), t[1].pos, 0.6f, false) && ScriptPedSuiviAtteint(s, 4, CVector(9, 0, 0), t[1].pos, 0.6f, true));
+		s.noeud = 3;
+		VERIF(!ScriptPedSuiviAtteint(s, 4, CVector(19, 10, 0), t[3].pos, 0.6f, true));        // dernier nœud, mode 0 : × 1
+		s.mode = 1; VERIF(ScriptPedSuiviAtteint(s, 4, CVector(19, 10, 0), t[3].pos, 0.6f, true));
+		VERIF(ScriptPedSuiviEcheance(0.0f, 5000) == 0 && ScriptPedSuiviEcheance(2.5f, 5000) == 7500);
+		VERIF(ScriptPedSuiviCap(90.0f, false) == 0.0f && ScriptPedSuiviCap(90.0f, true) == 270.0f);
 	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;

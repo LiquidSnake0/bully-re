@@ -107,6 +107,15 @@ bool ScriptPedSuiviArret(const CSuiviTrajet &s, const std::vector<CNoeudTrajet> 
 void ScriptPedSuiviPoserPlan(CSuiviTrajet &s, const std::vector<CNoeudTrajet> &noeuds, int32 precedent, int32 noeud);
 // FUN_0062eaa0 : le piéton a-t-il passé le plan (le produit de la normale et du nœud moins le piéton ≤ 0) ?
 bool ScriptPedSuiviPlanPasse(const CSuiviTrajet &s, const CVector &pos);
+// FUN_0062eb70 (0x62ec10 … 0x62ec90, lu à l'assembleur) : le nœud est atteint quand la distance à plat du piéton au nœud
+// (FUN_0085c4d0, la racine) est sous son rayon (+0x51c du piéton, PedPathNodeReachedDistance 0x5cd930) multiplié par 3
+// (_DAT_00900c14) à vélo, sauf au dernier nœud d'un trajet suivi une fois (mode 0), où le facteur reste 1.
+bool ScriptPedSuiviAtteint(const CSuiviTrajet &s, int nombre, const CVector &pos, const CVector &noeud, float rayon, bool velo);
+// L'attente d'un nœud atteint (FUN_0062eb70, 0x62ed86) : s'il a une attente positive (+0x1c, en secondes), la piste attend
+// jusqu'à maintenant + attente × 1000 ms (_DAT_0090d3d8 = -1000, soustrait) et le piéton prend le lacet du nœud moins 90
+// degrés (FUN_0062c300 → FUN_00621c00 ; à vélo, plus 180). Rend l'échéance en ms, 0 sans attente.
+uint32 ScriptPedSuiviEcheance(float attente, uint32 maintenantMs);
+float ScriptPedSuiviCap(float lacetNoeud, bool velo);
 
 // `tirer` rend un rand() du CRT (0 à 32767) ; les positions sont lues à plat.
 void ScriptPedCombatLocoChoisir(CCombatLoco &c, const CVector &soi, const CVector &cible, float petit, float grand,
@@ -213,6 +222,10 @@ struct CScriptPed {
 	// degrés, × π / 180 par FUN_00478e30) et la portée (+0xa6c, la colonne E, en mètres) ; un cache de 16 piétons (+0xa74 :
 	// le piéton, l'octet vu, le nombre d'images à vivre) que FUN_0048ccf0 fait vieillir à chaque image (CPed, FUN_004812d0).
 	float visionAngle = 0, visionPortee = 0;
+	// +0x51c et l'octet +0x520 : le rayon d'arrivée à un nœud de trajet et son « posé », que seul PedPathNodeReachedDistance
+	// (0x5cd930) écrit ; la valeur par défaut n'est pas trouvée (docs/missions.md, « 1_03 »).
+	float rayonNoeud = 0;
+	bool rayonNoeudPose = false;
 	struct Vu { int ped = -1; bool vu = false; int32 images = 0; };
 	Vu vus[16];
 	// +0x1dbc et +0x1dc0 : le dernier piéton qui l'a frappé (FUN_004973d0, depuis la méthode du coup FUN_0047b810 quand son

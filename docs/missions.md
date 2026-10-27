@@ -426,6 +426,11 @@ Ce qui est lu du suivi d'un trajet (docs/cat.md n'en parle pas ; le code est dan
   (`FUN_0061acc0`) : une fois (0), en boucle (1), aller-retour (2, le sens +0x34), sur place (3). La fin retire l'objectif
   (`FUN_00621c80`). `ScriptPedSuiviSuivant`, `ScriptPedSuiviArret`, `ScriptPedSuiviPoserPlan`, `ScriptPedSuiviPlanPasse`,
   `tests/test_scriptpeds`.
+- **L'arrivée à un nœud** (`FUN_0062eb70`, lu à l'assembleur de 0x62ec10 à 0x62edd3) : la distance à plat sous le rayon (+0x51c),
+  multiplié par 3 à vélo sauf au dernier nœud d'un trajet suivi une fois ; une attente positive (+0x1c du nœud) fait attendre la piste
+  jusqu'à maintenant + attente × 1000 ms (`_DAT_0090d3d8` = -1000, soustrait) et tourner le piéton vers le lacet du nœud moins 90
+  degrés (`FUN_0062c300`, plus 180 à vélo). `PedPathNodeReachedDistance` est réelle (`ScriptPedSuiviAtteint`, `ScriptPedSuiviEcheance`,
+  `ScriptPedSuiviCap`). Dix scripts seulement l'appellent, contre 105 qui suivent un trajet.
 - **Ce qui bloque** : la valeur du rayon +0x51c d'un piéton auquel aucun script ne l'a donnée. Aucune instruction ne l'écrit hors de
   `PedPathNodeReachedDistance` (relevé à l'assembleur : les deux autres écritures de +0x51c sont dans le navigateur, +0xdac, et le
   constructeur de `CPed`, `FUN_0047ffe0`, ni le composant de visée, `FUN_0048c1b0`, ne la posent) ; à 0, aucun nœud d'arrêt ne serait

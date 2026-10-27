@@ -736,3 +736,24 @@ ScriptPedSuiviPlanPasse(const CSuiviTrajet &s, const CVector &pos)
 	CVector v(s.planPoint.x - pos.x, s.planPoint.y - pos.y, s.planPoint.z - pos.z);
 	return s.planNormale.x * v.x + s.planNormale.y * v.y + s.planNormale.z * v.z <= 0.0f;
 }
+
+bool
+ScriptPedSuiviAtteint(const CSuiviTrajet &s, int nombre, const CVector &pos, const CVector &noeud, float rayon, bool velo)
+{
+	float dx = noeud.x - pos.x, dy = noeud.y - pos.y, d = sqrtf(fabsf(dx * dx + dy * dy));
+	float facteur = velo && !(s.noeud >= nombre - 1 && s.mode == 0) ? 3.0f : 1.0f;
+	return d < rayon * facteur;
+}
+
+uint32
+ScriptPedSuiviEcheance(float attente, uint32 maintenantMs)
+{
+	if(!(attente > 0.0f)) return 0;
+	return maintenantMs - (uint32)(int32)(attente * -1000.0);   // fistp, arrondi par troncature (le mot de contrôle | 0xc00)
+}
+
+float
+ScriptPedSuiviCap(float lacetNoeud, bool velo)
+{
+	return velo ? lacetNoeud + 180.0f : lacetNoeud - 90.0f;   // _DAT_00900158, _DAT_00900ab8
+}
