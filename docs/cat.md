@@ -652,6 +652,15 @@ vide ses entrées, la vitesse de l'intention reste 0 (ce qu'écrivait la section
 exécute `Base/DeadCleanup` (-100 points). `1_02` reste réussie à 121,94 s : le script attend une santé nulle (`0 < PedGetHealth`),
 puis `KnockOuts`.
 
+**Les deux conditions encore jugées -1 dans `1_02`**, retrouvées par le registre (`FUN_0064b090` : 419 entrées de 16 octets posées
+sur la pile, la chaîne du nom, le créateur, une fonction, une globale ; leurs noms relus dans le binaire et hachés : PropTargetInteractive
+#018970c6, ParametricTime #13d5cad1) :
+
+| Classe | Fonction | Ce qu'elle juge |
+|---|---|---|
+| `ParametricTime` | `FUN_005fbed0` (table 0x937ad8, créateur 0x649580) | le flottant que pointe le +0x38 du contexte comparé à +4 par +8 (`FUN_005fb750`) ; ce pointeur est l'adresse du +0x157c du piéton dans les trois contextes du composant d'actions (`FUN_00484d10`, 0x484df8 : +0x338, +0x390, +0x3e8), que seul le vélo écrit (`FUN_004e9160`, `FUN_005051b0`) ; l'outil : 0 |
+| `PropTargetInteractive` | `FUN_00655110` (table 0x936838, créateur 0x645470) | sans piéton, faux ; sauf pour le joueur à +4 et +0xc nuls, `FUN_004991e0` relève les objets proches (`FUN_004989f0` : la liste +0x450, 12 octets par objet, le nombre en +0x4c8) ; un partenaire de prise (+0x155c) sans l'octet +0x17 rend faux ; sinon `FUN_004979b0` : l'objet visé (+0x444) ou l'un des objets relevés, à moins de +4 m, du modèle voulu, devient la cible (+0x43c). L'outil n'a pas d'objets dans le monde : faux |
+
 ## Le chemin d'un nœud (18.10.2026)
 
 Les scripts désignent un nœud par un chemin, `PedSetActionNode(ped, "/Global/1_01/Talking",

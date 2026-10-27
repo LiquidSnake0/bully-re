@@ -124,6 +124,11 @@ struct CScriptPed {
 	// FUN_00478e30), son maximum ; FUN_0047cde0 la remplit à chaque image (jusqu'à ce maximum), FUN_0047cee0 la dépense.
 	// La condition Sprint la compare (FUN_005fda70). L'outil ne la fait pas varier.
 	float sprint = 0;
+	// +0x157c : un flottant que le vélo pose (FUN_004e9160, 0x4e9292 et 0x4e92d1 ; et FUN_005051b0, 0x5051ff, pour le piéton
+	// DAT_00c3ce14), et dont le composant d'actions range l'adresse en +0x38 de ses trois contextes (FUN_00484d10 : +0x338,
+	// +0x390, +0x3e8, vérifié à l'assembleur en 0x484df8) ; la condition ParametricTime le lit. Aucun constructeur ne
+	// l'écrit (FUN_0047ffe0 pose +0x1574 … +0x1584 sans lui) : 0 hors du vélo, supposé (la mémoire du pool).
+	float parametrique = 0;
 	bool discretion = false;     // +0x1398 : un piéton de mission de discrétion (PedSetIsStealthMissionPed, 0x5d0110 →
 	                             // FUN_005d0080) ; la condition IsStealthMissionChar le lit (FUN_00602cf0)
 	// +0x714 : la classe de combat, la colonne S de l'entrée de pedstats.dat (+0x60 de l'entrée, GetCharacterClassId

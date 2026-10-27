@@ -377,6 +377,16 @@ struct CJugeOutil : CJugeAction {
 		// l'octet +0x2b du type de l'arme tenue (WeaponGetType), faux sans arme.
 		static const uint32 kArmeTenue = ActionHash("WeaponDesiredIsEquiped"), kArmeLachee = ActionHash("IsWeaponFiredWhenDropped");
 		if(type == kArmeTenue) return 1;
+		// ParametricTime (ConditionParametricTime 0x937ad8, FUN_005fbed0 ; créateur 0x649580) : le flottant que pointe le
+		// +0x38 du contexte (+0x157c du piéton, que seul le vélo pose) comparé à +4 par +8 (FUN_005fb750).
+		// PropTargetInteractive (0x936838, FUN_00655110 ; créateur 0x645470) : sans piéton, faux ; pour le joueur à +4 nul
+		// et octet +0xc nul, sans relevé des objets, sinon FUN_004991e0 (FUN_004989f0 range en +0x450 les objets proches,
+		// leur nombre en +0x4c8) ; un partenaire de prise (+0x155c) sans l'octet +0x17 rend faux ; puis FUN_004979b0 : l'objet
+		// visé (+0x444) ou l'un des objets relevés, à moins de +4 m (+0x44c), du modèle voulu. L'outil n'a pas d'objets dans
+		// le monde : +0x444 est nul et la liste vide, la condition est fausse.
+		static const uint32 kParametrique = ActionHash("ParametricTime"), kObjetVise = ActionHash("PropTargetInteractive");
+		if(type == kParametrique) return moi ? ComparerCondition(moi->parametrique, seuil, mots[1]) : -1;
+		if(type == kObjetVise) return 0;
 		// WeaponAmmo (FUN_0065b290) : les munitions (FUN_00486130 : 0 pour une arme sous 1) de l'arme tenue (FUN_00474aa0 :
 		// le modèle +0x10e de l'objet arme +0x1d0, sinon 0), ou avec l'octet +0xc celles de l'arme du HUD (HUDWeapons, le
 		// composant 20, +0xc0) pour le joueur seulement, comparées à +4 par +8 (FUN_005fb750). Sans arme : 0.
