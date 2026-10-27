@@ -146,6 +146,16 @@ public:
 	struct Gestion { float entree, vie; bool joueur, retient; };
 	std::vector<Gestion> gestions, gestionsActives, combats, combatsActifs;
 	struct DemandeNoeud { float entree; uint32 nom; bool tenir, suivre, rendre, retient, vu, vivante; };
+	// - ActionRequest (ActionRequestTrack 0x9348a0 ; lancement FUN_0061ba70, mise à jour FUN_006260d0, arrêt FUN_00626160) :
+	//   à chaque image, appuie sur le bouton brut +0x18 (24) du composant d'actions dans le mode +0x1c (28) (FUN_005f3930 :
+	//   3 lâché, 2 appuyé et tenu, sinon appuyé) ; le bouton 12 pose aussi l'instant de la parade (+0x4d0, que lit la
+	//   condition BlockTimer, FUN_00600160), les boutons 1, 2, 3 et 8, pendant un nœud de HitTree, la minuterie du dernier
+	//   coup (+0x550, non suivi). Elle vit si l'octet +0x20 (32) ; à l'arrêt, un mode 2 lâche le bouton (le mode 3).
+	//   `appuis` : les boutons appuyés à cette image (bouton, mode) ; `laches` : ceux lâchés, que l'appelant vide.
+	struct DemandeBouton { float entree; int32 bouton, mode; bool vivante, retient, morte, lancee; };
+	std::vector<DemandeBouton> demandesBouton;
+	std::vector<std::pair<int32, int32>> appuis;
+	std::vector<int32> laches;
 	std::vector<DemandeNoeud> demandesNoeud;
 	std::vector<uint32> intentions;               // les noms posés en intention à cette image, rendus par Avancer
 	bool finParRetenues = false;                  // le nœud finit à la mort de ses pistes de l'IA qui le retiennent

@@ -643,6 +643,22 @@ main(void)
 				d.Avancer(ia, nil, rien, 0.133f);                               // fini : la piste meurt (+0x1e nul)
 				VERIF(d.joue != feuille || (!d.demandesNoeud.empty() && !d.demandesNoeud[0].vivante));
 			}else VERIF(false);
+			// La feuille Block de CombatActions : sa piste ActionRequest (FUN_006260d0) appuie le bouton brut 12 au mode 2 à chaque
+			// image et retient le nœud ; à l'arrêt (FUN_00626160), le bouton est lâché.
+			const CActionNode *parade = ia.Trouver("/Global/AI_FightTutorial/CombatActions/CombatActions/Block/Block");
+			if(parade){
+				struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return -1; } } rien;
+				CActionController d;
+				d.sousControleurs = true;
+				d.Jouer(ia, parade, 0.0f, &rien);
+				VERIF(d.demandesBouton.size() == 1 && d.demandesBouton[0].bouton == 12 && d.demandesBouton[0].mode == 2 && d.finParRetenues);
+				d.Avancer(ia, nil, rien, 0.033f);
+				VERIF(d.appuis.size() == 1 && d.appuis[0].first == 12 && d.joue == parade);
+				d.Avancer(ia, nil, rien, 0.066f);
+				VERIF(d.appuis.size() == 1 && d.laches.empty());
+				d.Jouer(ia, nil, 0.1f);
+				VERIF(d.laches.size() == 1 && d.laches[0] == 12);
+			}else VERIF(false);
 			// Sans objectif d'attaque ni focus, la descente tombe dans AMBIENT/IDLE : sa piste IDLE (FUN_0061d8e0) se lance à
 			// la première image et vide les entrées du piéton ; elle retient le nœud (l'octet +8), qui ne finit pas.
 			struct : CJugeAction {

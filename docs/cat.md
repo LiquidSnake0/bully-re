@@ -88,7 +88,7 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
 |---|---|
 | `ConditionGroup`, `TargetConditionGroup` | +4 : renvoi de la seconde table vers le groupe |
 | `WeaponEquiped` | +4 : le nom de l'arme, cité par la première table (`unarmed`, `any`, `bat`, `leadpipe`…) |
-| `ActionRequest` | (`ConditionActionRequestButton`, `FUN_005fd650`) +4 : le numéro de l'action (0x16, 3, 1…), +8 : le mode (3 : bouton lâché, `(état & 3) == 0` ; 2 : `état & 3` ; sinon `état & 1`), +0xc / +0x10 : un seuil et son comparateur sur la durée tenue (`FUN_005fbc30`), +0x14 : si non nul, seule la durée compte |
+| `ActionRequest` | (`ConditionActionIntentionActionRequest` 0x9368d4, `FUN_005fd570` ; corrigé le 27.10 au soir, par le registre : la chaîne 0x939b90 a le créateur 0x6456d0) +4 : le **bouton brut** (0x16, 3, 1, 12…), +8 : le mode (3 : bouton lâché, `(état & 3) == 0` ; 2 : `état & 3` ; sinon `état & 1`), +0xc / +0x10 : un seuil et son comparateur sur la durée tenue (`FUN_005fbc30`), +0x14 : 1, la durée (+8 du bouton) positive. `ActionRequestButton` (0x9368fc, `FUN_005fd650`, créateur 0x645750) fait de même par `ActionMapButes` (Globals.cat, `DAT_020c88d0` : le bouton de l'action n en +0x18 + 4 × n) |
 | `ActionNodePlayTime` | (`FUN_005fb940`) +4 : un temps (s), +8 : le comparateur de `FUN_005fb750` sur le temps du nœud ; deux champs |
 | `TargetPlaying` | +4 : un nom de nœud haché (`RollAway`…), +8 : 1 ; deux champs |
 | `LuaCond` | +0x10 : `mission`, +0x14 : la fonction du script (`F_PlayerGroundKicks`, `F_FinalAttacks`…) |
@@ -585,6 +585,20 @@ vers la cible : le piéton tourne autour de sa cible en lui faisant face, et la 
 bully arrive par le retour (mode 12, de 30,10 à 31,32 s) puis enchaîne les points tirés autour du joueur (sous-états 1 et 2, toutes
 les 1,5 à 3 s) ; ses coups pendant la leçon de parade sont les mêmes, et `1_02` reste réussie à 118,93 s. Supposés : la cible toujours
 vue, le point toujours valable, l'arme à distance (+0x7a, `FUN_00625540`), la hauteur (le mode 1 au-delà de 2 m d'écart, 0x900bfc).
+
+**La parade du bully** (lue le 27.10 au soir). La feuille `Block` de `CombatActions` (`AI_FightTutorial`) porte une piste
+`ActionRequest` (`ActionRequestTrack` 0x9348a0 : lancement `FUN_0061ba70`, mise à jour `FUN_006260d0`, arrêt `FUN_00626160`) : à
+chaque image, elle appuie le bouton brut +0x18 (12) du composant d'actions au mode +0x1c (2 : appuyé et tenu, l'état 3,
+`FUN_005f3930` ; 3 : lâché, 8 ; sinon 1), que `FUN_005f3720` fait vieillir (3 → 2, 1 → 0, 8 → 0) ; le bouton 12 pose aussi
+l'instant de la parade (+0x4d0), que lit `BlockTimer` (`ConditionBlockTimerPlayTime`, `FUN_00600160`, dans `AI_2_02` seulement) ;
+l'arrêt d'une piste au mode 2 lâche le bouton. Le nœud qui l'attend est `BLOCK` de `Block.cat` (`ActionRequest[12, 2]`, puis
+`BlockHits`), l'un des arbres globaux : le joueur y va par ses `Defense`. Mais `Fight_Tutorial`, l'arbre d'actions du bully, a une
+banque `Defense` vide (#202d180c, sans enfant) : l'`Opportunity` `../../../Defense` des `ActionOpps` de `Locomotion.act` n'y trouve
+rien. **Le bully de `1_02` ne pare donc pas, dans le jeu non plus** : son IA entre dans `Block` (73,06 s dans l'outil) et appuie le
+bouton 12, que rien ne lit dans son arbre ; elle y reste tant que le joueur attaque dans son cône (les sorties : `AttackPhase` 3 de
+la cible, plus de 0,567 s avant l'échéance ; la cible hors du cône ; ou la cible qui n'attaque plus pendant que le bully joue un nœud
+`Block`, ce qui n'arrive pas). L'outil appuie maintenant les boutons des piétons de l'IA et juge `ActionRequest` sur eux
+(`CActionController::demandesBouton`, `appuis`, `laches`) ; `1_02` ne change pas (118,93 s).
 
 **La course de `RunStart` est donc établie : il n'y en a pas.** À 89,33 s le joueur est à 0,75 m, sous le petit rayon : le pas de
 `CombatLoco` est le mode 10, sur place, et la navigation, arrivée, laisse la vitesse à 0 (`FUN_004a4eb0` la pose à 0 quand

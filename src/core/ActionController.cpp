@@ -78,7 +78,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kPoursuite = ActionHash("SeekEntityPosition"), kSpawn = ActionHash("spawn"),
 	                    kGestion = ActionHash("ManageTargets"), kCombatLoco = ActionHash("CombatLoco"),
 	                    kDemandeNoeud = ActionHash("ActionNodeRequest"), kEffacer = ActionHash("ClearCurrentObjective"),
-	                    kFuite = ActionHash("FleeObjective"), kRepos = ActionHash("IDLE");
+	                    kFuite = ActionHash("FleeObjective"), kRepos = ActionHash("IDLE"), kBouton = ActionHash("ActionRequest");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -131,6 +131,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			fuites.push_back({a, Octet(p, 24), Octet(p, 25), false});
 		}else if(p.type == kRepos){
 			repos.push_back({a, false});
+		}else if(sousControleurs && p.type == kBouton){
+			demandesBouton.push_back({a, (int32)p.Mot(24), (int32)p.Mot(28), Octet(p, 32), Octet(p, 8), false, false});
 		}else if(sousControleurs && (p.type == kGestion || p.type == kCombatLoco)){
 			Gestion g{a, Reel(p, 16, -1.0f), Octet(p, 24), Octet(p, 8)};
 			(p.type == kGestion ? gestions : combats).push_back(g);
@@ -217,6 +219,9 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	santes.clear();
 	prisesCible.clear();
 	gestions.clear(); combats.clear(); demandesNoeud.clear();
+	for(const DemandeBouton &d : demandesBouton)   // FUN_00626160 : l'arrêt d'une piste au mode 2 lâche son bouton
+		if(!d.morte && d.lancee && d.mode == 2) laches.push_back(d.bouton);
+	demandesBouton.clear();
 	effacements.clear(); fuites.clear(); repos.clear();
 	lances.clear();                    // FUN_005f7390 : l'arrêt d'une piste spawn arrête son contrôleur
 	finExecutees = -1.0f;
@@ -264,6 +269,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 		for(const Gestion &g : gestions) finParRetenues |= g.retient;
 		for(const Gestion &g : combats) finParRetenues |= g.retient;
 		for(const DemandeNoeud &g : demandesNoeud) finParRetenues |= g.retient;
+		for(const DemandeBouton &g : demandesBouton) finParRetenues |= g.retient;
 		if(sousControleurs) for(const COpportunite &o : occasions) finParRetenues |= o.retient;
 	}
 }
@@ -393,6 +399,14 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 			if((g.vie >= 0.0f && Temps(t) > g.entree + g.vie) || !juge.ACible()){ g.vie = -2.0f; continue; }   // morte
 			(k ? combatsActifs : gestionsActives).push_back(g);
 		}
+	// FUN_006260d0 (ActionRequest) : le bouton appuyé à chaque image ; la piste meurt sans l'octet +0x20.
+	appuis.clear();
+	for(DemandeBouton &d : demandesBouton){
+		if(d.morte || Temps(t) < d.entree) continue;
+		appuis.push_back({d.bouton, d.mode});
+		d.lancee = true;
+		if(!d.vivante){ d.morte = true; if(d.mode == 2) laches.push_back(d.bouton); }   // morte : son arrêt la lâche
+	}
 	// FUN_006261f0 (ActionNodeRequest) : l'intention, puis la vie de la piste.
 	for(DemandeNoeud &d : demandesNoeud){
 		if(!d.vivante || Temps(t) < d.entree) continue;
@@ -483,6 +497,7 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		for(const Gestion &g : gestions) retenu |= g.retient && g.vie != -2.0f;
 		for(const Gestion &g : combats) retenu |= g.retient && g.vie != -2.0f;
 		for(const DemandeNoeud &g : demandesNoeud) retenu |= g.retient && g.vivante;
+		for(const DemandeBouton &g : demandesBouton) retenu |= g.retient && !g.morte;
 		if(sousControleurs) for(const COpportunite &o : occasions) retenu |= o.retient && !o.arretee;
 		fini = !retenu;
 	}

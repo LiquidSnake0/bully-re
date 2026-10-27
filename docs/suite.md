@@ -44,19 +44,17 @@ chantier. Un point fini passe en bas, avec son commit.
    l'espace de noms de la mission : le bully attaque pendant la leçon de parade. `1_02` reste réussie (119,03 s).
    Les conditions de la parade, des armes, du social, des caméras, du HUD et des manettes sont lues (docs/cat.md, « Les
    conditions lues le 27.10.2026 ») ; la vitesse de `CombatLoco` vient du pas (`FUN_00625970`). `1_02` reste réussie (119,03 s).
+   La course de `RunStart` est établie (il n'y en a pas : le pas de `CombatLoco` est le mode 10 sous le petit rayon) ; les entrées
+   vidées (`FUN_005f38e0`), la vitesse de la navigation (`FUN_005e4a60`), les quatre sous-états de `CombatLoco` et l'arrêt au petit
+   rayon sont recréés ; le bully ne pare pas, dans le jeu non plus (la banque `Defense` de `Fight_Tutorial` est vide) ; `ActionRequest`
+   lit le bouton brut (`FUN_005fd570`). `1_02` est réussie à 118,93 s.
    Suite, dans l'ordre :
-   - **la course de `RunStart`** : la piste `Locomotion` (`FUN_00613480`) lit l'intention, aucune piste de `RunStart` ne l'écrit ;
-     reste à savoir ce que vaut la vitesse à 89,43 s, c'est-à-dire qui l'a posée en dernier (les 35 écritures de +0x1c relevées :
-     navigation, pistes de locomotion de l'IA, `FUN_004812d0` en 0x481603) et si `CPed` la remet à 0 à chaque image ;
-   - **le reste de `CombatLoco`** : le point tiré entre les deux rayons aux images de tirage (`FUN_0062c740` →
-     `FUN_0062c4f0`, mode 8), les sous-états 1 à 3 (`FUN_0061b700`, `FUN_00625740`, `FUN_0062c540`, `FUN_0061b6a0`) et le petit
-     rayon (+0x6c) comme arrêt, au lieu du grand ;
    - les conditions encore jugées -1 dans `1_02` : `WeaponNeedInit` (+0x120 de l'objet arme +0x1d0, sa valeur pour un piéton
      sans arme), `ConversationActive`, `PedIsInOutfit` (`FUN_006ca890`), `OnMission` (`FUN_005fc940` : les états de mission du
      moteur, 0, 1 et 11, à faire correspondre à ceux de l'outil), `MissionCond` dans les arbres d'actions, `ParametricTime`
      (le +0x38 du contexte), `PropTargetInteractive` ;
-   - la parade du bully (`BLOCK` de `CombatActions` : `F_CanBlock` rend 1 par moments, mais la banque ne redescend qu'à la fin
-     du `ControlNode`) ;
+   - la mort d'un piéton par la piste `Death` (`FUN_0060fdc0` → `FUN_00479110`, +0x1c98) au lieu de la santé nulle ;
+   - ce qui reste supposé dans `CombatLoco` : la cible vue (`FUN_0048d320`), le point valable (`FUN_006254c0`), la recherche de chemin ;
    - le choix d'une cible (`FUN_004992a0`, `FUN_004988b0`, `FUN_00496b60`), les sphères des os des coups (au lieu du demi-espace
      avant) ;
    - les `SpeechTrack` sans tenue ; puis la mission suivante, `1_03`.

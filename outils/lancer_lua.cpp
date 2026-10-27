@@ -56,6 +56,7 @@
 #include <cctype>
 #include <cmath>
 #include <map>
+#include <array>
 #include <set>
 #include <string>
 #include <vector>
@@ -163,11 +164,34 @@ static lua_State *etatLua = nil;        // pour LuaCond : la fonction du script 
 static int AppelLuaCond(const std::string &script, const std::string &fonction);
 // --demander N@s : une ActionRequest du joueur (la manette) en attente jusqu'à cet instant (ms).
 static std::map<uint32, uint32> demandes;
+// L'état des 47 boutons bruts des autres piétons (+0x20 du composant +0x2e0, 12 octets par bouton : l'octet d'état en +0),
+// que les pistes ActionRequest de leur arbre de l'IA appuient (FUN_005f3930 : 3 lâché → 8, 2 appuyé et tenu → 3, sinon
+// appuyé → 1) et que FUN_005f3720 fait vieillir à chaque image (le bit 0 tombe : 3 → 2, 1 → 0 ; 8 → 0).
+enum { BOUTONS_PIETON = 47 };
+static std::map<int, std::array<unsigned char, BOUTONS_PIETON>> boutonsPietons;
+static std::map<int, uint32> instantsParade;   // +0x4d0 : l'instant du dernier appui du bouton 12 (FUN_006260d0)
+static void
+AppuyerBouton(int ped, int32 bouton, int32 mode)   // FUN_005f3930
+{
+	if(bouton < 0 || bouton >= BOUTONS_PIETON) return;
+	auto it = boutonsPietons.find(ped);
+	if(it == boutonsPietons.end()) it = boutonsPietons.emplace(ped, std::array<unsigned char, BOUTONS_PIETON>{}).first;
+	it->second[bouton] = mode == 3 ? 8 : mode == 2 ? 3 : 1;
+}
+static void
+VieillirBoutons(void)   // FUN_005f3720
+{
+	for(auto &e : boutonsPietons)
+		for(unsigned char &b : e.second){
+			if(b & 1) b &= 2;
+			if((b >> 3 & 1) && b != 0) b = 0;
+		}
+}
 
 // Les conditions des nœuds d'action pour un piéton (FUN_005fb9b0 les juge une à une ; la banque fait NOT, OR, False
 // et ConditionGroup). Champs relevés dans les enregistrements (mots[i] = champ +4 * (i + 1) de l'objet) :
 //   WeaponEquiped        +4 : le nom de l'arme (« unarmed », « any », « bat »…), cité par la première table ;
-//   ActionRequest        (ConditionActionRequestButton, FUN_005fd650) +4 : le numéro de l'action, +8 : le mode
+//   ActionRequest        (ConditionActionIntentionActionRequest, FUN_005fd570) +4 : le bouton brut, +8 : le mode
 //                        (3 : bouton lâché, 2 : bit 0 ou 1, sinon bit 0), +0xc / +0x10 : un seuil et son comparateur
 //                        sur la durée tenue, +0x14 : si non nul, seule la durée compte ;
 //   ActionNodePlayTime   (FUN_005fb940) +4 : un temps (s), +8 : le comparateur de FUN_005fb750, sur le temps du nœud ;
@@ -386,6 +410,16 @@ struct CJugeOutil : CJugeAction {
 			if(it == controleurs.end()) return 0;
 			return ConditionAttackTimer(it->second, seuil, (mots[1] & 0xff) != 0, mots[2], (uint32)lrintf(t * 1000.0f));
 		}
+		// BlockTimer (ConditionBlockTimerPlayTime 0x936a08, FUN_00600160) : maintenant (DAT_00c1a9b4) comparé par +0xc à
+		// l'instant de la parade (+0x4d0, le dernier appui du bouton 12 par une piste ActionRequest, 0 sans parade) + 1000 ×
+		// (+4) ; si elle passe, l'octet +8 relance la minuterie. Seul AI_2_02 s'en sert.
+		static const uint32 kParade = ActionHash("BlockTimer");
+		if(type == kParade){
+			uint32 &inst = instantsParade[ped];
+			int r = ComparerCondition((float)maintenant, (float)inst + seuil * 1000.0f, mots[2]);
+			if(r == 1 && (mots[1] & 0xff)) inst = maintenant;
+			return r;
+		}
 		if(type == kAttaque){
 			auto it = coups.find(ped);
 			float depuis = it != coups.end() && it->second.instant >= 0.0f ? t - it->second.instant : t;
@@ -539,7 +573,14 @@ struct CJugeOutil : CJugeAction {
 			return enCours && it->second.drapeau == (mots[0] & 0x7fffffff);
 		}
 		if(type == kDemande){
-			if(ped != SCRIPT_PED_JOUEUR) return 0;
+			// ActionRequest (ConditionActionIntentionActionRequest 0x9368d4, FUN_005fd570, vérifié au registre : la chaîne
+			// 0x939b90, le créateur 0x6456d0) lit le bouton brut +4 ; ActionRequestButton (0x9368fc, FUN_005fd650) passe
+			// par ActionMapButes (DAT_020c88d0 +0x18 + 4 × n). Pour un autre que le joueur, ses boutons appuyés par l'IA.
+			if(ped != SCRIPT_PED_JOUEUR){
+				auto it = boutonsPietons.find(ped);
+				unsigned char etat = it != boutonsPietons.end() && mots[0] < BOUTONS_PIETON ? it->second[mots[0]] : 0;
+				return EtatBoutonCondition(etat, mots[1]);
+			}
 			auto it = demandes.find(mots[0]);
 			// La manette de l'outil : une demande en attente pose le bit 0 du bouton ; la durée tenue n'est pas suivie.
 			unsigned char etat = it != demandes.end() && maintenant <= it->second ? 1 : 0;
@@ -2232,7 +2273,7 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 	// contrôleur s'arrête (FUN_005f3f40). Sinon la vitesse de l'intention de mouvement reste celle que la dernière piste
 	// de navigation a posée : aucune remise à 0 à chaque image (les 35 écritures de +0x1c relevées à l'assembleur, et le
 	// +0x1c de FUN_005f38e0, sont toutes dans des pistes, la navigation ou ces cas-là).
-	if(!pietons.IAAvance(ped)){ pietons.ViderEntrees(ped); if(p->mort) c.Jouer(arbres, nil, maintenant / 1000.0f); return; }
+	if(!pietons.IAAvance(ped)){ pietons.ViderEntrees(ped); boutonsPietons.erase(ped); if(p->mort) c.Jouer(arbres, nil, maintenant / 1000.0f); return; }
 	float t = maintenant / 1000.0f;
 	c.image = images; c.graine = (uint16)ped;
 	const CActionNode *avant = c.joue;
@@ -2246,7 +2287,13 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 		for(size_t i = 1; i < tous.size(); i++)
 			if(vus[tous[i]] != tous[i]->joue){ vus[tous[i]] = tous[i]->joue; printf("%6.2f s  IA de %d, spawn : %s\n", t, ped, CheminVu(*tous[i], tous[i]->joue).c_str()); }
 	for(CActionController *k : tous){
-		if(k->reposLances > 0){ pietons.ViderEntrees(ped); intentionsPietons.erase(ped); }   // IDLE : FUN_0061d8e0
+		if(k->reposLances > 0){ pietons.ViderEntrees(ped); intentionsPietons.erase(ped); boutonsPietons.erase(ped); }   // IDLE : FUN_0061d8e0
+		for(const auto &a : k->appuis){   // FUN_006260d0
+			AppuyerBouton(ped, a.first, a.second);
+			if(a.first == 12) instantsParade[ped] = maintenant;
+		}
+		for(int32 b : k->laches) AppuyerBouton(ped, b, 3);   // FUN_00626160
+		k->laches.clear();
 		for(uint32 n : k->intentions) intentionsPietons[ped] = n;
 		for(const CActionController::Gestion &g : k->gestionsActives) GererCibles(ped, g.joueur);
 		for(const CActionController::Gestion &g : k->combatsActifs) CombatLoco(ped, g.joueur, k->Temps(t) <= g.entree + 0.034f);
@@ -3344,6 +3391,7 @@ main(int argc, char **argv)
 			}
 		}
 		intentionsPietons.clear();   // FUN_005f3720 : l'intention ne vaut que pour l'image
+		VieillirBoutons();
 		for(auto it = demandes.begin(); it != demandes.end(); ) it = maintenant > it->second ? demandes.erase(it) : ++it;
 		for(auto &e : poussees) if(!e.second.empty() && maintenant >= e.first){
 			int h = donnees.Declencheur(e.second.c_str());
