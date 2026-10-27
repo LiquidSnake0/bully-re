@@ -19,6 +19,9 @@ struct CMissionCondition {
 // (DAT_00bceb4b, DAT_00bceb4a).
 struct CEtatMissions {
 	std::vector<uint16> reussites;   // une par entrée de la banque
+	// L'octet +4 de l'entrée : le bit 3 (8) posé par MissionForceCompleted (0x5c0740, 0x5c0773), que MissionUnlocked lit ;
+	// le bit 4 (0x10, FUN_006aac70) et le bit 0 (FUN_006a9d00 le lève) ne sont pas suivis. Vide : tout à 0.
+	std::vector<uint8> drapeaux;
 	int heure = 8, minute = 0;
 	// La mission en cours (FUN_006aa630 : le second emplacement, +0x5a0, s'il joue, sinon le premier,
 	// +0x4bc) et la mission de cours active (FUN_006a9ed0 : la première dont le bit 0 de l'état est posé
@@ -76,6 +79,10 @@ public:
 	//  DayCond (FUN_006a7480 → FUN_006a8b30) : le jour du calendrier vaut +4 ; avec l'octet +8, c'est le
 	//    jour modulo le +0x18 de TimeCycleButes (DAT_020c88ac, la piste de Globals.cat : 5, le même
 	//    diviseur que GetCurrentDay écrit en dur).
+	//  MissionUnlocked (CMissionUnlockedCond 0x941778, FUN_006a72a0 ; créateur 0x63a1c0 → FUN_006a7270) : la mission
+	//    du nom +4 (son indice gardé en +8, -2 avant la première recherche, FUN_006a9e70) a réussi au moins une fois ou a
+	//    le bit 8 de l'octet +4 de son entrée (MissionForceCompleted). Un nom inconnu (-1) lit l'entrée d'avant le
+	//    tableau, ce que l'outil ne suit pas : faux.
 	//  ConditionFalse (FUN_006094f0) : toujours fausse.
 	//  ConditionNOT et ConditionOR (FUN_00609b30) : vraies ; ce sont des opérateurs de la liste.
 	int Evaluer(const CMissionCondition &c, const CEtatMissions &etat, const char **classe = nil) const;

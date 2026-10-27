@@ -190,7 +190,7 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
 
 | Classe | Fonction | Ce qu'elle juge |
 |---|---|---|
-| `HitTime` | `FUN_005fc400` | +0x434 (ou +0x438 si l'octet +0xc) du relevé comparé à +4 par +8 (`Standing/Melee` : ≤ 0, l'instant du coup) |
+| `HitTime` | `FUN_005fc400` | +0x434 (ou +0x438 si l'octet +0xc) du relevé comparé à +4 par +8 (`Standing/Melee` : ≤ 0, l'instant du coup) ; -1 sans coup reçu (`FUN_005f3ab0`) |
 | `stat` | 0x5ffff0 (hors de l'index) | la colonne +0xc du piéton (`GameGetPedStat`) ≥ +4 si l'octet +8 est nul ; l'octet +9 ajoute un `MePlaying` |
 | `IsPlayer` | `FUN_005ffe40` | le type du piéton (+0x1310) vaut 13 |
 | `PedFightingSystem` | `FUN_005fd740` | +4 égal à +0x16dc (`PedSetFightingSystem` 0x5ca590) |
@@ -660,6 +660,21 @@ sur la pile, la chaîne du nom, le créateur, une fonction, une globale ; leurs 
 |---|---|---|
 | `ParametricTime` | `FUN_005fbed0` (table 0x937ad8, créateur 0x649580) | le flottant que pointe le +0x38 du contexte comparé à +4 par +8 (`FUN_005fb750`) ; ce pointeur est l'adresse du +0x157c du piéton dans les trois contextes du composant d'actions (`FUN_00484d10`, 0x484df8 : +0x338, +0x390, +0x3e8), que seul le vélo écrit (`FUN_004e9160`, `FUN_005051b0`) ; l'outil : 0 |
 | `PropTargetInteractive` | `FUN_00655110` (table 0x936838, créateur 0x645470) | sans piéton, faux ; sauf pour le joueur à +4 et +0xc nuls, `FUN_004991e0` relève les objets proches (`FUN_004989f0` : la liste +0x450, 12 octets par objet, le nombre en +0x4c8) ; un partenaire de prise (+0x155c) sans l'octet +0x17 rend faux ; sinon `FUN_004979b0` : l'objet visé (+0x444) ou l'un des objets relevés, à moins de +4 m, du modèle voulu, devient la cible (+0x43c). L'outil n'a pas d'objets dans le monde : faux |
+
+**La dernière, #3bb83b8f, est `MissionUnlocked`** (`CMissionUnlockedCond` 0x941778, `FUN_006a72a0` ; créateur 0x63a1c0 →
+`FUN_006a7270`, qui pose l'indice +8 à -2) : la mission du nom +4 (cherchée une fois, `FUN_006a9e70`) a au moins une réussite (le mot
++2 de son entrée de 6 octets, `FUN_006aa660`) ou le bit 8 de son octet +4, que seul `MissionForceCompleted` (0x5c0740, 0x5c0773)
+pose ; `IsMissionCompleated` (0x5c0580) ne lit que le mot +2. Dans `Grapples.cat`, les renversements d'une prise
+(`ReversalOpps/AutoReversalOpps`, `StrikeReversalOpps`, `GrappleReversalOpps`, que les feuilles `RCV` de la prise exécutent)
+demandent `not MissionUnlocked[GrapTestUnlock]`, une mission de mise au point (`Test\grappleTest.lua`, `TimeCond false`) qu'aucun
+script ne force : ils sont donc toujours ouverts ; les prises spéciales (`Takedown`, `Spit`, `HeadButt`) demandent
+`MissionUnlocked[C_Wrestling_3]` ou d'être en cours de lutte.
+
+En la jugeant, un écart de `HitTime` est apparu : le bully de `1_02`, qu'aucun coup n'a encore touché, rompait la prise à 57,75 s
+(`AutoReversalOpps` : `Break_GIVE` si `HitTime[3,5 s, ≥]`). Sans coup reçu, le temps depuis le coup ne court pas depuis la création
+comme l'outil le supposait : le constructeur du relevé (`FUN_005f3ab0`, ecx = le composant + 0x408, 0x484b5f) pose +0x434 et +0x438 à
+-1, que `FUN_004850b0` ne fait pas avancer. Corrigé, la prise tient comme avant ; `1_02` reste réussie à 121,94 s et n'a plus aucune
+condition jugée -1.
 
 ## Le chemin d'un nœud (18.10.2026)
 

@@ -116,6 +116,7 @@ CMissionBank::Trouver(const char *nom) const
 
 static const uint32 kMissionCond = ActionHash("MissionCond") & 0x7fffffff;
 static const uint32 kTimeCond = ActionHash("TimeCond") & 0x7fffffff;
+static const uint32 kMissionUnlocked = ActionHash("MissionUnlocked") & 0x7fffffff;
 static const uint32 kFalse = ActionHash("False") & 0x7fffffff;              // ConditionFalse, enregistrée sous « False »
 static const uint32 kDayCond = ActionHash("DayCond") & 0x7fffffff;      // CDayCond (FUN_0063a2f0)
 static const uint32 kNot = ActionHash("NOT") & 0x7fffffff;               // ConditionNOT (FUN_00639470)
@@ -154,6 +155,14 @@ CMissionBank::Evaluer(const CMissionCondition &c, const CEtatMissions &etat, con
 		// FUN_006a9e70 : la première entrée de ce nom ; -1 rend faux.
 		for(size_t i = 0; i < missions.size(); i++)
 			if(missions[i].hachage == nom) return i < etat.reussites.size() && etat.reussites[i] != 0;
+		return 0;
+	}
+	if(c.type == kMissionUnlocked){
+		if(classe) *classe = "MissionUnlocked";
+		uint32 nom = c.mots[0] & 0x7fffffff;
+		for(size_t i = 0; i < missions.size(); i++)
+			if(missions[i].hachage == nom)
+				return (i < etat.reussites.size() && etat.reussites[i] != 0) || (i < etat.drapeaux.size() && (etat.drapeaux[i] & 8));
 		return 0;
 	}
 	if(c.type == kTimeCond){

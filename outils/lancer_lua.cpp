@@ -167,7 +167,8 @@ static int AppelLuaCond(const std::string &script, const std::string &fonction);
 static int SurMission(uint32 hachage);
 // MissionCond (CMissionCond 0x94173c, FUN_006a7db0) dans un arbre d'actions : la même classe que dans Missions.cat (le
 // créateur 0x63a140 → FUN_006a7d50) ; la mission +4 a au moins une réussite (CMissionBank::Evaluer).
-static int ConditionMission(const uint32 mots[6]);
+// MissionUnlocked (CMissionUnlockedCond 0x941778, FUN_006a72a0) : la mission +4 a réussi ou a été forcée (MissionForceCompleted).
+static int ConditionMission(uint32 type, const uint32 mots[6]);
 // PedIsInOutfit (ConditionPedIsInOutfit 0x936c50, FUN_005fbf70 : ecx = 0x20c5f70, puis FUN_006ca890(+4)) : la tenue que le
 // joueur porte a le nom haché +4, quel que soit le piéton jugé.
 static int ConditionTenue(uint32 nom);
@@ -221,7 +222,7 @@ VieillirBoutons(void)   // FUN_005f3720
 // +0x46c le drapeau haché (+0x2c de la piste Collision) ; +0x434 (+0x2c) le temps depuis le coup, remis à 0 par le
 // coup (FUN_00472b70, l'ancienne valeur passant en +0x438, +0x30), puis augmenté du pas à chaque image tant qu'il ne
 // vaut pas -1 (FUN_004850b0). L'outil tient le drapeau une seconde (ConditionFlag, HitLocation).
-struct CoupRecu { uint32 drapeau = 0; float jusqua = -1.0f; float degats = 0.0f; int attaquant = -1; float instant = -1.0f, precedent = 0.0f; };
+struct CoupRecu { uint32 drapeau = 0; float jusqua = -1.0f; float degats = 0.0f; int attaquant = -1; float instant = -1.0f, precedent = -1.0f; };
 static std::map<int, CoupRecu> coups;
 // Un piéton qui disparaît emporte ses contrôleurs (le composant +0x2e0, libéré avec le CPed) : une entrée du pool reprise
 // plus tard (PedCreatePoint) part de contrôleurs neufs.
@@ -368,8 +369,8 @@ struct CJugeOutil : CJugeAction {
 		if(type == kSurMission) return SurMission(mots[0]);
 		static const uint32 kTenue = ActionHash("PedIsInOutfit");
 		if(type == kTenue) return ConditionTenue(mots[0]);
-		static const uint32 kCondMission = ActionHash("MissionCond");
-		if(type == kCondMission) return ConditionMission(mots);
+		static const uint32 kCondMission = ActionHash("MissionCond"), kDebloquee = ActionHash("MissionUnlocked");
+		if(type == kCondMission || type == kDebloquee) return ConditionMission(type, mots);
 		if(type == kArmeInit) return moi && moi->armeInit == -1.0f;
 		if(type == kConversation) return 0;
 		// WeaponDesiredIsEquiped (FUN_0065b5b0) : sans arme voulue, vrai ; sinon l'objet arme (+0x1d0) doit en avoir le
@@ -589,11 +590,12 @@ struct CJugeOutil : CJugeAction {
 			return (float)moi->stats[mots[2]] >= seuil;
 		}
 		// HitTime (FUN_005fc400) : le temps depuis le coup (+0x434), ou l'intervalle d'avant (+0x438) si l'octet +0xc,
-		// comparé à +4 par +8. Sans coup reçu, +0x434 part de 0 à la création et court : l'outil prend le temps écoulé.
+		// comparé à +4 par +8. Sans coup reçu, +0x434 et +0x438 valent -1 : le constructeur du relevé (FUN_005f3ab0, ecx =
+		// le composant + 0x408 en 0x484b5f) les pose à _DAT_009009ac, et FUN_004850b0 ne fait pas courir un -1.
 		// DamagePending (FUN_005fbf00) : les dégâts du relevé (+0x440) comparés à +4 par +8.
 		if(type == kTempsCoup || type == kEnAttente){
 			auto it = coups.find(ped);
-			float v = type == kTempsCoup ? t : 0.0f;   // sans coup : +0x434 a couru depuis la création (à 0)
+			float v = type == kTempsCoup ? -1.0f : 0.0f;   // sans coup : -1, qui ne court pas
 			if(it != coups.end()){
 				if(type == kEnAttente) v = it->second.degats;
 				else v = (mots[2] & 0xff) ? it->second.precedent : t - it->second.instant;
@@ -911,10 +913,10 @@ static struct {
 } gestionnaire;
 
 static int
-ConditionMission(const uint32 mots[6])
+ConditionMission(uint32 type, const uint32 mots[6])
 {
 	CMissionCondition c;
-	c.type = ActionHash("MissionCond") & 0x7fffffff;
+	c.type = type & 0x7fffffff;
 	for(int i = 0; i < 6; i++) c.mots[i] = mots[i];
 	if(gestionnaire.etat.reussites.size() != banque.missions.size()) gestionnaire.etat.reussites.assign(banque.missions.size(), 0);
 	return banque.Evaluer(c, gestionnaire.etat);
@@ -2964,6 +2966,19 @@ IsMissionCompleated(lua_State *L)
 	return 1;
 }
 
+// MissionForceCompleted(nom) (0x5c0740) : le bit 8 de l'octet +4 de l'entrée de la mission (FUN_006a9e70, FUN_006aa660),
+// que MissionUnlocked lit ; IsMissionCompleated ne lit que les réussites (le mot +2).
+static int
+MissionForceCompleted(lua_State *L)
+{
+	Journal("MissionForceCompleted", L, 1);
+	int i = banque.Index(luaL_checkstring(L, 1));
+	if(i < 0) return 0;
+	if(gestionnaire.etat.drapeaux.size() != banque.missions.size()) gestionnaire.etat.drapeaux.resize(banque.missions.size(), 0);
+	gestionnaire.etat.drapeaux[i] |= 8;
+	return 0;
+}
+
 // SystemShouldMovePlayer() → (déplacer ?, mode) : à la nouvelle partie, vrai et 0 (gamemain pose alors
 // le joueur à la grille de l'école, PlayerSetPosXYZArea(272.68, -73.13, 6.97, 0)) jusqu'à
 // SystemResetShouldMovePlayer() ; le mode 1 serait une sauvegarde à reprendre.
@@ -3279,6 +3294,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedIsDead", PedIsDead);
 	lua_register(L, "PedGetHealth", PedGetHealth);
 	lua_register(L, "PedSetHealth", PedSetHealth);
+	lua_register(L, "MissionForceCompleted", MissionForceCompleted);
 	lua_register(L, "PedSetImmortalFlag", PedSetImmortalFlag);
 	lua_register(L, "PedGetImmortalFlag", PedGetImmortalFlag);
 	lua_register(L, "PlayerGetHealth", PlayerGetHealth);
@@ -3444,7 +3460,7 @@ main(int argc, char **argv)
 				degats = floorf(ceilf(degats * 1.0f) * 1.0f);
 				CoupRecu &r = coups[cible];
 				float t = maintenant / 1000.0f;
-				r.precedent = r.instant >= 0.0f ? t - r.instant : 0.0f;   // FUN_00472b70 : +0x434 passe en +0x438
+				r.precedent = r.instant >= 0.0f ? t - r.instant : -1.0f;  // FUN_00472b70 : +0x434 passe en +0x438 (-1 sans coup)
 				r.instant = t;
 				r.drapeau = k.drapeau & 0x7fffffff; r.jusqua = t + 1.0f; r.degats = degats; r.attaquant = c.first;
 				CActionController &v = controleurs[cible];
