@@ -229,6 +229,18 @@ main(void)
 		p->drapeauxSociaux = 1;
 		VERIF(!q.Socialise(SCRIPT_PED_JOUEUR, true));
 	}
+	// Attacked (FUN_00606b80) : l'attaquant devient la cible (FUN_0048c3b0), la cible de l'objectif et l'agresseur.
+	{
+		CScriptPedPool q;
+		q.Acceder(SCRIPT_PED_JOUEUR)->type = SCRIPT_PED_TYPE_JOUEUR;
+		int b = q.Creer(146, CVector(0, 0, 0), 0, 1), c = q.Creer(85, CVector(1, 0, 0), 0, 1);
+		VERIF(!q.PrendreAttaquant(SCRIPT_PED_JOUEUR, b) && !q.PrendreAttaquant(b, 17));
+		VERIF(q.JoindreZoneCombat(b, c, 0, false) && q.Acceder(b)->zoneCombat == 0 && q.Acceder(b)->verrou == c);
+		VERIF(q.PrendreAttaquant(b, SCRIPT_PED_JOUEUR));
+		const CScriptPed *p = q.Acceder(b);
+		VERIF(p->verrou == SCRIPT_PED_JOUEUR && p->cibleObjectif == SCRIPT_PED_JOUEUR && p->agresseur == SCRIPT_PED_JOUEUR);
+		VERIF(p->zoneCombat == -1 && q.Acceder(c)->combattants[0].empty());
+	}
 	// La vitesse du pas des pistes de locomotion de l'IA (FUN_00625970, FUN_0061b820, FUN_0061b8e0).
 	VERIF(ScriptPedVitesseDuPas(PAS_SUR_PLACE, 100, 100, 1.5f) == 0.0f && ScriptPedVitesseDuPas(PAS_ATTENDRE, 100, 100, 1.5f) == 0.0f);
 	VERIF(ScriptPedVitesseDuPas(PAS_VERS_CIBLE, 100, 100, 1.5f) == 1.5f && ScriptPedVitesseDuPas(PAS_ARRIVE, 0, 0, 1.5f) == 1.5f);

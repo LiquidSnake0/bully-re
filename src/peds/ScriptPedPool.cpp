@@ -487,3 +487,18 @@ ScriptPedVitesseDuPas(int mode, float d2Cible, float d2Point, float rayonButes2c
 	}
 	return 1.5f;
 }
+
+bool
+CScriptPedPool::PrendreAttaquant(int h, int attaquant)
+{
+	if(!Valide(h) || !Valide(attaquant) || peds[h].type == SCRIPT_PED_TYPE_JOUEUR) return false;
+	CScriptPed &p = peds[h];
+	if(attaquant != h && p.verrou != attaquant){
+		QuitterZones(peds, h);
+		p.zoneCombat = -1;
+		p.verrou = attaquant;
+	}
+	p.cibleObjectif = attaquant;
+	p.agresseur = attaquant;
+	return true;
+}

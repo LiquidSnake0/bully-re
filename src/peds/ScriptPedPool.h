@@ -110,6 +110,8 @@ struct CScriptPed {
 	bool masqueZones[3] = {true, true, true};
 	int32 capaciteZones[3] = {1, 2, 4};
 	std::vector<int> combattants[3];
+	int agresseur = -1;          // +0x544 (+0x188 du composant de visée) : posé par la condition Attacked (FUN_00606b40) ;
+	                             // un FleeObjective le fuit avec l'octet +0x19 de sa piste
 	int cibleObjectif = -1;      // +0x540 (+0x184 du composant de visée en +0x3bc) : la cible d'un objectif d'attaque, que la
 	                             // condition Objective pose quand elle passe (FUN_0048c330)
 	bool mort = false;
@@ -234,6 +236,12 @@ public:
 	// piéton joueur (type 13), vrai si un autre piéton du pool, du dernier au premier, est en échange avec lui (son
 	// partenaire est le joueur) sans le bit 0 de son octet +0xd68.
 	bool Socialise(int handle, bool pourLeJoueur) const;
+	// Ce que fait la condition Attacked (FUN_00606b80) quand elle passe pour un piéton qui n'est pas le joueur et dont le
+	// relevé du coup a un attaquant que sa liste (+0x198 du composant de visée, FUN_0048bf30 ; non suivie, vide) ne tient
+	// pas : FUN_0048c3b0 en fait sa cible (+0x538 ; s'il en change, il quitte sa zone de combat, FUN_00487a20 et
+	// FUN_00486c00), FUN_0048c330 la cible de son objectif (+0x540), FUN_00606b40 son agresseur (+0x544). Vrai si
+	// quelque chose a été posé.
+	bool PrendreAttaquant(int handle, int attaquant);
 	// lua_PedMakeAmbient (0x5ca850) : rendu à la population, plus ramassé par son script.
 	bool RendreAmbiant(int handle);
 	// Une image de dt secondes : marches, poursuites et coups ; pose les drapeaux d'événements. La régénération

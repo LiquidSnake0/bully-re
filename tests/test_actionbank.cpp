@@ -728,6 +728,12 @@ main(void)
 		VERIF(ConditionAttackPhase(c, 3, 0.0f, 10400) && ConditionAttackPhase(c, 3, 0.3f, 10400) && !ConditionAttackPhase(c, 3, 0.567f, 10400));
 		c.ArreterCollisions();      // le nœud change : la phase repasse à 0, l'octet +0x4e5 reste
 		VERIF(c.phaseAttaque == 0 && ConditionCollisionStart(c));
+		// AttackTimer (FUN_006000c0) : la minuterie (+0x550) posée à l'arrêt du coup (FUN_005f8240 → FUN_0048c040(0)).
+		VERIF(c.minuterieAttaque == 10400);
+		VERIF(ConditionAttackTimer(c, 0.5f, false, 3, 11000) && !ConditionAttackTimer(c, 0.5f, false, 3, 10800));
+		VERIF(ConditionAttackTimer(c, 0.5f, true, 3, 11000) && c.minuterieAttaque == 11000);   // l'octet +8 la relance
+		CActionController neuf;
+		VERIF(!ConditionAttackTimer(neuf, 0.0f, false, 5, 1500) && ConditionAttackTimer(neuf, 1.0f, false, 5, 2500));
 	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;

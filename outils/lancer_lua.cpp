@@ -376,6 +376,23 @@ struct CJugeOutil : CJugeAction {
 		static const uint32 kCamera = ActionHash("CameraActive"), kLargeEcran = ActionHash("CameraInWidescreen");
 		if(type == kCamera) return CameraActive(cameras, (int32)mots[0]);
 		if(type == kLargeEcran) return CameraInWidescreen(cameras);
+		// AttackTimer (ConditionAttackTimerPlayTime, FUN_006000c0) : le temps depuis le dernier coup du piéton (+0x550, posé à
+		// l'arrêt de ses pistes Collision), comparé à +4 s par +0xc ; l'octet +8 relance la minuterie.
+		// Attacked (FUN_00606b80) : le temps depuis le coup reçu (+0x2c du relevé, comme HitTime) au plus +4 s ; alors, pour un
+		// piéton qui n'est pas le joueur, l'attaquant du relevé devient sa cible, la cible de son objectif et son agresseur.
+		static const uint32 kMinuterie = ActionHash("AttackTimer"), kAttaque = ActionHash("Attacked");
+		if(type == kMinuterie){
+			auto it = controleurs.find(ped);
+			if(it == controleurs.end()) return 0;
+			return ConditionAttackTimer(it->second, seuil, (mots[1] & 0xff) != 0, mots[2], (uint32)lrintf(t * 1000.0f));
+		}
+		if(type == kAttaque){
+			auto it = coups.find(ped);
+			float depuis = it != coups.end() && it->second.instant >= 0.0f ? t - it->second.instant : t;
+			if(!(depuis <= seuil)) return 0;
+			if(it != coups.end() && it->second.attaquant >= 0) pietons.PrendreAttaquant(ped, it->second.attaquant);
+			return 1;
+		}
 		// HudComponentVisible (FUN_0065aee0) : l'emplacement 4 du composant +4 de la table du HUD (DAT_00c674a0), l'octet
 		// +8 pour tous ceux que les arbres relevés testent (14, 18, 19, 23 à 37 ; HUDMoney et HUDClockWarnings ont le leur).
 		static const uint32 kHud = ActionHash("HudComponentVisible");
@@ -2085,7 +2102,8 @@ AppliquerObjectifs(int ped, CActionController &c)
 		if(n > 0) printf("%6.2f s  le piéton %d perd %d objectif(s) de type %d (ClearCurrentObjective)\n", maintenant / 1000.0, ped, n, e.type);
 	}
 	for(const CActionController::Fuite &f : c.fuitesLancees){
-		int cible = f.autreCible ? -1 : CibleDe(ped);
+		const CScriptPed *fuyard = pietons.Acceder(ped);
+		int cible = f.autreCible ? (fuyard ? fuyard->agresseur : -1) : CibleDe(ped);
 		if(cible < 0) continue;
 		CObjectifPieton o; o.type = OBJECTIF_FUIR; o.cible = cible;
 		if(pietons.PousserObjectif(ped, o, !f.auBout))

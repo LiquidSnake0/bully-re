@@ -55,6 +55,11 @@ public:
 	// l'assembleur, aucune instruction ne le remet à 0 dans un CPed (la seule autre écriture, 0x6f2d68, est dans
 	// FUN_006f2d10, sur un autre objet) : une fois qu'un piéton a lancé un coup, CollisionStart reste vraie.
 	bool collisionDemarree = false;
+	// +0x550 du piéton (+0x194 du composant de visée +0x3bc) : l'instant (ms) de son dernier coup, que l'arrêt d'une piste
+	// Collision pose (FUN_005f8240 → FUN_0048c040(0) : maintenant moins 0), comme PlayerRecordAttackTime (0x5d2910) ;
+	// 0 au départ. La condition AttackTimer le lit et peut le reposer.
+	uint32 minuterieAttaque = 0;
+	uint32 maintenantMs = 0;         // l'horloge du jeu (DAT_00c1a9b4) à la dernière image des pistes
 	std::vector<Contact> touches;                 // les coups qui portent à cette image, rendus par Avancer
 	// Ses pistes DamageHandle (HandleDamageTrack, table 0x9313e4 ; lancement FUN_0060fc70), y compris celles des nœuds
 	// que ses Execute font jouer (HitTree/…/Base/HitBase) : à leur lancement, le piéton subit les dégâts du coup reçu
@@ -201,3 +206,7 @@ bool ConditionCollisionStart(const CActionController &c);
 // +4 ; si le délai +8 est positif, il faut aussi une échéance posée et qu'elle tombe plus de +8 secondes après
 // maintenant (maintenant + 1000 × (+8), arrondi, strictement avant l'échéance).
 bool ConditionAttackPhase(const CActionController &c, int32 phase, float delai, uint32 maintenantMs);
+// La condition AttackTimer (ConditionAttackTimerPlayTime, table 0x9369e4, FUN_006000c0) : faux si le piéton n'a jamais
+// frappé (+0x550 nul) et que l'horloge n'a pas passé 2 000 ms ; sinon maintenant comparé à +0x550 + 1000 × (+4) par le
+// comparateur +0xc (FUN_005fb750) ; vrai et l'octet +8 posé, la minuterie repart (FUN_0048c040(0)).
+bool ConditionAttackTimer(CActionController &c, float delai, bool relancer, uint32 comparateur, uint32 maintenantMs);

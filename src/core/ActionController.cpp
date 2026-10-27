@@ -1,4 +1,5 @@
 #include "ActionController.h"
+#include "ConditionListe.h"
 #include <cmath>
 #include <cstring>
 
@@ -530,6 +531,7 @@ void
 CActionController::PhasesCollision(float t)
 {
 	float temps = Temps(t);
+	maintenantMs = EcheanceMs(t, 0.0f);
 	for(Contact &c : contacts){
 		if(c.arretee) continue;
 		if(!c.lancee){
@@ -541,7 +543,7 @@ CActionController::PhasesCollision(float t)
 			echeanceAttaque = EcheanceMs(t, c.debutBrut);
 		}
 		// La durée de vie (+0x10) passée, la piste meurt : son arrêt (FUN_005f8240).
-		if(c.vie >= 0.0f && temps > c.entree + c.vie){ c.arretee = true; phaseAttaque = 0; continue; }
+		if(c.vie >= 0.0f && temps > c.entree + c.vie){ c.arretee = true; phaseAttaque = 0; minuterieAttaque = EcheanceMs(t, 0.0f); continue; }
 		// FUN_005f9e70.
 		if(temps < c.debutFenetre) continue;
 		if(c.finFenetre >= 0.0f && temps > c.finFenetre){
@@ -559,7 +561,7 @@ void
 CActionController::ArreterCollisions(void)
 {
 	for(Contact &c : contacts)
-		if(c.lancee && !c.arretee){ c.arretee = true; phaseAttaque = 0; }
+		if(c.lancee && !c.arretee){ c.arretee = true; phaseAttaque = 0; minuterieAttaque = maintenantMs; }
 }
 
 bool
@@ -575,4 +577,13 @@ ConditionAttackPhase(const CActionController &c, int32 phase, float delai, uint3
 	if(delai <= 0.0f) return true;
 	if(c.echeanceAttaque == 0) return false;
 	return (uint32)lrintf((float)maintenantMs + delai * 1000.0f) < c.echeanceAttaque;
+}
+
+bool
+ConditionAttackTimer(CActionController &c, float delai, bool relancer, uint32 comparateur, uint32 maintenantMs)
+{
+	if(c.minuterieAttaque == 0 && maintenantMs < 2001) return false;
+	bool vrai = ComparerCondition((float)maintenantMs, (float)c.minuterieAttaque + delai * 1000.0f, comparateur);
+	if(vrai && relancer) c.minuterieAttaque = maintenantMs;
+	return vrai;
 }
