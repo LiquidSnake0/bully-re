@@ -49,6 +49,8 @@ chantier. Un point fini passe en bas, avec son commit.
    rayon sont recréés ; le bully pare (le bouton 12 de son IA, `Defence/Block`, `HitTree/Standing/BlockHits`), une `Opportunity` prise
    fait finir son nœud même sans nœud visé ; `ActionRequest` lit le bouton brut (`FUN_005fd570`) ; huit conditions de plus (armes,
    conversation, missions, tenues, `AttackerConditionGroup`). `1_02` est réussie à 121,94 s (quinze jabs, docs/missions.md).
+   La mort passe par la piste `Death`, `1_02` n'a plus de condition jugée -1 (`MissionUnlocked` ; `HitTime` vaut -1 sans coup), la vue
+   des piétons et `DamageTarget` sont lues ; `1_03` démarre (la piste `FollowPath`, docs/missions.md). `1_02` reste réussie à 121,94 s.
    Suite, dans l'ordre :
    - ce qui reste supposé dans `CombatLoco` : le point valable (`FUN_006254c0`), la recherche de chemin ;
    - le choix d'une cible (`FUN_004992a0`, `FUN_004988b0`, `FUN_00496b60`), les sphères des os des coups (au lieu du demi-espace
@@ -86,6 +88,12 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- La mort, les dernières conditions et le suivi de trajet (27.10, nuit, 2 ; bd5a363, fb991db, 01693c4, 082a35e, 474710f, 9befc54,
+  e40e7a5, 82d730e, 40241d1) : la piste `Death` (`FUN_00479110`) au lieu de la santé nulle, `ParametricTime`, `PropTargetInteractive`,
+  `MissionUnlocked` et `MissionForceCompleted`, `HitTime` à -1 sans coup, la vue (`FUN_0048d320`), `DamageTarget`, `tests/test_surface`
+  réparé, `PedFollowPath` et la piste `FollowPath` (le rayon de 1 m, `FUN_0048c430`) : **`1_02` reste réussie à 121,94 s**, `1_03`
+  joue sa poursuite d'introduction.
 
 - La vitesse de l'IA et la parade (27.10, soir ; 5e778b1, 9d2108e, 85a3bd9, 0d5f9fc, 70ebb21, 7c260a7, 36fca42, 379089e, 004063b) :
   les entrées vidées (`FUN_005f38e0`, `IDLE`, la garde `FUN_00484490`), la vitesse de la navigation (`FUN_005e4a60`), l'arrêt de
