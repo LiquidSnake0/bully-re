@@ -689,6 +689,17 @@ la portée sont les colonnes D et E de `pedstats.dat` (`FUN_00478e30` : +0xa68 =
 nomme : « Vision Yaw (in degrees) - total yaw », « Vision Range (in metres) ») : 100 degrés et 12 m pour `STAT_B_STRIKER_A`. Dans
 `1_02`, le bully fait face au joueur dans `CombatLoco` : il le voit toujours, rien ne change.
 
+**La piste `DamageTarget`** (`TargetDamageTrack` 0x935290, créateur 0x640e70, le nom relu dans le registre des pistes en 0x6525dc ;
+`CActionController::degatsCibles`) : les coups portés pendant une prise (`GrappleStrikes`, la charge lâchée `Release/Light/Give` : 15
+points, la genouillère `GRAB_KNEE_GV` : deux fois 10). La cible est le partenaire de prise du piéton (l'emplacement 5, `FUN_0060fc60` :
++0x155c), les dégâts (+0x18) sont portés par le piéton par `FUN_0047b7f0` → `FUN_0047b6b0` (invulnérabilités, santé minimale), sans la
+méthode du coup : pas de relevé, pas de `HitTree`, `HitTime` ne repart pas. La mise à jour (`FUN_0060fad0`, le pas de l'image) : sans
+durée de vie, tout d'un coup ; sinon le reste × pas / (+0x10 − +0xc − l'écoulé +0x2c), et rien quand ce reste de temps ne dépasse pas le
+pas ; l'arrêt (`FUN_0060fbe0`), avant la fin de la durée, rien, sinon le reste. Pour la charge (0,167 à 0,2 s), les 15 points tombent
+d'un bloc à la fin, 0,2 s après l'entrée du nœud (`tests/test_actionbank`). L'octet +0x20, le genre du coup reçu (+0x464 de la cible),
+n'est pas suivi. Dans `1_02`, rien ne change : les prises de la commande sont jouées par `--jouer …/GrappleSuccess/GIVE`, qui passe
+`GrappleAttempt` et son `SetTargetAsGrappleTarget` : le joueur n'a pas de partenaire de prise, la charge ne blesse pas.
+
 ## Le chemin d'un nœud (18.10.2026)
 
 Les scripts désignent un nœud par un chemin, `PedSetActionNode(ped, "/Global/1_01/Talking",

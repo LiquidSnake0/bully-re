@@ -148,6 +148,18 @@ public:
 	//   (68, FUN_0051ad50) ou son modèle ; sur son composant de visée (+0x1c8), les angles +0x18, +0x20, +0x30 (en degrés,
 	//   passés en radians) et les champs voisins (non suivis). La condition WeaponNeedInit (FUN_0065b7b0) attend +0x120 = -1 :
 	//   la banque NeedInit de Weapons.cat ne passe qu'une fois. `infosArmeLancees` : celles lancées à cette image.
+	// Ses pistes DamageTarget (TargetDamageTrack 0x935290 ; créateur 0x640e70, le nom « DamageTarget » du registre des pistes
+	// FUN_00650150 en 0x6525dc) : la cible est le partenaire de prise du piéton (FUN_0060fc60 : +0x155c), qui subit +0x18 (24)
+	// points portés par le piéton (FUN_0047b7f0 → FUN_0047b6b0, sans relevé de coup). Mise à jour (FUN_0060fad0, à chaque
+	// image, le pas en secondes) : sans durée de vie (+0x10 négatif), tout d'un coup, puis la piste meurt ; sinon le reste
+	// (+0x18 moins le fait, +0x28) × pas / (ce qui reste du temps de la piste : +0x10 − +0xc − l'écoulé +0x2c), rien quand ce
+	// qui reste ne dépasse pas le pas. Arrêt (FUN_0060fbe0) : avant la fin de sa durée, rien ; sinon le reste. Sans partenaire,
+	// rien. +0x20 (32), s'il est positif, pose le genre du coup reçu (+0x464 du composant de la cible, moins 1), non suivi.
+	// L'outil compte la durée depuis le lancement de la piste. `coupsCible` : les dégâts de cette image, rendus par Avancer.
+	struct DegatsCible { float entree, duree, total, fait, ecoule; bool finie; };
+	std::vector<DegatsCible> degatsCibles;
+	std::vector<float> coupsCible;
+	float dernierAvancer = -1.0f;    // le temps de la dernière image (le pas des mises à jour)
 	struct InfoArme { float entree, init, champ40; bool fait; };
 	std::vector<InfoArme> infosArme, infosArmeLancees;
 	struct Repos { float entree; bool fait; };

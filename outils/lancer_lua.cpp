@@ -2424,6 +2424,23 @@ AppliquerMorts(int ped, CActionController &c)
 	c.mortsLancees.clear();
 }
 
+// Les pistes DamageTarget (FUN_0060fad0, FUN_0060fbe0) : le partenaire de prise du piéton (FUN_0060fc60, +0x155c) subit les
+// dégâts de l'image, portés par le piéton (FUN_0047b7f0 → FUN_0047b6b0 : CScriptPedPool::Blesser, sans relevé de coup).
+static void
+AppliquerDegatsCible(int ped, CActionController &c)
+{
+	const CScriptPed *p = pietons.Acceder(ped);
+	for(float v : c.coupsCible){
+		const CScriptPed *q = p ? pietons.Acceder(p->cibleDePrise) : nil;
+		if(q == nil || v == 0.0f) continue;
+		float avant = q->sante;
+		bool porte = pietons.Blesser(p->cibleDePrise, v, ped);
+		printf("%6.2f s  DamageTarget de %d sur %d : %.2f, %s, %.2f → %.2f points de vie\n", maintenant / 1000.0, ped, p->cibleDePrise, v,
+		       porte ? "porté" : "rien", avant, q->sante);
+	}
+	c.coupsCible.clear();
+}
+
 // Une image du contrôleur de l'IA d'un piéton (FUN_00484490), puis ce que font ses pistes et celles des contrôleurs de
 // ses pistes spawn : l'intention (ActionNodeRequest), ManageTargets, CombatLoco, FaceTarget, SetPedFlags.
 static void
@@ -2466,6 +2483,7 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 		for(const CActionController::Drapeau &d : k->drapeauxPoses) if(d.numero < SCRIPT_PED_DRAPEAUX) p->drapeaux[d.numero] = d.valeur;
 		k->drapeauxPoses.clear();
 		AppliquerMorts(ped, *k);
+		AppliquerDegatsCible(ped, *k);
 		for(const CActionController::InfoArme &d : k->infosArmeLancees) p->armeInit = d.init;   // FUN_00660f50
 		AppliquerObjectifs(ped, *k);
 	}
@@ -3499,6 +3517,7 @@ main(int argc, char **argv)
 				for(const CActionController::Drapeau &d : c.second.drapeauxPoses) if(d.numero < SCRIPT_PED_DRAPEAUX) p->drapeaux[d.numero] = d.valeur;
 			c.second.drapeauxPoses.clear();
 			AppliquerMorts(c.first, c.second);
+			AppliquerDegatsCible(c.first, c.second);
 			// SetWeaponInfo (FUN_00660f50) : le +0x120 de l'objet arme du piéton.
 			if(CScriptPed *p = pietons.Acceder(c.first))
 				for(const CActionController::InfoArme &d : c.second.infosArmeLancees) p->armeInit = d.init;
