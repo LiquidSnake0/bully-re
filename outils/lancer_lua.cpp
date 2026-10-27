@@ -2188,7 +2188,10 @@ CombatLoco(int ped, bool joueur, bool premiere)
 	// L'intention de mouvement vers la cible : l'approche de FUN_0062c740 est le mode 11, auquel le pas (FUN_00625970)
 	// donne 1,5. Supposé : tout droit, sans le point tiré entre les deux rayons aux images de tirage (FUN_0062c4f0, mode 8,
 	// aussi 1,5) ni l'attente qui suit (FUN_0061b700, FUN_00625740).
-	p->intentionVitesse = ScriptPedVitesseDuPas(PAS_VERS_CIBLE, d * d, d * d, ButeIA(44, 1.5f));
+	// La navigation (FUN_004a4eb0, le rayon d'arrivée 0,2 m que le pas passe, _DAT_00900484) en fait la vitesse de
+	// l'intention (FUN_005e4a60) : ralentie par l'écart entre le cap du piéton et la direction de la cible.
+	float ecart = remainderf(atan2f(dy, dx) - p->cap * 3.14159265f / 180.0f, 2.0f * 3.14159265f);
+	p->intentionVitesse = ScriptPedVitesseDuTrajet(ScriptPedVitesseDuPas(PAS_VERS_CIBLE, d * d, d * d, ButeIA(44, 1.5f)), d * d, ecart, 0.2f);
 	float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f, k = d - rayon < pas ? (d - rayon) / d : pas / d;
 	p->pos.x += dx * k; p->pos.y += dy * k;
 	p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;

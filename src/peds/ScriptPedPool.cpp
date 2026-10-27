@@ -502,6 +502,19 @@ ScriptPedVitesseDuPas(int mode, float d2Cible, float d2Point, float rayonButes2c
 	return 1.5f;
 }
 
+float
+ScriptPedVitesseDuTrajet(float vitesse, float d2Point, float ecartCap, float rayonArrivee, bool immobile)
+{
+	if(immobile || !((double)vitesse >= 0.1)) return 0.0f;         // FUN_005e09c0, FUN_005e4a60
+	if(d2Point <= rayonArrivee * rayonArrivee) return 0.0f;         // FUN_005e2fb0 : arrivé
+	if(!(d2Point < 9.0f)) return vitesse;
+	float ecart = fabsf(ecartCap);
+	if(!((double)ecart <= 3.14159265358979)) return 0.0f;
+	float v = cosf(ecart) * vitesse;
+	if(d2Point < 0.09f) v = (float)(sqrtf(d2Point) / 0.3) * v;
+	return v > 0.1f ? v : 0.1f;                                      // FUN_00414340
+}
+
 bool
 CScriptPedPool::PrendreAttaquant(int h, int attaquant)
 {

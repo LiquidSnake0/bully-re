@@ -34,6 +34,18 @@ float ScriptPedIntentionVitesse(int allure, float defaut = 0.7f);
 // ou 10 sur place une fois dans le petit rayon (+0x6c) : 1,5, la vitesse du sprint de FUN_005c6180.
 enum { PAS_SUR_PLACE = 2, PAS_ATTENDRE = 4, PAS_APPROCHE_7 = 7, PAS_APPROCHE_9 = 9, PAS_ARRIVE = 10, PAS_VERS_CIBLE = 11, PAS_RALENTI = 12 };
 float ScriptPedVitesseDuPas(int mode, float d2Cible, float d2Point, float rayonButes2c);
+// La vitesse que la navigation donne à l'intention de mouvement (FUN_005e4c60 → FUN_005e4a60), une fois le but posé par
+// FUN_004a4eb0 (le navigateur est en +0xdac du piéton : la vitesse demandée en +0x534, le rayon d'arrivée en +0x528, que
+// FUN_005e09c0 recopie en +0x450 si le piéton n'est pas immobile, l'octet +0x4e4 de PedSetStationary 0x5c7950 et de la
+// piste SetStationary FUN_00626920). 0 si le piéton est immobile, si la vitesse demandée est sous 0,1 (le double
+// 0x900128) ou s'il est arrivé (FUN_005e2fb0 : à plat, à moins du rayon d'arrivée du but ; FUN_004a4eb0 pose alors 0
+// lui-même). À moins de 3 m du point (d² < 9, 0x900e04), elle dépend de l'écart de cap entre le devant du piéton
+// (FUN_00415350) et la direction du point (FUN_004331c0, FUN_00432830) : jusqu'à π (le double 0x900160), la vitesse
+// × cos(écart) (FUN_0085ad50, le _CIcos du CRT), × d / 0,3 sous 0,3 m (d² < 0,09, 0x90cfc8 ; FUN_0040df70, le double
+// 0x900d78), au moins 0,1 (0x900170, FUN_00414340 = max) ; au-delà, 0. Lu à l'assembleur (0x5e4a60 … 0x5e4c4f).
+// Non suivis : les points du chemin (+0x508, +0x53f), FUN_00473b90 et FUN_005e2720 qui sautent le ralenti, l'appui
+// qu'FUN_005e4c60 simule (FUN_005f3930(4)) à l'octet +0x551.
+float ScriptPedVitesseDuTrajet(float vitesse, float d2Point, float ecartCap, float rayonArrivee, bool immobile = false);
 
 // Les 22 groupes d'animations d'humiliation (0x9113d0, 32 octets par nom) : « HUMIL_5-8_A » pour 0 … « HUMIL_6-1V6-1 »
 // pour 21. Le groupe 0 à 12 est celui d'une victime du joueur, rangé par sa taille (CharacterSize) : 0 à 2 Medium

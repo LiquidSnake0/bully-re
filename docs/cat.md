@@ -530,6 +530,39 @@ ont posée. L'outil la remettait à 0 à chaque image pour un piéton de l'IA sa
 dans `Combat/…/CombatLoco` d'un bout à l'autre et l'outil le tient pour mort dès que sa santé tombe à 0 (89,43 s), alors que le
 jeu attend la piste `Death`.
 
+
+**La vitesse de la navigation** (`ScriptPedVitesseDuTrajet`). `FUN_004a4eb0` (le but d'une piste de locomotion) range dans le
+navigateur du piéton (+0xdac, l'ecx de `FUN_005e4c60` ; les décalages du pseudo-code, +0x12e0 et +0x12d4, sont ceux du piéton) la
+vitesse demandée (+0x534, son cinquième argument) et le rayon d'arrivée (+0x528, le sixième : 0,2 m, `_DAT_00900484`, pour le pas de
+`CombatLoco`), puis `FUN_005e4c60` pose l'intention : la direction du point suivant (`FUN_005e4970`) et la vitesse de
+`FUN_005e4a60`, lue à l'assembleur (0x5e4a60 … 0x5e4c4f) :
+
+- 0 si le piéton est immobile (l'octet +0x4e4, `PedSetStationary` 0x5c7950, la piste `SetStationary` `FUN_00626920`, `FUN_005e09c0`
+  qui recopie la vitesse en +0x450), si elle est sous 0,1 (le double 0x900128), ou s'il est arrivé (`FUN_005e2fb0` : à plat, à moins
+  du rayon d'arrivée) ;
+- à moins de 3 m (d² < 9, 0x900e04) : l'écart entre le devant du piéton (`FUN_00415350`) et la direction du point, ramené entre −π
+  et π (`FUN_00432830`) ; jusqu'à π (le double 0x900160) la vitesse × cos(écart) (`FUN_0085ad50` est le `_CIcos` du CRT : `fcos`
+  en 0x85adbd), × d / 0,3 sous 0,3 m (0x90cfc8, le double 0x900d78), au moins 0,1 (`FUN_00414340` est un max) ;
+- au-delà de 3 m, la vitesse demandée.
+
+Le chemin (+0x508, +0x53f), `FUN_00473b90` et `FUN_005e2720` (qui sautent le ralenti) ne sont pas suivis. Dans l'outil, la vitesse
+de `CombatLoco` y passe (le cap du piéton contre la direction de la cible) : dans `1_02`, rien ne change, le bully court vers le
+joueur en face de lui.
+
+**La course de `RunStart`, après trois angles** (relecture des pistes le 27.10 dans la nuit, puis les vidages et la navigation ce
+soir). Ce qui est établi : aucune piste de `RunStart` n'écrit la vitesse ; `FleeObjective` (type 22) n'a aucune méthode de mise à
+jour (sa table 0x911894 : destructeur `FUN_0048e660`, type `FUN_0048e5f0`, `FUN_00828240` qui rend 0, `FUN_0049a500` vide) et
+`AI_FightTutorial` n'a pas de branche 22 (`GeneralObjectives` n'a que les types 0 à 4, 9 et 12) : rien ne fait fuir le bully. Son
+contrôleur de l'IA, lui, reste dans `Combat/…/CombatLoco` : la banque `Combat` n'est jugée qu'à la descente, et la piste `CombatLoco`
+vit tant que sa cible est valide (`FUN_00625270` → `FUN_0048bee0` : +0x538, un piéton, pas mort) et sa zone prise (`FUN_006252d0`) ;
+`ClearCurrentObjective` ne la touche pas. Le jeu ne le tient pour mort qu'à la piste `Death` de `HitTree` (`FUN_0060fdc0`), pas à
+santé nulle. La vitesse que `Locomotion` lit pendant `RunStart` est donc celle que le pas de `CombatLoco` fait poser à la navigation
+chaque image : le joueur à 0,97 m (entre le petit rayon 0,9 et le grand 1,5 de la zone 0), l'approche vers lui (mode 11, 1,5), et le
+bully tourné de 180 degrés par `FaceTarget` : l'écart vaut π, d'où max(1,5 × cos π, 0,1) = **0,1**, le seuil de `walk`
+(`MotionIntentionSpeed` ≥ 0,1), pas une course. Ce qui reste supposé : la distance exacte à 89,43 s (le point de l'approche,
+`FUN_0062c740`, peut ne pas être le joueur lui-même) ; l'outil, lui, tient le bully pour mort à santé nulle et arrête son IA, et
+s'arrête au grand rayon : il pose 0.
+
 ## Le chemin d'un nœud (18.10.2026)
 
 Les scripts désignent un nœud par un chemin, `PedSetActionNode(ped, "/Global/1_01/Talking",

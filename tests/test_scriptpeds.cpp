@@ -256,6 +256,13 @@ main(void)
 	VERIF(fabsf(ScriptPedVitesseDuPas(PAS_APPROCHE_7, 0, 32, 1.5f) - 0.85f) < 1e-6f);
 	VERIF(fabsf(ScriptPedVitesseDuPas(PAS_RALENTI, 1.0f, 0, 1.5f) - 0.5f) < 1e-6f && fabsf(ScriptPedVitesseDuPas(PAS_RALENTI, 100, 0, 1.5f) - 1.5f) < 1e-6f);
 	VERIF(fabsf(ScriptPedVitesseDuPas(PAS_RALENTI, 14.0f, 0, 1.5f) - (1.0f - powf(0.5f, 8.0f) + 0.5f)) < 1e-6f);
+	// La vitesse de la navigation (FUN_005e4a60) : arrivé, immobile, trop lente → 0 ; ralentie près du point par l'écart de cap.
+	VERIF(ScriptPedVitesseDuTrajet(1.5f, 100, 0, 0.2f) == 1.5f && ScriptPedVitesseDuTrajet(1.5f, 0.03f, 0, 0.2f) == 0.0f);
+	VERIF(ScriptPedVitesseDuTrajet(1.5f, 100, 0, 0.2f, true) == 0.0f && ScriptPedVitesseDuTrajet(0.05f, 100, 0, 0.2f) == 0.0f);
+	VERIF(ScriptPedVitesseDuTrajet(1.5f, 4, 0, 0.2f) == 1.5f && fabsf(ScriptPedVitesseDuTrajet(1.5f, 4, 1.0471976f, 0.2f) - 0.75f) < 1e-5f);
+	VERIF(fabsf(ScriptPedVitesseDuTrajet(1.5f, 0.0625f, 0, 0.2f) - 1.25f) < 1e-5f);    // 0,25 m : × 0,25 / 0,3
+	VERIF(fabsf(ScriptPedVitesseDuTrajet(1.5f, 0.94f, 3.1f, 0.2f) - 0.1f) < 1e-6f);    // de dos : au moins 0,1
+	VERIF(ScriptPedVitesseDuTrajet(1.5f, 0.94f, 3.2f, 0.2f) == 0.0f);
 	// FUN_005f38e0 et la garde de FUN_00484490 : mort, endormi (+0x1358) ou tous endormis (DAT_00c2b108), l'IA n'avance pas.
 	{
 		CScriptPedPool q;
