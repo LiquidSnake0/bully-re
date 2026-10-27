@@ -757,3 +757,22 @@ ScriptPedSuiviCap(float lacetNoeud, bool velo)
 {
 	return velo ? lacetNoeud + 180.0f : lacetNoeud - 90.0f;   // _DAT_00900158, _DAT_00900ab8
 }
+
+CVector
+ScriptPedSuiviBut(const CVector &a, const CVector &b, const CVector &pos, float avance, float &t)
+{
+	float sx = b.x - a.x, sy = b.y - a.y, sz = b.z - a.z, l2 = sx * sx + sy * sy + sz * sz;
+	if(l2 <= 0.0f){ t = 2.0f; return b; }
+	float l = sqrtf(l2);
+	float u = ((pos.x - a.x) * sx + (pos.y - a.y) * sy + (pos.z - a.z) * sz) / l2;   // FUN_005e7340
+	CVector proj(a.x + sx * u, a.y + sy * u, a.z + sz * u);
+	// L'écart à plat, perpendiculaire au segment.
+	float nx = -sy, ny = sx, n = sqrtf(nx * nx + ny * ny);
+	float ecart = n > 0.0f ? fabsf((a.x - pos.x) * nx / n + (a.y - pos.y) * ny / n) : 0.0f;
+	t = u;
+	if(u <= 1.0f && ecart > avance) return proj;
+	t = u + avance / l;
+	if(t > 1.0f) return b;
+	if(t < 0.0f) return a;
+	return CVector(a.x + sx * t, a.y + sy * t, a.z + sz * t);
+}

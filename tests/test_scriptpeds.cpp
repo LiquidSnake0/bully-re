@@ -392,6 +392,17 @@ main(void)
 		s.mode = 1; VERIF(ScriptPedSuiviAtteint(s, 4, CVector(19, 10, 0), t[3].pos, 0.6f, true));
 		VERIF(ScriptPedSuiviEcheance(0.0f, 5000) == 0 && ScriptPedSuiviEcheance(2.5f, 5000) == 7500);
 		VERIF(ScriptPedSuiviCap(90.0f, false) == 0.0f && ScriptPedSuiviCap(90.0f, true) == 270.0f);
+		// FUN_005e7560 : le but lissé, 4 m devant la projection sur le segment (0,0) → (10,0) ; au-delà du bout, le bout ;
+		// trop loin du segment, la projection.
+		float f = 0;
+		CVector b = ScriptPedSuiviBut(t[0].pos, t[1].pos, CVector(2, 1, 0), 4.0f, f);
+		VERIF(fabsf(b.x - 6.0f) < 1e-4f && b.y == 0.0f && fabsf(f - 0.6f) < 1e-5f);
+		b = ScriptPedSuiviBut(t[0].pos, t[1].pos, CVector(8, 0, 0), 4.0f, f);
+		VERIF(b.x == 10.0f && f > 1.0f);
+		b = ScriptPedSuiviBut(t[0].pos, t[1].pos, CVector(5, 6, 0), 4.0f, f);
+		VERIF(b.x == 5.0f && b.y == 0.0f);
+		CScriptPedPool rq;
+		VERIF(rq.Acceder(rq.Creer(85, CVector(), 0, 1))->rayonNoeud == 1.0f);   // FUN_0048c430 : 1 m par défaut
 	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;

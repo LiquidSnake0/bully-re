@@ -115,6 +115,10 @@ bool ScriptPedSuiviAtteint(const CSuiviTrajet &s, int nombre, const CVector &pos
 // jusqu'à maintenant + attente × 1000 ms (_DAT_0090d3d8 = -1000, soustrait) et le piéton prend le lacet du nœud moins 90
 // degrés (FUN_0062c300 → FUN_00621c00 ; à vélo, plus 180). Rend l'échéance en ms, 0 sans attente.
 uint32 ScriptPedSuiviEcheance(float attente, uint32 maintenantMs);
+// FUN_005e7560 (le but lissé de FUN_00621a30) : sur le segment a → b, le point à `avance` mètres devant la projection du
+// piéton (`t` rend la fraction atteinte, plus de 1 au-delà de b, alors b) ; si le piéton s'écarte du segment de plus que
+// `avance`, sa projection. L'avance est 3 × la vitesse de l'intention + 3 (_DAT_00900c14, _DAT_00900988).
+CVector ScriptPedSuiviBut(const CVector &a, const CVector &b, const CVector &pos, float avance, float &t);
 float ScriptPedSuiviCap(float lacetNoeud, bool velo);
 
 // `tirer` rend un rand() du CRT (0 à 32767) ; les positions sont lues à plat.
@@ -147,6 +151,7 @@ struct CObjectifPieton {
 	// départ), la vitesse (+0x3c, _DAT_00911e30 au départ, puis l'allure de FUN_005c6180).
 	int32 trajet = -1, noeudDepart = 0, mode = 1;
 	float vitesse = 0.3f;
+	int32 allure = -1;           // l'allure du script (le quatrième argument), pour la vitesse du geste de l'outil
 };
 
 struct CScriptPed {
@@ -222,9 +227,10 @@ struct CScriptPed {
 	// degrés, × π / 180 par FUN_00478e30) et la portée (+0xa6c, la colonne E, en mètres) ; un cache de 16 piétons (+0xa74 :
 	// le piéton, l'octet vu, le nombre d'images à vivre) que FUN_0048ccf0 fait vieillir à chaque image (CPed, FUN_004812d0).
 	float visionAngle = 0, visionPortee = 0;
-	// +0x51c et l'octet +0x520 : le rayon d'arrivée à un nœud de trajet et son « posé », que seul PedPathNodeReachedDistance
-	// (0x5cd930) écrit ; la valeur par défaut n'est pas trouvée (docs/missions.md, « 1_03 »).
-	float rayonNoeud = 0;
+	// +0x51c et l'octet +0x520 (+0x160 et +0x164 du composant de visée +0x3bc) : le rayon d'arrivée à un nœud de trajet et son
+	// « posé », qu'écrit PedPathNodeReachedDistance (0x5cd930) ; 1 m par défaut, posé par la remise du composant (FUN_0048c430,
+	// 0x48c5d1), que la remise du piéton (FUN_00474f50, 0x474f71) appelle depuis son constructeur.
+	float rayonNoeud = 1.0f;     // FUN_0048c430 (la remise du composant de visée, depuis FUN_00474f50) : fld1 en 0x48c5c9
 	bool rayonNoeudPose = false;
 	struct Vu { int ped = -1; bool vu = false; int32 images = 0; };
 	Vu vus[16];

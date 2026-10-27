@@ -407,9 +407,9 @@ et **`1_02` se termine réussie à 121,94 s** (`1_02_HumiliateHim` après le jab
 Davis (modèle 99, `1_03_Davis.act`, invulnérable, sprint infini) et Peter, puis lance la poursuite d'introduction :
 `PedFollowPath(Davis, PATH._1_03_SCHOOLFLEE, 0, 3, cbSchoolFlee)` et `PedFollowPath(joueur, PATH._1_03_PURSUE, 0, 2,
 cbIntroPursueDone)`, et attend `bIntroPursueDone`, que pose le rappel quand le joueur atteint le dernier nœud de son trajet
-(`node == PathGetLastNode(path)`, lu dans `1_03.lur`). C'est là que l'outil s'arrête.
+(`node == PathGetLastNode(path)`, lu dans `1_03.lur`). L'outil s'y arrêtait ; depuis la piste `FollowPath`, la poursuite démarre.
 
-Ce qui est lu du suivi d'un trajet (docs/cat.md n'en parle pas ; le code est dans `src/peds/ScriptPedPool`) :
+Ce qui est lu du suivi d'un trajet (le code est dans `src/peds/ScriptPedPool` et `lancer_lua`) :
 
 - **`PedFollowPath`** (0x5cfbf0, réel dans `lancer_lua`) : un `FollowPathObjective` (type 12, `FUN_0046fc20`) ; le trajet +0x10, le
   départ +0x14 (sixième argument), le mode +0x24 (troisième), la vitesse +0x3c (l'allure du quatrième, `FUN_005c6180`), trois rappels
@@ -431,12 +431,21 @@ Ce qui est lu du suivi d'un trajet (docs/cat.md n'en parle pas ; le code est dan
   jusqu'à maintenant + attente × 1000 ms (`_DAT_0090d3d8` = -1000, soustrait) et tourner le piéton vers le lacet du nœud moins 90
   degrés (`FUN_0062c300`, plus 180 à vélo). `PedPathNodeReachedDistance` est réelle (`ScriptPedSuiviAtteint`, `ScriptPedSuiviEcheance`,
   `ScriptPedSuiviCap`). Dix scripts seulement l'appellent, contre 105 qui suivent un trajet.
-- **Ce qui bloque** : la valeur du rayon +0x51c d'un piéton auquel aucun script ne l'a donnée. Aucune instruction ne l'écrit hors de
-  `PedPathNodeReachedDistance` (relevé à l'assembleur : les deux autres écritures de +0x51c sont dans le navigateur, +0xdac, et le
-  constructeur de `CPed`, `FUN_0047ffe0`, ni le composant de visée, `FUN_0048c1b0`, ne la posent) ; à 0, aucun nœud d'arrêt ne serait
-  atteint à pied, ce que le jeu dément. Sans elle, la piste n'est pas jouée et `1_03` attend le joueur au départ de sa poursuite.
-  Dans `1_02`, les deux `PedFollowPath` (2,11 s, le piéton 2 sur le trajet 21 ; 33,20 s, sans piéton) posent l'objectif sans rien
-  changer d'autre.
+- **Le rayon par défaut** : 1 m. Il n'est écrit ni par le constructeur de `CPed` (`FUN_0047ffe0`) ni par celui du composant de visée
+  (`FUN_0048c1b0`), dont +0x51c est le +0x160, mais par sa remise (`FUN_0048c430`, `fld1` en 0x48c5c9 puis 0x48c5d1), que la remise
+  du piéton (`FUN_00474f50`, 0x474f71) appelle depuis le constructeur.
+- **La piste jouée par l'outil** (`AvancerSuivis`, comme un geste : le moteur la lance depuis l'arbre de l'IA,
+  `GeneralObjectives/FollowPath`) : le lancement depuis l'objectif, l'attente, l'arrivée sous le rayon avec les plans en attente
+  (`FUN_0062e640`), le but lissé à 3 × la vitesse de l'intention + 3 m devant la projection sur le segment (`FUN_00621a30` →
+  `FUN_005e7560`, qui fait avancer le nœud visé quand le but dépasse un nœud sans arrêt), le passage des plans (`FUN_0062eaa0`),
+  la fin qui retire l'objectif ; l'arrêt rend son état à l'objectif (`FUN_0062c230`). Le pas va droit vers le but, à la vitesse de
+  l'allure de l'outil ; les actions des nœuds (`FUN_0062e780`) ne sont pas suivies. `DistanceBetweenCoords3d` (0x5bfac0) et
+  `DistanceBetweenCoords2d` (0x5bfc10) sont réelles.
+- **Dans `1_03`** : le joueur suit `_1_03_PURSUE` (deux nœuds, 2,28 et 3,37 s), le rappel pose `bIntroPursueDone`, le script rend la
+  main (`PlayerSetControl(1)`, `TutorialStart("SPRINT1")`, l'objectif `1_03_INSTRUC02` à 3,40 s) ; Davis file sur `_1_03_SCHOOLFLEE`
+  au sprint (nœuds 0 à 5 de 2,31 à 7,99 s). Le joueur de l'outil ne le poursuit pas : `1_03_D13` (8,81 s, il s'éloigne), puis
+  `MissionFail("1_03_D11")` à 28,81 s. La suite est de jouer la poursuite (`--aller` sur le trajet de Davis). Dans `1_02`, le piéton 2
+  suit le trajet 21 depuis 2,11 s, jusqu'à ce que le script le supprime (22,04 s) : rien d'autre ne change.
 
 ## Suite
 

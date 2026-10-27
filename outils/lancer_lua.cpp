@@ -226,12 +226,14 @@ struct CoupRecu { uint32 drapeau = 0; float jusqua = -1.0f; float degats = 0.0f;
 static std::map<int, CoupRecu> coups;
 // Un piéton qui disparaît emporte ses contrôleurs (le composant +0x2e0, libéré avec le CPed) : une entrée du pool reprise
 // plus tard (PedCreatePoint) part de contrôleurs neufs.
+static void OublierSuivi(int h);   // la piste FollowPath et les rappels de son objectif
 static void
 OublierControleurs(int h)
 {
 	controleurs.erase(h);
 	controleursIA.erase(h);
 	coups.erase(h);
+	OublierSuivi(h);
 }
 
 static float facteurCoupsJoueur = 1.0f;   // PlayerButes +0xac (172) pour l'état physique 0 (FUN_0047b810), lu au démarrage
@@ -2246,6 +2248,136 @@ PedMoveToPoint(lua_State *L)
 	return 0;
 }
 
+// La piste FollowPath (FollowPathTrack 0x93800c) d'un piéton dont l'objectif courant est un FollowPath, jouée par l'outil
+// comme un geste (le moteur la lance depuis l'arbre de l'IA, GeneralObjectives/FollowPath) : son état (CSuiviTrajet), le
+// nœud atteint en dernier, l'échéance d'une attente (+0x1c) et les deux rappels Lua de l'objectif.
+struct SuiviPieton {
+	CSuiviTrajet s;
+	bool lance = false;
+	uint32 echeance = 0;
+	int rappelAtteint = LUA_NOREF, rappelQuitte = LUA_NOREF;
+};
+static std::map<int, SuiviPieton> suivis;
+static void Oublier(lua_State *L, int &ref);
+
+static void
+OublierSuivi(int h)
+{
+	auto it = suivis.find(h);
+	if(it == suivis.end()) return;
+	if(etatLua){ Oublier(etatLua, it->second.rappelAtteint); Oublier(etatLua, it->second.rappelQuitte); }
+	suivis.erase(it);
+}
+
+static std::vector<CNoeudTrajet>
+NoeudsDuTrajet(int trajet)
+{
+	std::vector<CNoeudTrajet> n;
+	if(const CTriggerPath *t = donnees.TrajetParHandle(trajet))
+		for(const CTriggerPathPoint &p : t->points){ CNoeudTrajet x; x.pos = p.pos; x.attente = p.attente; x.actions = !p.actions.empty(); n.push_back(x); }
+	return n;
+}
+
+// FUN_0062e640 et FUN_0062df60 : le rappel est appelé avec (piéton, trajet, nœud).
+static void
+RappelerSuivi(lua_State *L, int ref, int ped, int trajet, int noeud, const char *quoi)
+{
+	printf("%6.2f s  piéton %d, trajet %d : nœud %d %s\n", maintenant / 1000.0, ped, trajet, noeud, quoi);
+	if(ref == LUA_NOREF) return;
+	lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+	lua_pushnumber(L, ped); lua_pushnumber(L, trajet); lua_pushnumber(L, noeud);
+	if(lua_pcall(L, 3, 0, 0) != 0){ printf("        rappel du trajet : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+}
+
+static void
+AvancerSuivis(lua_State *L)
+{
+	for(auto it = suivis.begin(); it != suivis.end(); ){
+		int ped = it->first;
+		SuiviPieton &v = it->second;
+		CScriptPed *p = pietons.Acceder(ped);
+		const CObjectifPieton *o = p ? pietons.ObjectifCourant(ped) : nil;
+		if(p == nil || p->mort){ Oublier(L, v.rappelAtteint); Oublier(L, v.rappelQuitte); it = suivis.erase(it); continue; }
+		// Pas l'objectif courant : la piste s'arrête et rend son état à l'objectif (FUN_0062c230 : le nœud, le mode, le sens) ;
+		// relancée, elle repart de ce nœud sans précédent ni plan (FUN_0062c290).
+		if(o == nil || o->type != OBJECTIF_SUIVRE_TRAJET){ v.s.precedent = -1; v.s.plan = -1; ++it; continue; }
+		int trajet = o->trajet;
+		std::vector<CNoeudTrajet> noeuds = NoeudsDuTrajet(trajet);
+		int nombre = (int)noeuds.size();
+		CSuiviTrajet &s = v.s;
+		if(!v.lance){   // FUN_0062c290, FUN_0062c1e0
+			s = CSuiviTrajet();
+			s.noeud = o->noeudDepart; s.mode = o->mode; s.sens = 1;
+			v.lance = true; v.echeance = 0;
+		}
+		if(nombre == 0 || s.noeud < 0 || s.noeud >= nombre){ ++it; continue; }
+		// FUN_0062e5f0 : le nœud quitté, puis le suivant ; sans suivant, la fin retire l'objectif (FUN_00621c80).
+		bool fini = false;
+		auto suivant = [&](void){
+			int32 n = s.noeud;
+			RappelerSuivi(L, v.rappelQuitte, ped, trajet, n, "quitté");
+			s.precedent = n;
+			if(ScriptPedSuiviSuivant(s, nombre, s.noeud)){ ScriptPedSuiviPoserPlan(s, noeuds, n, s.noeud); return; }
+			s.noeud = 0;
+			pietons.RetirerObjectifs(ped, OBJECTIF_SUIVRE_TRAJET);
+			fini = true;
+		};
+		if(v.echeance != 0){   // FUN_0062eb70 : l'attente d'un nœud
+			if(maintenant <= v.echeance){ p->intentionVitesse = 0; ++it; continue; }
+			v.echeance = 0;
+			suivant();
+			if(fini){ p->intentionVitesse = 0; ++it; continue; }
+		}
+		// L'arrivée au nœud visé, sous le rayon du piéton (+0x51c) : les plans en attente, puis le rappel (FUN_0062e640).
+		if(ScriptPedSuiviAtteint(s, nombre, p->pos, noeuds[s.noeud].pos, p->rayonNoeud, false)){
+			while(s.plan != -1 && s.plan != s.noeud){
+				int32 q = s.plan, r = q;
+				RappelerSuivi(L, v.rappelAtteint, ped, trajet, q, "atteint");
+				RappelerSuivi(L, v.rappelQuitte, ped, trajet, q, "quitté");
+				if(ScriptPedSuiviSuivant(s, nombre, r)) ScriptPedSuiviPoserPlan(s, noeuds, q, r); else s.plan = -1;
+			}
+			RappelerSuivi(L, v.rappelAtteint, ped, trajet, s.noeud, "atteint");
+			if(noeuds[s.noeud].attente > 0.0f){
+				v.echeance = ScriptPedSuiviEcheance(noeuds[s.noeud].attente, maintenant);
+				p->cap = ScriptPedSuiviCap(donnees.TrajetParHandle(trajet)->points[s.noeud].lacetTangageRoulis[0], false);   // FUN_0062c300
+				p->intentionVitesse = 0;
+				++it; continue;
+			}
+			suivant();   // les actions du nœud (FUN_0062e780) ne sont pas suivies
+			if(fini){ p->intentionVitesse = 0; ++it; continue; }
+		}
+		// Le pas (FUN_0062ee20) : le but lissé (FUN_00621a30 → FUN_005e7560), puis le passage d'un plan (FUN_0062eaa0).
+		float vitesseIntention = o->vitesse < 0.0f ? 1.1f : o->vitesse;   // FUN_00478030 : à pied, -1 → _DAT_0090cec8
+		if(s.precedent == -1){
+			if(ScriptPedSuiviArret(s, noeuds, s.noeud)){ s.precedent = -2; }
+			else{ ScriptPedSuiviPoserPlan(s, noeuds, -1, s.noeud); s.precedent = s.noeud; ScriptPedSuiviSuivant(s, nombre, s.noeud); }
+		}
+		CVector but = noeuds[s.noeud].pos;
+		if(s.precedent >= 0 && s.precedent < nombre){
+			float t = 0;
+			but = ScriptPedSuiviBut(noeuds[s.precedent].pos, noeuds[s.noeud].pos, p->pos, 3.0f * vitesseIntention + 3.0f, t);
+			if(t > 1.0f && !ScriptPedSuiviArret(s, noeuds, s.noeud)){ s.precedent = s.noeud; ScriptPedSuiviSuivant(s, nombre, s.noeud); }
+		}
+		if(ScriptPedSuiviPlanPasse(s, p->pos)){
+			int32 q = s.plan, r = q;
+			RappelerSuivi(L, v.rappelAtteint, ped, trajet, q, "atteint");
+			RappelerSuivi(L, v.rappelQuitte, ped, trajet, q, "quitté");
+			if(ScriptPedSuiviSuivant(s, nombre, r)) ScriptPedSuiviPoserPlan(s, noeuds, q, r); else s.plan = -1;
+		}
+		float dx = but.x - p->pos.x, dy = but.y - p->pos.y, dz = but.z - p->pos.z, d = sqrtf(dx * dx + dy * dy);
+		float pas = ScriptPedVitesse(o->allure < 0 ? ALLURE_MARCHE : o->allure) * 0.033f;
+		p->enMarche = false;
+		p->intentionVitesse = vitesseIntention;
+		if(d > 1e-3f){
+			float k = d < pas ? 1.0f : pas / d;
+			p->pos.x += dx * k; p->pos.y += dy * k; p->pos.z += dz * k;
+			p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
+			p->intention = CVector(dx / d, dy / d, 0);
+		}
+		++it;
+	}
+}
+
 // PedFollowPath(ped, trajet, mode, allure, rappel, départ, rappel2, rappel3) (0x5cfbf0) : rien sans piéton, sans trajet
 // (FUN_005ed240), pour un trajet vide, ou d'un seul nœud hors du mode 3. Avec plus de cinq arguments, ou si l'objectif
 // FollowPath de sa file (FUN_005cf670 : le premier de type 12) suit un autre trajet : le contrôleur de l'IA s'arrête
@@ -2273,13 +2405,41 @@ PedFollowPath(lua_State *L)
 		o.noeudDepart = arguments > 5 ? (int)luaL_optnumber(L, 6, 0) : 0;
 		pietons.PousserObjectif(ped, o, false);
 		courant = p->nombreObjectifs - 1;
+		suivis[ped].lance = false;   // une piste neuve partira de ce départ
 	}
 	CObjectifPieton o = p->objectifs[courant];   // FUN_00471be0 : devant
 	for(int i = courant; i > 0; i--) p->objectifs[i] = p->objectifs[i - 1];
 	p->objectifs[0] = o;
 	p->objectifs[0].mode = mode;
-	p->objectifs[0].vitesse = ScriptPedIntentionVitesse(lua_isnumber(L, 4) ? (int)lua_tonumber(L, 4) : -1, 0.3f);
+	p->objectifs[0].allure = lua_isnumber(L, 4) ? (int)lua_tonumber(L, 4) : -1;
+	p->objectifs[0].vitesse = ScriptPedIntentionVitesse(p->objectifs[0].allure, 0.3f);
+	// FUN_005d9f00 : les rappels du cinquième (+0x2c, nœud atteint) et du septième argument (+0x30, nœud quitté).
+	SuiviPieton &v = suivis[ped];
+	Oublier(L, v.rappelAtteint); Oublier(L, v.rappelQuitte);
+	if(lua_isfunction(L, 5)){ lua_pushvalue(L, 5); v.rappelAtteint = luaL_ref(L, LUA_REGISTRYINDEX); }
+	if(lua_isfunction(L, 7)){ lua_pushvalue(L, 7); v.rappelQuitte = luaL_ref(L, LUA_REGISTRYINDEX); }
 	return 0;
+}
+
+// DistanceBetweenCoords3d(x1, y1, z1, x2, y2, z2) (0x5bfac0) et DistanceBetweenCoords2d(x1, y1, x2, y2) (0x5bfc10) : la racine
+// (FUN_0085c4d0) du carré de la différence (FUN_00414a20), rendue en flottant (FUN_005d8480).
+static int
+DistanceBetweenCoords3d(lua_State *L)
+{
+	appels["DistanceBetweenCoords3d"]++;
+	float x = (float)luaL_optnumber(L, 1, 0) - (float)luaL_optnumber(L, 4, 0), y = (float)luaL_optnumber(L, 2, 0) - (float)luaL_optnumber(L, 5, 0),
+	      z = (float)luaL_optnumber(L, 3, 0) - (float)luaL_optnumber(L, 6, 0);
+	lua_pushnumber(L, sqrtf(x * x + y * y + z * z));
+	return 1;
+}
+
+static int
+DistanceBetweenCoords2d(lua_State *L)
+{
+	appels["DistanceBetweenCoords2d"]++;
+	float x = (float)luaL_optnumber(L, 1, 0) - (float)luaL_optnumber(L, 3, 0), y = (float)luaL_optnumber(L, 2, 0) - (float)luaL_optnumber(L, 4, 0);
+	lua_pushnumber(L, sqrtf(x * x + y * y));
+	return 1;
 }
 
 // PedPathNodeReachedDistance(ped, rayon) (0x5cd930) : le rayon d'arrivée aux nœuds de trajet (+0x51c) et l'octet +0x520.
@@ -2553,6 +2713,7 @@ static void
 AvancerPietons(void)
 {
 	pietons.Avancer(0.033f);
+	if(etatLua) AvancerSuivis(etatLua);   // les pistes FollowPath
 	pietons.AvancerVue(0.033f);   // CPed (FUN_004812d0) : FUN_0048ccf0, FUN_00499340
 	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
 		const CScriptPed *p = pietons.Acceder(i);
@@ -3377,6 +3538,8 @@ main(int argc, char **argv)
 	lua_register(L, "PedFollowPath", PedFollowPath);
 	lua_register(L, "PathGetLastNode", PathGetLastNode);
 	lua_register(L, "PedPathNodeReachedDistance", PedPathNodeReachedDistance);
+	lua_register(L, "DistanceBetweenCoords3d", DistanceBetweenCoords3d);
+	lua_register(L, "DistanceBetweenCoords2d", DistanceBetweenCoords2d);
 	lua_register(L, "MissionForceCompleted", MissionForceCompleted);
 	lua_register(L, "PedSetImmortalFlag", PedSetImmortalFlag);
 	lua_register(L, "PedGetImmortalFlag", PedGetImmortalFlag);
