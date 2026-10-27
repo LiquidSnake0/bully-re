@@ -131,6 +131,14 @@ public:
 	// - FleeObjective (0x935578 ; lancement FUN_00628ce0) : un FleeObjective (type 22) fuyant la cible du piéton (+0x538 ;
 	//   +0x544 si l'octet +0x19 (25) ; d'abord le +4 du +0x10 du contexte, non suivi), mis devant la file (FUN_00471320),
 	//   ou au bout si l'octet +0x18 (24) (CPed::PushObjective) ; rien sans cible.
+	// - IDLE (IdleTrack 0x934cd8 ; lancement FUN_0061d8e0, mise à jour FUN_0061d850) : au lancement, le composant d'actions
+	//   du piéton vide ses entrées (FUN_005f38e0, CScriptPedPool::ViderEntrees : la vitesse de l'intention de mouvement
+	//   retombe à 0 ; vérifié à l'assembleur, ecx = +0x2e0 en 0x61d97b) ; pour un piéton à vélo (+0x1570 = 1), le vélo
+	//   (+0x1554) est aussi arrêté (non suivi). Sa mise à jour la garde en vie tant que son piéton existe : un nœud IDLE
+	//   (AMBIENT/IDLE d'AI_FightTutorial, à l'octet +8) ne finit pas de lui-même. `reposLances` : celles lancées à cette image.
+	struct Repos { float entree; bool fait; };
+	std::vector<Repos> repos;
+	int reposLances = 0;
 	struct Effacement { float entree; int32 type; bool fait; };
 	std::vector<Effacement> effacements, effacementsLances;
 	struct Fuite { float entree; bool auBout, autreCible, fait; };

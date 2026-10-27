@@ -78,7 +78,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kPoursuite = ActionHash("SeekEntityPosition"), kSpawn = ActionHash("spawn"),
 	                    kGestion = ActionHash("ManageTargets"), kCombatLoco = ActionHash("CombatLoco"),
 	                    kDemandeNoeud = ActionHash("ActionNodeRequest"), kEffacer = ActionHash("ClearCurrentObjective"),
-	                    kFuite = ActionHash("FleeObjective");
+	                    kFuite = ActionHash("FleeObjective"), kRepos = ActionHash("IDLE");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -129,6 +129,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			effacements.push_back({a, (int32)p.Mot(24), false});
 		}else if(p.type == kFuite){
 			fuites.push_back({a, Octet(p, 24), Octet(p, 25), false});
+		}else if(p.type == kRepos){
+			repos.push_back({a, false});
 		}else if(sousControleurs && (p.type == kGestion || p.type == kCombatLoco)){
 			Gestion g{a, Reel(p, 16, -1.0f), Octet(p, 24), Octet(p, 8)};
 			(p.type == kGestion ? gestions : combats).push_back(g);
@@ -215,7 +217,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	santes.clear();
 	prisesCible.clear();
 	gestions.clear(); combats.clear(); demandesNoeud.clear();
-	effacements.clear(); fuites.clear();
+	effacements.clear(); fuites.clear(); repos.clear();
 	lances.clear();                    // FUN_005f7390 : l'arrêt d'une piste spawn arrête son contrôleur
 	finExecutees = -1.0f;
 	retenu = false;
@@ -451,6 +453,9 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; effacementsLances.push_back(d); }
 	for(Fuite &d : fuites)        // FUN_00628ce0
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; fuitesLancees.push_back(d); }
+	reposLances = 0;
+	for(Repos &d : repos)         // FUN_0061d8e0
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; reposLances++; }
 	for(Sante &d : santes)        // FUN_00627500
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; santesLancees.push_back(d); }
 	for(PriseCible &d : prisesCible)   // FUN_0062a580

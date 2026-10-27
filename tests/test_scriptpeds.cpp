@@ -256,6 +256,21 @@ main(void)
 	VERIF(fabsf(ScriptPedVitesseDuPas(PAS_APPROCHE_7, 0, 32, 1.5f) - 0.85f) < 1e-6f);
 	VERIF(fabsf(ScriptPedVitesseDuPas(PAS_RALENTI, 1.0f, 0, 1.5f) - 0.5f) < 1e-6f && fabsf(ScriptPedVitesseDuPas(PAS_RALENTI, 100, 0, 1.5f) - 1.5f) < 1e-6f);
 	VERIF(fabsf(ScriptPedVitesseDuPas(PAS_RALENTI, 14.0f, 0, 1.5f) - (1.0f - powf(0.5f, 8.0f) + 0.5f)) < 1e-6f);
+	// FUN_005f38e0 et la garde de FUN_00484490 : mort, endormi (+0x1358) ou tous endormis (DAT_00c2b108), l'IA n'avance pas.
+	{
+		CScriptPedPool q;
+		int b = q.Creer(146, CVector(0, 0, 0), 0, 1);
+		q.Acceder(b)->intentionVitesse = 1.5f;
+		VERIF(q.IAAvance(b));
+		q.ViderEntrees(b);
+		VERIF(q.Acceder(b)->intentionVitesse == 0.0f);
+		q.Acceder(b)->endormi = true;
+		VERIF(!q.IAAvance(b));
+		q.Acceder(b)->endormi = false; q.sommeilGeneral = true;
+		VERIF(!q.IAAvance(b));
+		q.sommeilGeneral = false; q.Sante(b, 0);
+		VERIF(!q.IAAvance(b) && !q.IAAvance(-1));
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }

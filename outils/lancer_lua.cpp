@@ -1791,6 +1791,24 @@ PedSetControllerID(lua_State *L)
 	return 0;
 }
 
+// PedSetAsleep(ped, oui) (0x5caa30) : +0x1358 du piéton ; PedSetGlobalSleep(oui) (0x5c6e40) : DAT_00c2b108. L'un ou
+// l'autre arrête l'arbre de l'IA (FUN_00484490).
+static int
+PedSetAsleep(lua_State *L)
+{
+	Journal("PedSetAsleep", L, 1);
+	if(CScriptPed *p = pietons.Acceder((int)luaL_checknumber(L, 1))) p->endormi = BooleenArg(L, 2);
+	return 0;
+}
+
+static int
+PedSetGlobalSleep(lua_State *L)
+{
+	Journal("PedSetGlobalSleep", L, 1);
+	pietons.sommeilGeneral = BooleenArg(L, 1);
+	return 0;
+}
+
 // PedSetFaction(ped, type) (0x5cb570) : le type du piéton (+0x1310), sauf 13 (PLAYER1), que le moteur refuse.
 static int
 PedSetFaction(lua_State *L)
@@ -2182,12 +2200,14 @@ static void
 AvancerIA(int ped, CActionController &c, uint32 images)
 {
 	CScriptPed *p = pietons.Acceder(ped);
-	if(p == nil || p->mort || c.arbre == nil) return;
+	if(p == nil || c.arbre == nil) return;
+	// Mort, endormi, ou tous endormis : l'IA ne tourne pas et les entrées du piéton sont vidées (FUN_005f38e0) ; mort, son
+	// contrôleur s'arrête (FUN_005f3f40). Sinon la vitesse de l'intention de mouvement reste celle que la dernière piste
+	// de navigation a posée : aucune remise à 0 à chaque image (les 35 écritures de +0x1c relevées à l'assembleur, et le
+	// +0x1c de FUN_005f38e0, sont toutes dans des pistes, la navigation ou ces cas-là).
+	if(!pietons.IAAvance(ped)){ pietons.ViderEntrees(ped); if(p->mort) c.Jouer(arbres, nil, maintenant / 1000.0f); return; }
 	float t = maintenant / 1000.0f;
 	c.image = images; c.graine = (uint16)ped;
-	// La navigation repose l'intention de mouvement à chaque image ; sans but, sa vitesse retombe à 0 (FUN_004a45c0). Les
-	// pistes de l'IA (CombatLoco) la reposent ensuite.
-	if(!p->enMarche) p->intentionVitesse = 0;
 	const CActionNode *avant = c.joue;
 	if(c.joue == nil) c.Poser(arbres, c.arbre, CJugeOutil(ped, t), t);   // FUN_00483ec0
 	else c.Avancer(arbres, nil, CJugeOutil(ped, t), t);
@@ -2199,6 +2219,7 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 		for(size_t i = 1; i < tous.size(); i++)
 			if(vus[tous[i]] != tous[i]->joue){ vus[tous[i]] = tous[i]->joue; printf("%6.2f s  IA de %d, spawn : %s\n", t, ped, CheminVu(*tous[i], tous[i]->joue).c_str()); }
 	for(CActionController *k : tous){
+		if(k->reposLances > 0){ pietons.ViderEntrees(ped); intentionsPietons.erase(ped); }   // IDLE : FUN_0061d8e0
 		for(uint32 n : k->intentions) intentionsPietons[ped] = n;
 		for(const CActionController::Gestion &g : k->gestionsActives) GererCibles(ped, g.joueur);
 		for(const CActionController::Gestion &g : k->combatsActifs) CombatLoco(ped, g.joueur, k->Temps(t) <= g.entree + 0.034f);
@@ -3035,6 +3056,8 @@ main(int argc, char **argv)
 	lua_register(L, "PlayerGetPhysicalState", PlayerGetPhysicalState);
 	lua_register(L, "ChapterGet", ChapterGet);
 	lua_register(L, "PedSetControllerID", PedSetControllerID);
+	lua_register(L, "PedSetAsleep", PedSetAsleep);
+	lua_register(L, "PedSetGlobalSleep", PedSetGlobalSleep);
 	lua_register(L, "CameraGetActive", CameraGetActive);
 	lua_register(L, "CameraSetActive", CameraSetActive);
 	lua_register(L, "CameraReturnToPlayer", CameraReturnToPlayer);

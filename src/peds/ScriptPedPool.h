@@ -129,6 +129,7 @@ struct CScriptPed {
 	// un piéton (Aller : la vitesse de son allure ; arrivé, arrêté : 0) et dans CombatLoco (lancer_lua).
 	CVector intention;
 	float intentionVitesse = 0;
+	bool endormi = false;        // +0x1358 : PedSetAsleep (0x5caa30) ; endormi, son arbre de l'IA n'avance plus (FUN_00484490)
 	bool enMarche = false;       // va vers `cible` à `vitesse`
 	CVector cible;
 	float vitesse = 0;
@@ -248,6 +249,18 @@ public:
 	// FUN_00486c00), FUN_0048c330 la cible de son objectif (+0x540), FUN_00606b40 son agresseur (+0x544). Vrai si
 	// quelque chose a été posé.
 	bool PrendreAttaquant(int handle, int attaquant);
+	// FUN_005f38e0 (ecx = le composant d'actions +0x2e0) : vide les entrées du piéton : les 47 boutons (+0x20, 12 octets
+	// chacun : la valeur passe en précédente puis à 0, l'octet d'appui à 0), l'intention (+0x254) et la vitesse de
+	// l'intention de mouvement (+0x1c) ; la direction (+0) reste. Le lancement d'une piste IDLE (FUN_0061d8e0), l'IA qui
+	// ne tourne pas (FUN_00484490), PlayerSetControl (0x5d12f0) et l'initialisation du composant (FUN_00484d10)
+	// l'appellent. L'outil n'a que la vitesse ; l'intention, rangée par lancer_lua, ne vaut que pour l'image.
+	void ViderEntrees(int handle);
+	// FUN_00484490, la garde de l'image du contrôleur de l'IA : il n'avance pas (FUN_005f49a0) si le piéton est mort
+	// (+0x1c98, posé par l'emplacement 42 de CPed, FUN_00479110, que lance la piste Death, FUN_0060fdc0), endormi
+	// (+0x1358) ou si tous dorment (DAT_00c2b108, PedSetGlobalSleep 0x5c6e40) ; ses entrées sont alors vidées (et, mort,
+	// son contrôleur arrêté, FUN_005f3f40).
+	bool IAAvance(int handle) const;
+	bool sommeilGeneral = false;   // DAT_00c2b108
 	// lua_PedMakeAmbient (0x5ca850) : rendu à la population, plus ramassé par son script.
 	bool RendreAmbiant(int handle);
 	// Une image de dt secondes : marches, poursuites et coups ; pose les drapeaux d'événements. La régénération

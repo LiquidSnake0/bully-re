@@ -239,6 +239,19 @@ CScriptPedPool::Blesser(int cible, float degats, int attaquant)
 }
 
 void
+CScriptPedPool::ViderEntrees(int h)
+{
+	if(CScriptPed *p = Acceder(h)) p->intentionVitesse = 0;
+}
+
+bool
+CScriptPedPool::IAAvance(int h) const
+{
+	const CScriptPed *p = Acceder(h);
+	return p && !p->mort && !p->endormi && !sommeilGeneral;
+}
+
+void
 CScriptPedPool::Sante(int h, float sante)
 {
 	CScriptPed *p = Acceder(h);

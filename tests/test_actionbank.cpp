@@ -643,6 +643,22 @@ main(void)
 				d.Avancer(ia, nil, rien, 0.133f);                               // fini : la piste meurt (+0x1e nul)
 				VERIF(d.joue != feuille || (!d.demandesNoeud.empty() && !d.demandesNoeud[0].vivante));
 			}else VERIF(false);
+			// Sans objectif d'attaque ni focus, la descente tombe dans AMBIENT/IDLE : sa piste IDLE (FUN_0061d8e0) se lance à
+			// la première image et vide les entrées du piéton ; elle retient le nœud (l'octet +8), qui ne finit pas.
+			struct : CJugeAction {
+				int Juger(const CActionTreeFile &, int32, uint32 type, const uint32 *) const override {
+					static const uint32 kInterdites = ActionHash("AttacksDisabled");
+					return type == kInterdites ? 0 : -1;
+				}
+			} ambiant;
+			CActionController r;
+			r.sousControleurs = true;
+			VERIF(racine && r.Poser(ia, racine, ambiant, 0.0f));
+			VERIF(r.joue && (r.joue->hachage & 0x7fffffff) == ActionHash("IDLE") && r.repos.size() == 1 && r.retenu && r.fin < 0.0f);
+			r.Avancer(ia, nil, ambiant, 0.033f);
+			VERIF(r.reposLances == 1);
+			r.Avancer(ia, nil, ambiant, 0.066f);
+			VERIF(r.reposLances == 0 && r.joue && (r.joue->hachage & 0x7fffffff) == ActionHash("IDLE"));
 		}
 		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());
 		// Les références montées (FUN_005f6bb0 → FUN_005f6960) : Locomotion.act, référencé par B_Striker_A (un des arbres

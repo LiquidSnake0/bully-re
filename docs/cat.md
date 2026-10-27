@@ -507,6 +507,29 @@ testent les invites sociales (23 à 36 : `HUDSocialApologize` … `HUDSocialBurn
 `HUDBarber` (18), `HUDTattoo` (19) ; dans `1_02`, `main` ne fait que cacher la santé, le radar et la retenue (4, 11, 0) et
 montrer l'historique des boutons (21) : les 1 306 jugements se décident, faux.
 
+## La vitesse de l'intention, lue le 27.10.2026 (soir)
+
+**Les entrées vidées** (`FUN_005f38e0`, ecx = le composant d'actions +0x2e0) : les 47 boutons (+0x20, 12 octets chacun : la
+valeur passe en précédente puis à 0, l'octet d'appui à 0), l'intention (+0x254) et la **vitesse de l'intention de mouvement**
+(+0x1c) ; la direction (+0) reste. Cette écriture-là manquait au relevé des 35 : elle passe par le composant lui-même, pas par
+le piéton. Ses appelants : le lancement d'une piste `IDLE` (`IdleTrack` 0x934cd8, `FUN_0061d8e0`, vérifié à l'assembleur : ecx =
+piéton +0x2e0 en 0x61d97b ; sa mise à jour `FUN_0061d850` la garde en vie tant que le piéton existe), la garde de l'image de
+l'IA (`FUN_00484490`), `PlayerSetControl` (0x5d12f0), l'initialisation du composant (`FUN_00484d10`), les portes (`FUN_004151e0`,
+`FUN_00416a00`) et le ballon prisonnier.
+
+**La garde de l'IA** (`FUN_00484490`, lue à l'assembleur de 0x484490 à 0x484506) : le contrôleur de l'IA (+0x290) n'avance
+(`FUN_005f49a0`, après la redescente `FUN_00483ec0` s'il ne joue rien) que si le piéton n'est pas mort (+0x1c98), pas endormi
+(+0x1358, `PedSetAsleep` 0x5caa30) et que tous ne dorment pas (`DAT_00c2b108`, `PedSetGlobalSleep` 0x5c6e40) ; sinon les entrées
+sont vidées, et, mort, le contrôleur est arrêté (`FUN_005f3f40`). +0x1c98 est posé à 1 par l'emplacement 42 de `CPed`
+(`FUN_00479110`, 0x479308), qu'appelle le lancement d'une piste `Death` (`DeathTrack` 0x934aa0, `FUN_0060fdc0`, dans `HitTree`) ;
+seules les stats le remettent à 0 (`FUN_00476fa0`, `FUN_004788d0`, `FUN_00478e30`).
+
+**Il n'y a donc pas de remise à 0 à chaque image** : la vitesse reste celle que la dernière piste de navigation, ou ces vidages,
+ont posée. L'outil la remettait à 0 à chaque image pour un piéton de l'IA sans geste ; il suit maintenant ces règles
+(`CScriptPedPool::ViderEntrees`, `IAAvance`, `CActionController::repos`). Dans `1_02`, rien ne change (119,03 s) : le bully reste
+dans `Combat/…/CombatLoco` d'un bout à l'autre et l'outil le tient pour mort dès que sa santé tombe à 0 (89,43 s), alors que le
+jeu attend la piste `Death`.
+
 ## Le chemin d'un nœud (18.10.2026)
 
 Les scripts désignent un nœud par un chemin, `PedSetActionNode(ped, "/Global/1_01/Talking",
