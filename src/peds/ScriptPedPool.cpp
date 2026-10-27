@@ -470,3 +470,20 @@ CScriptPedPool::Socialise(int h, bool pourLeJoueur) const
 	}
 	return false;
 }
+
+float
+ScriptPedVitesseDuPas(int mode, float d2Cible, float d2Point, float rayonButes2c)
+{
+	if(mode == PAS_SUR_PLACE || mode == PAS_ATTENDRE) return 0.0f;
+	if(mode == PAS_RALENTI){   // FUN_0061b820
+		float t = (d2Cible - rayonButes2c) * 0.04f;
+		if(!(t >= 0.0f)) t = 0.0f; else if(t > 1.0f) t = 1.0f;
+		return (1.0f - powf(1.0f - t, 8.0f)) + 0.5f;
+	}
+	if(mode == PAS_APPROCHE_7 || mode == PAS_APPROCHE_9){   // FUN_0061b8e0
+		float t = d2Point * 0.015625f;
+		if(!(t >= 0.0f)) t = 0.0f; else if(t > 1.0f) t = 1.0f;
+		return t * 1.3f + 0.2f;
+	}
+	return 1.5f;
+}

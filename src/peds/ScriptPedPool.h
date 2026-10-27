@@ -26,6 +26,15 @@ float ScriptPedVitesse(int allure);   // m/s
 // d'argument (FUN_005d8240 rend -1), la vitesse par défaut de l'appelant (0,7 pour PedMoveToXYZ, _DAT_00900e00).
 float ScriptPedIntentionVitesse(int allure, float defaut = 0.7f);
 
+// FUN_00625970 : la vitesse que le pas d'une piste de locomotion de l'IA (CombatLoco, FUN_0062ea40) passe à la navigation
+// (FUN_004a4eb0, qui en fait la vitesse de l'intention de mouvement), selon le mode que FUN_0061b430 a rangé (+0x24) avec
+// le point visé : 2 et 4 (rester sur place) 0 ; 12 FUN_0061b820 : t = (d² au point +0x60 − AIButes +0x2c) × 0,04, borné à
+// [0, 1], puis 1 − (1 − t)⁸ + 0,5 ; 7 et 9 FUN_0061b8e0 : min(d² au point +0x2c / 64, 1) × 1,3 + 0,2 ; tout autre mode
+// 1,5 (_DAT_0090fb9c). L'approche de CombatLoco (FUN_0062c740, hors de l'image de tirage) est le mode 11 vers la cible,
+// ou 10 sur place une fois dans le petit rayon (+0x6c) : 1,5, la vitesse du sprint de FUN_005c6180.
+enum { PAS_SUR_PLACE = 2, PAS_ATTENDRE = 4, PAS_APPROCHE_7 = 7, PAS_APPROCHE_9 = 9, PAS_ARRIVE = 10, PAS_VERS_CIBLE = 11, PAS_RALENTI = 12 };
+float ScriptPedVitesseDuPas(int mode, float d2Cible, float d2Point, float rayonButes2c);
+
 // Les 22 groupes d'animations d'humiliation (0x9113d0, 32 octets par nom) : « HUMIL_5-8_A » pour 0 … « HUMIL_6-1V6-1 »
 // pour 21. Le groupe 0 à 12 est celui d'une victime du joueur, rangé par sa taille (CharacterSize) : 0 à 2 Medium
 // (5-8), 3 et 4 Fat (5-8F), 5 à 7 Large (6-1), 8 et 9 Small (4-10), 10 à 12 Huge (6-5). nil hors de la table.

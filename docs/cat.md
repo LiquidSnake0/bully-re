@@ -465,6 +465,26 @@ demande `CollisionStart` à la cible et `F_CanBlock`, et la contre-attaque `Atta
 ne pare pas : la feuille `BLOCK` demande que le joueur joue `LightAttacks` ou `HeavyAttacks`, et la banque `CombatActions` du
 bully ne redescend qu'à la fin de son `ControlNode` (1,03 s), jamais pendant le jab du joueur.
 
+**La vitesse de `CombatLoco`** (levée le 27.10) : la mise à jour (`FUN_0062ea40`) appelle, après la zone et les rayons, le choix du
+point (`FUN_0062e120`) puis le pas (`FUN_00625970`), qui passe à la navigation (`FUN_004a4eb0`) le point et une vitesse tirée du
+mode que `FUN_0061b430` a rangé (+0x24) : 2 et 4 (rester sur place) 0 ; 12 (`FUN_0061b820`) 1 − (1 − t)⁸ + 0,5 avec t = (d² −
+AIButes +0x2c) × 0,04 borné ; 7 et 9 (`FUN_0061b8e0`) min(d² / 64, 1) × 1,3 + 0,2 ; tout autre mode 1,5 (`_DAT_0090fb9c`). L'approche
+(`FUN_0062c740`, sous-état 0 hors de l'image de tirage, l'octet +0x78 de `FUN_00465910(8)`) est le mode 11 vers la cible, 10 sur
+place dans le petit rayon (+0x6c) ; à l'image de tirage, un point entre les deux rayons (+0x6c, +0x70 : `FUN_006253e0`), le mode 8,
+puis le sous-état 1 (`FUN_0061b700`) et l'attente (`FUN_00625740`), non suivis. Le 0,7 supposé tombe : dans `1_02`, le bully qui gagne
+sa zone joue `Locomotion/Free/Sprint` (30,10 s) au lieu de `RUN` (`ScriptPedVitesseDuPas`).
+
+**La course de `RunStart`** (le nœud de `HumiliateFlee` dans `Player.act`) : `Locomotion` (lancement `FUN_0060c5b0`, mise à jour
+`FUN_00613480`) lit l'intention (la direction +0, ou le cap voulu +0xc si l'octet +0x39 ; la vitesse +0x1c), ou vise la cible à
+0,3 (`_DAT_00911e30`) si l'octet +0x38 ; celle de `RunStart` a +0x38 et +0x39 nuls. Aucune piste de `RunStart` (`Locomotion`,
+`LocomotionAnimationNew`, `LocomotionEvent`, `TargetPlayer`, `FaceTarget` à 180 degrés, l'`Opportunity` de 0,833 s vers
+`KnockOuts/Rear`) n'écrit la vitesse : les 35 écritures de +0x1c du composant (relevées à l'assembleur) sont dans la navigation
+(`FUN_004a45c0`, `FUN_004a47c0`, `FUN_004a4a50`, `FUN_004a4eb0`), les pistes de locomotion de l'IA (`PursuitLoco`, `KeepDistanceLoco`,
+`JumpLoco`, `FollowPath`, `FaceObjective`, `FollowFocus`, `EvadeProjectile`…) et `CPed` (emplacement 12, `FUN_004812d0`, 0x481603 :
+0, sur une branche). La vitesse est donc celle que la dernière piste de navigation a laissée (l'arrêt de `CombatLoco`,
+`FUN_00625230`, ne la remet pas à 0) : ce qu'elle vaut à 89,43 s n'est pas établi, l'outil la met à 0 (le bully tourne et tombe sur
+place).
+
 **Le HUD** (`src/hud/HudComponents`) : `HUDComponent` (`FUN_0053cc70`) naît caché ; l'emplacement 5 (`FUN_0053cd60`) le montre
 ou le cache (caché, il ne clignote plus) ; `ToggleHUDComponentVisibility` (0x5bd500), `ToggleHUDComponentLocked` (0x5bd560,
 l'octet +0x15), `HUDComponentGetVisibility` (0x5bd590), `HUDClearAllElements` (0x5bdb80), `HUDSaveVisibility` /

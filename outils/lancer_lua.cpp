@@ -2095,9 +2095,10 @@ CombatLoco(int ped, bool joueur, bool premiere)
 	float dx = q->pos.x - p->pos.x, dy = q->pos.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
 	if(d > 0) p->intention = CVector(dx / d, dy / d, 0);
 	if(d <= rayon){ p->intentionVitesse = 0; return; }
-	// L'intention de mouvement vers la cible : la vitesse de course de FUN_005c6180 (0,7), supposée (le moteur la tire de
-	// la navigation, FUN_004a4a50, sur le point que FUN_0061b430 range).
-	p->intentionVitesse = 0.7f;
+	// L'intention de mouvement vers la cible : l'approche de FUN_0062c740 est le mode 11, auquel le pas (FUN_00625970)
+	// donne 1,5. Supposé : tout droit, sans le point tiré entre les deux rayons aux images de tirage (FUN_0062c4f0, mode 8,
+	// aussi 1,5) ni l'attente qui suit (FUN_0061b700, FUN_00625740).
+	p->intentionVitesse = ScriptPedVitesseDuPas(PAS_VERS_CIBLE, d * d, d * d, ButeIA(44, 1.5f));
 	float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f, k = d - rayon < pas ? (d - rayon) / d : pas / d;
 	p->pos.x += dx * k; p->pos.y += dy * k;
 	p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;

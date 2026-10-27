@@ -229,6 +229,13 @@ main(void)
 		p->drapeauxSociaux = 1;
 		VERIF(!q.Socialise(SCRIPT_PED_JOUEUR, true));
 	}
+	// La vitesse du pas des pistes de locomotion de l'IA (FUN_00625970, FUN_0061b820, FUN_0061b8e0).
+	VERIF(ScriptPedVitesseDuPas(PAS_SUR_PLACE, 100, 100, 1.5f) == 0.0f && ScriptPedVitesseDuPas(PAS_ATTENDRE, 100, 100, 1.5f) == 0.0f);
+	VERIF(ScriptPedVitesseDuPas(PAS_VERS_CIBLE, 100, 100, 1.5f) == 1.5f && ScriptPedVitesseDuPas(PAS_ARRIVE, 0, 0, 1.5f) == 1.5f);
+	VERIF(fabsf(ScriptPedVitesseDuPas(PAS_APPROCHE_7, 0, 0, 1.5f) - 0.2f) < 1e-6f && fabsf(ScriptPedVitesseDuPas(PAS_APPROCHE_9, 0, 128, 1.5f) - 1.5f) < 1e-6f);
+	VERIF(fabsf(ScriptPedVitesseDuPas(PAS_APPROCHE_7, 0, 32, 1.5f) - 0.85f) < 1e-6f);
+	VERIF(fabsf(ScriptPedVitesseDuPas(PAS_RALENTI, 1.0f, 0, 1.5f) - 0.5f) < 1e-6f && fabsf(ScriptPedVitesseDuPas(PAS_RALENTI, 100, 0, 1.5f) - 1.5f) < 1e-6f);
+	VERIF(fabsf(ScriptPedVitesseDuPas(PAS_RALENTI, 14.0f, 0, 1.5f) - (1.0f - powf(0.5f, 8.0f) + 0.5f)) < 1e-6f);
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }
