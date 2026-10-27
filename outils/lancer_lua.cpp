@@ -44,6 +44,8 @@
 #include "../src/audio/SpeechBank.h"
 #include "../src/cutscene/CutsceneFiles.h"
 #include "../src/peds/ScriptPedPool.h"
+#include "../src/hud/HudComponents.h"
+#include "../src/render/CameraMgr.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
 #include "../tests/hote/Chemins.h"
@@ -103,6 +105,8 @@ static CModelEnum modeles;
 // demandé par PlayerSetPos… et joué image par image comme FUN_00416e30 : fondu au noir, scripts de zone
 // retirés puis celui de la nouvelle zone chargé avec son main, zone visible et joueur posés à l'arrivée.
 static CAreaManager zones;
+static CCameraMgr cameras;   // le gestionnaire de caméras (0xc3cc68) : le mode 1 au démarrage (FUN_004f35d0)
+static CHudComponents hud;   // DAT_00c674a0 : les 48 composants du HUD, tous cachés au démarrage (FUN_0053cc70)
 // Le fondu de la caméra (CameraFade, 0x4f1980), réduit à ce que la machine des zones et les scripts en
 // attendent : une durée, un sens, et « fini ». Les durées par défaut sont celles d'AreaTransitionButes (DAT_020c8910,
 // lue dans Globals.cat au démarrage) : +0x18 pour le fondu au noir (0,65 s), +0x1c pour le retour (0,5 s) ;
@@ -319,6 +323,91 @@ struct CJugeOutil : CJugeAction {
 		static const uint32 kArmeVoulue = ActionHash("WeaponDesired"), kArmeInventaire = ActionHash("WeaponIsInventory");
 		if(type == kArmeVoulue) return (mots[1] & 0xff) == 0;
 		if(type == kArmeInventaire) return 0;
+		// WeaponDesiredIsEquiped (FUN_0065b5b0) : sans arme voulue, vrai ; sinon l'objet arme (+0x1d0) doit en avoir le
+		// modèle (+0x10e), et l'arme voulue « dernière » (-1) est alors effacée. IsWeaponFiredWhenDropped (FUN_0065bbe0) :
+		// l'octet +0x2b du type de l'arme tenue (WeaponGetType), faux sans arme.
+		static const uint32 kArmeTenue = ActionHash("WeaponDesiredIsEquiped"), kArmeLachee = ActionHash("IsWeaponFiredWhenDropped");
+		if(type == kArmeTenue) return 1;
+		// WeaponAmmo (FUN_0065b290) : les munitions (FUN_00486130 : 0 pour une arme sous 1) de l'arme tenue (FUN_00474aa0 :
+		// le modèle +0x10e de l'objet arme +0x1d0, sinon 0), ou avec l'octet +0xc celles de l'arme du HUD (HUDWeapons, le
+		// composant 20, +0xc0) pour le joueur seulement, comparées à +4 par +8 (FUN_005fb750). Sans arme : 0.
+		static const uint32 kMunitions = ActionHash("WeaponAmmo");
+		if(type == kMunitions){
+			if((mots[2] & 0xff) && (moi == nil || moi->type != SCRIPT_PED_TYPE_JOUEUR)) return 0;
+			return ComparerCondition(0.0f, seuil, mots[1]);
+		}
+		if(type == kArmeLachee) return 0;
+		// CollisionWeaponType (FUN_0065aa30) : sur le relevé du dernier coup reçu (le +0x10 du contexte, +0x408 du composant
+		// +0x2e0), l'arme du coup (+0x5e, un mot : +0x466 ; -1 à mains nues) et son genre (+0x60 : +0x468), que la méthode
+		// du coup pose (FUN_0047b810, ses 5e et 19e arguments). Avec l'octet +8, l'arme du nom +0xc (FUN_0051ad50 : -1 pour
+		// « unarmed » ou un nom inconnu, gardée en +0x10) doit être celle du coup ; sans lui, une arme est requise, puis le
+		// genre +4 (0 à 3) juge son type (+0x68, +0x69) et le genre du coup. Les coups de l'outil sont à mains nues (-1) :
+		// seul un nom sans modèle d'arme passe (l'outil cherche le nom parmi tous les modèles des .idb, le moteur parmi les
+		// 146 armes de ms_weaponModelStore, DAT_00c735e8 ; les huit noms des arbres de 1_02, W_Itch, dodgeball, Banana…,
+		// sont des armes).
+		static const uint32 kArmeDuCoup = ActionHash("CollisionWeaponType");
+		if(type == kArmeDuCoup){
+			if((mots[1] & 0xff) == 0) return 0;
+			std::string nom = f.ChaineCitee((uint32)d + 16);
+			return strcasecmp(nom.c_str(), "unarmed") == 0 || modeles.Index(nom.c_str()) < 0;
+		}
+		// CollisionStart (FUN_00602260) : l'octet +0x4e5 du piéton, que le lancement d'une piste Collision pose et que rien
+		// ne remet à 0. AttackPhase (FUN_00601fc0) : la phase +0x71c est +4, et, si +8 est positif, l'échéance +0x720
+		// tombe plus de +8 secondes après maintenant (src/core/ActionController).
+		static const uint32 kCollisionStart = ActionHash("CollisionStart"), kPhase = ActionHash("AttackPhase");
+		if(type == kCollisionStart || type == kPhase){
+			auto it = controleurs.find(ped);
+			if(it == controleurs.end()) return 0;
+			if(type == kCollisionStart) return ConditionCollisionStart(it->second);
+			float delai; memcpy(&delai, &mots[1], 4);
+			return ConditionAttackPhase(it->second, (int32)mots[0], delai, (uint32)lrintf(t * 1000.0f));
+		}
+		// IsSocialStateWait (FUN_00603b80) et IsSocializing (FUN_006039d0, l'octet +4 : pour le joueur, un autre en échange
+		// avec lui) : l'état social (+0xbb0) et le partenaire (+0xbb4) du piéton.
+		static const uint32 kAttenteSociale = ActionHash("IsSocialStateWait"), kSocial = ActionHash("IsSocializing");
+		if(type == kAttenteSociale) return pietons.AttenteSociale(ped);
+		if(type == kSocial) return pietons.Socialise(ped, (mots[0] & 0xff) != 0);
+		// Controller (FUN_006006f0) : le piéton mené par une manette (l'octet +5 : l'une des deux ; sinon la 1 si l'octet +4,
+		// la 0 sinon). La manette 0 mène le joueur (FUN_0049b1b0) ; PedSetControllerID les change.
+		static const uint32 kManette = ActionHash("Controller");
+		if(type == kManette) return pietons.MeneParLaManette(ped, (mots[0] & 0xff) != 0, ((mots[0] >> 8) & 0xff) != 0);
+		// CameraActive (FUN_0065aea0) : le mode courant du gestionnaire de caméras (+0x90) est +4. CameraInWidescreen
+		// (FUN_0065afc0) : l'écran large (DAT_00c3cd0c).
+		static const uint32 kCamera = ActionHash("CameraActive"), kLargeEcran = ActionHash("CameraInWidescreen");
+		if(type == kCamera) return CameraActive(cameras, (int32)mots[0]);
+		if(type == kLargeEcran) return CameraInWidescreen(cameras);
+		// AttackTimer (ConditionAttackTimerPlayTime, FUN_006000c0) : le temps depuis le dernier coup du piéton (+0x550, posé à
+		// l'arrêt de ses pistes Collision), comparé à +4 s par +0xc ; l'octet +8 relance la minuterie.
+		// Attacked (FUN_00606b80) : le temps depuis le coup reçu (+0x2c du relevé, comme HitTime) au plus +4 s ; alors, pour un
+		// piéton qui n'est pas le joueur, l'attaquant du relevé devient sa cible, la cible de son objectif et son agresseur.
+		static const uint32 kMinuterie = ActionHash("AttackTimer"), kAttaque = ActionHash("Attacked");
+		if(type == kMinuterie){
+			auto it = controleurs.find(ped);
+			if(it == controleurs.end()) return 0;
+			return ConditionAttackTimer(it->second, seuil, (mots[1] & 0xff) != 0, mots[2], (uint32)lrintf(t * 1000.0f));
+		}
+		if(type == kAttaque){
+			auto it = coups.find(ped);
+			float depuis = it != coups.end() && it->second.instant >= 0.0f ? t - it->second.instant : t;
+			if(!(depuis <= seuil)) return 0;
+			if(it != coups.end() && it->second.attaquant >= 0) pietons.PrendreAttaquant(ped, it->second.attaquant);
+			return 1;
+		}
+		// FightClass (FUN_00601440) : la classe de combat du piéton (+0x714, la colonne S de pedstats.dat) est +4.
+		// RangeToFocus (FUN_006008e0, lu à l'assembleur de 0x6008e0 à 0x60096c) : sans focus (+0x53c), faux ; sinon la
+		// distance à plat (x, y) entre les deux, comparée à +4 par +8 (FUN_005fb750).
+		static const uint32 kClasse = ActionHash("FightClass"), kFocus = ActionHash("RangeToFocus");
+		if(type == kClasse) return moi && moi->classeCombat == (int32)mots[0];
+		if(type == kFocus){
+			const CScriptPed *f = moi ? pietons.Acceder(moi->focus) : nil;
+			if(f == nil) return 0;
+			float dx = f->pos.x - moi->pos.x, dy = f->pos.y - moi->pos.y;
+			return ComparerCondition(sqrtf(fabsf(dx * dx + dy * dy)), seuil, mots[1]);
+		}
+		// HudComponentVisible (FUN_0065aee0) : l'emplacement 4 du composant +4 de la table du HUD (DAT_00c674a0), l'octet
+		// +8 pour tous ceux que les arbres relevés testent (14, 18, 19, 23 à 37 ; HUDMoney et HUDClockWarnings ont le leur).
+		static const uint32 kHud = ActionHash("HudComponentVisible");
+		if(type == kHud) return HudComponentVisible(hud, (int32)mots[0]);
 		// Season (FUN_005fc8d0) : avec l'octet +4, la zone visible doit être dehors (FUN_004301d0) ; puis la saison du
 		// chapitre en cours est +8.
 		static const uint32 kSaison = ActionHash("Season");
@@ -1589,6 +1678,119 @@ ChapterGet(lua_State *L)
 	return 1;
 }
 
+// Les composants du HUD (src/hud/HudComponents.h). ToggleHUDComponentVisibility(n, oui) (0x5bd500 : l'emplacement 5 du
+// composant n), ToggleHUDComponentLocked(n, oui) (0x5bd560 : l'octet +0x15), HUDComponentGetVisibility(n) (0x5bd590 :
+// l'emplacement 4), HUDComponentGetLocked (0x5bd5f0), HUDComponentGetFlashing (0x5bd5c0), HUDClearAllElements
+// (0x5bdb80), HUDSaveVisibility (0x5bdb70) et HUDRestoreVisibility (0x5bdba0). Le booléen des scripts passe par
+// FUN_005d8f20 : un nombre tronqué non nul, sinon lua_toboolean.
+static bool
+BooleenArg(lua_State *L, int i)
+{
+	return lua_isnumber(L, i) ? (int)lua_tonumber(L, i) != 0 : lua_toboolean(L, i) != 0;
+}
+
+static int
+ToggleHUDComponentVisibility(lua_State *L)
+{
+	Journal("ToggleHUDComponentVisibility", L, 1);
+	hud.Basculer((int)luaL_checknumber(L, 1), BooleenArg(L, 2));
+	return 0;
+}
+
+static int
+ToggleHUDComponentLocked(lua_State *L)
+{
+	hud.Verrouiller((int)luaL_checknumber(L, 1), BooleenArg(L, 2));
+	return 0;
+}
+
+static int
+HUDComponentGetVisibility(lua_State *L)
+{
+	lua_pushboolean(L, hud.Visible((int)luaL_checknumber(L, 1)));
+	return 1;
+}
+
+static int
+HUDComponentGetLocked(lua_State *L)
+{
+	lua_pushboolean(L, hud.Verrouille((int)luaL_checknumber(L, 1)));
+	return 1;
+}
+
+static int
+HUDComponentGetFlashing(lua_State *L)
+{
+	lua_pushboolean(L, hud.Clignote((int)luaL_checknumber(L, 1)));
+	return 1;
+}
+
+static int
+HUDClearAllElements(lua_State *L)
+{
+	hud.ToutCacher();
+	return 0;
+}
+
+static int
+HUDSaveVisibility(lua_State *L)
+{
+	hud.Sauver();
+	return 0;
+}
+
+static int
+HUDRestoreVisibility(lua_State *L)
+{
+	hud.Restaurer();
+	return 0;
+}
+
+// Le gestionnaire de caméras (src/render/CameraMgr.h). CameraGetActive() (0x5b9bb0) : le mode courant. CameraSetActive(mode,
+// durée, octet) (0x5b9b30) : une demande (FUN_004f2ad0), que seules les pistes de caméra appliquent (FUN_004f1740) ;
+// l'octet vaut 1 sans troisième argument. CameraReturnToPlayer(octet) (0x5b8fd0) : la demande du mode 1 (l'octet vrai par
+// défaut ; avec un second argument vrai et le point de reprise, le moteur replace aussi la caméra, non suivi).
+// CameraSetWidescreen(oui, progressif) (0x5b8f20).
+static int
+CameraGetActive(lua_State *L)
+{
+	lua_pushnumber(L, cameras.courant);
+	return 1;
+}
+
+static int
+CameraSetActive(lua_State *L)
+{
+	Journal("CameraSetActive", L, 1);
+	cameras.Demander((int32)luaL_checknumber(L, 1), 0, lua_gettop(L) > 2 ? BooleenArg(L, 3) : true);
+	return 0;
+}
+
+static int
+CameraReturnToPlayer(lua_State *L)
+{
+	Journal("CameraReturnToPlayer", L, 1);
+	cameras.Demander(CAMERA_JOUEUR, 0, lua_gettop(L) > 0 ? BooleenArg(L, 1) : true);
+	return 0;
+}
+
+static int
+CameraSetWidescreen(lua_State *L)
+{
+	Journal("CameraSetWidescreen", L, 1);
+	cameras.LargeEcran(BooleenArg(L, 1), lua_gettop(L) == 2 && !BooleenArg(L, 2));
+	return 0;
+}
+
+// PedSetControllerID(ped, n) (FUN_005c9fc0) : le piéton mené par la manette n (0 : DAT_00c2b120, 1 : DAT_00c2b124).
+static int
+PedSetControllerID(lua_State *L)
+{
+	Journal("PedSetControllerID", L, 1);
+	pietons.PoserManette((int)luaL_checknumber(L, 1), (int)luaL_checknumber(L, 2));
+	return 0;
+}
+
 // PedSetFaction(ped, type) (0x5cb570) : le type du piéton (+0x1310), sauf 13 (PLAYER1), que le moteur refuse.
 static int
 PedSetFaction(lua_State *L)
@@ -1911,7 +2113,8 @@ AppliquerObjectifs(int ped, CActionController &c)
 		if(n > 0) printf("%6.2f s  le piéton %d perd %d objectif(s) de type %d (ClearCurrentObjective)\n", maintenant / 1000.0, ped, n, e.type);
 	}
 	for(const CActionController::Fuite &f : c.fuitesLancees){
-		int cible = f.autreCible ? -1 : CibleDe(ped);
+		const CScriptPed *fuyard = pietons.Acceder(ped);
+		int cible = f.autreCible ? (fuyard ? fuyard->agresseur : -1) : CibleDe(ped);
 		if(cible < 0) continue;
 		CObjectifPieton o; o.type = OBJECTIF_FUIR; o.cible = cible;
 		if(pietons.PousserObjectif(ped, o, !f.auBout))
@@ -1964,9 +2167,10 @@ CombatLoco(int ped, bool joueur, bool premiere)
 	float dx = q->pos.x - p->pos.x, dy = q->pos.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
 	if(d > 0) p->intention = CVector(dx / d, dy / d, 0);
 	if(d <= rayon){ p->intentionVitesse = 0; return; }
-	// L'intention de mouvement vers la cible : la vitesse de course de FUN_005c6180 (0,7), supposée (le moteur la tire de
-	// la navigation, FUN_004a4a50, sur le point que FUN_0061b430 range).
-	p->intentionVitesse = 0.7f;
+	// L'intention de mouvement vers la cible : l'approche de FUN_0062c740 est le mode 11, auquel le pas (FUN_00625970)
+	// donne 1,5. Supposé : tout droit, sans le point tiré entre les deux rayons aux images de tirage (FUN_0062c4f0, mode 8,
+	// aussi 1,5) ni l'attente qui suit (FUN_0061b700, FUN_00625740).
+	p->intentionVitesse = ScriptPedVitesseDuPas(PAS_VERS_CIBLE, d * d, d * d, ButeIA(44, 1.5f));
 	float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f, k = d - rayon < pas ? (d - rayon) / d : pas / d;
 	p->pos.x += dx * k; p->pos.y += dy * k;
 	p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
@@ -2830,6 +3034,19 @@ main(int argc, char **argv)
 	lua_register(L, "ChapterSet", ChapterSet);
 	lua_register(L, "PlayerGetPhysicalState", PlayerGetPhysicalState);
 	lua_register(L, "ChapterGet", ChapterGet);
+	lua_register(L, "PedSetControllerID", PedSetControllerID);
+	lua_register(L, "CameraGetActive", CameraGetActive);
+	lua_register(L, "CameraSetActive", CameraSetActive);
+	lua_register(L, "CameraReturnToPlayer", CameraReturnToPlayer);
+	lua_register(L, "CameraSetWidescreen", CameraSetWidescreen);
+	lua_register(L, "ToggleHUDComponentVisibility", ToggleHUDComponentVisibility);
+	lua_register(L, "ToggleHUDComponentLocked", ToggleHUDComponentLocked);
+	lua_register(L, "HUDComponentGetVisibility", HUDComponentGetVisibility);
+	lua_register(L, "HUDComponentGetLocked", HUDComponentGetLocked);
+	lua_register(L, "HUDComponentGetFlashing", HUDComponentGetFlashing);
+	lua_register(L, "HUDClearAllElements", HUDClearAllElements);
+	lua_register(L, "HUDSaveVisibility", HUDSaveVisibility);
+	lua_register(L, "HUDRestoreVisibility", HUDRestoreVisibility);
 	lua_register(L, "PedSetIsStealthMissionPed", PedSetIsStealthMissionPed);
 	lua_register(L, "PedGetFaction", PedGetFaction);
 	lua_register(L, "PedSetCombatZoneMask", PedSetCombatZoneMask);

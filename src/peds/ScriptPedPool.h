@@ -26,6 +26,15 @@ float ScriptPedVitesse(int allure);   // m/s
 // d'argument (FUN_005d8240 rend -1), la vitesse par défaut de l'appelant (0,7 pour PedMoveToXYZ, _DAT_00900e00).
 float ScriptPedIntentionVitesse(int allure, float defaut = 0.7f);
 
+// FUN_00625970 : la vitesse que le pas d'une piste de locomotion de l'IA (CombatLoco, FUN_0062ea40) passe à la navigation
+// (FUN_004a4eb0, qui en fait la vitesse de l'intention de mouvement), selon le mode que FUN_0061b430 a rangé (+0x24) avec
+// le point visé : 2 et 4 (rester sur place) 0 ; 12 FUN_0061b820 : t = (d² au point +0x60 − AIButes +0x2c) × 0,04, borné à
+// [0, 1], puis 1 − (1 − t)⁸ + 0,5 ; 7 et 9 FUN_0061b8e0 : min(d² au point +0x2c / 64, 1) × 1,3 + 0,2 ; tout autre mode
+// 1,5 (_DAT_0090fb9c). L'approche de CombatLoco (FUN_0062c740, hors de l'image de tirage) est le mode 11 vers la cible,
+// ou 10 sur place une fois dans le petit rayon (+0x6c) : 1,5, la vitesse du sprint de FUN_005c6180.
+enum { PAS_SUR_PLACE = 2, PAS_ATTENDRE = 4, PAS_APPROCHE_7 = 7, PAS_APPROCHE_9 = 9, PAS_ARRIVE = 10, PAS_VERS_CIBLE = 11, PAS_RALENTI = 12 };
+float ScriptPedVitesseDuPas(int mode, float d2Cible, float d2Point, float rayonButes2c);
+
 // Les 22 groupes d'animations d'humiliation (0x9113d0, 32 octets par nom) : « HUMIL_5-8_A » pour 0 … « HUMIL_6-1V6-1 »
 // pour 21. Le groupe 0 à 12 est celui d'une victime du joueur, rangé par sa taille (CharacterSize) : 0 à 2 Medium
 // (5-8), 3 et 4 Fat (5-8F), 5 à 7 Large (6-1), 8 et 9 Small (4-10), 10 à 12 Huge (6-5). nil hors de la table.
@@ -69,6 +78,12 @@ struct CScriptPed {
 	float sprint = 0;
 	bool discretion = false;     // +0x1398 : un piéton de mission de discrétion (PedSetIsStealthMissionPed, 0x5d0110 →
 	                             // FUN_005d0080) ; la condition IsStealthMissionChar le lit (FUN_00602cf0)
+	// +0x714 : la classe de combat, la colonne S de l'entrée de pedstats.dat (+0x60 de l'entrée, GetCharacterClassId
+	// 0x488a00 : Generic, Ranged…), que FUN_00478e30 recopie ; la condition FightClass la compare (FUN_00601440).
+	int32 classeCombat = 0;
+	// +0x53c (+0x180 du composant de visée +0x3bc, FUN_0048bf20) : le piéton que celui-ci regarde, nul à la construction
+	// (FUN_0048c1b0) ; FUN_00488b60 le pose, non suivi. La condition RangeToFocus en mesure la distance (FUN_006008e0).
+	int focus = -1;
 	int32 systemeCombat = 0;     // +0x16dc, PedSetFightingSystem (0x5ca590) ; 0 à la création (FUN_00474f50)
 	// +0x1314 : les drapeaux du piéton, un mot chacun (le drapeau n en +0x1314 + 4n) ; les pistes SetPedFlags les posent
 	// (PedFlagsTrack 0x931380, lancement FUN_0060f8e0 : le drapeau +0x1c reçoit l'octet +0x18), la condition PedFlags
@@ -80,6 +95,13 @@ struct CScriptPed {
 	// -1 à la construction (FUN_0048e790, appelé par le constructeur de CPed) ; un indice dans la table des 22 groupes
 	// d'animations HUMIL_ (ScriptPedGroupeHumiliation). La condition HumiliationGroupIs le lit (FUN_006039b0).
 	int32 groupeHumiliation = -1;
+	// Le composant social (+0xb44) : son état (+0x6c, +0xbb0 du piéton ; FUN_0048f270 le passe de 1 à 2 ou de 3 à 6 et pose
+	// 3 ou 5 au partenaire, FUN_00492990 4, FUN_00495440 3 et 5) et son partenaire (+0x70, +0xbb4), nuls hors d'un échange ;
+	// l'octet +0x224 (+0xd68 du piéton), dont le bit 0 écarte le piéton des échanges vus par IsSocializing. L'outil ne joue
+	// pas le système social : l'état reste 0.
+	int32 etatSocial = 0;
+	int partenaireSocial = -1;
+	uint8 drapeauxSociaux = 0;
 	int cibleDePrise = -1;       // +0x155c, PedSetGrappleTarget (0x474360) : le partenaire de prise, -1 sinon
 	CObjectifPieton objectifs[SCRIPT_PED_OBJECTIFS];   // +0x5f8, la file des objectifs
 	int nombreObjectifs = 0;     // +0x648
@@ -94,6 +116,8 @@ struct CScriptPed {
 	bool masqueZones[3] = {true, true, true};
 	int32 capaciteZones[3] = {1, 2, 4};
 	std::vector<int> combattants[3];
+	int agresseur = -1;          // +0x544 (+0x188 du composant de visée) : posé par la condition Attacked (FUN_00606b40) ;
+	                             // un FleeObjective le fuit avec l'octet +0x19 de sa piste
 	int cibleObjectif = -1;      // +0x540 (+0x184 du composant de visée en +0x3bc) : la cible d'un objectif d'attaque, que la
 	                             // condition Objective pose quand elle passe (FUN_0048c330)
 	bool mort = false;
@@ -201,6 +225,29 @@ public:
 	// quitte sa zone d'avant et y entre (FUN_004878e0, FUN_00486c70, +0x66c). Le remplacement d'un combattant moins bien
 	// placé (FUN_004863c0) et l'arme à distance (FUN_00486a90, seule la zone 2) ne sont pas suivis.
 	bool JoindreZoneCombat(int handle, int cible, int zone, bool essai);
+	// Les piétons menés par les deux manettes : DAT_00c2b120 (la manette 0), que le constructeur de CPlayerPed
+	// (FUN_0049b1b0) pose au joueur, et DAT_00c2b124 (la manette 1), nul au démarrage ; PedSetControllerID(ped, n)
+	// (FUN_005c9fc0) y range le piéton pour n = 0 ou 1 (une autre valeur ne fait rien), comme le lancement d'une piste
+	// Controller (FUN_0061d860, l'octet +0x1c et la manette +0x18), que son arrêt (FUN_0061a890) remet à nul. -1 : aucun.
+	bool PoserManette(int handle, int manette);
+	int PietonDeLaManette(int manette) const { return manette == 0 || manette == 1 ? manettes[manette] : -1; }
+	// La condition Controller (ConditionController, FUN_006006f0) : l'octet DAT_00a45a4c, qui vaut 1 dans le .data et
+	// qu'aucune instruction n'écrit, la laisse passer ; avec l'octet +5, vrai si le piéton est mené par l'une des deux
+	// manettes ; sinon par la manette 1 si l'octet +4, la manette 0 s'il est nul.
+	bool MeneParLaManette(int handle, bool manette1, bool lesDeux) const;
+	// La condition IsSocialStateWait (FUN_00603b80) : le piéton a un état social et un partenaire, et l'état est 2, 4 ou 6
+	// (il attend la réponse de l'autre).
+	bool AttenteSociale(int handle) const;
+	// La condition IsSocializing (FUN_006039d0) : un état social et un partenaire ; avec `pourLeJoueur` (l'octet +4) et un
+	// piéton joueur (type 13), vrai si un autre piéton du pool, du dernier au premier, est en échange avec lui (son
+	// partenaire est le joueur) sans le bit 0 de son octet +0xd68.
+	bool Socialise(int handle, bool pourLeJoueur) const;
+	// Ce que fait la condition Attacked (FUN_00606b80) quand elle passe pour un piéton qui n'est pas le joueur et dont le
+	// relevé du coup a un attaquant que sa liste (+0x198 du composant de visée, FUN_0048bf30 ; non suivie, vide) ne tient
+	// pas : FUN_0048c3b0 en fait sa cible (+0x538 ; s'il en change, il quitte sa zone de combat, FUN_00487a20 et
+	// FUN_00486c00), FUN_0048c330 la cible de son objectif (+0x540), FUN_00606b40 son agresseur (+0x544). Vrai si
+	// quelque chose a été posé.
+	bool PrendreAttaquant(int handle, int attaquant);
 	// lua_PedMakeAmbient (0x5ca850) : rendu à la population, plus ramassé par son script.
 	bool RendreAmbiant(int handle);
 	// Une image de dt secondes : marches, poursuites et coups ; pose les drapeaux d'événements. La régénération
@@ -210,4 +257,5 @@ public:
 	void Avancer(float dt);
 private:
 	CScriptPed peds[SCRIPT_PED_POOL_SIZE];
+	int manettes[2] = {SCRIPT_PED_JOUEUR, -1};
 };

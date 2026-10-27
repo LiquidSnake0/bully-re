@@ -201,6 +201,61 @@ main(void)
 		VERIF(q.Acceder(SCRIPT_PED_JOUEUR)->combattants[0].empty() && q.Acceder(SCRIPT_PED_JOUEUR)->combattants[1].size() == 2);
 		VERIF(q.Supprimer(a) && q.Acceder(SCRIPT_PED_JOUEUR)->combattants[1].size() == 1);
 	}
+	// Les manettes (FUN_0049b1b0, PedSetControllerID FUN_005c9fc0) et la condition Controller (FUN_006006f0).
+	{
+		CScriptPedPool q;
+		int b = q.Creer(146, CVector(0, 0, 0), 0, 1);
+		VERIF(q.PietonDeLaManette(0) == SCRIPT_PED_JOUEUR && q.PietonDeLaManette(1) == -1);
+		VERIF(q.MeneParLaManette(SCRIPT_PED_JOUEUR, false, false) && !q.MeneParLaManette(SCRIPT_PED_JOUEUR, true, false));
+		VERIF(q.MeneParLaManette(SCRIPT_PED_JOUEUR, true, true) && !q.MeneParLaManette(b, false, true));
+		VERIF(!q.PoserManette(b, 2) && q.PoserManette(b, 1) && q.PietonDeLaManette(1) == b);
+		VERIF(q.MeneParLaManette(b, true, false) && q.MeneParLaManette(b, false, true) && !q.MeneParLaManette(b, false, false));
+		VERIF(!q.PoserManette(17, 0) && q.PietonDeLaManette(0) == SCRIPT_PED_JOUEUR);
+	}
+	// L'état social (+0xbb0, +0xbb4) : IsSocialStateWait (FUN_00603b80) et IsSocializing (FUN_006039d0).
+	{
+		CScriptPedPool q;
+		q.Acceder(SCRIPT_PED_JOUEUR)->type = SCRIPT_PED_TYPE_JOUEUR;
+		int b = q.Creer(146, CVector(0, 0, 0), 0, 1);
+		VERIF(!q.AttenteSociale(b) && !q.Socialise(b, false) && !q.Socialise(SCRIPT_PED_JOUEUR, true));
+		CScriptPed *p = q.Acceder(b);
+		p->etatSocial = 2;
+		VERIF(!q.AttenteSociale(b));                   // sans partenaire, rien
+		p->partenaireSocial = SCRIPT_PED_JOUEUR;
+		VERIF(q.AttenteSociale(b) && q.Socialise(b, false) && q.Socialise(b, true));
+		VERIF(q.Socialise(SCRIPT_PED_JOUEUR, true) && !q.Socialise(SCRIPT_PED_JOUEUR, false));
+		p->etatSocial = 3;
+		VERIF(!q.AttenteSociale(b) && q.Socialise(b, false));
+		p->drapeauxSociaux = 1;
+		VERIF(!q.Socialise(SCRIPT_PED_JOUEUR, true));
+	}
+	// Attacked (FUN_00606b80) : l'attaquant devient la cible (FUN_0048c3b0), la cible de l'objectif et l'agresseur.
+	{
+		CScriptPedPool q;
+		q.Acceder(SCRIPT_PED_JOUEUR)->type = SCRIPT_PED_TYPE_JOUEUR;
+		int b = q.Creer(146, CVector(0, 0, 0), 0, 1), c = q.Creer(85, CVector(1, 0, 0), 0, 1);
+		VERIF(!q.PrendreAttaquant(SCRIPT_PED_JOUEUR, b) && !q.PrendreAttaquant(b, 17));
+		VERIF(q.JoindreZoneCombat(b, c, 0, false) && q.Acceder(b)->zoneCombat == 0 && q.Acceder(b)->verrou == c);
+		VERIF(q.PrendreAttaquant(b, SCRIPT_PED_JOUEUR));
+		const CScriptPed *p = q.Acceder(b);
+		VERIF(p->verrou == SCRIPT_PED_JOUEUR && p->cibleObjectif == SCRIPT_PED_JOUEUR && p->agresseur == SCRIPT_PED_JOUEUR);
+		VERIF(p->zoneCombat == -1 && q.Acceder(c)->combattants[0].empty());
+	}
+	// FUN_00478e30 : la classe de combat (+0x714) est la colonne S ; le focus (+0x53c) naît nul (FUN_0048c1b0).
+	{
+		CScriptPedPool q;
+		int b = q.Creer(146, CVector(0, 0, 0), 0, 1);
+		int32 col[64] = {}; col[4] = 95; col[17] = 3;
+		VERIF(q.Acceder(b)->classeCombat == 0 && q.Acceder(b)->focus == -1);
+		VERIF(q.PoserStats(b, col) && q.Acceder(b)->classeCombat == 3 && q.Stat(b, 17) == 3);
+	}
+	// La vitesse du pas des pistes de locomotion de l'IA (FUN_00625970, FUN_0061b820, FUN_0061b8e0).
+	VERIF(ScriptPedVitesseDuPas(PAS_SUR_PLACE, 100, 100, 1.5f) == 0.0f && ScriptPedVitesseDuPas(PAS_ATTENDRE, 100, 100, 1.5f) == 0.0f);
+	VERIF(ScriptPedVitesseDuPas(PAS_VERS_CIBLE, 100, 100, 1.5f) == 1.5f && ScriptPedVitesseDuPas(PAS_ARRIVE, 0, 0, 1.5f) == 1.5f);
+	VERIF(fabsf(ScriptPedVitesseDuPas(PAS_APPROCHE_7, 0, 0, 1.5f) - 0.2f) < 1e-6f && fabsf(ScriptPedVitesseDuPas(PAS_APPROCHE_9, 0, 128, 1.5f) - 1.5f) < 1e-6f);
+	VERIF(fabsf(ScriptPedVitesseDuPas(PAS_APPROCHE_7, 0, 32, 1.5f) - 0.85f) < 1e-6f);
+	VERIF(fabsf(ScriptPedVitesseDuPas(PAS_RALENTI, 1.0f, 0, 1.5f) - 0.5f) < 1e-6f && fabsf(ScriptPedVitesseDuPas(PAS_RALENTI, 100, 0, 1.5f) - 1.5f) < 1e-6f);
+	VERIF(fabsf(ScriptPedVitesseDuPas(PAS_RALENTI, 14.0f, 0, 1.5f) - (1.0f - powf(0.5f, 8.0f) + 0.5f)) < 1e-6f);
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }

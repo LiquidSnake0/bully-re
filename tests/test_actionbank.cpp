@@ -707,6 +707,34 @@ main(void)
 			g.cle = 0xffffffffu;
 		}
 	}
+	// La phase de l'attaque (FUN_005f9480, FUN_005f9e70, FUN_005f8240) et les conditions CollisionStart (FUN_00602260)
+	// et AttackPhase (FUN_00601fc0) : une piste Collision lancée à 0,1 s, la fenêtre de 0,2 à 0,3 s, sans durée de vie,
+	// le nœud fini à 0,8 s.
+	{
+		CActionController c;
+		c.debut = 10.0f; c.fin = 10.8f;
+		CActionController::Contact k{nil, 10.2f, 10.3f, 0u, 8.0f, std::string(), false};
+		k.entree = 0.1f; k.debutBrut = 0.2f; k.finBrut = 0.3f; k.debutFenetre = 0.2f; k.finFenetre = 0.3f;
+		c.contacts.push_back(k);
+		c.PhasesCollision(10.05f);
+		VERIF(c.phaseAttaque == 0 && !ConditionCollisionStart(c) && !ConditionAttackPhase(c, 1, 0.0f, 10050));
+		c.PhasesCollision(10.1f);
+		VERIF(c.phaseAttaque == 1 && ConditionCollisionStart(c) && c.echeanceAttaque == 10300);
+		VERIF(ConditionAttackPhase(c, 1, 0.0f, 10100) && ConditionAttackPhase(c, 1, 0.1f, 10100) && !ConditionAttackPhase(c, 1, 0.2f, 10100));
+		c.PhasesCollision(10.25f);
+		VERIF(c.phaseAttaque == 2 && c.echeanceAttaque == 10550 && !ConditionAttackPhase(c, 3, 0.0f, 10250));
+		c.PhasesCollision(10.4f);   // passé la fenêtre : la phase 3, l'échéance à la fin du nœud
+		VERIF(c.phaseAttaque == 3 && c.echeanceAttaque == 10800);
+		VERIF(ConditionAttackPhase(c, 3, 0.0f, 10400) && ConditionAttackPhase(c, 3, 0.3f, 10400) && !ConditionAttackPhase(c, 3, 0.567f, 10400));
+		c.ArreterCollisions();      // le nœud change : la phase repasse à 0, l'octet +0x4e5 reste
+		VERIF(c.phaseAttaque == 0 && ConditionCollisionStart(c));
+		// AttackTimer (FUN_006000c0) : la minuterie (+0x550) posée à l'arrêt du coup (FUN_005f8240 → FUN_0048c040(0)).
+		VERIF(c.minuterieAttaque == 10400);
+		VERIF(ConditionAttackTimer(c, 0.5f, false, 3, 11000) && !ConditionAttackTimer(c, 0.5f, false, 3, 10800));
+		VERIF(ConditionAttackTimer(c, 0.5f, true, 3, 11000) && c.minuterieAttaque == 11000);   // l'octet +8 la relance
+		CActionController neuf;
+		VERIF(!ConditionAttackTimer(neuf, 0.0f, false, 5, 1500) && ConditionAttackTimer(neuf, 1.0f, false, 5, 2500));
+	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;
 }

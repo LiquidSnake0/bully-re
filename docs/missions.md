@@ -376,6 +376,15 @@ l'espace de noms de `1_02.lua`, comme `FUN_005d8000`, `F_CanBullyAttack` rend 1 
 il réagit dans `HitTree/Standing`) ; la leçon passe ensuite à la prise (`F_CanBullyAttack` à 0). `1_02` reste réussie à
 119,03 s.
 
+Le 27.10 (docs/cat.md, « Les conditions lues le 27.10.2026 ») : la même commande ; les conditions du HUD, des manettes, des
+armes, du social, des caméras, `CollisionStart`, `AttackPhase`, `AttackTimer`, `Attacked`, `FightClass`, `RangeToFocus` se
+décident. Ce qui change dans la partie : le joueur passe par `GrappleOpps` après chaque `GIVE` (54,19 et 60,19 s, `Controller`
+lu), par `Combat/CombatTransition/CombatIdle_Out` après la parade (45,01 s, `AttackTimer`), et le bully qui gagne sa zone joue
+`Locomotion/Free/Sprint` au lieu de `RUN` (30,10 s : la vitesse 1,5 du pas de `CombatLoco`). `CameraGetActive` rend 1 et l'écran
+est large de 22,80 à 29,40 s. `1_02` reste réussie à 119,03 s, `1_01` à 10,46 s ; au bilan de fin ne restent que `WeaponNeedInit`
+(762), `MissionCond` (28), `ConversationActive` (19), `PedIsInOutfit` (17), `OnMission`, `PropTargetInteractive` et
+`ParametricTime`.
+
 ## Suite
 
 1. Ce que `1_01` ne joue pas encore pour de vrai : les nœuds d'action (`PedSetActionNode` cherche le nœud dans

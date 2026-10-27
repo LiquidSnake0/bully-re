@@ -436,8 +436,76 @@ qui juge est l'emplacement 1), `lancer_lua` dresse à la fin le bilan des classe
 `SetMotionIntention` (lancement `FUN_00611c50`) n'en pose que la direction (le devant tourné de +0x18 degrés). Les allures
 des scripts (`PedMoveToXYZ` 0x5c7c90, `PedMoveToPoint`) passent par `FUN_005c6180` : 0 → 0,3, 1 → 0,7, 2 → 1,1, 3 → 1,5,
 4 → -1, sans argument 0,7 (le `MoveToPosObjective` de `FUN_00470460` la porte). Dans l'outil : la vitesse de l'allure pour
-un piéton qui marche, 0 arrivé ou arrêté, 0,7 vers la cible dans `CombatLoco` (supposé), 0 à chaque image pour un piéton
+un piéton qui marche, 0 arrivé ou arrêté, 1,5 vers la cible dans `CombatLoco` (le mode 11 du pas, `FUN_00625970`, depuis le 27.10), 0 à chaque image pour un piéton
 de l'IA qui n'a pas de geste.
+
+## Les conditions lues le 27.10.2026
+
+| Classe | Fonction | Ce qu'elle juge |
+|---|---|---|
+| `CollisionStart` | `FUN_00602260` | l'octet +0x4e5 du piéton : posé à 1 par le lancement d'une piste `Collision` (`FUN_005f9480`, 0x5f94aa) ou `WeaponCollision` (`FUN_00661660`, 0x661694) ; aucune instruction ne le remet à 0 (la seule autre écriture, 0x6f2d68, est dans `FUN_006f2d10`, sur un autre objet) : vrai pour tout piéton qui a déjà lancé un coup |
+| `AttackPhase` | `FUN_00601fc0` | la phase de l'attaque (+0x71c) est +4 ; si +8 est positif, l'échéance (+0x720, en ms de `DAT_00c1a9b4`) est posée et tombe plus de +8 s après maintenant |
+| `Controller` | `FUN_006006f0` | l'octet `DAT_00a45a4c` (1 dans le .data, aucune instruction ne l'écrit) laisse passer ; avec l'octet +5, le piéton est mené par l'une des deux manettes (`DAT_00c2b120`, `DAT_00c2b124`) ; sinon par la manette 1 si l'octet +4, la 0 sinon. La manette 0 mène le joueur (le constructeur de `CPlayerPed`, `FUN_0049b1b0`) ; `PedSetControllerID` (`FUN_005c9fc0`) et la piste `Controller` (`FUN_0061d860`, arrêt `FUN_0061a890`) les changent |
+| `WeaponDesiredIsEquiped` | `FUN_0065b5b0` | sans arme voulue (+0x18 du composant +0x2e0), vrai ; sinon l'objet arme (+0x1d0) en a le modèle (+0x10e), et une arme voulue « dernière » (-1) est effacée |
+| `WeaponAmmo` | `FUN_0065b290` | les munitions (`FUN_00486130`, 0 pour une arme sous 1) de l'arme tenue (`FUN_00474aa0`), ou avec l'octet +0xc de l'arme du HUD (`HUDWeapons`, +0xc0) pour le joueur seul, comparées à +4 par +8 |
+| `IsWeaponFiredWhenDropped` | `FUN_0065bbe0` | l'octet +0x2b du type de l'arme tenue (`WeaponGetType`) ; faux sans arme |
+| `CollisionWeaponType` | `FUN_0065aa30` | sur le relevé du dernier coup reçu (le +0x10 du contexte, +0x408 du composant +0x2e0) : l'arme du coup (+0x5e, le mot +0x466, -1 à mains nues) et son genre (+0x60, +0x468), les 5e et 19e arguments de la méthode du coup (`FUN_0047b810`). Avec l'octet +8, l'arme du nom +0xc (`FUN_0051ad50` : -1 pour « unarmed » ou un nom hors des 146 armes de `ms_weaponModelStore`, `DAT_00c735e8`) est celle du coup ; sans lui, une arme est requise, puis le genre +4 (0 à 3) juge son type (+0x68, +0x69) et le genre du coup |
+| `IsSocialStateWait` | `FUN_00603b80` | l'état social du piéton (+0xbb0, le +0x6c du composant social +0xb44) est 2, 4 ou 6 et il a un partenaire (+0xbb4, +0x70) |
+| `IsSocializing` | `FUN_006039d0` | un état social et un partenaire ; avec l'octet +4, pour le joueur : un autre piéton du pool (`DAT_00c0f5f0`, du dernier au premier) a le joueur pour partenaire, sans le bit 0 de son octet +0xd68 |
+| `AttackTimer` | `FUN_006000c0` (`ConditionAttackTimerPlayTime`) | faux si le piéton n'a jamais frappé (+0x550 nul) et que l'horloge n'a pas passé 2 000 ms ; sinon maintenant comparé à +0x550 + 1000 × (+4) par +0xc ; vrai avec l'octet +8, la minuterie repart. +0x550 est le +0x194 du composant de visée (+0x3bc), posé à maintenant par `FUN_0048c040(0)` à l'arrêt d'une piste `Collision` (`FUN_005f8240`, vérifié à l'assembleur : `ecx` = piéton + 0x3bc en 0x5f826a) et par `PlayerRecordAttackTime` (0x5d2910) |
+| `Attacked` | `FUN_00606b80` | le temps depuis le coup reçu (+0x2c du relevé, -1 jamais) au plus +4 s ; pour un piéton qui n'est pas le joueur, si l'attaquant du relevé (+4) n'est pas dans sa liste (+0x198 du composant de visée, `FUN_0048bf30`), il devient sa cible (`FUN_0048c3b0`, qui le fait quitter sa zone de combat, `FUN_00487a20`, `FUN_00486c00`), la cible de son objectif (+0x540, `FUN_0048c330`) et son agresseur (+0x544, `FUN_00606b40`, que fuit un `FleeObjective` à l'octet +0x19) |
+| `FightClass` | `FUN_00601440` | la classe de combat (+0x714), la colonne S de l'entrée de pedstats.dat (+0x60 de l'entrée, `GetCharacterClassId` 0x488a00) que `FUN_00478e30` recopie, est +4 |
+| `RangeToFocus` | `FUN_006008e0` | sans focus (+0x53c, le +0x180 du composant de visée : nul à la construction, `FUN_0048c1b0`, posé par `FUN_00488b60`), faux ; sinon la distance à plat (x, y, lu à l'assembleur) comparée à +4 par +8 |
+| `CameraActive` | `FUN_0065aea0` | le mode courant du gestionnaire de caméras (0xc3cc68 +0x90 : `DAT_00c3ccf8`, 1 à l'initialisation par `FUN_004f35d0`) est +4 |
+| `CameraInWidescreen` | `FUN_0065afc0` | l'écran large (`DAT_00c3cd0c`, posé par `CameraSetWidescreen`, 0x5b8f20) |
+| `HudComponentVisible` | `FUN_0065aee0` | l'emplacement 4 (+0x10) du composant +4 de la table du HUD (`DAT_00c674a0`, 48 places remplies par la fabrique `FUN_0053cee0` depuis `FUN_00514920`) : l'octet +8 de `HUDComponent` (`FUN_00538f80`), sauf `HUDMoney` (13, `FUN_00542740`) et `HUDClockWarnings` (15, `FUN_0053c820`) |
+
+**La phase de l'attaque** (`CActionController::PhasesCollision`) : le lancement de la piste `Collision` (`FUN_005f9480`) pose la
+phase 1, l'octet +0x4e5, +0x4e8 et +0xe4 à 1, et l'échéance à maintenant + (+0x18) s ; sa mise à jour (`FUN_005f9e70`), une fois
+le temps du nœud à +0x18, la phase 2 et l'échéance à maintenant + (+0x1c) s (la fenêtre, ou +0x1c négatif), puis après +0x1c la
+phase 3 et l'échéance à maintenant + la durée de vie (+0x10) si elle est positive, sinon + ce qui reste de l'animation
+(`FUN_006b1df0` ; l'outil prend la fin du nœud) ; l'arrêt (`FUN_005f8240`) remet la phase et +0xe4 à 0. Les valeurs +0x18 et
++0x1c sont des temps du nœud, ajoutés tels quels à l'horloge (pas ce qui reste à attendre). Dans `AI_FightTutorial`, `BLOCK`
+demande `CollisionStart` à la cible et `F_CanBlock`, et la contre-attaque `AttackPhase[3, 0,567]` à la cible ; dans `1_02`, les
+1 171 jugements de `CollisionStart` se décident ; `F_CanBlock` rend 1 par moments (85 fois sur 435 à partir de 69 s), mais le bully
+ne pare pas : la feuille `BLOCK` demande que le joueur joue `LightAttacks` ou `HeavyAttacks`, et la banque `CombatActions` du
+bully ne redescend qu'à la fin de son `ControlNode` (1,03 s), jamais pendant le jab du joueur.
+
+**La vitesse de `CombatLoco`** (levée le 27.10) : la mise à jour (`FUN_0062ea40`) appelle, après la zone et les rayons, le choix du
+point (`FUN_0062e120`) puis le pas (`FUN_00625970`), qui passe à la navigation (`FUN_004a4eb0`) le point et une vitesse tirée du
+mode que `FUN_0061b430` a rangé (+0x24) : 2 et 4 (rester sur place) 0 ; 12 (`FUN_0061b820`) 1 − (1 − t)⁸ + 0,5 avec t = (d² −
+AIButes +0x2c) × 0,04 borné ; 7 et 9 (`FUN_0061b8e0`) min(d² / 64, 1) × 1,3 + 0,2 ; tout autre mode 1,5 (`_DAT_0090fb9c`). L'approche
+(`FUN_0062c740`, sous-état 0 hors de l'image de tirage, l'octet +0x78 de `FUN_00465910(8)`) est le mode 11 vers la cible, 10 sur
+place dans le petit rayon (+0x6c) ; à l'image de tirage, un point entre les deux rayons (+0x6c, +0x70 : `FUN_006253e0`), le mode 8,
+puis le sous-état 1 (`FUN_0061b700`) et l'attente (`FUN_00625740`), non suivis. Le 0,7 supposé tombe : dans `1_02`, le bully qui gagne
+sa zone joue `Locomotion/Free/Sprint` (30,10 s) au lieu de `RUN` (`ScriptPedVitesseDuPas`).
+
+**La course de `RunStart`** (le nœud de `HumiliateFlee` dans `Player.act`) : `Locomotion` (lancement `FUN_0060c5b0`, mise à jour
+`FUN_00613480`) lit l'intention (la direction +0, ou le cap voulu +0xc si l'octet +0x39 ; la vitesse +0x1c), ou vise la cible à
+0,3 (`_DAT_00911e30`) si l'octet +0x38 ; celle de `RunStart` a +0x38 et +0x39 nuls. Aucune piste de `RunStart` (`Locomotion`,
+`LocomotionAnimationNew`, `LocomotionEvent`, `TargetPlayer`, `FaceTarget` à 180 degrés, l'`Opportunity` de 0,833 s vers
+`KnockOuts/Rear`) n'écrit la vitesse : les 35 écritures de +0x1c du composant (relevées à l'assembleur) sont dans la navigation
+(`FUN_004a45c0`, `FUN_004a47c0`, `FUN_004a4a50`, `FUN_004a4eb0`), les pistes de locomotion de l'IA (`PursuitLoco`, `KeepDistanceLoco`,
+`JumpLoco`, `FollowPath`, `FaceObjective`, `FollowFocus`, `EvadeProjectile`…) et `CPed` (emplacement 12, `FUN_004812d0`, 0x481603 :
+0, sur une branche). La vitesse est donc celle que la dernière piste de navigation a laissée (l'arrêt de `CombatLoco`,
+`FUN_00625230`, ne la remet pas à 0) : ce qu'elle vaut à 89,43 s n'est pas établi, l'outil la met à 0 (le bully tourne et tombe sur
+place).
+
+**Les caméras** (`src/render/CameraMgr`) : `DAT_00c3ccf8` n'est écrit par aucune instruction à adresse fixe, c'est le +0x90 du
+gestionnaire en 0xc3cc68 (l'`ecx` de `CameraSetActive`). `CameraSetActive` et `CameraReturnToPlayer` (le mode 1) ne font que ranger
+une demande en +0x270 (`FUN_004f2ad0`) ; `FUN_004f1740` l'applique (le mode d'avant en +0x94, la demande effacée), appelé seulement
+par les pistes `CameraSetDesiredActive` (`FUN_0065dd40`) et `SetCameraTrack` (`FUN_00660a30`). `CameraGetActive` (0x5b9bb0) rend le
+mode courant : dans `1_02`, il vaut 1 du début à la fin ; de 22,80 à 29,40 s l'écran est large (la leçon de parade commence à la fin
+de la scène) ; les 28 jugements de `CameraActive` et les 30 de `CameraInWidescreen` se décident, `ConversationActive` les remplace au
+bilan.
+
+**Le HUD** (`src/hud/HudComponents`) : `HUDComponent` (`FUN_0053cc70`) naît caché ; l'emplacement 5 (`FUN_0053cd60`) le montre
+ou le cache (caché, il ne clignote plus) ; `ToggleHUDComponentVisibility` (0x5bd500), `ToggleHUDComponentLocked` (0x5bd560,
+l'octet +0x15), `HUDComponentGetVisibility` (0x5bd590), `HUDClearAllElements` (0x5bdb80), `HUDSaveVisibility` /
+`HUDRestoreVisibility` (`FUN_00514080`, `FUN_005140c0`, la copie `DAT_00c66d98`) sont réels dans `lancer_lua`. Les arbres
+testent les invites sociales (23 à 36 : `HUDSocialApologize` … `HUDSocialBurn`), `HUDSocial` (37), `HUDClothing` (14),
+`HUDBarber` (18), `HUDTattoo` (19) ; dans `1_02`, `main` ne fait que cacher la santé, le radar et la retenue (4, 11, 0) et
+montrer l'historique des boutons (21) : les 1 306 jugements se décident, faux.
 
 ## Le chemin d'un nœud (18.10.2026)
 

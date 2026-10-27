@@ -258,6 +258,7 @@ CScriptPedPool::PoserStats(int h, const int32 colonnes[64])
 	p->regeneration = (float)colonnes[5];
 	p->sante = p->santeMax;
 	p->sprint = (float)colonnes[16];        // FUN_00478e30 : +0x18d0 = la colonne R (+0x5c)
+	p->classeCombat = colonnes[17];         // +0x714 = la colonne S (+0x60)
 	return true;
 }
 
@@ -431,4 +432,74 @@ CScriptPedPool::SurveillerHumiliation(int victime, int taille, int tailleJoueur,
 	if(p == nil || (p->groupeHumiliation != -1 && p->groupeHumiliation <= 12)) return -1;
 	if(!(p->santeMax > 0 && (double)(p->sante / p->santeMax) < 0.5)) return -1;
 	return ChoisirGroupeHumiliation(victime, taille, SCRIPT_PED_JOUEUR, tailleJoueur, true, tirage);
+}
+
+bool
+CScriptPedPool::PoserManette(int handle, int manette)
+{
+	if(!Valide(handle) || (manette != 0 && manette != 1)) return false;
+	manettes[manette] = handle;
+	return true;
+}
+
+bool
+CScriptPedPool::MeneParLaManette(int handle, bool manette1, bool lesDeux) const
+{
+	if(!Valide(handle)) return false;
+	if(lesDeux) return manettes[0] == handle || manettes[1] == handle;
+	return manettes[manette1 ? 1 : 0] == handle;
+}
+
+bool
+CScriptPedPool::AttenteSociale(int h) const
+{
+	if(!Valide(h)) return false;
+	const CScriptPed &p = peds[h];
+	return p.etatSocial != 0 && p.partenaireSocial >= 0 && (p.etatSocial == 2 || p.etatSocial == 4 || p.etatSocial == 6);
+}
+
+bool
+CScriptPedPool::Socialise(int h, bool pourLeJoueur) const
+{
+	if(!Valide(h)) return false;
+	const CScriptPed &p = peds[h];
+	if(!pourLeJoueur || p.type != SCRIPT_PED_TYPE_JOUEUR) return p.etatSocial != 0 && p.partenaireSocial >= 0;
+	for(int i = SCRIPT_PED_POOL_SIZE - 1; i >= 0; i--){
+		const CScriptPed &o = peds[i];
+		if(i == h || !o.vivant) continue;
+		if(o.etatSocial != 0 && o.partenaireSocial == h && (o.drapeauxSociaux & 1) == 0) return true;
+	}
+	return false;
+}
+
+float
+ScriptPedVitesseDuPas(int mode, float d2Cible, float d2Point, float rayonButes2c)
+{
+	if(mode == PAS_SUR_PLACE || mode == PAS_ATTENDRE) return 0.0f;
+	if(mode == PAS_RALENTI){   // FUN_0061b820
+		float t = (d2Cible - rayonButes2c) * 0.04f;
+		if(!(t >= 0.0f)) t = 0.0f; else if(t > 1.0f) t = 1.0f;
+		return (1.0f - powf(1.0f - t, 8.0f)) + 0.5f;
+	}
+	if(mode == PAS_APPROCHE_7 || mode == PAS_APPROCHE_9){   // FUN_0061b8e0
+		float t = d2Point * 0.015625f;
+		if(!(t >= 0.0f)) t = 0.0f; else if(t > 1.0f) t = 1.0f;
+		return t * 1.3f + 0.2f;
+	}
+	return 1.5f;
+}
+
+bool
+CScriptPedPool::PrendreAttaquant(int h, int attaquant)
+{
+	if(!Valide(h) || !Valide(attaquant) || peds[h].type == SCRIPT_PED_TYPE_JOUEUR) return false;
+	CScriptPed &p = peds[h];
+	if(attaquant != h && p.verrou != attaquant){
+		QuitterZones(peds, h);
+		p.zoneCombat = -1;
+		p.verrou = attaquant;
+	}
+	p.cibleObjectif = attaquant;
+	p.agresseur = attaquant;
+	return true;
 }

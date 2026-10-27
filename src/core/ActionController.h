@@ -38,8 +38,28 @@ public:
 	// +0x2c (44) le drapeau du coup (« GROUNDHITHEAVY »), passé à la méthode du coup de la cible (slot 15 de CPed,
 	// FUN_0047b810) ; +0x34 (52) les dégâts ; +0x68 (104) un nœud de l'attaquant, joué si le coup porte sur un
 	// piéton (FUN_005f4490), relatif au nœud qui porte la piste (supposé : +0x78, 120, n'est pas suivi).
-	struct Contact { const CActionNode *porteur; float debut, fin; uint32 drapeau; float degats; std::string surCoup; bool fait; };
+	// La phase de l'attaque du piéton (+0x71c) et son échéance (+0x720, en millisecondes du jeu, DAT_00c1a9b4), que la
+	// piste tient : son lancement (FUN_005f9480) pose la phase 1, l'octet +0x4e5 (CollisionStart) et l'échéance au début
+	// de la fenêtre (maintenant + (+0x18) s) ; sa mise à jour (FUN_005f9e70), une fois le temps du nœud à (+0x18), pose
+	// la phase 2 et l'échéance maintenant + (+0x1c) s dans la fenêtre (ou si +0x1c est négatif), puis, passé +0x1c, la
+	// phase 3 et l'échéance maintenant + la durée de vie (+0x10) si elle est positive, sinon maintenant + ce qui reste de
+	// l'animation (FUN_006b1df0 ; l'outil : la fin du nœud) ; son arrêt (FUN_005f8240) remet la phase à 0 (et +0xe4).
+	// WeaponCollisionTrack (0x9382f0, lancement FUN_00661660) fait de même pour une arme.
+	struct Contact { const CActionNode *porteur; float debut, fin; uint32 drapeau; float degats; std::string surCoup; bool fait;
+	                 float entree = 0.0f, vie = -1.0f, debutFenetre = 0.0f, finFenetre = -1.0f, debutBrut = 0.0f, finBrut = -1.0f;
+	                 bool lancee = false, arretee = false; };
 	std::vector<Contact> contacts;
+	int32 phaseAttaque = 0;          // +0x71c du piéton
+	uint32 echeanceAttaque = 0;      // +0x720
+	// +0x4e5 : posé à 1 par le lancement d'une piste Collision ou WeaponCollision (0x5f94aa, 0x661694) ; vérifié à
+	// l'assembleur, aucune instruction ne le remet à 0 dans un CPed (la seule autre écriture, 0x6f2d68, est dans
+	// FUN_006f2d10, sur un autre objet) : une fois qu'un piéton a lancé un coup, CollisionStart reste vraie.
+	bool collisionDemarree = false;
+	// +0x550 du piéton (+0x194 du composant de visée +0x3bc) : l'instant (ms) de son dernier coup, que l'arrêt d'une piste
+	// Collision pose (FUN_005f8240 → FUN_0048c040(0) : maintenant moins 0), comme PlayerRecordAttackTime (0x5d2910) ;
+	// 0 au départ. La condition AttackTimer le lit et peut le reposer.
+	uint32 minuterieAttaque = 0;
+	uint32 maintenantMs = 0;         // l'horloge du jeu (DAT_00c1a9b4) à la dernière image des pistes
 	std::vector<Contact> touches;                 // les coups qui portent à cette image, rendus par Avancer
 	// Ses pistes DamageHandle (HandleDamageTrack, table 0x9313e4 ; lancement FUN_0060fc70), y compris celles des nœuds
 	// que ses Execute font jouer (HitTree/…/Base/HitBase) : à leur lancement, le piéton subit les dégâts du coup reçu
@@ -170,8 +190,23 @@ public:
 	const CActionNode *Occasions(const CActionBank &b, const CJugeAction &juge, float t);   // ce que ActionNodePlayTime mesure
 	// La fin d'un nœud : le plus tard des (entrée + durée de vie) de ses pistes à durée finie ; -1 si aucune n'en a.
 	static float Duree(const CActionBank &b, const CActionNode &n);
+	// Les pistes Collision à une image (FUN_005f9480, FUN_005f9e70, FUN_005f8240) : la phase et l'échéance ci-dessus.
+	void PhasesCollision(float t);
+	// L'arrêt des pistes Collision lancées et pas encore arrêtées (FUN_005f8240), quand le nœud joué change.
+	void ArreterCollisions(void);
 private:
 	void Pistes(const CActionBank &b, const CActionNode &n, float entree, int prof, const CJugeAction *juge);
 	void PistesLancees(const CActionBank &b, const CActionNode &n, float entree, int prof, const CJugeAction *juge);
 	const CActionNode *Descendre(const CActionBank &b, const CActionNode *depuis, const CJugeAction &juge) const;
 };
+
+// La condition CollisionStart (ConditionCollisionStart, table 0x936a30, FUN_00602260) : l'octet +0x4e5 du piéton.
+bool ConditionCollisionStart(const CActionController &c);
+// La condition AttackPhase (ConditionAttackPhase, table 0x9369d0, FUN_00601fc0) : la phase de l'attaque du piéton est
+// +4 ; si le délai +8 est positif, il faut aussi une échéance posée et qu'elle tombe plus de +8 secondes après
+// maintenant (maintenant + 1000 × (+8), arrondi, strictement avant l'échéance).
+bool ConditionAttackPhase(const CActionController &c, int32 phase, float delai, uint32 maintenantMs);
+// La condition AttackTimer (ConditionAttackTimerPlayTime, table 0x9369e4, FUN_006000c0) : faux si le piéton n'a jamais
+// frappé (+0x550 nul) et que l'horloge n'a pas passé 2 000 ms ; sinon maintenant comparé à +0x550 + 1000 × (+4) par le
+// comparateur +0xc (FUN_005fb750) ; vrai et l'octet +8 posé, la minuterie repart (FUN_0048c040(0)).
+bool ConditionAttackTimer(CActionController &c, float delai, bool relancer, uint32 comparateur, uint32 maintenantMs);
