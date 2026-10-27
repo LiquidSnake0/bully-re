@@ -136,6 +136,13 @@ public:
 	//   retombe à 0 ; vérifié à l'assembleur, ecx = +0x2e0 en 0x61d97b) ; pour un piéton à vélo (+0x1570 = 1), le vélo
 	//   (+0x1554) est aussi arrêté (non suivi). Sa mise à jour la garde en vie tant que son piéton existe : un nœud IDLE
 	//   (AMBIENT/IDLE d'AI_FightTutorial, à l'octet +8) ne finit pas de lui-même. `reposLances` : celles lancées à cette image.
+	// - SetWeaponInfo (SetWeaponInfoTrack 0x935d04 ; lancement FUN_00660f50) : pose les réglages de l'arme du piéton : sur
+	//   son objet arme (+0x1d0, un CWeapon), +0x120 = le champ +0x2c (44), +0x124 = +0x40 (64), +0x12c = l'arme du nom +0x44
+	//   (68, FUN_0051ad50) ou son modèle ; sur son composant de visée (+0x1c8), les angles +0x18, +0x20, +0x30 (en degrés,
+	//   passés en radians) et les champs voisins (non suivis). La condition WeaponNeedInit (FUN_0065b7b0) attend +0x120 = -1 :
+	//   la banque NeedInit de Weapons.cat ne passe qu'une fois. `infosArmeLancees` : celles lancées à cette image.
+	struct InfoArme { float entree, init, champ40; bool fait; };
+	std::vector<InfoArme> infosArme, infosArmeLancees;
 	struct Repos { float entree; bool fait; };
 	std::vector<Repos> repos;
 	int reposLances = 0;

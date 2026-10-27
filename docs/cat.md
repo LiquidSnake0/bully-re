@@ -600,6 +600,19 @@ la cible, plus de 0,567 s avant l'échéance ; la cible hors du cône ; ou la ci
 `Block`, ce qui n'arrive pas). L'outil appuie maintenant les boutons des piétons de l'IA et juge `ActionRequest` sur eux
 (`CActionController::demandesBouton`, `appuis`, `laches`) ; `1_02` ne change pas (118,93 s).
 
+**Les conditions lues ce soir** (par le registre `FUN_0064b090` : la chaîne, le créateur, la table virtuelle, l'emplacement 1) :
+
+| Classe | Fonction | Ce qu'elle juge |
+|---|---|---|
+| `WeaponNeedInit` | `FUN_0065b7b0` (0x9366a4) | le +0x120 de l'objet arme (+0x1d0, un `CWeapon`) vaut -1 : posé à -1 par le constructeur (`FUN_004da610`, 0x4da696) et les remises (`FUN_004d92c0`, `FUN_004d9940`, `FUN_004d9fa0`), à son champ +0x2c par le lancement d'une piste `SetWeaponInfo` (`FUN_00660f50`, 7 à mains nues) : la banque `NeedInit` de `Weapons.cat` ne passe qu'une fois |
+| `ConversationActive` | `FUN_00685940` (0x937318) | lue à l'assembleur (0x685940 … 0x685953) : `setne` / `sub 1` / `and` avec `DAT_00b9db1c` ; avec un piéton dans le contexte (+8), faux ; sans piéton, l'octet de la conversation en cours |
+| `BlockTimer` | `FUN_00600160` (0x936a08) | maintenant comparé par +0xc à l'instant de la parade (+0x4d0) + 1000 × (+4) ; si elle passe, l'octet +8 la relance |
+
+`SetWeaponInfo` (`SetWeaponInfoTrack` 0x935d04) pose aussi, sur le composant de visée (+0x1c8), des angles (+0x18, +0x20, +0x30, en
+degrés passés en radians par π / 180) et des distances (non suivis). Dans `1_02`, la banque `NeedInit` passe une fois pour chaque
+piéton qui joue `Weapons.cat` ; les 762 jugements de `WeaponNeedInit` et les 19 de `ConversationActive` se décident, et
+`AttackerConditionGroup` (#5106e3f5, 10 jugements) apparaît au bilan, derrière `NeedInit`.
+
 **La course de `RunStart` est donc établie : il n'y en a pas.** À 89,33 s le joueur est à 0,75 m, sous le petit rayon : le pas de
 `CombatLoco` est le mode 10, sur place, et la navigation, arrivée, laisse la vitesse à 0 (`FUN_004a4eb0` la pose à 0 quand
 `FUN_005e4c60` échoue). `Locomotion` ne fait pas bouger le bully, qui se retourne (`FaceTarget` à 180 degrés) et tombe sur place

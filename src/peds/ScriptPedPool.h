@@ -177,6 +177,8 @@ struct CScriptPed {
 	// un piéton (Aller : la vitesse de son allure ; arrivé, arrêté : 0) et dans CombatLoco (lancer_lua).
 	CVector intention;
 	float intentionVitesse = 0;
+	float armeInit = -1.0f;      // +0x120 de l'objet arme (+0x1d0, CWeapon) : -1 depuis son constructeur (FUN_004da610),
+	                             // posé par une piste SetWeaponInfo (FUN_00660f50) ; WeaponNeedInit (FUN_0065b7b0) attend -1
 	bool endormi = false;        // +0x1358 : PedSetAsleep (0x5caa30) ; endormi, son arbre de l'IA n'avance plus (FUN_00484490)
 	bool enMarche = false;       // va vers `cible` à `vitesse`
 	CVector cible;

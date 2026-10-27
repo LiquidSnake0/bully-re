@@ -347,6 +347,16 @@ struct CJugeOutil : CJugeAction {
 		static const uint32 kArmeVoulue = ActionHash("WeaponDesired"), kArmeInventaire = ActionHash("WeaponIsInventory");
 		if(type == kArmeVoulue) return (mots[1] & 0xff) == 0;
 		if(type == kArmeInventaire) return 0;
+		// WeaponNeedInit (ConditionWeaponNeedInit 0x9366a4, FUN_0065b7b0) : le +0x120 de l'objet arme (+0x1d0, un CWeapon) vaut
+		// -1 (_DAT_009009ac). Le constructeur de CWeapon (FUN_004da610, 0x4da696) et ses remises (FUN_004d92c0, FUN_004d9940,
+		// FUN_004d9fa0) le posent à -1, le lancement d'une piste SetWeaponInfo (FUN_00660f50) à son champ +0x2c (7 à mains
+		// nues dans Weapons.cat) : la banque NeedInit ne passe qu'une fois par arme.
+		// ConversationActive (CConversationActiveCond 0x937318, FUN_00685940, lue à l'assembleur de 0x685940 à 0x685953) :
+		// setne / sub 1 / and : l'octet de DAT_00b9db1c (une conversation en cours) seulement quand le contexte n'a pas de
+		// piéton (+8) ; avec un piéton, faux.
+		static const uint32 kArmeInit = ActionHash("WeaponNeedInit"), kConversation = ActionHash("ConversationActive");
+		if(type == kArmeInit) return moi && moi->armeInit == -1.0f;
+		if(type == kConversation) return 0;
 		// WeaponDesiredIsEquiped (FUN_0065b5b0) : sans arme voulue, vrai ; sinon l'objet arme (+0x1d0) doit en avoir le
 		// modèle (+0x10e), et l'arme voulue « dernière » (-1) est alors effacée. IsWeaponFiredWhenDropped (FUN_0065bbe0) :
 		// l'octet +0x2b du type de l'arme tenue (WeaponGetType), faux sans arme.
@@ -2303,6 +2313,7 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 		}
 		for(const CActionController::Drapeau &d : k->drapeauxPoses) if(d.numero < SCRIPT_PED_DRAPEAUX) p->drapeaux[d.numero] = d.valeur;
 		k->drapeauxPoses.clear();
+		for(const CActionController::InfoArme &d : k->infosArmeLancees) p->armeInit = d.init;   // FUN_00660f50
 		AppliquerObjectifs(ped, *k);
 	}
 }
@@ -3311,6 +3322,9 @@ main(int argc, char **argv)
 			if(CScriptPed *p = pietons.Acceder(c.first))
 				for(const CActionController::Drapeau &d : c.second.drapeauxPoses) if(d.numero < SCRIPT_PED_DRAPEAUX) p->drapeaux[d.numero] = d.valeur;
 			c.second.drapeauxPoses.clear();
+			// SetWeaponInfo (FUN_00660f50) : le +0x120 de l'objet arme du piéton.
+			if(CScriptPed *p = pietons.Acceder(c.first))
+				for(const CActionController::InfoArme &d : c.second.infosArmeLancees) p->armeInit = d.init;
 			// SpeechTrack (FUN_006195a0) : une ligne à tenir est retenue ; les autres ne sont pas jouées par l'outil (une
 			// seule ligne à la fois, que les scripts attendent). SpeechStartTrack (FUN_00619950) lâche les lignes du piéton.
 			for(const CActionController::Parole &e : c.second.parolesLancees){

@@ -78,7 +78,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kPoursuite = ActionHash("SeekEntityPosition"), kSpawn = ActionHash("spawn"),
 	                    kGestion = ActionHash("ManageTargets"), kCombatLoco = ActionHash("CombatLoco"),
 	                    kDemandeNoeud = ActionHash("ActionNodeRequest"), kEffacer = ActionHash("ClearCurrentObjective"),
-	                    kFuite = ActionHash("FleeObjective"), kRepos = ActionHash("IDLE"), kBouton = ActionHash("ActionRequest");
+	                    kFuite = ActionHash("FleeObjective"), kRepos = ActionHash("IDLE"), kBouton = ActionHash("ActionRequest"),
+	                    kInfoArme = ActionHash("SetWeaponInfo");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -131,6 +132,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			fuites.push_back({a, Octet(p, 24), Octet(p, 25), false});
 		}else if(p.type == kRepos){
 			repos.push_back({a, false});
+		}else if(p.type == kInfoArme){
+			infosArme.push_back({a, Reel(p, 44, -1.0f), Reel(p, 64, 0.0f), false});
 		}else if(sousControleurs && p.type == kBouton){
 			demandesBouton.push_back({a, (int32)p.Mot(24), (int32)p.Mot(28), Octet(p, 32), Octet(p, 8), false, false});
 		}else if(sousControleurs && (p.type == kGestion || p.type == kCombatLoco)){
@@ -222,7 +225,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	for(const DemandeBouton &d : demandesBouton)   // FUN_00626160 : l'arrêt d'une piste au mode 2 lâche son bouton
 		if(!d.morte && d.lancee && d.mode == 2) laches.push_back(d.bouton);
 	demandesBouton.clear();
-	effacements.clear(); fuites.clear(); repos.clear();
+	effacements.clear(); fuites.clear(); repos.clear(); infosArme.clear();
 	lances.clear();                    // FUN_005f7390 : l'arrêt d'une piste spawn arrête son contrôleur
 	finExecutees = -1.0f;
 	retenu = false;
@@ -467,6 +470,9 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; effacementsLances.push_back(d); }
 	for(Fuite &d : fuites)        // FUN_00628ce0
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; fuitesLancees.push_back(d); }
+	infosArmeLancees.clear();
+	for(InfoArme &d : infosArme)      // FUN_00660f50
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; infosArmeLancees.push_back(d); }
 	reposLances = 0;
 	for(Repos &d : repos)         // FUN_0061d8e0
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; reposLances++; }

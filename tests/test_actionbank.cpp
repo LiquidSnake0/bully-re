@@ -676,6 +676,22 @@ main(void)
 			r.Avancer(ia, nil, ambiant, 0.066f);
 			VERIF(r.reposLances == 0 && r.joue && (r.joue->hachage & 0x7fffffff) == ActionHash("IDLE"));
 		}
+		// Weapons.cat, NeedInit/…/NoWeapon : la piste SetWeaponInfo (FUN_00660f50) pose le +0x120 de l'objet arme à son champ
+		// +0x2c (7 à mains nues), ce qui ferme la banque NeedInit (WeaponNeedInit attend -1).
+		{
+			const CActionNode *init = g.Trouver("/Global/Weapons/NeedInit");
+			const CActionNode *sans = init && !init->enfants.empty() && !init->enfants[0].enfants.empty() ? &init->enfants[0].enfants[0] : nil;
+			const CActionNode *feuille = sans && !sans->enfants.empty() ? &sans->enfants[0] : nil;
+			VERIF(sans && sans->hachage == ActionHash("NoWeapon") && feuille);
+			if(feuille){
+				CActionController c;
+				c.Jouer(g, feuille, 0.0f);
+				VERIF(c.infosArme.size() == 1 && c.infosArme[0].init == 7.0f);
+				struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return -1; } } rien;
+				c.Avancer(g, nil, rien, 0.033f);
+				VERIF(c.infosArmeLancees.size() == 1);
+			}
+		}
 		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());
 		// Les références montées (FUN_005f6bb0 → FUN_005f6960) : Locomotion.act, référencé par B_Striker_A (un des arbres
 		// globaux) et par Fight_Tutorial, n'est lu qu'une fois, sous /Global/Locomotion.act ; chaque référence le prend pour
