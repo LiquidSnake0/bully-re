@@ -45,6 +45,7 @@
 #include "../src/cutscene/CutsceneFiles.h"
 #include "../src/peds/ScriptPedPool.h"
 #include "../src/hud/HudComponents.h"
+#include "../src/render/CameraMgr.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
 #include "../tests/hote/Chemins.h"
@@ -104,6 +105,7 @@ static CModelEnum modeles;
 // demandé par PlayerSetPos… et joué image par image comme FUN_00416e30 : fondu au noir, scripts de zone
 // retirés puis celui de la nouvelle zone chargé avec son main, zone visible et joueur posés à l'arrivée.
 static CAreaManager zones;
+static CCameraMgr cameras;   // le gestionnaire de caméras (0xc3cc68) : le mode 1 au démarrage (FUN_004f35d0)
 static CHudComponents hud;   // DAT_00c674a0 : les 48 composants du HUD, tous cachés au démarrage (FUN_0053cc70)
 // Le fondu de la caméra (CameraFade, 0x4f1980), réduit à ce que la machine des zones et les scripts en
 // attendent : une durée, un sens, et « fini ». Les durées par défaut sont celles d'AreaTransitionButes (DAT_020c8910,
@@ -369,6 +371,11 @@ struct CJugeOutil : CJugeAction {
 		// la 0 sinon). La manette 0 mène le joueur (FUN_0049b1b0) ; PedSetControllerID les change.
 		static const uint32 kManette = ActionHash("Controller");
 		if(type == kManette) return pietons.MeneParLaManette(ped, (mots[0] & 0xff) != 0, ((mots[0] >> 8) & 0xff) != 0);
+		// CameraActive (FUN_0065aea0) : le mode courant du gestionnaire de caméras (+0x90) est +4. CameraInWidescreen
+		// (FUN_0065afc0) : l'écran large (DAT_00c3cd0c).
+		static const uint32 kCamera = ActionHash("CameraActive"), kLargeEcran = ActionHash("CameraInWidescreen");
+		if(type == kCamera) return CameraActive(cameras, (int32)mots[0]);
+		if(type == kLargeEcran) return CameraInWidescreen(cameras);
 		// HudComponentVisible (FUN_0065aee0) : l'emplacement 4 du composant +4 de la table du HUD (DAT_00c674a0), l'octet
 		// +8 pour tous ceux que les arbres relevés testent (14, 18, 19, 23 à 37 ; HUDMoney et HUDClockWarnings ont le leur).
 		static const uint32 kHud = ActionHash("HudComponentVisible");
@@ -1711,6 +1718,42 @@ HUDRestoreVisibility(lua_State *L)
 	return 0;
 }
 
+// Le gestionnaire de caméras (src/render/CameraMgr.h). CameraGetActive() (0x5b9bb0) : le mode courant. CameraSetActive(mode,
+// durée, octet) (0x5b9b30) : une demande (FUN_004f2ad0), que seules les pistes de caméra appliquent (FUN_004f1740) ;
+// l'octet vaut 1 sans troisième argument. CameraReturnToPlayer(octet) (0x5b8fd0) : la demande du mode 1 (l'octet vrai par
+// défaut ; avec un second argument vrai et le point de reprise, le moteur replace aussi la caméra, non suivi).
+// CameraSetWidescreen(oui, progressif) (0x5b8f20).
+static int
+CameraGetActive(lua_State *L)
+{
+	lua_pushnumber(L, cameras.courant);
+	return 1;
+}
+
+static int
+CameraSetActive(lua_State *L)
+{
+	Journal("CameraSetActive", L, 1);
+	cameras.Demander((int32)luaL_checknumber(L, 1), 0, lua_gettop(L) > 2 ? BooleenArg(L, 3) : true);
+	return 0;
+}
+
+static int
+CameraReturnToPlayer(lua_State *L)
+{
+	Journal("CameraReturnToPlayer", L, 1);
+	cameras.Demander(CAMERA_JOUEUR, 0, lua_gettop(L) > 0 ? BooleenArg(L, 1) : true);
+	return 0;
+}
+
+static int
+CameraSetWidescreen(lua_State *L)
+{
+	Journal("CameraSetWidescreen", L, 1);
+	cameras.LargeEcran(BooleenArg(L, 1), lua_gettop(L) == 2 && !BooleenArg(L, 2));
+	return 0;
+}
+
 // PedSetControllerID(ped, n) (FUN_005c9fc0) : le piéton mené par la manette n (0 : DAT_00c2b120, 1 : DAT_00c2b124).
 static int
 PedSetControllerID(lua_State *L)
@@ -2963,6 +3006,10 @@ main(int argc, char **argv)
 	lua_register(L, "PlayerGetPhysicalState", PlayerGetPhysicalState);
 	lua_register(L, "ChapterGet", ChapterGet);
 	lua_register(L, "PedSetControllerID", PedSetControllerID);
+	lua_register(L, "CameraGetActive", CameraGetActive);
+	lua_register(L, "CameraSetActive", CameraSetActive);
+	lua_register(L, "CameraReturnToPlayer", CameraReturnToPlayer);
+	lua_register(L, "CameraSetWidescreen", CameraSetWidescreen);
 	lua_register(L, "ToggleHUDComponentVisibility", ToggleHUDComponentVisibility);
 	lua_register(L, "ToggleHUDComponentLocked", ToggleHUDComponentLocked);
 	lua_register(L, "HUDComponentGetVisibility", HUDComponentGetVisibility);

@@ -452,6 +452,8 @@ de l'IA qui n'a pas de geste.
 | `CollisionWeaponType` | `FUN_0065aa30` | sur le relevé du dernier coup reçu (le +0x10 du contexte, +0x408 du composant +0x2e0) : l'arme du coup (+0x5e, le mot +0x466, -1 à mains nues) et son genre (+0x60, +0x468), les 5e et 19e arguments de la méthode du coup (`FUN_0047b810`). Avec l'octet +8, l'arme du nom +0xc (`FUN_0051ad50` : -1 pour « unarmed » ou un nom hors des 146 armes de `ms_weaponModelStore`, `DAT_00c735e8`) est celle du coup ; sans lui, une arme est requise, puis le genre +4 (0 à 3) juge son type (+0x68, +0x69) et le genre du coup |
 | `IsSocialStateWait` | `FUN_00603b80` | l'état social du piéton (+0xbb0, le +0x6c du composant social +0xb44) est 2, 4 ou 6 et il a un partenaire (+0xbb4, +0x70) |
 | `IsSocializing` | `FUN_006039d0` | un état social et un partenaire ; avec l'octet +4, pour le joueur : un autre piéton du pool (`DAT_00c0f5f0`, du dernier au premier) a le joueur pour partenaire, sans le bit 0 de son octet +0xd68 |
+| `CameraActive` | `FUN_0065aea0` | le mode courant du gestionnaire de caméras (0xc3cc68 +0x90 : `DAT_00c3ccf8`, 1 à l'initialisation par `FUN_004f35d0`) est +4 |
+| `CameraInWidescreen` | `FUN_0065afc0` | l'écran large (`DAT_00c3cd0c`, posé par `CameraSetWidescreen`, 0x5b8f20) |
 | `HudComponentVisible` | `FUN_0065aee0` | l'emplacement 4 (+0x10) du composant +4 de la table du HUD (`DAT_00c674a0`, 48 places remplies par la fabrique `FUN_0053cee0` depuis `FUN_00514920`) : l'octet +8 de `HUDComponent` (`FUN_00538f80`), sauf `HUDMoney` (13, `FUN_00542740`) et `HUDClockWarnings` (15, `FUN_0053c820`) |
 
 **La phase de l'attaque** (`CActionController::PhasesCollision`) : le lancement de la piste `Collision` (`FUN_005f9480`) pose la
@@ -484,6 +486,14 @@ sa zone joue `Locomotion/Free/Sprint` (30,10 s) au lieu de `RUN` (`ScriptPedVite
 0, sur une branche). La vitesse est donc celle que la dernière piste de navigation a laissée (l'arrêt de `CombatLoco`,
 `FUN_00625230`, ne la remet pas à 0) : ce qu'elle vaut à 89,43 s n'est pas établi, l'outil la met à 0 (le bully tourne et tombe sur
 place).
+
+**Les caméras** (`src/render/CameraMgr`) : `DAT_00c3ccf8` n'est écrit par aucune instruction à adresse fixe, c'est le +0x90 du
+gestionnaire en 0xc3cc68 (l'`ecx` de `CameraSetActive`). `CameraSetActive` et `CameraReturnToPlayer` (le mode 1) ne font que ranger
+une demande en +0x270 (`FUN_004f2ad0`) ; `FUN_004f1740` l'applique (le mode d'avant en +0x94, la demande effacée), appelé seulement
+par les pistes `CameraSetDesiredActive` (`FUN_0065dd40`) et `SetCameraTrack` (`FUN_00660a30`). `CameraGetActive` (0x5b9bb0) rend le
+mode courant : dans `1_02`, il vaut 1 du début à la fin ; de 22,80 à 29,40 s l'écran est large (la leçon de parade commence à la fin
+de la scène) ; les 28 jugements de `CameraActive` et les 30 de `CameraInWidescreen` se décident, `ConversationActive` les remplace au
+bilan.
 
 **Le HUD** (`src/hud/HudComponents`) : `HUDComponent` (`FUN_0053cc70`) naît caché ; l'emplacement 5 (`FUN_0053cd60`) le montre
 ou le cache (caché, il ne clignote plus) ; `ToggleHUDComponentVisibility` (0x5bd500), `ToggleHUDComponentLocked` (0x5bd560,
