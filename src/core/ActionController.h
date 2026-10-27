@@ -47,7 +47,8 @@ public:
 	// WeaponCollisionTrack (0x9382f0, lancement FUN_00661660) fait de même pour une arme.
 	struct Contact { const CActionNode *porteur; float debut, fin; uint32 drapeau; float degats; std::string surCoup; bool fait;
 	                 float entree = 0.0f, vie = -1.0f, debutFenetre = 0.0f, finFenetre = -1.0f, debutBrut = 0.0f, finBrut = -1.0f;
-	                 bool lancee = false, arretee = false; };
+	                 bool lancee = false, arretee = false;
+	                 bool agresseur = false; };   // l'octet +0x214 (532) : la cible retient l'attaquant (FUN_004973d0)
 	std::vector<Contact> contacts;
 	int32 phaseAttaque = 0;          // +0x71c du piéton
 	uint32 echeanceAttaque = 0;      // +0x720
@@ -84,6 +85,12 @@ public:
 	// Ses pistes SetPedFlags (PedFlagsTrack 0x931380, lancement FUN_0060f8e0) : le drapeau +0x1c (28) du piéton reçoit
 	// l'octet +0x18 (24). Une entrée négative (-1) se lance quand le nœud s'arrête (FUN_005f3fb0 avec son troisième
 	// argument). Les lancées s'accumulent dans `drapeauxPoses`, que l'appelant applique et vide.
+	// Ses pistes Death (DeathTrack 0x934aa0, lancement FUN_0060fdc0) : le piéton meurt (l'emplacement 42 de CPed,
+	// FUN_00479110, avec l'octet +0x18), y compris celles des nœuds exécutés (HitTree/…/Dead exécute Base/DeadCleanup,
+	// dont la piste Death est à 0) ; une entrée négative se lance à l'arrêt du nœud (Player.act, Humiliate_Me/…/MISSION).
+	// Les lancées s'accumulent dans `mortsLancees`, que l'appelant applique et vide.
+	struct Mort { float entree; uint8 octet; bool fait; };
+	std::vector<Mort> morts, mortsLancees;
 	struct Drapeau { float entree; uint32 numero; int32 valeur; bool fait; };
 	std::vector<Drapeau> drapeaux;
 	std::vector<Drapeau> drapeauxPoses;
@@ -141,6 +148,18 @@ public:
 	//   (68, FUN_0051ad50) ou son modèle ; sur son composant de visée (+0x1c8), les angles +0x18, +0x20, +0x30 (en degrés,
 	//   passés en radians) et les champs voisins (non suivis). La condition WeaponNeedInit (FUN_0065b7b0) attend +0x120 = -1 :
 	//   la banque NeedInit de Weapons.cat ne passe qu'une fois. `infosArmeLancees` : celles lancées à cette image.
+	// Ses pistes DamageTarget (TargetDamageTrack 0x935290 ; créateur 0x640e70, le nom « DamageTarget » du registre des pistes
+	// FUN_00650150 en 0x6525dc) : la cible est le partenaire de prise du piéton (FUN_0060fc60 : +0x155c), qui subit +0x18 (24)
+	// points portés par le piéton (FUN_0047b7f0 → FUN_0047b6b0, sans relevé de coup). Mise à jour (FUN_0060fad0, à chaque
+	// image, le pas en secondes) : sans durée de vie (+0x10 négatif), tout d'un coup, puis la piste meurt ; sinon le reste
+	// (+0x18 moins le fait, +0x28) × pas / (ce qui reste du temps de la piste : +0x10 − +0xc − l'écoulé +0x2c), rien quand ce
+	// qui reste ne dépasse pas le pas. Arrêt (FUN_0060fbe0) : avant la fin de sa durée, rien ; sinon le reste. Sans partenaire,
+	// rien. +0x20 (32), s'il est positif, pose le genre du coup reçu (+0x464 du composant de la cible, moins 1), non suivi.
+	// L'outil compte la durée depuis le lancement de la piste. `coupsCible` : les dégâts de cette image, rendus par Avancer.
+	struct DegatsCible { float entree, duree, total, fait, ecoule; bool finie; };
+	std::vector<DegatsCible> degatsCibles;
+	std::vector<float> coupsCible;
+	float dernierAvancer = -1.0f;    // le temps de la dernière image (le pas des mises à jour)
 	struct InfoArme { float entree, init, champ40; bool fait; };
 	std::vector<InfoArme> infosArme, infosArmeLancees;
 	struct Repos { float entree; bool fait; };

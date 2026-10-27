@@ -65,6 +65,18 @@ main(int argc, char **argv)
 		VERIF(b.Activable(i02, etat) == 1 && b.Activable(i02a, etat) == 0);
 		etat.reussites[i02] = 1;
 		VERIF(b.Activable(i02a, etat) == 1);
+		// MissionUnlocked (FUN_006a72a0) : une réussite, ou le bit 8 de l'octet +4 (MissionForceCompleted, 0x5c0740).
+		CMissionCondition ouverte; ouverte.type = ActionHash("MissionUnlocked") & 0x7fffffff;
+		ouverte.mots[0] = ActionHash("1_02B") & 0x7fffffff;
+		VERIF(b.Evaluer(ouverte, etat) == 0);
+		etat.drapeaux.assign(b.missions.size(), 0); etat.drapeaux[i02b] = 8;
+		VERIF(b.Evaluer(ouverte, etat) == 1);
+		etat.drapeaux[i02b] = 0x10;
+		VERIF(b.Evaluer(ouverte, etat) == 0);
+		ouverte.mots[0] = ActionHash("1_02") & 0x7fffffff;
+		VERIF(b.Evaluer(ouverte, etat) == 1);
+		ouverte.mots[0] = ActionHash("pas_une_mission") & 0x7fffffff;
+		VERIF(b.Evaluer(ouverte, etat) == 0);
 		const CMissionData &m3 = b.missions[i03];
 		VERIF(m3.conds.size() == 3);
 		int temps = 0;

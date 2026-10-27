@@ -256,8 +256,25 @@ CScriptPedPool::Sante(int h, float sante)
 {
 	CScriptPed *p = Acceder(h);
 	if(p == nil) return;
-	p->sante = sante;
-	if(sante <= 0 && !p->mort){ p->mort = true; p->vientDeMourir = true; p->enMarche = false; p->attaque = -1; }
+	p->sante = sante < p->santeMin ? p->santeMin : sante;
+}
+
+bool
+CScriptPedPool::Mourir(int h, uint32 maintenantMs)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil || p->mort || p->immortel) return false;
+	p->sante = -100.0f;                       // _DAT_00906520
+	p->mort = true;
+	p->vientDeMourir = true;
+	p->enMarche = false;
+	p->attaque = -1;
+	p->intentionVitesse = 0;
+	if(h != SCRIPT_PED_JOUEUR){
+		p->instantMort = maintenantMs;        // +0x18b8 = DAT_00c1a9b4
+		p->verrou = -1; p->verrouMode = 0;    // FUN_004989c0(0)
+	}
+	return true;
 }
 
 bool
@@ -270,6 +287,8 @@ CScriptPedPool::PoserStats(int h, const int32 colonnes[64])
 	p->santeMin = 0;
 	p->regeneration = (float)colonnes[5];
 	p->sante = p->santeMax;
+	p->visionAngle = (float)colonnes[2] * 3.14159265f / 180.0f;   // +0xa68 = la colonne D (+0x24) × π / 180
+	p->visionPortee = (float)colonnes[3];   // +0xa6c = la colonne E (+0x28)
 	p->sprint = (float)colonnes[16];        // FUN_00478e30 : +0x18d0 = la colonne R (+0x5c)
 	p->classeCombat = colonnes[17];         // +0x714 = la colonne S (+0x60)
 	return true;
@@ -345,6 +364,9 @@ CScriptPedPool::Avancer(float dt)
 			p.aFrappe = true;
 			p.dernierFrappe = p.attaque;
 			Blesser(p.attaque, SCRIPT_PED_DEGATS, (int)(&p - peds));
+			// Le geste de l'outil n'a pas d'arbre d'actions : la cible à santé nulle meurt sur le coup, à la place de
+			// HitTree/…/Dead, qui exécute Base/DeadCleanup et sa piste Death (supposé pour ce geste seulement).
+			if(c->sante <= 0) Mourir(p.attaque);
 			if(c->mort) p.attaque = -1;
 		}else if(p.enMarche){
 			if(Pas(p, p.cible, p.vitesse * dt, 0)){ p.enMarche = false; p.arrive = true; p.intentionVitesse = 0; }
@@ -593,4 +615,164 @@ CScriptPedPool::PrendreAttaquant(int h, int attaquant)
 	p.cibleObjectif = attaquant;
 	p.agresseur = attaquant;
 	return true;
+}
+
+bool
+CScriptPedPool::Voit(int h, int cible, int (*tirer)(void *), void *ctx)
+{
+	CScriptPed *p = Acceder(h);
+	const CScriptPed *c = Acceder(cible);
+	if(p == nil || c == nil) return false;
+	if(h == cible) return true;
+	float dx = c->pos.x - p->pos.x, dy = c->pos.y - p->pos.y, dz = c->pos.z - p->pos.z;
+	if(p->dernierAgresseur == cible && p->tempsAgresseur < 5.0f && dx * dx + dy * dy + dz * dz - 25.0f < 0.0f)
+		return true;
+	for(const CScriptPed::Vu &v : p->vus)
+		if(v.ped == cible) return v.vu;
+	// FUN_0048cf50 : à portée, à plat (z mis à 0) ; puis dans le cône du devant.
+	bool vu = false;
+	if(dx * dx + dy * dy - p->visionPortee * p->visionPortee <= 0.0f){
+		float n = sqrtf(dx * dx + dy * dy), a = p->cap * 3.14159265f / 180.0f;
+		float produit = n > 0.0f ? (cosf(a) * dx + sinf(a) * dy) / n : 1.0f;
+		vu = produit > cosf(p->visionAngle * 0.5f);
+	}
+	// FUN_0048d0e0 : la ligne de vue (FUN_00461d50) n'a rien à traverser dans l'outil.
+	for(CScriptPed::Vu &v : p->vus)
+		if(v.ped < 0){ v.ped = cible; v.vu = vu; v.images = tirer(ctx) * 5 / 0x7fff + 4; break; }
+	return vu;
+}
+
+void
+CScriptPedPool::AvancerVue(float dt)
+{
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
+		CScriptPed &p = peds[i];
+		for(CScriptPed::Vu &v : p.vus)   // FUN_0048ccf0
+			if(v.ped >= 0 && --v.images < 1){ v.ped = -1; v.vu = false; v.images = 0; }
+		p.tempsAgresseur = p.dernierAgresseur >= 0 ? p.tempsAgresseur + dt : 0.0f;   // FUN_00499340
+	}
+}
+
+void
+CScriptPedPool::Agresse(int h, int attaquant)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return;
+	p->dernierAgresseur = attaquant;
+	p->tempsAgresseur = 0;
+}
+
+bool
+ScriptPedSuiviSuivant(CSuiviTrajet &s, int nombre, int32 &noeud)
+{
+	if(nombre == 0) return false;
+	switch(s.mode){
+	case 0:
+		noeud++;
+		return noeud < nombre;
+	case 1:
+		noeud++;
+		if(noeud >= nombre) noeud = 0;
+		return true;
+	case 2:
+		noeud += s.sens;
+		if(noeud >= nombre){ s.sens = -1; noeud = nombre - 2; return true; }
+		if(noeud < 0){ noeud = 1; s.sens = 1; }
+		return true;
+	case 3:
+		return true;
+	default:
+		return false;
+	}
+}
+
+bool
+ScriptPedSuiviArret(const CSuiviTrajet &s, const std::vector<CNoeudTrajet> &noeuds, int32 noeud)
+{
+	int nombre = (int)noeuds.size();
+	if(noeud < 0 || noeud >= nombre) return true;
+	const CNoeudTrajet &n = noeuds[noeud];
+	if(n.actions || n.attente > 0.0f) return true;
+	if(s.mode == 2) return noeud == nombre - 1 || noeud == 0;
+	if(s.mode == 0 || s.mode == 3) return noeud == nombre - 1;
+	return false;
+}
+
+static CVector
+Unitaire(const CVector &v)
+{
+	float n = sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
+	return n > 0.0f ? CVector(v.x / n, v.y / n, v.z / n) : CVector(0, 0, 0);
+}
+
+void
+ScriptPedSuiviPoserPlan(CSuiviTrajet &s, const std::vector<CNoeudTrajet> &noeuds, int32 precedent, int32 noeud)
+{
+	int32 suivant = noeud;
+	if(ScriptPedSuiviArret(s, noeuds, noeud) || !ScriptPedSuiviSuivant(s, (int)noeuds.size(), suivant) ||
+	   suivant < 0 || suivant >= (int)noeuds.size()){
+		s.plan = -1;
+		return;
+	}
+	const CVector &p = noeuds[noeud].pos, &q = noeuds[suivant].pos;
+	CVector vers = Unitaire(CVector(q.x - p.x, q.y - p.y, q.z - p.z));
+	s.planPoint = p;
+	s.plan = noeud;
+	s.planNormale = vers;
+	if(precedent < 0 || precedent >= (int)noeuds.size()) return;
+	const CVector &r = noeuds[precedent].pos;
+	CVector depuis = Unitaire(CVector(r.x - p.x, r.y - p.y, r.z - p.z));
+	CVector somme(depuis.x + vers.x, depuis.y + vers.y, depuis.z + vers.z);
+	if(somme.x * somme.x + somme.y * somme.y + somme.z * somme.z < 0.05f) return;   // _DAT_00900c18 (0,05) : presque droit
+	CVector n = Unitaire(CVector(-somme.y, somme.x, 0.0f));
+	if(n.x * vers.x + n.y * vers.y + n.z * vers.z < 0.0f) n = CVector(-n.x, -n.y, -n.z);
+	s.planNormale = n;
+}
+
+bool
+ScriptPedSuiviPlanPasse(const CSuiviTrajet &s, const CVector &pos)
+{
+	if(s.plan < 0) return false;
+	CVector v(s.planPoint.x - pos.x, s.planPoint.y - pos.y, s.planPoint.z - pos.z);
+	return s.planNormale.x * v.x + s.planNormale.y * v.y + s.planNormale.z * v.z <= 0.0f;
+}
+
+bool
+ScriptPedSuiviAtteint(const CSuiviTrajet &s, int nombre, const CVector &pos, const CVector &noeud, float rayon, bool velo)
+{
+	float dx = noeud.x - pos.x, dy = noeud.y - pos.y, d = sqrtf(fabsf(dx * dx + dy * dy));
+	float facteur = velo && !(s.noeud >= nombre - 1 && s.mode == 0) ? 3.0f : 1.0f;
+	return d < rayon * facteur;
+}
+
+uint32
+ScriptPedSuiviEcheance(float attente, uint32 maintenantMs)
+{
+	if(!(attente > 0.0f)) return 0;
+	return maintenantMs - (uint32)(int32)(attente * -1000.0);   // fistp, arrondi par troncature (le mot de contrôle | 0xc00)
+}
+
+float
+ScriptPedSuiviCap(float lacetNoeud, bool velo)
+{
+	return velo ? lacetNoeud + 180.0f : lacetNoeud - 90.0f;   // _DAT_00900158, _DAT_00900ab8
+}
+
+CVector
+ScriptPedSuiviBut(const CVector &a, const CVector &b, const CVector &pos, float avance, float &t)
+{
+	float sx = b.x - a.x, sy = b.y - a.y, sz = b.z - a.z, l2 = sx * sx + sy * sy + sz * sz;
+	if(l2 <= 0.0f){ t = 2.0f; return b; }
+	float l = sqrtf(l2);
+	float u = ((pos.x - a.x) * sx + (pos.y - a.y) * sy + (pos.z - a.z) * sz) / l2;   // FUN_005e7340
+	CVector proj(a.x + sx * u, a.y + sy * u, a.z + sz * u);
+	// L'écart à plat, perpendiculaire au segment.
+	float nx = -sy, ny = sx, n = sqrtf(nx * nx + ny * ny);
+	float ecart = n > 0.0f ? fabsf((a.x - pos.x) * nx / n + (a.y - pos.y) * ny / n) : 0.0f;
+	t = u;
+	if(u <= 1.0f && ecart > avance) return proj;
+	t = u + avance / l;
+	if(t > 1.0f) return b;
+	if(t < 0.0f) return a;
+	return CVector(a.x + sx * t, a.y + sy * t, a.z + sz * t);
 }

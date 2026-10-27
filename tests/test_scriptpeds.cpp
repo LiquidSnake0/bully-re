@@ -91,12 +91,22 @@ main(void)
 	VERIF(mortA * 0.033f > 9.5f && mortA * 0.033f < 10.5f);
 	q.Avancer(0.033f);
 	VERIF(!q.Acceder(ci)->vientDeMourir && q.Acceder(ci)->mort);
-	// Un mort ne marche plus, n'attaque plus ; PedSetHealth à 0 tue et lâche le geste.
+	// Un mort ne marche plus, n'attaque plus. PedSetHealth à 0 ne tue pas (FUN_00478190) : seule la piste Death
+	// (FUN_00479110) tue, met la santé à -100 et lâche le geste ; un immortel (+0x13fc) n'en meurt pas.
 	VERIF(!q.Aller(ci, CVector(), ALLURE_MARCHE) && !q.Attaquer(ci, at));
+	VERIF(q.Acceder(ci)->sante == -100.0f);
 	int c = q.Creer(99, CVector(0, 5, 0), 0, 1);
 	VERIF(q.Aller(c, CVector(0, 9, 0), ALLURE_MARCHE));
 	q.Sante(c, 0);
+	VERIF(!q.Acceder(c)->mort && q.Acceder(c)->sante == 0 && q.Acceder(c)->enMarche);
+	q.Acceder(c)->immortel = true;
+	VERIF(!q.Mourir(c, 5000) && !q.Acceder(c)->mort);
+	q.Acceder(c)->immortel = false;
+	q.Verrouiller(c, at, 1);
+	VERIF(q.Mourir(c, 5000) && !q.Mourir(c, 6000));
 	VERIF(q.Acceder(c)->mort && q.Acceder(c)->vientDeMourir && !q.Acceder(c)->enMarche);
+	VERIF(q.Acceder(c)->sante == -100.0f && q.Acceder(c)->instantMort == 5000 && q.Acceder(c)->verrou == -1);
+	VERIF(!q.Blesser(c, 10, at));                          // un mort ne prend plus de coups
 	// PedMakeAmbient : le piéton reste, mais n'est plus ramassé avec son script ; pas le joueur.
 	VERIF(!q.RendreAmbiant(SCRIPT_PED_JOUEUR) && q.RendreAmbiant(at) && q.Acceder(at)->script == -1);
 	VERIF(q.SupprimerDuScript(1) == 3 && q.Valide(at));   // m, ci et c libérés, a reste
@@ -114,10 +124,10 @@ main(void)
 		pa->santeMin = 75;                                    // plus bas que la santé actuelle : elle remonte au plancher
 		VERIF(q.Blesser(a, 10, b) && pa->sante == 75 && !pa->mort);
 		pa->santeMin = 0;
-		VERIF(q.Blesser(a, 500, b) && pa->sante == 0 && pa->mort);
+		VERIF(q.Blesser(a, 500, b) && pa->sante == 0 && !pa->mort);   // à zéro, pas mort : la piste Death décide
 		pj->drapeaux[DRAPEAU_INVULNERABLE] = 1;
 		VERIF(!q.Blesser(SCRIPT_PED_JOUEUR, 10, b) && pj->sante == 100);
-		pa->santeMin = 0; pa->mort = false; pa->sante = 50; pa->drapeaux[DRAPEAU_INVULNERABLE_JOUEUR] = 0;
+		pa->santeMin = 0; pa->sante = 50; pa->drapeaux[DRAPEAU_INVULNERABLE_JOUEUR] = 0;
 		pa->drapeaux[DRAPEAU_INTOUCHABLE] = 1;                // le drapeau 12 (+0x1344) : aucun coup
 		VERIF(!q.Blesser(a, 10, b) && pa->sante == 50);
 	}
@@ -313,7 +323,86 @@ main(void)
 		q.Acceder(b)->endormi = false; q.sommeilGeneral = true;
 		VERIF(!q.IAAvance(b));
 		q.sommeilGeneral = false; q.Sante(b, 0);
+		VERIF(q.IAAvance(b));                              // à santé nulle, l'IA tourne encore (FUN_00484490 lit +0x1c98)
+		q.Mourir(b);
 		VERIF(!q.IAAvance(b) && !q.IAAvance(-1));
+	}
+	// FUN_0048d320, FUN_0048cf50, FUN_0048ccf0 : la vue (le cône de la colonne D, la portée de la colonne E), son cache et
+	// le dernier agresseur (+0x1dbc, +0x1dc0).
+	{
+		CScriptPedPool q;
+		int a = q.Creer(146, CVector(0, 0, 0), 0, 1), b = q.Creer(85, CVector(5, 0, 0), 0, 1);
+		int32 col[64] = {};
+		col[2] = 100; col[3] = 12; col[4] = 100;              // STAT_B_STRIKER_A : 100 degrés, 12 m
+		VERIF(q.PoserStats(a, col) && fabsf(q.Acceder(a)->visionAngle - 1.745329f) < 1e-4f && q.Acceder(a)->visionPortee == 12);
+		auto zero = [](void *) { return 0; };                 // rand() = 0 : 4 images en cache
+		VERIF(q.Voit(a, a, zero, nil) && !q.Voit(a, 23, zero, nil));
+		VERIF(q.Voit(a, b, zero, nil));                       // devant, à 5 m
+		q.Acceder(b)->pos = CVector(-5, 0, 0);
+		VERIF(q.Voit(a, b, zero, nil));                       // le cache répond encore
+		for(int i = 0; i < 4; i++) q.AvancerVue(0.033f);
+		VERIF(!q.Voit(a, b, zero, nil));                      // derrière : hors du cône
+		q.Acceder(b)->pos = CVector(3, 3.5f, 0);              // à 49,4 degrés du devant, dans le demi-angle de 50
+		for(int i = 0; i < 4; i++) q.AvancerVue(0.033f);
+		VERIF(q.Voit(a, b, zero, nil));
+		q.Acceder(b)->pos = CVector(12.5f, 0, 0);             // au-delà de la portée
+		for(int i = 0; i < 4; i++) q.AvancerVue(0.033f);
+		VERIF(!q.Voit(a, b, zero, nil));
+		// Le dernier agresseur, à moins de 5 m et depuis moins de 5 s, est vu même dans le dos.
+		q.Acceder(b)->pos = CVector(-4, 0, 0);
+		for(int i = 0; i < 4; i++) q.AvancerVue(0.033f);
+		q.Agresse(a, b);
+		VERIF(q.Voit(a, b, zero, nil));
+		for(int i = 0; i < 152; i++) q.AvancerVue(0.033f);   // 5,02 s
+		VERIF(q.Acceder(a)->tempsAgresseur > 5.0f && !q.Voit(a, b, zero, nil));
+	}
+	// FUN_0061acc0, FUN_0061ad60, FUN_0061afa0, FUN_0062eaa0 : le suivi d'un trajet (le nœud suivant selon le mode, les
+	// nœuds d'arrêt, le plan de passage d'un nœud et son franchissement).
+	{
+		CSuiviTrajet s;
+		int32 n = 2;
+		s.mode = 0; VERIF(!ScriptPedSuiviSuivant(s, 3, n) && n == 3);   // une fois : fini après le dernier
+		n = 2; s.mode = 1; VERIF(ScriptPedSuiviSuivant(s, 3, n) && n == 0);   // en boucle
+		n = 2; s.mode = 2; s.sens = 1; VERIF(ScriptPedSuiviSuivant(s, 3, n) && n == 1 && s.sens == -1);   // aller-retour
+		n = 0; VERIF(ScriptPedSuiviSuivant(s, 3, n) && n == 1 && s.sens == 1);
+		n = 1; s.mode = 3; VERIF(ScriptPedSuiviSuivant(s, 3, n) && n == 1);
+		s.mode = 7; VERIF(!ScriptPedSuiviSuivant(s, 3, n));
+		std::vector<CNoeudTrajet> t(4);
+		t[0].pos = CVector(0, 0, 0); t[1].pos = CVector(10, 0, 0); t[2].pos = CVector(10, 10, 0); t[3].pos = CVector(20, 10, 0);
+		s.mode = 0;
+		VERIF(!ScriptPedSuiviArret(s, t, 1) && ScriptPedSuiviArret(s, t, 3));
+		t[2].attente = 2.0f; VERIF(ScriptPedSuiviArret(s, t, 2)); t[2].attente = 0;
+		s.mode = 1; VERIF(!ScriptPedSuiviArret(s, t, 3));
+		s.mode = 2; VERIF(ScriptPedSuiviArret(s, t, 0) && ScriptPedSuiviArret(s, t, 3) && !ScriptPedSuiviArret(s, t, 2));
+		s.mode = 0; s.sens = 1;
+		ScriptPedSuiviPoserPlan(s, t, -1, 1);                 // sans précédent : la normale va vers le nœud 2
+		VERIF(s.plan == 1 && fabsf(s.planNormale.y - 1.0f) < 1e-5f);
+		ScriptPedSuiviPoserPlan(s, t, 0, 1);                  // un virage à 90 degrés : la bissectrice
+		VERIF(s.plan == 1 && fabsf(s.planNormale.x - 0.7071068f) < 1e-4f && fabsf(s.planNormale.y - 0.7071068f) < 1e-4f);
+		VERIF(!ScriptPedSuiviPlanPasse(s, CVector(9, -1, 0)) && ScriptPedSuiviPlanPasse(s, CVector(10, 0.5f, 0)));
+		ScriptPedSuiviPoserPlan(s, t, 2, 3);                  // le dernier nœud est un arrêt : pas de plan
+		VERIF(s.plan == -1 && !ScriptPedSuiviPlanPasse(s, CVector(30, 10, 0)));
+		// FUN_0062eb70 : l'arrivée à plat sous le rayon (× 3 à vélo, sauf au dernier nœud d'un trajet suivi une fois),
+		// l'échéance d'une attente et le cap pris au nœud (FUN_0062c300).
+		s.mode = 0; s.noeud = 1;
+		VERIF(ScriptPedSuiviAtteint(s, 4, CVector(9.5f, 0, 5), t[1].pos, 0.6f, false));     // la hauteur ne compte pas
+		VERIF(!ScriptPedSuiviAtteint(s, 4, CVector(9, 0, 0), t[1].pos, 0.6f, false) && ScriptPedSuiviAtteint(s, 4, CVector(9, 0, 0), t[1].pos, 0.6f, true));
+		s.noeud = 3;
+		VERIF(!ScriptPedSuiviAtteint(s, 4, CVector(19, 10, 0), t[3].pos, 0.6f, true));        // dernier nœud, mode 0 : × 1
+		s.mode = 1; VERIF(ScriptPedSuiviAtteint(s, 4, CVector(19, 10, 0), t[3].pos, 0.6f, true));
+		VERIF(ScriptPedSuiviEcheance(0.0f, 5000) == 0 && ScriptPedSuiviEcheance(2.5f, 5000) == 7500);
+		VERIF(ScriptPedSuiviCap(90.0f, false) == 0.0f && ScriptPedSuiviCap(90.0f, true) == 270.0f);
+		// FUN_005e7560 : le but lissé, 4 m devant la projection sur le segment (0,0) → (10,0) ; au-delà du bout, le bout ;
+		// trop loin du segment, la projection.
+		float f = 0;
+		CVector b = ScriptPedSuiviBut(t[0].pos, t[1].pos, CVector(2, 1, 0), 4.0f, f);
+		VERIF(fabsf(b.x - 6.0f) < 1e-4f && b.y == 0.0f && fabsf(f - 0.6f) < 1e-5f);
+		b = ScriptPedSuiviBut(t[0].pos, t[1].pos, CVector(8, 0, 0), 4.0f, f);
+		VERIF(b.x == 10.0f && f > 1.0f);
+		b = ScriptPedSuiviBut(t[0].pos, t[1].pos, CVector(5, 6, 0), 4.0f, f);
+		VERIF(b.x == 5.0f && b.y == 0.0f);
+		CScriptPedPool rq;
+		VERIF(rq.Acceder(rq.Creer(85, CVector(), 0, 1))->rayonNoeud == 1.0f);   // FUN_0048c430 : 1 m par défaut
 	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;

@@ -190,7 +190,7 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
 
 | Classe | Fonction | Ce qu'elle juge |
 |---|---|---|
-| `HitTime` | `FUN_005fc400` | +0x434 (ou +0x438 si l'octet +0xc) du relevé comparé à +4 par +8 (`Standing/Melee` : ≤ 0, l'instant du coup) |
+| `HitTime` | `FUN_005fc400` | +0x434 (ou +0x438 si l'octet +0xc) du relevé comparé à +4 par +8 (`Standing/Melee` : ≤ 0, l'instant du coup) ; -1 sans coup reçu (`FUN_005f3ab0`) |
 | `stat` | 0x5ffff0 (hors de l'index) | la colonne +0xc du piéton (`GameGetPedStat`) ≥ +4 si l'octet +8 est nul ; l'octet +9 ajoute un `MePlaying` |
 | `IsPlayer` | `FUN_005ffe40` | le type du piéton (+0x1310) vaut 13 |
 | `PedFightingSystem` | `FUN_005fd740` | +4 égal à +0x16dc (`PedSetFightingSystem` 0x5ca590) |
@@ -583,8 +583,7 @@ Chaque changement de sous-état force le tirage de l'image suivante (+0x79). Les
 cible + le décalage +0x38, s'il tombe à plus de 0,5 m du piéton, `_DAT_009055a0`) et, sauf aux modes 3, 7 et 12, tourne le cap voulu
 vers la cible : le piéton tourne autour de sa cible en lui faisant face, et la navigation le ralentit (cos de l'écart). Dans `1_02`, le
 bully arrive par le retour (mode 12, de 30,10 à 31,32 s) puis enchaîne les points tirés autour du joueur (sous-états 1 et 2, toutes
-les 1,5 à 3 s) ; ses coups pendant la leçon de parade sont les mêmes, et `1_02` reste réussie à 118,93 s. Supposés : la cible toujours
-vue, le point toujours valable, l'arme à distance (+0x7a, `FUN_00625540`), la hauteur (le mode 1 au-delà de 2 m d'écart, 0x900bfc).
+les 1,5 à 3 s) ; ses coups pendant la leçon de parade sont les mêmes, et `1_02` reste réussie à 118,93 s. Supposés : le point toujours valable (la vue est lue depuis le 27.10 dans la nuit, plus bas), l'arme à distance (+0x7a, `FUN_00625540`), la hauteur (le mode 1 au-delà de 2 m d'écart, 0x900bfc).
 
 **La parade du bully** (lue le 27.10 au soir). La feuille `Block` de `CombatActions` (`AI_FightTutorial`) porte une piste
 `ActionRequest` (`ActionRequestTrack` 0x9348a0 : lancement `FUN_0061ba70`, mise à jour `FUN_006260d0`, arrêt `FUN_00626160`) : à
@@ -618,6 +617,88 @@ points (la commande de docs/missions.md tape jusqu'à 86 s et humilie à 87 s), 
 (`KnockOuts/Rear`) : c'est ce que l'outil joue. Restent des écarts de l'outil qui n'y changent rien ici : il tient le bully pour mort
 à santé nulle (le jeu attend la piste `Death`) et coupe son IA, et il ne joue pas les images de tirage (le point tiré entre les deux
 rayons, mode 8, et les sous-états 1 à 3).
+
+## La mort et les dernières conditions, lues le 27.10.2026 (nuit, 2)
+
+**La mort d'un piéton** (`CScriptPedPool::Mourir`). Un piéton n'est mort que par la piste `Death` (`DeathTrack` 0x934aa0, lancement
+`FUN_0060fdc0` : l'emplacement 42 de `CPed`, +0xa8, avec l'octet +0x18 de la piste), dont l'effet est `FUN_00479110`, lu à
+l'assembleur de 0x479110 à 0x479406 :
+
+- rien si le piéton est déjà mort (+0x1c98) ;
+- un **immortel** (+0x13fc : `PedSetImmortalFlag` 0x5ce6e0, `PedGetImmortalFlag` 0x5ce730, remis à 0 par `FUN_00474f50` et
+  `FUN_006e63b0`) ne meurt pas : seul son rappel Lua est appelé (+0x141c, la fonction rangée en +0x18e8, non suivi) ;
+- sinon, si le dernier coup a un attaquant (+0x40c du composant +0x2e0), celui-ci reçoit l'octet en +0x13f0, un stimulus 7 part
+  (`PedCreateStimulus`) et, si c'est le joueur, ses statistiques (`FUN_00458330` selon le type de la victime : 0x54 … 0x60, non
+  suivies) ; puis la santé passe à **-100** (`_DAT_00906520`, 0xc2c80000 dans le .rdata) et +0x1c98 à 1 ; trois messages au pool
+  (`FUN_0054a740` 2, 0xd, 6), +0x135c, +0x1708, +0x170c à 0 ; pour le joueur (type 13) la partie perdue (`FUN_004311e0`), pour un
+  autre l'instant de la mort (+0x18b8 = `DAT_00c1a9b4`), `FUN_004441f0` et la cible lâchée (`FUN_004989c0(0)`).
+
+Une **santé nulle ne tue pas** : `FUN_00478190` (`PedSetHealth` 0x5c8e80, la piste `SetHealth` au mode poser) et `FUN_004782a0`
+(un coup, `SetHealth` au mode ôter) ne font, à 0, qu'appeler le même rappel Lua ; `PedSetHealth` relève aussi le maximum (+0x1ca4)
+s'il est dépassé. `PedIsDead` (0x5c8f30) lit +0x1c98 (vrai sans piéton). La piste `Death` est dans onze arbres ; dans `HitTree`,
+`Base/DeadCleanup` (#37bc920c) la porte, à 0, et les feuilles `…/Dead/KOReactions/…` de `PostHit/BellyUp`, `BellyDown` et des
+nages l'exécutent quand la santé est nulle (`dead si HEALTH`) ; dans `Player.act`, les feuilles `MISSION` des humiliations ôtent 500
+points puis meurent à l'arrêt du nœud (entrée -1). L'outil tenait un piéton pour mort dès que sa santé tombait à 0 ; il suit
+maintenant la piste (`CActionController::morts`, `AppliquerMorts`). Seul le geste `PedAttack` de l'outil, qui n'a pas d'arbre
+d'actions, tue encore sa cible à santé nulle, à la place de `HitTree/…/Dead` (supposé pour ce geste).
+
+Dans `1_02`, le bully passe à 0 point à 92,33 s (`HumiliateFlee`, ôter 500) mais reste vivant : son IA continue. L'`Opportunity`
+`../../../` de la feuille `CombatLoco` (prise dès que la descente depuis la racine mène ailleurs) le fait passer à 92,37 s dans
+`AMBIENT/Idle`, la banque `Combat` ne passant plus (`objective` 7 ou 16 : l'objectif courant est le `FleeObjective`) ; la piste `IDLE`
+vide ses entrées, la vitesse de l'intention reste 0 (ce qu'écrivait la section précédente, « son contrôleur de l'IA reste dans
+`CombatLoco` », ne valait que tant que l'outil le tenait pour mort). Il court sur place (`RunStart`, 95,50 s), tombe
+(`KnockOuts/Rear/Rear`, 96,36 s), rebondit (`BellyDown/OnGroundBounce`) et meurt à **97,61 s**, par `BellyDown/Dead/KOReactions` qui
+exécute `Base/DeadCleanup` (-100 points). `1_02` reste réussie à 121,94 s : le script attend une santé nulle (`0 < PedGetHealth`),
+puis `KnockOuts`.
+
+**Les deux conditions encore jugées -1 dans `1_02`**, retrouvées par le registre (`FUN_0064b090` : 419 entrées de 16 octets posées
+sur la pile, la chaîne du nom, le créateur, une fonction, une globale ; leurs noms relus dans le binaire et hachés : PropTargetInteractive
+#018970c6, ParametricTime #13d5cad1) :
+
+| Classe | Fonction | Ce qu'elle juge |
+|---|---|---|
+| `ParametricTime` | `FUN_005fbed0` (table 0x937ad8, créateur 0x649580) | le flottant que pointe le +0x38 du contexte comparé à +4 par +8 (`FUN_005fb750`) ; ce pointeur est l'adresse du +0x157c du piéton dans les trois contextes du composant d'actions (`FUN_00484d10`, 0x484df8 : +0x338, +0x390, +0x3e8), que seul le vélo écrit (`FUN_004e9160`, `FUN_005051b0`) ; l'outil : 0 |
+| `PropTargetInteractive` | `FUN_00655110` (table 0x936838, créateur 0x645470) | sans piéton, faux ; sauf pour le joueur à +4 et +0xc nuls, `FUN_004991e0` relève les objets proches (`FUN_004989f0` : la liste +0x450, 12 octets par objet, le nombre en +0x4c8) ; un partenaire de prise (+0x155c) sans l'octet +0x17 rend faux ; sinon `FUN_004979b0` : l'objet visé (+0x444) ou l'un des objets relevés, à moins de +4 m, du modèle voulu, devient la cible (+0x43c). L'outil n'a pas d'objets dans le monde : faux |
+
+**La dernière, #3bb83b8f, est `MissionUnlocked`** (`CMissionUnlockedCond` 0x941778, `FUN_006a72a0` ; créateur 0x63a1c0 →
+`FUN_006a7270`, qui pose l'indice +8 à -2) : la mission du nom +4 (cherchée une fois, `FUN_006a9e70`) a au moins une réussite (le mot
++2 de son entrée de 6 octets, `FUN_006aa660`) ou le bit 8 de son octet +4, que seul `MissionForceCompleted` (0x5c0740, 0x5c0773)
+pose ; `IsMissionCompleated` (0x5c0580) ne lit que le mot +2. Dans `Grapples.cat`, les renversements d'une prise
+(`ReversalOpps/AutoReversalOpps`, `StrikeReversalOpps`, `GrappleReversalOpps`, que les feuilles `RCV` de la prise exécutent)
+demandent `not MissionUnlocked[GrapTestUnlock]`, une mission de mise au point (`Test\grappleTest.lua`, `TimeCond false`) qu'aucun
+script ne force : ils sont donc toujours ouverts ; les prises spéciales (`Takedown`, `Spit`, `HeadButt`) demandent
+`MissionUnlocked[C_Wrestling_3]` ou d'être en cours de lutte.
+
+En la jugeant, un écart de `HitTime` est apparu : le bully de `1_02`, qu'aucun coup n'a encore touché, rompait la prise à 57,75 s
+(`AutoReversalOpps` : `Break_GIVE` si `HitTime[3,5 s, ≥]`). Sans coup reçu, le temps depuis le coup ne court pas depuis la création
+comme l'outil le supposait : le constructeur du relevé (`FUN_005f3ab0`, ecx = le composant + 0x408, 0x484b5f) pose +0x434 et +0x438 à
+-1, que `FUN_004850b0` ne fait pas avancer. Corrigé, la prise tient comme avant ; `1_02` reste réussie à 121,94 s et n'a plus aucune
+condition jugée -1.
+
+**La vue d'un piéton** (`CScriptPedPool::Voit`), que la garde de `CombatLoco` (`FUN_0062c540`) et son retour (0x6257c0) demandent
+pour la cible : `FUN_0048d320`, sur le composant de vue (+0xa64 du piéton, vérifié à l'assembleur en 0x62c5aa ; son piéton en +0).
+Lui-même, oui. Le **dernier agresseur** (+0x1dbc, posé par la méthode du coup `FUN_0047b810` → `FUN_004973d0` quand son 15e
+argument est posé : relu à l'assembleur de l'appel en 0x5fa464 … 0x5fa4d9, c'est l'octet +0x214 de la piste `Collision`, le champ
+532, à 1 dans 189 pistes sur 218), depuis moins de 5 s (+0x1dc0, que `FUN_00499340` fait avancer chaque image) et à moins de 5 m
+(`_DAT_00900188`, `FUN_00487d00`), oui. Sinon le cache de 16 piétons (+0x10 du composant, 12 octets : le piéton, l'octet vu, les
+images à vivre, tirées entre 4 et 8 par `rand() × 5 / 0x7fff + 4`, que `FUN_0048ccf0` décompte depuis `CPed`, `FUN_004812d0`) ; à
+défaut `FUN_0048d0e0` : `FUN_0048cf50` (la cible à moins de la portée, +8 du composant, à plat ; puis le produit scalaire du devant et
+de la direction, à plat, strictement au-dessus du cosinus de la moitié de l'angle +4 : `_DAT_008ff1f8` = 0,5), puis la ligne de vue
+(`FUN_00461d50`, un rayon dans le monde, depuis la tête, `PedGetHeadPos`), que l'outil, sans monde, tient pour dégagée. L'angle et
+la portée sont les colonnes D et E de `pedstats.dat` (`FUN_00478e30` : +0xa68 = D × π / 180, +0xa6c = E ; l'en-tête du fichier les
+nomme : « Vision Yaw (in degrees) - total yaw », « Vision Range (in metres) ») : 100 degrés et 12 m pour `STAT_B_STRIKER_A`. Dans
+`1_02`, le bully fait face au joueur dans `CombatLoco` : il le voit toujours, rien ne change.
+
+**La piste `DamageTarget`** (`TargetDamageTrack` 0x935290, créateur 0x640e70, le nom relu dans le registre des pistes en 0x6525dc ;
+`CActionController::degatsCibles`) : les coups portés pendant une prise (`GrappleStrikes`, la charge lâchée `Release/Light/Give` : 15
+points, la genouillère `GRAB_KNEE_GV` : deux fois 10). La cible est le partenaire de prise du piéton (l'emplacement 5, `FUN_0060fc60` :
++0x155c), les dégâts (+0x18) sont portés par le piéton par `FUN_0047b7f0` → `FUN_0047b6b0` (invulnérabilités, santé minimale), sans la
+méthode du coup : pas de relevé, pas de `HitTree`, `HitTime` ne repart pas. La mise à jour (`FUN_0060fad0`, le pas de l'image) : sans
+durée de vie, tout d'un coup ; sinon le reste × pas / (+0x10 − +0xc − l'écoulé +0x2c), et rien quand ce reste de temps ne dépasse pas le
+pas ; l'arrêt (`FUN_0060fbe0`), avant la fin de la durée, rien, sinon le reste. Pour la charge (0,167 à 0,2 s), les 15 points tombent
+d'un bloc à la fin, 0,2 s après l'entrée du nœud (`tests/test_actionbank`). L'octet +0x20, le genre du coup reçu (+0x464 de la cible),
+n'est pas suivi. Dans `1_02`, rien ne change : les prises de la commande sont jouées par `--jouer …/GrappleSuccess/GIVE`, qui passe
+`GrappleAttempt` et son `SetTargetAsGrappleTarget` : le joueur n'a pas de partenaire de prise, la charge ne blesse pas.
 
 ## Le chemin d'un nœud (18.10.2026)
 

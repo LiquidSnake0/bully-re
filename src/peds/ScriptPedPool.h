@@ -79,6 +79,48 @@ struct CCombatLoco {
 	bool tirage = false;         // +0x78 : FUN_00465910(8) à cette image
 	bool forcer = false;         // +0x79 : la prochaine image tire
 };
+// Le suivi d'un trajet (PATH) : l'objectif FollowPath (FollowPathObjective, table 0x90ca24, type 12 ; constructeur
+// FUN_0046fc20, posé par PedFollowPath 0x5cfbf0 : le trajet +0x10, le nœud de départ +0x14, le mode +0x24, le sens +0x28 à 1,
+// la vitesse +0x3c par FUN_005c6180, les rappels Lua +0x2c, +0x30, +0x34) et la piste FollowPath (FollowPathTrack 0x93800c :
+// lancement FUN_0062c290, mise à jour FUN_0062eb70, arrêt FUN_0062c2e0, fin FUN_00621c80 qui retire l'objectif, pas
+// FUN_0062ee20), qui en recopie les champs (FUN_0062c1e0).
+struct CSuiviTrajet {
+	int32 noeud = 0;             // +0x20 : le nœud visé
+	int32 precedent = -1;        // +0x24
+	int32 mode = 1;              // +0x30 : 0 une fois, 1 en boucle, 2 aller-retour, 3 sur place
+	int32 sens = 1;              // +0x34 : le pas de l'aller-retour
+	int32 plan = -1;             // +0x44 : le nœud dont on guette le passage, -1 aucun
+	CVector planPoint;           // +0x48 : ce nœud
+	CVector planNormale;         // +0x54 : la normale du plan de passage, vers la suite du trajet
+};
+// Un nœud du trajet tel que la piste le lit (FUN_005ec760) : sa position, son attente (+0x1c, en secondes) et ses actions (+0x20).
+struct CNoeudTrajet { CVector pos; float attente = 0; bool actions = false; };
+// FUN_0061acc0 : le nœud qui suit `noeud` selon le mode (le sens change aux bouts de l'aller-retour) ; faux à la fin du mode 0,
+// pour un mode inconnu ou un trajet vide. Le mode 3 garde le nœud.
+bool ScriptPedSuiviSuivant(CSuiviTrajet &s, int nombre, int32 &noeud);
+// FUN_0061ad60 : le piéton doit-il s'arrêter à ce nœud ? Oui s'il a des actions ou une attente, au dernier nœud des modes 0
+// et 3, aux deux bouts du mode 2 ; jamais en boucle (mode 1).
+bool ScriptPedSuiviArret(const CSuiviTrajet &s, const std::vector<CNoeudTrajet> &noeuds, int32 noeud);
+// FUN_0061afa0(precedent, noeud) : le plan de passage du nœud, sauf pour un nœud d'arrêt (alors plus de plan) ou sans suite :
+// sa normale est la direction vers le nœud suivant ; avec un précédent et un virage (la somme des deux directions unitaires
+// au carré au moins _DAT_00900c18), la perpendiculaire à plat de leur bissectrice, tournée vers la suite.
+void ScriptPedSuiviPoserPlan(CSuiviTrajet &s, const std::vector<CNoeudTrajet> &noeuds, int32 precedent, int32 noeud);
+// FUN_0062eaa0 : le piéton a-t-il passé le plan (le produit de la normale et du nœud moins le piéton ≤ 0) ?
+bool ScriptPedSuiviPlanPasse(const CSuiviTrajet &s, const CVector &pos);
+// FUN_0062eb70 (0x62ec10 … 0x62ec90, lu à l'assembleur) : le nœud est atteint quand la distance à plat du piéton au nœud
+// (FUN_0085c4d0, la racine) est sous son rayon (+0x51c du piéton, PedPathNodeReachedDistance 0x5cd930) multiplié par 3
+// (_DAT_00900c14) à vélo, sauf au dernier nœud d'un trajet suivi une fois (mode 0), où le facteur reste 1.
+bool ScriptPedSuiviAtteint(const CSuiviTrajet &s, int nombre, const CVector &pos, const CVector &noeud, float rayon, bool velo);
+// L'attente d'un nœud atteint (FUN_0062eb70, 0x62ed86) : s'il a une attente positive (+0x1c, en secondes), la piste attend
+// jusqu'à maintenant + attente × 1000 ms (_DAT_0090d3d8 = -1000, soustrait) et le piéton prend le lacet du nœud moins 90
+// degrés (FUN_0062c300 → FUN_00621c00 ; à vélo, plus 180). Rend l'échéance en ms, 0 sans attente.
+uint32 ScriptPedSuiviEcheance(float attente, uint32 maintenantMs);
+// FUN_005e7560 (le but lissé de FUN_00621a30) : sur le segment a → b, le point à `avance` mètres devant la projection du
+// piéton (`t` rend la fraction atteinte, plus de 1 au-delà de b, alors b) ; si le piéton s'écarte du segment de plus que
+// `avance`, sa projection. L'avance est 3 × la vitesse de l'intention + 3 (_DAT_00900c14, _DAT_00900988).
+CVector ScriptPedSuiviBut(const CVector &a, const CVector &b, const CVector &pos, float avance, float &t);
+float ScriptPedSuiviCap(float lacetNoeud, bool velo);
+
 // `tirer` rend un rand() du CRT (0 à 32767) ; les positions sont lues à plat.
 void ScriptPedCombatLocoChoisir(CCombatLoco &c, const CVector &soi, const CVector &cible, float petit, float grand,
                                 int32 pasMs, bool cibleVue, int (*tirer)(void *), void *ctx);
@@ -102,8 +144,15 @@ static const float SCRIPT_PED_DEGATS = 10.0f;       // points de vie par coup
 // Objective les traite ensemble, FUN_00606c00). Le compte de références (+0xc) n'est pas suivi.
 // FleeObjective (le constructeur FUN_0046f940(0x16, piéton), table 0x911894) est le type 22, la cible fuie en +0x10.
 enum { SCRIPT_PED_TYPE_DEFAUT = 12, SCRIPT_PED_TYPE_JOUEUR = 13 };
-enum { OBJECTIF_ATTAQUER_PIETON = 7, OBJECTIF_ATTAQUER_16 = 16, OBJECTIF_FUIR = 22, SCRIPT_PED_OBJECTIFS = 20 };
-struct CObjectifPieton { int32 type = -1; int cible = -1; int32 style = 0; };
+enum { OBJECTIF_ATTAQUER_PIETON = 7, OBJECTIF_SUIVRE_TRAJET = 12, OBJECTIF_ATTAQUER_16 = 16, OBJECTIF_FUIR = 22, SCRIPT_PED_OBJECTIFS = 20 };
+struct CObjectifPieton {
+	int32 type = -1; int cible = -1; int32 style = 0;
+	// FollowPath (type 12, FUN_0046fc20) : le trajet (+0x10, -1 au départ), le nœud de départ (+0x14), le mode (+0x24, 1 au
+	// départ), la vitesse (+0x3c, _DAT_00911e30 au départ, puis l'allure de FUN_005c6180).
+	int32 trajet = -1, noeudDepart = 0, mode = 1;
+	float vitesse = 0.3f;
+	int32 allure = -1;           // l'allure du script (le quatrième argument), pour la vitesse du geste de l'outil
+};
 
 struct CScriptPed {
 	bool vivant = false;         // l'entrée est prise
@@ -124,6 +173,11 @@ struct CScriptPed {
 	// FUN_00478e30), son maximum ; FUN_0047cde0 la remplit à chaque image (jusqu'à ce maximum), FUN_0047cee0 la dépense.
 	// La condition Sprint la compare (FUN_005fda70). L'outil ne la fait pas varier.
 	float sprint = 0;
+	// +0x157c : un flottant que le vélo pose (FUN_004e9160, 0x4e9292 et 0x4e92d1 ; et FUN_005051b0, 0x5051ff, pour le piéton
+	// DAT_00c3ce14), et dont le composant d'actions range l'adresse en +0x38 de ses trois contextes (FUN_00484d10 : +0x338,
+	// +0x390, +0x3e8, vérifié à l'assembleur en 0x484df8) ; la condition ParametricTime le lit. Aucun constructeur ne
+	// l'écrit (FUN_0047ffe0 pose +0x1574 … +0x1584 sans lui) : 0 hors du vélo, supposé (la mémoire du pool).
+	float parametrique = 0;
 	bool discretion = false;     // +0x1398 : un piéton de mission de discrétion (PedSetIsStealthMissionPed, 0x5d0110 →
 	                             // FUN_005d0080) ; la condition IsStealthMissionChar le lit (FUN_00602cf0)
 	// +0x714 : la classe de combat, la colonne S de l'entrée de pedstats.dat (+0x60 de l'entrée, GetCharacterClassId
@@ -168,7 +222,25 @@ struct CScriptPed {
 	                             // un FleeObjective le fuit avec l'octet +0x19 de sa piste
 	int cibleObjectif = -1;      // +0x540 (+0x184 du composant de visée en +0x3bc) : la cible d'un objectif d'attaque, que la
 	                             // condition Objective pose quand elle passe (FUN_0048c330)
-	bool mort = false;
+	bool mort = false;           // +0x1c98 : posé par la piste Death (FUN_00479110), lu par PedIsDead (0x5c8f30)
+	// Le composant de vue (+0xa64, son piéton en +0) : l'angle total du cône (+0xa68, la colonne D de pedstats.dat en
+	// degrés, × π / 180 par FUN_00478e30) et la portée (+0xa6c, la colonne E, en mètres) ; un cache de 16 piétons (+0xa74 :
+	// le piéton, l'octet vu, le nombre d'images à vivre) que FUN_0048ccf0 fait vieillir à chaque image (CPed, FUN_004812d0).
+	float visionAngle = 0, visionPortee = 0;
+	// +0x51c et l'octet +0x520 (+0x160 et +0x164 du composant de visée +0x3bc) : le rayon d'arrivée à un nœud de trajet et son
+	// « posé », qu'écrit PedPathNodeReachedDistance (0x5cd930) ; 1 m par défaut, posé par la remise du composant (FUN_0048c430,
+	// 0x48c5d1), que la remise du piéton (FUN_00474f50, 0x474f71) appelle depuis son constructeur.
+	float rayonNoeud = 1.0f;     // FUN_0048c430 (la remise du composant de visée, depuis FUN_00474f50) : fld1 en 0x48c5c9
+	bool rayonNoeudPose = false;
+	struct Vu { int ped = -1; bool vu = false; int32 images = 0; };
+	Vu vus[16];
+	// +0x1dbc et +0x1dc0 : le dernier piéton qui l'a frappé (FUN_004973d0, depuis la méthode du coup FUN_0047b810 quand son
+	// 15e argument, l'octet +0x214 de la piste Collision, est posé) et le temps écoulé depuis, en secondes (FUN_00499340 : 0
+	// sans agresseur).
+	int dernierAgresseur = -1;
+	float tempsAgresseur = 0;
+	bool immortel = false;       // +0x13fc : PedSetImmortalFlag (0x5ce6e0) / PedGetImmortalFlag (0x5ce730)
+	uint32 instantMort = 0;      // +0x18b8 : l'horloge (ms) à la mort d'un autre que le joueur
 	// Le geste en cours.
 	// L'intention de mouvement du composant d'actions (+0x2e0) : sa direction (+0, +4, +8) et sa vitesse (+0x1c), que la
 	// navigation pose à chaque image (FUN_004a4a50) et remet à zéro sans but (FUN_004a45c0) ; les conditions
@@ -231,8 +303,17 @@ public:
 	// lua_PedLockTarget (0x5cb060) : rien si le piéton n'existe pas ; cible -1 lève le verrou (FUN_004989c0(0)) ;
 	// sinon, si la cible existe, FUN_00497d20 la verrouille avec le mode donné. Vrai si quelque chose a changé.
 	bool Verrouiller(int handle, int cible, int mode);
-	// lua_PedSetHealth : la santé ; à zéro, le piéton meurt et lâche son geste.
+	// FUN_00478190 (lua_PedSetHealth, la piste SetHealth) : la santé (+0x1cb8), jamais sous la santé minimale (+0x1ca8).
+	// Une santé nulle ne tue pas : seul le rappel Lua du piéton (+0x141c, rangé en +0x18e8, non suivi) est appelé. Le
+	// piéton ne meurt que par Mourir, la piste Death.
 	void Sante(int handle, float sante);
+	// L'emplacement 42 de CPed (FUN_00479110), que lance la piste Death (DeathTrack 0x934aa0, FUN_0060fdc0 : l'octet
+	// +0x18 de la piste en argument). Rien pour un piéton déjà mort (+0x1c98) ; rien non plus pour un immortel (+0x13fc,
+	// PedSetImmortalFlag 0x5ce6e0), dont seul le rappel Lua est appelé. Sinon la santé passe à -100 (_DAT_00906520),
+	// +0x1c98 à 1 ; pour un autre que le joueur, la cible est lâchée (FUN_004989c0(0)) et l'instant de la mort posé
+	// (+0x18b8). Les stimulus, les statistiques du tueur (FUN_00458330, le joueur seul) et la partie perdue du joueur
+	// (FUN_004311e0) ne sont pas suivis. Vrai si le piéton meurt.
+	bool Mourir(int handle, uint32 maintenantMs = 0);
 	// FUN_00478e30 (lua_PedSetStatsType, et la création avec l'entrée du modèle, modelinfo +0x54) : les 64 colonnes de
 	// l'entrée de pedstats.dat copiées en +0x1900, la santé maximale = colonne F (entrée +0x2c), la santé = le maximum,
 	// la santé minimale à 0, la régénération = colonne G (+0x30). Le reste (vision, armes, vitesse) n'est pas suivi.
@@ -299,6 +380,18 @@ public:
 	// FUN_00486c00), FUN_0048c330 la cible de son objectif (+0x540), FUN_00606b40 son agresseur (+0x544). Vrai si
 	// quelque chose a été posé.
 	bool PrendreAttaquant(int handle, int attaquant);
+	// FUN_0048d320 (le composant de vue +0xa64) : le piéton voit-il `cible` ? Lui-même, oui ; le dernier piéton qui l'a frappé
+	// (+0x1dbc), depuis moins de 5 s et à moins de 5 m (_DAT_00900188, FUN_00487d00), oui ; sinon la réponse du cache, ou, à
+	// défaut, FUN_0048d0e0 (mise en cache pour 4 à 8 images, rand() × 5 / 0x7fff + 4) : la cible à portée à plat et dans le
+	// cône (FUN_0048cf50 : produit scalaire du devant et de la direction, à plat, strictement au-dessus du cosinus du
+	// demi-angle), puis la ligne de vue (FUN_00461d50, un rayon dans le monde) : l'outil n'a pas de monde, elle est dégagée.
+	// Les cas du joueur (l'octet +0x1e91, la hauteur d'un piéton discret +0x1398) ne sont pas suivis. `tirer` : le rand().
+	bool Voit(int handle, int cible, int (*tirer)(void *), void *ctx);
+	// L'image de la vue et du dernier agresseur : FUN_0048ccf0 (le cache vieillit d'une image) et FUN_00499340 (+0x1dc0
+	// avance du pas, en secondes, s'il y a un agresseur, sinon 0).
+	void AvancerVue(float dt);
+	// FUN_004973d0 : `attaquant` devient le dernier piéton qui a frappé `handle`, le temps repart de 0.
+	void Agresse(int handle, int attaquant);
 	// FUN_005f38e0 (ecx = le composant d'actions +0x2e0) : vide les entrées du piéton : les 47 boutons (+0x20, 12 octets
 	// chacun : la valeur passe en précédente puis à 0, l'octet d'appui à 0), l'intention (+0x254) et la vitesse de
 	// l'intention de mouvement (+0x1c) ; la direction (+0) reste. Le lancement d'une piste IDLE (FUN_0061d8e0), l'IA qui

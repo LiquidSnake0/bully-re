@@ -399,6 +399,54 @@ jabs (73,16, 82,14, 84,15, 86,16 s) ; la commande devient :
 
 et **`1_02` se termine réussie à 121,94 s** (`1_02_HumiliateHim` après le jab de 85,14 s, 7 → 5 points).
 
+## `1_03` (27.10.2026, nuit)
+
+`1_03` (« The Setup ») s'enchaîne après `1_02C` et `1_02B`, entre 8 h et 19 h (« Les conditions »). Lancée seule
+(`build/outils/lancer_lua 60 --mission 1_03 --sans-cinematiques`), son `MissionSetup` se joue jusqu'au bout (1,25 s : la cinématique
+`1-03` chargée puis sautée, `1_03.DAT`, douze groupes d'animations, quatre arbres, la population vidée) ; `main` crée les bullies,
+Davis (modèle 99, `1_03_Davis.act`, invulnérable, sprint infini) et Peter, puis lance la poursuite d'introduction :
+`PedFollowPath(Davis, PATH._1_03_SCHOOLFLEE, 0, 3, cbSchoolFlee)` et `PedFollowPath(joueur, PATH._1_03_PURSUE, 0, 2,
+cbIntroPursueDone)`, et attend `bIntroPursueDone`, que pose le rappel quand le joueur atteint le dernier nœud de son trajet
+(`node == PathGetLastNode(path)`, lu dans `1_03.lur`). L'outil s'y arrêtait ; depuis la piste `FollowPath`, la poursuite démarre.
+
+Ce qui est lu du suivi d'un trajet (le code est dans `src/peds/ScriptPedPool` et `lancer_lua`) :
+
+- **`PedFollowPath`** (0x5cfbf0, réel dans `lancer_lua`) : un `FollowPathObjective` (type 12, `FUN_0046fc20`) ; le trajet +0x10, le
+  départ +0x14 (sixième argument), le mode +0x24 (troisième), la vitesse +0x3c (l'allure du quatrième, `FUN_005c6180`), trois rappels
+  Lua (+0x2c, cinquième ; +0x30, septième ; +0x34, huitième). Un objectif neuf arrête le contrôleur de l'IA et vide la file.
+  **`PathGetLastNode`** (0x5bc600) : le nombre de nœuds moins 1, nil sans trajet.
+- **La piste `FollowPath`** (0x93800c) : son lancement (`FUN_0062c290`) recopie l'objectif (`FUN_0062c1e0`) ; sa mise à jour
+  (`FUN_0062eb70`) attend la fin de l'attente d'un nœud (+0x1c), puis compare la distance à plat au nœud visé au rayon du piéton
+  (+0x51c, `PedPathNodeReachedDistance` 0x5cd930) ; atteint, le rappel +0x2c est appelé avec (piéton, trajet, nœud)
+  (`FUN_0062e640`), puis les actions du nœud (`FUN_0062e780`), son attente, ou le nœud suivant (`FUN_0062e5f0` → `FUN_0061acc0`) ;
+  sinon le pas (`FUN_0062ee20` : le but lissé `FUN_00621a30`, la navigation `FUN_004a4eb0`). Entre deux nœuds sans arrêt, le passage
+  se voit au **plan** du nœud (`FUN_0061afa0` le pose : la direction vers la suite, ou dans un virage la perpendiculaire à la
+  bissectrice ; `FUN_0062eaa0` le teste à chaque image et appelle les deux rappels, +0x2c puis +0x30). Les nœuds d'arrêt
+  (`FUN_0061ad60`) : des actions, une attente, le dernier nœud des modes 0 et 3, les bouts de l'aller-retour. Le nœud suivant
+  (`FUN_0061acc0`) : une fois (0), en boucle (1), aller-retour (2, le sens +0x34), sur place (3). La fin retire l'objectif
+  (`FUN_00621c80`). `ScriptPedSuiviSuivant`, `ScriptPedSuiviArret`, `ScriptPedSuiviPoserPlan`, `ScriptPedSuiviPlanPasse`,
+  `tests/test_scriptpeds`.
+- **L'arrivée à un nœud** (`FUN_0062eb70`, lu à l'assembleur de 0x62ec10 à 0x62edd3) : la distance à plat sous le rayon (+0x51c),
+  multiplié par 3 à vélo sauf au dernier nœud d'un trajet suivi une fois ; une attente positive (+0x1c du nœud) fait attendre la piste
+  jusqu'à maintenant + attente × 1000 ms (`_DAT_0090d3d8` = -1000, soustrait) et tourner le piéton vers le lacet du nœud moins 90
+  degrés (`FUN_0062c300`, plus 180 à vélo). `PedPathNodeReachedDistance` est réelle (`ScriptPedSuiviAtteint`, `ScriptPedSuiviEcheance`,
+  `ScriptPedSuiviCap`). Dix scripts seulement l'appellent, contre 105 qui suivent un trajet.
+- **Le rayon par défaut** : 1 m. Il n'est écrit ni par le constructeur de `CPed` (`FUN_0047ffe0`) ni par celui du composant de visée
+  (`FUN_0048c1b0`), dont +0x51c est le +0x160, mais par sa remise (`FUN_0048c430`, `fld1` en 0x48c5c9 puis 0x48c5d1), que la remise
+  du piéton (`FUN_00474f50`, 0x474f71) appelle depuis le constructeur.
+- **La piste jouée par l'outil** (`AvancerSuivis`, comme un geste : le moteur la lance depuis l'arbre de l'IA,
+  `GeneralObjectives/FollowPath`) : le lancement depuis l'objectif, l'attente, l'arrivée sous le rayon avec les plans en attente
+  (`FUN_0062e640`), le but lissé à 3 × la vitesse de l'intention + 3 m devant la projection sur le segment (`FUN_00621a30` →
+  `FUN_005e7560`, qui fait avancer le nœud visé quand le but dépasse un nœud sans arrêt), le passage des plans (`FUN_0062eaa0`),
+  la fin qui retire l'objectif ; l'arrêt rend son état à l'objectif (`FUN_0062c230`). Le pas va droit vers le but, à la vitesse de
+  l'allure de l'outil ; les actions des nœuds (`FUN_0062e780`) ne sont pas suivies. `DistanceBetweenCoords3d` (0x5bfac0) et
+  `DistanceBetweenCoords2d` (0x5bfc10) sont réelles.
+- **Dans `1_03`** : le joueur suit `_1_03_PURSUE` (deux nœuds, 2,28 et 3,37 s), le rappel pose `bIntroPursueDone`, le script rend la
+  main (`PlayerSetControl(1)`, `TutorialStart("SPRINT1")`, l'objectif `1_03_INSTRUC02` à 3,40 s) ; Davis file sur `_1_03_SCHOOLFLEE`
+  au sprint (nœuds 0 à 5 de 2,31 à 7,99 s). Le joueur de l'outil ne le poursuit pas : `1_03_D13` (8,81 s, il s'éloigne), puis
+  `MissionFail("1_03_D11")` à 28,81 s. La suite est de jouer la poursuite (`--aller` sur le trajet de Davis). Dans `1_02`, le piéton 2
+  suit le trajet 21 depuis 2,11 s, jusqu'à ce que le script le supprime (22,04 s) : rien d'autre ne change.
+
 ## Suite
 
 1. Ce que `1_01` ne joue pas encore pour de vrai : les nœuds d'action (`PedSetActionNode` cherche le nœud dans

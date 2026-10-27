@@ -344,6 +344,25 @@ main(void)
 		// Les inclusions : GlobalActions inclut Grapples.act sous « actions », comme les scripts le désignent.
 		VERIF(g.Trouver("/Global/Actions/Grapples/Front/Grapples/GrappleAttempt/GrappleSuccess/GIVE") != nil);
 		VERIF(g.Trouver("/Global/Actions/Grapples/Front/Grapples/GrappleMoves/GrappleStrikes/HitC/Charge") != nil);
+		// DamageTarget (FUN_0060fad0, FUN_0060fbe0) : la charge lâchée (Release/Light/Give, 12 = 0,167, 16 = 0,2, 24 = 15) ne
+		// donne rien tant que le reste de sa durée ne dépasse pas le pas, puis ses 15 points à la fin de sa durée.
+		{
+			struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return 0; } } rien;
+			const CActionNode *legere = g.Trouver("/Global/Actions/Grapples/Front/Grapples/GrappleMoves/GrappleStrikes/HitC/Charge/Release/Light/Give");
+			VERIF(legere != nil);
+			if(legere){
+				CActionController c;
+				c.Jouer(g, legere, 0.0f);
+				VERIF(c.degatsCibles.size() == 1 && c.degatsCibles[0].total == 15.0f);
+				float somme = 0.0f, premier = -1.0f;
+				for(int i = 0; i <= 12; i++){
+					c.Avancer(g, nil, rien, i * 0.033f);
+					for(float v : c.coupsCible){ somme += v; if(premier < 0.0f) premier = i * 0.033f; }
+					c.coupsCible.clear();
+				}
+				VERIF(somme == 15.0f && premier > 0.19f && premier < 0.24f);
+			}
+		}
 		// Les pistes Collision (FUN_005f9e70) : le coup de pied au sol de TrainingPlayer porte la sienne par un Execute
 		// (« ./Collision », la feuille « ped ») : GROUNDHITHEAVY entre 0,0833 et 0,217 s, 8 de dégâts.
 		{

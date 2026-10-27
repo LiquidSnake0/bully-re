@@ -816,3 +816,37 @@ en échec plutôt que de les masquer.
   `tests/test_surface` plante déjà sur `main` avec `surface.dat` (hors CI, non touché).
 - **Bilan** : 667 fonctions recréées (4,3 % du code), contre 614 (4,1 %) ; 1 446 comprises (8,6 %) ; 10 commits.
 
+## 27.10.2026 (nuit, 2)
+
+- **La mort d'un piéton** : seule la piste `Death` tue (`FUN_0060fdc0` → l'emplacement 42 de `CPed`, `FUN_00479110`, lu à l'assembleur) :
+  santé à -100 (`_DAT_00906520`), +0x1c98 à 1, rien pour un immortel (+0x13fc, `PedSetImmortalFlag`). Une santé nulle ne fait qu'appeler
+  un rappel Lua (`FUN_00478190`, `FUN_004782a0`). Dans `1_02`, le bully à 0 point reste vivant, son IA passe dans `AMBIENT/Idle` par
+  l'`Opportunity` `../../../` de `CombatLoco`, et il meurt à 97,61 s par `BellyDown/Dead/KOReactions` → `Base/DeadCleanup`.
+- **Plus aucune condition jugée -1 dans `1_02`** : `ParametricTime` (`FUN_005fbed0`, le +0x157c du piéton par le +0x38 du contexte),
+  `PropTargetInteractive` (`FUN_00655110`, les objets proches, faux sans monde) et #3bb83b8f = `MissionUnlocked` (`FUN_006a72a0` : une
+  réussite ou le bit 8 de `MissionForceCompleted`), retrouvés par le registre `FUN_0064b090` (419 noms relus et hachés). En la jugeant,
+  un écart de l'outil est apparu et a été corrigé : sans coup reçu, `HitTime` vaut -1 (`FUN_005f3ab0`), il ne court pas depuis la
+  création ; faute de quoi les renversements toujours ouverts de `Grapples.cat` (`not MissionUnlocked[GrapTestUnlock]`) faisaient rompre
+  la prise au bully à 57,75 s.
+- **La vue** (`FUN_0048d320`) : le dernier agresseur à moins de 5 s et 5 m (+0x1dbc, posé quand l'octet +0x214 de la piste `Collision`
+  est mis, relu à l'appel de la méthode du coup), un cache de 16 piétons, le cône et la portée des colonnes D et E de `pedstats.dat`
+  (100 degrés, 12 m pour le bully). `CombatLoco` ne suppose plus la cible vue.
+- **La piste `DamageTarget`** (`FUN_0060fad0`, `FUN_0060fbe0`, `FUN_0060fc60`) : les coups portés pendant une prise ; sans effet dans
+  `1_02`, où la commande force `GIVE` sans partenaire de prise.
+- **`1_03` démarre** : `PedFollowPath`, `PathGetLastNode`, `PedPathNodeReachedDistance`, `DistanceBetweenCoords3d/2d` réels, et la piste
+  `FollowPath` jouée comme un geste (le nœud suivant `FUN_0061acc0`, les arrêts `FUN_0061ad60`, le plan de passage `FUN_0061afa0` /
+  `FUN_0062eaa0`, l'arrivée `FUN_0062eb70`, le but lissé `FUN_005e7560`, les rappels `FUN_0062e640` / `FUN_0062df60`). Le rayon d'arrivée
+  par défaut, introuvable au premier relevé, est 1 m (`FUN_0048c430`, la remise du composant de visée, 0x48c5c9). Le joueur finit sa
+  poursuite d'introduction, le script lui rend la main ; Davis file, et sans poursuite `1_03` échoue à 28,81 s (`1_03_D11`).
+- **`tests/test_surface`** ne plante plus : `CheminHote` (tests/hote) préfixait `BULLY_DATA` à un chemin absolu.
+- **Chronos** : `1_01` à 10,46 s et `1_02` à 121,94 s à chaque commit, déroulé de `1_02` inchangé sauf le bully (vivant jusqu'à
+  97,61 s, dans `AMBIENT/Idle` après l'humiliation) et le piéton 2 (qui suit le trajet 21 jusqu'à sa suppression).
+- **Ce qui bloque encore** : le point valable de `CombatLoco` (`FUN_006254c0` : la liste des piétons proches +0x3c0 du composant de
+  visée, le maillage de navigation) ; le choix d'une cible (`FUN_004992a0`, appelé à chaque image par `FUN_00499340`, et sa validité
+  `FUN_00497080`) ; les sphères des os (`FUN_005f8e20` teste six sphères du corps de la cible, qu'il faudrait tirer du squelette animé) ;
+  les `SpeechTrack` sans tenue (`FUN_006195a0` → `FUN_005a4980` : une parole par piéton avec sa priorité, que la parole unique de
+  l'outil ne sait pas tenir) ; la hauteur relative (`FUN_00603170`, les boîtes de collision des modèles) ; dans `1_03`, la poursuite.
+- **Bilan** : 710 fonctions recréées (5,0 % du code), contre 667 (4,3 %) ; 1 499 comprises (9,0 %) ; 10 commits. La mesure compte les
+  fonctions citées dans `src/` : une part du saut vient de fonctions seulement citées en commentaire (la méthode du coup `FUN_0047b810`,
+  `CPed` `FUN_004812d0`), pas recréées.
+

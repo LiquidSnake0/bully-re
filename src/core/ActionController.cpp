@@ -79,7 +79,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kGestion = ActionHash("ManageTargets"), kCombatLoco = ActionHash("CombatLoco"),
 	                    kDemandeNoeud = ActionHash("ActionNodeRequest"), kEffacer = ActionHash("ClearCurrentObjective"),
 	                    kFuite = ActionHash("FleeObjective"), kRepos = ActionHash("IDLE"), kBouton = ActionHash("ActionRequest"),
-	                    kInfoArme = ActionHash("SetWeaponInfo");
+	                    kInfoArme = ActionHash("SetWeaponInfo"), kMort = ActionHash("Death"),
+	                    kDegatsCible = ActionHash("DamageTarget");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -108,6 +109,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			c.entree = a; c.vie = Reel(p, 16, -1.0f);
 			c.debutBrut = Reel(p, 24, 0.0f); c.finBrut = Reel(p, 28, -1.0f);
 			c.debutFenetre = entree + c.debutBrut; c.finFenetre = c.finBrut >= 0.0f ? entree + c.finBrut : -1.0f;
+			c.agresseur = Octet(p, 532);
 			contacts.push_back(c);
 		}else if(p.type == kDegats){
 			{ const CActionAttribut *fx = p.Champ(28); degats.push_back({&n, a, Reel(p, 24, 0.0f), fx && fx->taille >= 1 && fx->valeur[0] != 0, false}); }
@@ -130,6 +132,11 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			effacements.push_back({a, (int32)p.Mot(24), false});
 		}else if(p.type == kFuite){
 			fuites.push_back({a, Octet(p, 24), Octet(p, 25), false});
+		}else if(p.type == kDegatsCible){
+			float vie = Reel(p, 16, -1.0f);
+			degatsCibles.push_back({a, vie < 0.0f ? -1.0f : vie - Reel(p, 12, 0.0f), Reel(p, 24, 0.0f), 0.0f, 0.0f, false});
+		}else if(p.type == kMort){
+			morts.push_back({Reel(p, 12, 0.0f) < 0.0f ? -1.0f : a, Octet(p, 24), false});
 		}else if(p.type == kRepos){
 			repos.push_back({a, false});
 		}else if(p.type == kInfoArme){
@@ -204,6 +211,14 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	for(Drapeau &d : drapeaux)    // FUN_005f3fb0 à l'arrêt du nœud : les entrées négatives se lancent
 		if(!d.fait && d.entree < 0.0f){ d.fait = true; drapeauxPoses.push_back(d); }
 	drapeaux.clear();
+	for(DegatsCible &d : degatsCibles)   // FUN_0060fbe0 : l'arrêt d'une piste lancée
+		if(!d.finie && joue && Temps(t) >= d.entree && !(d.duree > 0.0f && Temps(t) - d.entree < d.duree)){
+			coupsCible.push_back(d.total - d.fait); d.fait = d.total; d.finie = true;
+		}
+	degatsCibles.clear();
+	for(Mort &d : morts)          // FUN_0060fdc0, à l'arrêt du nœud
+		if(!d.fait && d.entree < 0.0f){ d.fait = true; mortsLancees.push_back(d); }
+	morts.clear();
 	for(Parole &d : paroles)
 		if(!d.fait && d.entree < 0.0f){ d.fait = true; parolesLancees.push_back(d); }
 	paroles.clear();
@@ -455,6 +470,20 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 	prises.clear();
 	for(Blessure &d : degats)     // FUN_0060fc70 : au lancement de la piste
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; blessures.push_back(d); }
+	float pas = dernierAvancer >= 0.0f && t > dernierAvancer ? t - dernierAvancer : 0.033f;
+	dernierAvancer = t;
+	for(DegatsCible &d : degatsCibles){   // FUN_0060fad0, puis FUN_0060fbe0 à la fin de sa durée
+		if(d.finie || Temps(t) < d.entree) continue;
+		if(d.duree < 0.0f){ coupsCible.push_back(d.total - d.fait); d.fait = d.total; d.finie = true; continue; }
+		if(Temps(t) - d.entree >= d.duree){ coupsCible.push_back(d.total - d.fait); d.fait = d.total; d.finie = true; continue; }
+		float reste = d.duree - d.ecoule;
+		if(reste < 0.0f && d.ecoule == 0.0f){ d.finie = true; continue; }
+		float part = reste <= pas ? 0.0f : pas / reste, v = (d.total - d.fait) * part;
+		if(v != 0.0f) coupsCible.push_back(v);
+		d.fait += v; d.ecoule += pas;
+	}
+	for(Mort &d : morts)          // FUN_0060fdc0
+		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; mortsLancees.push_back(d); }
 	for(Drapeau &d : drapeaux)    // FUN_0060f8e0
 		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; drapeauxPoses.push_back(d); }
 	regardsActifs.clear();
