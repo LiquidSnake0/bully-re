@@ -445,6 +445,7 @@ de l'IA qui n'a pas de geste.
 |---|---|---|
 | `CollisionStart` | `FUN_00602260` | l'octet +0x4e5 du piéton : posé à 1 par le lancement d'une piste `Collision` (`FUN_005f9480`, 0x5f94aa) ou `WeaponCollision` (`FUN_00661660`, 0x661694) ; aucune instruction ne le remet à 0 (la seule autre écriture, 0x6f2d68, est dans `FUN_006f2d10`, sur un autre objet) : vrai pour tout piéton qui a déjà lancé un coup |
 | `AttackPhase` | `FUN_00601fc0` | la phase de l'attaque (+0x71c) est +4 ; si +8 est positif, l'échéance (+0x720, en ms de `DAT_00c1a9b4`) est posée et tombe plus de +8 s après maintenant |
+| `Controller` | `FUN_006006f0` | l'octet `DAT_00a45a4c` (1 dans le .data, aucune instruction ne l'écrit) laisse passer ; avec l'octet +5, le piéton est mené par l'une des deux manettes (`DAT_00c2b120`, `DAT_00c2b124`) ; sinon par la manette 1 si l'octet +4, la 0 sinon. La manette 0 mène le joueur (le constructeur de `CPlayerPed`, `FUN_0049b1b0`) ; `PedSetControllerID` (`FUN_005c9fc0`) et la piste `Controller` (`FUN_0061d860`, arrêt `FUN_0061a890`) les changent |
 | `HudComponentVisible` | `FUN_0065aee0` | l'emplacement 4 (+0x10) du composant +4 de la table du HUD (`DAT_00c674a0`, 48 places remplies par la fabrique `FUN_0053cee0` depuis `FUN_00514920`) : l'octet +8 de `HUDComponent` (`FUN_00538f80`), sauf `HUDMoney` (13, `FUN_00542740`) et `HUDClockWarnings` (15, `FUN_0053c820`) |
 
 **La phase de l'attaque** (`CActionController::PhasesCollision`) : le lancement de la piste `Collision` (`FUN_005f9480`) pose la

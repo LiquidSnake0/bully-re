@@ -332,6 +332,10 @@ struct CJugeOutil : CJugeAction {
 			float delai; memcpy(&delai, &mots[1], 4);
 			return ConditionAttackPhase(it->second, (int32)mots[0], delai, (uint32)lrintf(t * 1000.0f));
 		}
+		// Controller (FUN_006006f0) : le piéton mené par une manette (l'octet +5 : l'une des deux ; sinon la 1 si l'octet +4,
+		// la 0 sinon). La manette 0 mène le joueur (FUN_0049b1b0) ; PedSetControllerID les change.
+		static const uint32 kManette = ActionHash("Controller");
+		if(type == kManette) return pietons.MeneParLaManette(ped, (mots[0] & 0xff) != 0, ((mots[0] >> 8) & 0xff) != 0);
 		// HudComponentVisible (FUN_0065aee0) : l'emplacement 4 du composant +4 de la table du HUD (DAT_00c674a0), l'octet
 		// +8 pour tous ceux que les arbres relevés testent (14, 18, 19, 23 à 37 ; HUDMoney et HUDClockWarnings ont le leur).
 		static const uint32 kHud = ActionHash("HudComponentVisible");
@@ -1674,6 +1678,15 @@ HUDRestoreVisibility(lua_State *L)
 	return 0;
 }
 
+// PedSetControllerID(ped, n) (FUN_005c9fc0) : le piéton mené par la manette n (0 : DAT_00c2b120, 1 : DAT_00c2b124).
+static int
+PedSetControllerID(lua_State *L)
+{
+	Journal("PedSetControllerID", L, 1);
+	pietons.PoserManette((int)luaL_checknumber(L, 1), (int)luaL_checknumber(L, 2));
+	return 0;
+}
+
 // PedSetFaction(ped, type) (0x5cb570) : le type du piéton (+0x1310), sauf 13 (PLAYER1), que le moteur refuse.
 static int
 PedSetFaction(lua_State *L)
@@ -2915,6 +2928,7 @@ main(int argc, char **argv)
 	lua_register(L, "ChapterSet", ChapterSet);
 	lua_register(L, "PlayerGetPhysicalState", PlayerGetPhysicalState);
 	lua_register(L, "ChapterGet", ChapterGet);
+	lua_register(L, "PedSetControllerID", PedSetControllerID);
 	lua_register(L, "ToggleHUDComponentVisibility", ToggleHUDComponentVisibility);
 	lua_register(L, "ToggleHUDComponentLocked", ToggleHUDComponentLocked);
 	lua_register(L, "HUDComponentGetVisibility", HUDComponentGetVisibility);

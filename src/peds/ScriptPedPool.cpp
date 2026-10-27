@@ -432,3 +432,19 @@ CScriptPedPool::SurveillerHumiliation(int victime, int taille, int tailleJoueur,
 	if(!(p->santeMax > 0 && (double)(p->sante / p->santeMax) < 0.5)) return -1;
 	return ChoisirGroupeHumiliation(victime, taille, SCRIPT_PED_JOUEUR, tailleJoueur, true, tirage);
 }
+
+bool
+CScriptPedPool::PoserManette(int handle, int manette)
+{
+	if(!Valide(handle) || (manette != 0 && manette != 1)) return false;
+	manettes[manette] = handle;
+	return true;
+}
+
+bool
+CScriptPedPool::MeneParLaManette(int handle, bool manette1, bool lesDeux) const
+{
+	if(!Valide(handle)) return false;
+	if(lesDeux) return manettes[0] == handle || manettes[1] == handle;
+	return manettes[manette1 ? 1 : 0] == handle;
+}

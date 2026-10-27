@@ -201,6 +201,16 @@ public:
 	// quitte sa zone d'avant et y entre (FUN_004878e0, FUN_00486c70, +0x66c). Le remplacement d'un combattant moins bien
 	// placé (FUN_004863c0) et l'arme à distance (FUN_00486a90, seule la zone 2) ne sont pas suivis.
 	bool JoindreZoneCombat(int handle, int cible, int zone, bool essai);
+	// Les piétons menés par les deux manettes : DAT_00c2b120 (la manette 0), que le constructeur de CPlayerPed
+	// (FUN_0049b1b0) pose au joueur, et DAT_00c2b124 (la manette 1), nul au démarrage ; PedSetControllerID(ped, n)
+	// (FUN_005c9fc0) y range le piéton pour n = 0 ou 1 (une autre valeur ne fait rien), comme le lancement d'une piste
+	// Controller (FUN_0061d860, l'octet +0x1c et la manette +0x18), que son arrêt (FUN_0061a890) remet à nul. -1 : aucun.
+	bool PoserManette(int handle, int manette);
+	int PietonDeLaManette(int manette) const { return manette == 0 || manette == 1 ? manettes[manette] : -1; }
+	// La condition Controller (ConditionController, FUN_006006f0) : l'octet DAT_00a45a4c, qui vaut 1 dans le .data et
+	// qu'aucune instruction n'écrit, la laisse passer ; avec l'octet +5, vrai si le piéton est mené par l'une des deux
+	// manettes ; sinon par la manette 1 si l'octet +4, la manette 0 s'il est nul.
+	bool MeneParLaManette(int handle, bool manette1, bool lesDeux) const;
 	// lua_PedMakeAmbient (0x5ca850) : rendu à la population, plus ramassé par son script.
 	bool RendreAmbiant(int handle);
 	// Une image de dt secondes : marches, poursuites et coups ; pose les drapeaux d'événements. La régénération
@@ -210,4 +220,5 @@ public:
 	void Avancer(float dt);
 private:
 	CScriptPed peds[SCRIPT_PED_POOL_SIZE];
+	int manettes[2] = {SCRIPT_PED_JOUEUR, -1};
 };

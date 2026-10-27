@@ -201,6 +201,17 @@ main(void)
 		VERIF(q.Acceder(SCRIPT_PED_JOUEUR)->combattants[0].empty() && q.Acceder(SCRIPT_PED_JOUEUR)->combattants[1].size() == 2);
 		VERIF(q.Supprimer(a) && q.Acceder(SCRIPT_PED_JOUEUR)->combattants[1].size() == 1);
 	}
+	// Les manettes (FUN_0049b1b0, PedSetControllerID FUN_005c9fc0) et la condition Controller (FUN_006006f0).
+	{
+		CScriptPedPool q;
+		int b = q.Creer(146, CVector(0, 0, 0), 0, 1);
+		VERIF(q.PietonDeLaManette(0) == SCRIPT_PED_JOUEUR && q.PietonDeLaManette(1) == -1);
+		VERIF(q.MeneParLaManette(SCRIPT_PED_JOUEUR, false, false) && !q.MeneParLaManette(SCRIPT_PED_JOUEUR, true, false));
+		VERIF(q.MeneParLaManette(SCRIPT_PED_JOUEUR, true, true) && !q.MeneParLaManette(b, false, true));
+		VERIF(!q.PoserManette(b, 2) && q.PoserManette(b, 1) && q.PietonDeLaManette(1) == b);
+		VERIF(q.MeneParLaManette(b, true, false) && q.MeneParLaManette(b, false, true) && !q.MeneParLaManette(b, false, false));
+		VERIF(!q.PoserManette(17, 0) && q.PietonDeLaManette(0) == SCRIPT_PED_JOUEUR);
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }
