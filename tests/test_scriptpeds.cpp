@@ -212,6 +212,23 @@ main(void)
 		VERIF(q.MeneParLaManette(b, true, false) && q.MeneParLaManette(b, false, true) && !q.MeneParLaManette(b, false, false));
 		VERIF(!q.PoserManette(17, 0) && q.PietonDeLaManette(0) == SCRIPT_PED_JOUEUR);
 	}
+	// L'état social (+0xbb0, +0xbb4) : IsSocialStateWait (FUN_00603b80) et IsSocializing (FUN_006039d0).
+	{
+		CScriptPedPool q;
+		q.Acceder(SCRIPT_PED_JOUEUR)->type = SCRIPT_PED_TYPE_JOUEUR;
+		int b = q.Creer(146, CVector(0, 0, 0), 0, 1);
+		VERIF(!q.AttenteSociale(b) && !q.Socialise(b, false) && !q.Socialise(SCRIPT_PED_JOUEUR, true));
+		CScriptPed *p = q.Acceder(b);
+		p->etatSocial = 2;
+		VERIF(!q.AttenteSociale(b));                   // sans partenaire, rien
+		p->partenaireSocial = SCRIPT_PED_JOUEUR;
+		VERIF(q.AttenteSociale(b) && q.Socialise(b, false) && q.Socialise(b, true));
+		VERIF(q.Socialise(SCRIPT_PED_JOUEUR, true) && !q.Socialise(SCRIPT_PED_JOUEUR, false));
+		p->etatSocial = 3;
+		VERIF(!q.AttenteSociale(b) && q.Socialise(b, false));
+		p->drapeauxSociaux = 1;
+		VERIF(!q.Socialise(SCRIPT_PED_JOUEUR, true));
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }

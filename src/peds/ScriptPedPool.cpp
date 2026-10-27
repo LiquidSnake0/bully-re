@@ -448,3 +448,25 @@ CScriptPedPool::MeneParLaManette(int handle, bool manette1, bool lesDeux) const
 	if(lesDeux) return manettes[0] == handle || manettes[1] == handle;
 	return manettes[manette1 ? 1 : 0] == handle;
 }
+
+bool
+CScriptPedPool::AttenteSociale(int h) const
+{
+	if(!Valide(h)) return false;
+	const CScriptPed &p = peds[h];
+	return p.etatSocial != 0 && p.partenaireSocial >= 0 && (p.etatSocial == 2 || p.etatSocial == 4 || p.etatSocial == 6);
+}
+
+bool
+CScriptPedPool::Socialise(int h, bool pourLeJoueur) const
+{
+	if(!Valide(h)) return false;
+	const CScriptPed &p = peds[h];
+	if(!pourLeJoueur || p.type != SCRIPT_PED_TYPE_JOUEUR) return p.etatSocial != 0 && p.partenaireSocial >= 0;
+	for(int i = SCRIPT_PED_POOL_SIZE - 1; i >= 0; i--){
+		const CScriptPed &o = peds[i];
+		if(i == h || !o.vivant) continue;
+		if(o.etatSocial != 0 && o.partenaireSocial == h && (o.drapeauxSociaux & 1) == 0) return true;
+	}
+	return false;
+}

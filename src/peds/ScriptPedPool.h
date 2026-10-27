@@ -80,6 +80,13 @@ struct CScriptPed {
 	// -1 à la construction (FUN_0048e790, appelé par le constructeur de CPed) ; un indice dans la table des 22 groupes
 	// d'animations HUMIL_ (ScriptPedGroupeHumiliation). La condition HumiliationGroupIs le lit (FUN_006039b0).
 	int32 groupeHumiliation = -1;
+	// Le composant social (+0xb44) : son état (+0x6c, +0xbb0 du piéton ; FUN_0048f270 le passe de 1 à 2 ou de 3 à 6 et pose
+	// 3 ou 5 au partenaire, FUN_00492990 4, FUN_00495440 3 et 5) et son partenaire (+0x70, +0xbb4), nuls hors d'un échange ;
+	// l'octet +0x224 (+0xd68 du piéton), dont le bit 0 écarte le piéton des échanges vus par IsSocializing. L'outil ne joue
+	// pas le système social : l'état reste 0.
+	int32 etatSocial = 0;
+	int partenaireSocial = -1;
+	uint8 drapeauxSociaux = 0;
 	int cibleDePrise = -1;       // +0x155c, PedSetGrappleTarget (0x474360) : le partenaire de prise, -1 sinon
 	CObjectifPieton objectifs[SCRIPT_PED_OBJECTIFS];   // +0x5f8, la file des objectifs
 	int nombreObjectifs = 0;     // +0x648
@@ -211,6 +218,13 @@ public:
 	// qu'aucune instruction n'écrit, la laisse passer ; avec l'octet +5, vrai si le piéton est mené par l'une des deux
 	// manettes ; sinon par la manette 1 si l'octet +4, la manette 0 s'il est nul.
 	bool MeneParLaManette(int handle, bool manette1, bool lesDeux) const;
+	// La condition IsSocialStateWait (FUN_00603b80) : le piéton a un état social et un partenaire, et l'état est 2, 4 ou 6
+	// (il attend la réponse de l'autre).
+	bool AttenteSociale(int handle) const;
+	// La condition IsSocializing (FUN_006039d0) : un état social et un partenaire ; avec `pourLeJoueur` (l'octet +4) et un
+	// piéton joueur (type 13), vrai si un autre piéton du pool, du dernier au premier, est en échange avec lui (son
+	// partenaire est le joueur) sans le bit 0 de son octet +0xd68.
+	bool Socialise(int handle, bool pourLeJoueur) const;
 	// lua_PedMakeAmbient (0x5ca850) : rendu à la population, plus ramassé par son script.
 	bool RendreAmbiant(int handle);
 	// Une image de dt secondes : marches, poursuites et coups ; pose les drapeaux d'événements. La régénération

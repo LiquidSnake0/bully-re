@@ -360,6 +360,11 @@ struct CJugeOutil : CJugeAction {
 			float delai; memcpy(&delai, &mots[1], 4);
 			return ConditionAttackPhase(it->second, (int32)mots[0], delai, (uint32)lrintf(t * 1000.0f));
 		}
+		// IsSocialStateWait (FUN_00603b80) et IsSocializing (FUN_006039d0, l'octet +4 : pour le joueur, un autre en échange
+		// avec lui) : l'état social (+0xbb0) et le partenaire (+0xbb4) du piéton.
+		static const uint32 kAttenteSociale = ActionHash("IsSocialStateWait"), kSocial = ActionHash("IsSocializing");
+		if(type == kAttenteSociale) return pietons.AttenteSociale(ped);
+		if(type == kSocial) return pietons.Socialise(ped, (mots[0] & 0xff) != 0);
 		// Controller (FUN_006006f0) : le piéton mené par une manette (l'octet +5 : l'une des deux ; sinon la 1 si l'octet +4,
 		// la 0 sinon). La manette 0 mène le joueur (FUN_0049b1b0) ; PedSetControllerID les change.
 		static const uint32 kManette = ActionHash("Controller");
