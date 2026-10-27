@@ -342,6 +342,7 @@ CActionController::Occasions(const CActionBank &b, const CJugeAction &juge, floa
 {
 	demandeNoeud = nil;
 	demandePriorite = -1;
+	finDemandee = false;
 	float temps = Temps(t);
 	for(COpportunite &o : occasions){
 		if(o.arretee || temps < o.entree) continue;
@@ -379,6 +380,7 @@ CActionController::Occasions(const CActionBank &b, const CJugeAction &juge, floa
 		}
 		if(!arret) continue;
 		o.arretee = true;
+		if(o.prise) finDemandee = true;                   // FUN_005f7440 : FUN_005f3bc0(nœud, priorité, 1)
 		if(o.prise && o.priorite > demandePriorite){       // FUN_005f3bc0
 			demandePriorite = o.priorite;
 			demandeNoeud = o.cible;
@@ -507,6 +509,9 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(sousControleurs) for(const COpportunite &o : occasions) retenu |= o.retient && !o.arretee;
 		fini = !retenu;
 	}
+	// Une Opportunity prise sans nœud (un chemin vide) a demandé la fin du nœud (FUN_005f49a0 : l'octet +1, quelles que
+	// soient les pistes qui le retiennent) : il finit comme les autres, ses Sequence comprises.
+	if(joue && finDemandee) fini = true;
 	// FUN_005f7030 : les Sequence à la fin du nœud. Le nœud visé (FUN_005f4e30) peut être hors de l'arbre posé : la
 	// poussée de la prise (PushFwd/RCV) envoie la cible dans HitTree/Standing/PostHit/BellyUp/OnGroundBounce.
 	if(fini){

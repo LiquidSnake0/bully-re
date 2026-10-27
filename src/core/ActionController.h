@@ -187,6 +187,8 @@ public:
 	uint32 hasard = 1;                // la graine du rand() du CRT (OpportunityRandomLatch)
 	const CActionNode *demandeNoeud = nil;   // la demande retenue à cette image (FUN_005f3bc0 : +0x14)
 	int32 demandePriorite = -1;              // sa priorité (+4)
+	bool finDemandee = false;                // FUN_005f3bc0 avec son dernier octet (+1) : une Opportunity prise s'est arrêtée,
+	                                         // le nœud joué finit, même sans nœud demandé (FUN_005f7440, FUN_005f49a0)
 
 	// La pile du contexte (+0x44 le haut, +0x48 les clés) : FUN_005f36d0 pose la racine (+0x40) et y met sa clé
 	// (FUN_005f4e40, le nom haché de l'arbre de tête de la racine) ; FUN_005f3700 en empile une seconde (le partenaire de

@@ -46,11 +46,13 @@ chantier. Un point fini passe en bas, avec son commit.
    conditions lues le 27.10.2026 ») ; la vitesse de `CombatLoco` vient du pas (`FUN_00625970`). `1_02` reste réussie (119,03 s).
    La course de `RunStart` est établie (il n'y en a pas : le pas de `CombatLoco` est le mode 10 sous le petit rayon) ; les entrées
    vidées (`FUN_005f38e0`), la vitesse de la navigation (`FUN_005e4a60`), les quatre sous-états de `CombatLoco` et l'arrêt au petit
-   rayon sont recréés ; le bully ne pare pas, dans le jeu non plus (la banque `Defense` de `Fight_Tutorial` est vide) ; `ActionRequest`
-   lit le bouton brut (`FUN_005fd570`). `1_02` est réussie à 118,93 s.
+   rayon sont recréés ; le bully pare (le bouton 12 de son IA, `Defence/Block`, `HitTree/Standing/BlockHits`), une `Opportunity` prise
+   fait finir son nœud même sans nœud visé ; `ActionRequest` lit le bouton brut (`FUN_005fd570`) ; huit conditions de plus (armes,
+   conversation, missions, tenues, `AttackerConditionGroup`). `1_02` est réussie à 121,94 s (quinze jabs, docs/missions.md).
    Suite, dans l'ordre :
-   - les conditions encore jugées -1 dans `1_02` : `AttackerConditionGroup`, `ParametricTime`
-     (le +0x38 du contexte), `PropTargetInteractive` ;
+   - les conditions encore jugées -1 dans `1_02` : `ParametricTime` (le flottant en +0x157c du piéton, que pose le vélo,
+     `FUN_004e9160`), `PropTargetInteractive` (`FUN_00655110`), #3bb83b8f,
+     à lire ;
    - la mort d'un piéton par la piste `Death` (`FUN_0060fdc0` → `FUN_00479110`, +0x1c98) au lieu de la santé nulle ;
    - ce qui reste supposé dans `CombatLoco` : la cible vue (`FUN_0048d320`), le point valable (`FUN_006254c0`), la recherche de chemin ;
    - le choix d'une cible (`FUN_004992a0`, `FUN_004988b0`, `FUN_00496b60`), les sphères des os des coups (au lieu du demi-espace

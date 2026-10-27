@@ -390,7 +390,14 @@ petit rayon (0,9 m, `FUN_0062c740`), plus au grand ; le bully se tient plus prè
 l'humiliation (`GV` à 84,12 s, `RCV/END` à 89,33 s) : **`1_02` se termine réussie à 118,93 s**. Pendant `RunStart`, le joueur est sous
 le petit rayon : la vitesse de l'intention est 0 dans le jeu aussi, le bully tombe sur place. `MissionCond` et `OnMission` sont jugées dans les arbres
 d'actions : la charge de la prise (57 s) se lâche d'elle-même (`Charge/Release`, 57,09 s), le cours de lutte `C_Wrestling_1` n'étant
-pas réussi.
+pas réussi. Avec `AttackerConditionGroup` et la fin demandée par une `Opportunity` sans nœud (docs/cat.md), le bully pare quatre
+jabs (73,16, 82,14, 84,15, 86,16 s) ; la commande devient :
+
+    build/outils/lancer_lua 130 --mission 1_02 … (les mêmes options, sauf :)
+      --jouer /Global/TrainingPlayer/Attacks/Strikes/LightAttacks@72,73,74,75,76,77,78,79,80,81,82,83,84,85,86 \
+      --jouer /Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init:Act/Player.act@87
+
+et **`1_02` se termine réussie à 121,94 s** (`1_02_HumiliateHim` après le jab de 85,14 s, 7 → 5 points).
 
 ## Suite
 

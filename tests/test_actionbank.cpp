@@ -576,7 +576,8 @@ main(void)
 				bool debut = false;
 				for(const CActionController::Drapeau &d : c.drapeauxPoses) if(d.numero == 123 && d.valeur == 1) debut = true;
 				size_t avant = debut ? 1 : 0;
-				c.drapeauxPoses.clear();
+				// Sans partenaire de prise, son Opportunity sans chemin (« not HasGrappleTarget ») est prise et fait finir le
+				// nœud dès cette image (FUN_005f7440 → FUN_005f3bc0(…, 1)) : le drapeau peut déjà être remis à 0.
 				c.Jouer(g, give, 0.02f);                          // le nœud change : SetPedFlags 123 à 0 (entrée -1) se lance
 				bool fin = false;
 				for(const CActionController::Drapeau &d : c.drapeauxPoses) if(d.numero == 123 && d.valeur == 0) fin = true;

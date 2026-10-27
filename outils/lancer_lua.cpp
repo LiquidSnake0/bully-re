@@ -737,6 +737,18 @@ struct CJugeOutil : CJugeAction {
 			if(pietons.Acceder(c) == nil || !f.GroupeDe(d, groupe)) return 0;
 			return arbres.JugerListe(f, groupe, CJugeOutil(c, t)) == 1;
 		}
+		// AttackerConditionGroup (ConditionAttackerConditionGroup 0x9370a0, FUN_00601e00) : le groupe +4 jugé pour l'attaquant du
+		// dernier coup reçu (le +4 du relevé, PedGetLastHitWeapon : +0x40c du composant +0x2e0), dans son propre contexte
+		// (l'emplacement +0x40 de sa table) ; faux sans piéton ni attaquant. Le véhicule du contexte (+0xc, son conducteur
+		// +0x1c0) n'est pas suivi.
+		static const uint32 kGroupeAttaquant = ActionHash("AttackerConditionGroup");
+		if(type == kGroupeAttaquant){
+			auto it = coups.find(ped);
+			int a = it != coups.end() ? it->second.attaquant : -1;
+			std::vector<int32> groupe;
+			if(moi == nil || pietons.Acceder(a) == nil || !f.GroupeDe(d, groupe)) return 0;
+			return arbres.JugerListe(f, groupe, CJugeOutil(a, t)) == 1;
+		}
 		// InAttackCone (FUN_00602200 → FUN_004865a0) : la cible à moins d'AIButes +0x54 (1,5 m) et devant le piéton (le
 		// cosinus de l'angle au moins +0x58, 0,76). Le dernier test (FUN_0048d320, l'un voit l'autre) est supposé vrai.
 		if(type == kCone){
