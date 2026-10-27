@@ -78,7 +78,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kPoursuite = ActionHash("SeekEntityPosition"), kSpawn = ActionHash("spawn"),
 	                    kGestion = ActionHash("ManageTargets"), kCombatLoco = ActionHash("CombatLoco"),
 	                    kDemandeNoeud = ActionHash("ActionNodeRequest"), kEffacer = ActionHash("ClearCurrentObjective"),
-	                    kFuite = ActionHash("FleeObjective");
+	                    kFuite = ActionHash("FleeObjective"), kRepos = ActionHash("IDLE"), kBouton = ActionHash("ActionRequest"),
+	                    kInfoArme = ActionHash("SetWeaponInfo");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -129,6 +130,12 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			effacements.push_back({a, (int32)p.Mot(24), false});
 		}else if(p.type == kFuite){
 			fuites.push_back({a, Octet(p, 24), Octet(p, 25), false});
+		}else if(p.type == kRepos){
+			repos.push_back({a, false});
+		}else if(p.type == kInfoArme){
+			infosArme.push_back({a, Reel(p, 44, -1.0f), Reel(p, 64, 0.0f), false});
+		}else if(sousControleurs && p.type == kBouton){
+			demandesBouton.push_back({a, (int32)p.Mot(24), (int32)p.Mot(28), Octet(p, 32), Octet(p, 8), false, false});
 		}else if(sousControleurs && (p.type == kGestion || p.type == kCombatLoco)){
 			Gestion g{a, Reel(p, 16, -1.0f), Octet(p, 24), Octet(p, 8)};
 			(p.type == kGestion ? gestions : combats).push_back(g);
@@ -215,7 +222,10 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	santes.clear();
 	prisesCible.clear();
 	gestions.clear(); combats.clear(); demandesNoeud.clear();
-	effacements.clear(); fuites.clear();
+	for(const DemandeBouton &d : demandesBouton)   // FUN_00626160 : l'arrêt d'une piste au mode 2 lâche son bouton
+		if(!d.morte && d.lancee && d.mode == 2) laches.push_back(d.bouton);
+	demandesBouton.clear();
+	effacements.clear(); fuites.clear(); repos.clear(); infosArme.clear();
 	lances.clear();                    // FUN_005f7390 : l'arrêt d'une piste spawn arrête son contrôleur
 	finExecutees = -1.0f;
 	retenu = false;
@@ -262,6 +272,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 		for(const Gestion &g : gestions) finParRetenues |= g.retient;
 		for(const Gestion &g : combats) finParRetenues |= g.retient;
 		for(const DemandeNoeud &g : demandesNoeud) finParRetenues |= g.retient;
+		for(const DemandeBouton &g : demandesBouton) finParRetenues |= g.retient;
 		if(sousControleurs) for(const COpportunite &o : occasions) finParRetenues |= o.retient;
 	}
 }
@@ -331,6 +342,7 @@ CActionController::Occasions(const CActionBank &b, const CJugeAction &juge, floa
 {
 	demandeNoeud = nil;
 	demandePriorite = -1;
+	finDemandee = false;
 	float temps = Temps(t);
 	for(COpportunite &o : occasions){
 		if(o.arretee || temps < o.entree) continue;
@@ -368,6 +380,7 @@ CActionController::Occasions(const CActionBank &b, const CJugeAction &juge, floa
 		}
 		if(!arret) continue;
 		o.arretee = true;
+		if(o.prise) finDemandee = true;                   // FUN_005f7440 : FUN_005f3bc0(nœud, priorité, 1)
 		if(o.prise && o.priorite > demandePriorite){       // FUN_005f3bc0
 			demandePriorite = o.priorite;
 			demandeNoeud = o.cible;
@@ -391,6 +404,14 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 			if((g.vie >= 0.0f && Temps(t) > g.entree + g.vie) || !juge.ACible()){ g.vie = -2.0f; continue; }   // morte
 			(k ? combatsActifs : gestionsActives).push_back(g);
 		}
+	// FUN_006260d0 (ActionRequest) : le bouton appuyé à chaque image ; la piste meurt sans l'octet +0x20.
+	appuis.clear();
+	for(DemandeBouton &d : demandesBouton){
+		if(d.morte || Temps(t) < d.entree) continue;
+		appuis.push_back({d.bouton, d.mode});
+		d.lancee = true;
+		if(!d.vivante){ d.morte = true; if(d.mode == 2) laches.push_back(d.bouton); }   // morte : son arrêt la lâche
+	}
 	// FUN_006261f0 (ActionNodeRequest) : l'intention, puis la vie de la piste.
 	for(DemandeNoeud &d : demandesNoeud){
 		if(!d.vivante || Temps(t) < d.entree) continue;
@@ -451,6 +472,12 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; effacementsLances.push_back(d); }
 	for(Fuite &d : fuites)        // FUN_00628ce0
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; fuitesLancees.push_back(d); }
+	infosArmeLancees.clear();
+	for(InfoArme &d : infosArme)      // FUN_00660f50
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; infosArmeLancees.push_back(d); }
+	reposLances = 0;
+	for(Repos &d : repos)         // FUN_0061d8e0
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; reposLances++; }
 	for(Sante &d : santes)        // FUN_00627500
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; santesLancees.push_back(d); }
 	for(PriseCible &d : prisesCible)   // FUN_0062a580
@@ -478,9 +505,13 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		for(const Gestion &g : gestions) retenu |= g.retient && g.vie != -2.0f;
 		for(const Gestion &g : combats) retenu |= g.retient && g.vie != -2.0f;
 		for(const DemandeNoeud &g : demandesNoeud) retenu |= g.retient && g.vivante;
+		for(const DemandeBouton &g : demandesBouton) retenu |= g.retient && !g.morte;
 		if(sousControleurs) for(const COpportunite &o : occasions) retenu |= o.retient && !o.arretee;
 		fini = !retenu;
 	}
+	// Une Opportunity prise sans nœud (un chemin vide) a demandé la fin du nœud (FUN_005f49a0 : l'octet +1, quelles que
+	// soient les pistes qui le retiennent) : il finit comme les autres, ses Sequence comprises.
+	if(joue && finDemandee) fini = true;
 	// FUN_005f7030 : les Sequence à la fin du nœud. Le nœud visé (FUN_005f4e30) peut être hors de l'arbre posé : la
 	// poussée de la prise (PushFwd/RCV) envoie la cible dans HitTree/Standing/PostHit/BellyUp/OnGroundBounce.
 	if(fini){

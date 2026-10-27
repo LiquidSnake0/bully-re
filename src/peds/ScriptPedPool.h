@@ -34,6 +34,54 @@ float ScriptPedIntentionVitesse(int allure, float defaut = 0.7f);
 // ou 10 sur place une fois dans le petit rayon (+0x6c) : 1,5, la vitesse du sprint de FUN_005c6180.
 enum { PAS_SUR_PLACE = 2, PAS_ATTENDRE = 4, PAS_APPROCHE_7 = 7, PAS_APPROCHE_9 = 9, PAS_ARRIVE = 10, PAS_VERS_CIBLE = 11, PAS_RALENTI = 12 };
 float ScriptPedVitesseDuPas(int mode, float d2Cible, float d2Point, float rayonButes2c);
+// La vitesse que la navigation donne à l'intention de mouvement (FUN_005e4c60 → FUN_005e4a60), une fois le but posé par
+// FUN_004a4eb0 (le navigateur est en +0xdac du piéton : la vitesse demandée en +0x534, le rayon d'arrivée en +0x528, que
+// FUN_005e09c0 recopie en +0x450 si le piéton n'est pas immobile, l'octet +0x4e4 de PedSetStationary 0x5c7950 et de la
+// piste SetStationary FUN_00626920). 0 si le piéton est immobile, si la vitesse demandée est sous 0,1 (le double
+// 0x900128) ou s'il est arrivé (FUN_005e2fb0 : à plat, à moins du rayon d'arrivée du but ; FUN_004a4eb0 pose alors 0
+// lui-même). À moins de 3 m du point (d² < 9, 0x900e04), elle dépend de l'écart de cap entre le devant du piéton
+// (FUN_00415350) et la direction du point (FUN_004331c0, FUN_00432830) : jusqu'à π (le double 0x900160), la vitesse
+// × cos(écart) (FUN_0085ad50, le _CIcos du CRT), × d / 0,3 sous 0,3 m (d² < 0,09, 0x90cfc8 ; FUN_0040df70, le double
+// 0x900d78), au moins 0,1 (0x900170, FUN_00414340 = max) ; au-delà, 0. Lu à l'assembleur (0x5e4a60 … 0x5e4c4f).
+// Non suivis : les points du chemin (+0x508, +0x53f), FUN_00473b90 et FUN_005e2720 qui sautent le ralenti, l'appui
+// qu'FUN_005e4c60 simule (FUN_005f3930(4)) à l'octet +0x551.
+float ScriptPedVitesseDuTrajet(float vitesse, float d2Point, float ecartCap, float rayonArrivee, bool immobile = false);
+
+// Le choix du point d'une piste CombatLoco (CombatLocoTrack 0x9349e0), à chaque image de sa mise à jour (FUN_0062ea40) :
+// FUN_0062e120 appelle FUN_0062c540, puis joue le sous-état (+0x28) :
+// - la garde FUN_0062c540 (hors du sous-état 3) : plus loin de la cible que le grand rayon + 2 m (le double 0x900980), ou
+//   le piéton à +0x1448 (non suivi), FUN_0061b6a0 ; sinon une minuterie (+0x4c) court tant que la cible n'est pas vue
+//   (FUN_0048d320), et passé 1 000 ms, FUN_0061b6a0. FUN_0061b6a0 : le sous-état 3, un tirage forcé (+0x78, +0x79) et un
+//   angle tiré entre ±π/4 (+0x58, DAT_00b0c0a0) ;
+// - 0, l'approche (FUN_0062c740) : à l'image de tirage (+0x78), un point tiré autour de la cible, à une distance entre les
+//   deux rayons et à un angle de π/8 à 3π/8 (DAT_00b0c0a4, DAT_00b0c0a0) d'un côté ou de l'autre du cap de la cible vers
+//   le piéton (FUN_00433200) ; s'il est valable (FUN_006254c0 : la navigation, non suivie, supposé vrai), le mode 8 vers
+//   lui et le sous-état 1. Sinon, plus près de la cible que le petit rayon, le mode 10 sur place ; plus loin, le mode 11
+//   vers la cible ;
+// - 1, l'aller (FUN_0061b700) : une minuterie (+0x44) ; à moins de 0,3 m du point (le double 0x933490 = 0,09), le
+//   sous-état 2 ; passé 10 000 ms, le sous-état 0 ;
+// - 2, l'attente (FUN_00625740) : une minuterie (+0x48) ; passé 300 ms, un rand() impair ramène au sous-état 0, sinon la
+//   minuterie repart ;
+// - 3, le retour (FUN_0062e120 en 0x6257c0) : dans le grand rayon et la cible vue, le sous-état 0 ; sinon le mode 12 vers la
+//   cible (la recherche de chemin FUN_005e9df0 n'est pas suivie).
+// Chaque changement de sous-état force le tirage de l'image suivante (+0x79). Les minuteries comptent le pas de l'image en
+// ms (FUN_00446720 : 0,02 × CTimer::ms_fTimeStep × 1000). Non suivis : l'arme à distance (+0x7a, FUN_00625540), le vélo,
+// la hauteur (|dz| > 2 m, le mode 1), les piétons à +0x9b4 / +0x9b8.
+struct CCombatLoco {
+	int32 sousEtat = 0;          // +0x28
+	int32 mode = 11;             // +0x24 (FUN_0061b430)
+	CVector point;               // +0x2c
+	CVector decalage;            // +0x38 : le point moins la cible
+	int32 minuterieAller = 0;    // +0x44
+	int32 minuterieAttente = 0;  // +0x48
+	int32 minuterieVue = 0;      // +0x4c
+	float angle = 0;             // +0x58
+	bool tirage = false;         // +0x78 : FUN_00465910(8) à cette image
+	bool forcer = false;         // +0x79 : la prochaine image tire
+};
+// `tirer` rend un rand() du CRT (0 à 32767) ; les positions sont lues à plat.
+void ScriptPedCombatLocoChoisir(CCombatLoco &c, const CVector &soi, const CVector &cible, float petit, float grand,
+                                int32 pasMs, bool cibleVue, int (*tirer)(void *), void *ctx);
 
 // Les 22 groupes d'animations d'humiliation (0x9113d0, 32 octets par nom) : « HUMIL_5-8_A » pour 0 … « HUMIL_6-1V6-1 »
 // pour 21. Le groupe 0 à 12 est celui d'une victime du joueur, rangé par sa taille (CharacterSize) : 0 à 2 Medium
@@ -129,6 +177,9 @@ struct CScriptPed {
 	// un piéton (Aller : la vitesse de son allure ; arrivé, arrêté : 0) et dans CombatLoco (lancer_lua).
 	CVector intention;
 	float intentionVitesse = 0;
+	float armeInit = -1.0f;      // +0x120 de l'objet arme (+0x1d0, CWeapon) : -1 depuis son constructeur (FUN_004da610),
+	                             // posé par une piste SetWeaponInfo (FUN_00660f50) ; WeaponNeedInit (FUN_0065b7b0) attend -1
+	bool endormi = false;        // +0x1358 : PedSetAsleep (0x5caa30) ; endormi, son arbre de l'IA n'avance plus (FUN_00484490)
 	bool enMarche = false;       // va vers `cible` à `vitesse`
 	CVector cible;
 	float vitesse = 0;
@@ -248,6 +299,18 @@ public:
 	// FUN_00486c00), FUN_0048c330 la cible de son objectif (+0x540), FUN_00606b40 son agresseur (+0x544). Vrai si
 	// quelque chose a été posé.
 	bool PrendreAttaquant(int handle, int attaquant);
+	// FUN_005f38e0 (ecx = le composant d'actions +0x2e0) : vide les entrées du piéton : les 47 boutons (+0x20, 12 octets
+	// chacun : la valeur passe en précédente puis à 0, l'octet d'appui à 0), l'intention (+0x254) et la vitesse de
+	// l'intention de mouvement (+0x1c) ; la direction (+0) reste. Le lancement d'une piste IDLE (FUN_0061d8e0), l'IA qui
+	// ne tourne pas (FUN_00484490), PlayerSetControl (0x5d12f0) et l'initialisation du composant (FUN_00484d10)
+	// l'appellent. L'outil n'a que la vitesse ; l'intention, rangée par lancer_lua, ne vaut que pour l'image.
+	void ViderEntrees(int handle);
+	// FUN_00484490, la garde de l'image du contrôleur de l'IA : il n'avance pas (FUN_005f49a0) si le piéton est mort
+	// (+0x1c98, posé par l'emplacement 42 de CPed, FUN_00479110, que lance la piste Death, FUN_0060fdc0), endormi
+	// (+0x1358) ou si tous dorment (DAT_00c2b108, PedSetGlobalSleep 0x5c6e40) ; ses entrées sont alors vidées (et, mort,
+	// son contrôleur arrêté, FUN_005f3f40).
+	bool IAAvance(int handle) const;
+	bool sommeilGeneral = false;   // DAT_00c2b108
 	// lua_PedMakeAmbient (0x5ca850) : rendu à la population, plus ramassé par son script.
 	bool RendreAmbiant(int handle);
 	// Une image de dt secondes : marches, poursuites et coups ; pose les drapeaux d'événements. La régénération

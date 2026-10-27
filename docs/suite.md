@@ -44,19 +44,17 @@ chantier. Un point fini passe en bas, avec son commit.
    l'espace de noms de la mission : le bully attaque pendant la leçon de parade. `1_02` reste réussie (119,03 s).
    Les conditions de la parade, des armes, du social, des caméras, du HUD et des manettes sont lues (docs/cat.md, « Les
    conditions lues le 27.10.2026 ») ; la vitesse de `CombatLoco` vient du pas (`FUN_00625970`). `1_02` reste réussie (119,03 s).
+   La course de `RunStart` est établie (il n'y en a pas : le pas de `CombatLoco` est le mode 10 sous le petit rayon) ; les entrées
+   vidées (`FUN_005f38e0`), la vitesse de la navigation (`FUN_005e4a60`), les quatre sous-états de `CombatLoco` et l'arrêt au petit
+   rayon sont recréés ; le bully pare (le bouton 12 de son IA, `Defence/Block`, `HitTree/Standing/BlockHits`), une `Opportunity` prise
+   fait finir son nœud même sans nœud visé ; `ActionRequest` lit le bouton brut (`FUN_005fd570`) ; huit conditions de plus (armes,
+   conversation, missions, tenues, `AttackerConditionGroup`). `1_02` est réussie à 121,94 s (quinze jabs, docs/missions.md).
    Suite, dans l'ordre :
-   - **la course de `RunStart`** : la piste `Locomotion` (`FUN_00613480`) lit l'intention, aucune piste de `RunStart` ne l'écrit ;
-     reste à savoir ce que vaut la vitesse à 89,43 s, c'est-à-dire qui l'a posée en dernier (les 35 écritures de +0x1c relevées :
-     navigation, pistes de locomotion de l'IA, `FUN_004812d0` en 0x481603) et si `CPed` la remet à 0 à chaque image ;
-   - **le reste de `CombatLoco`** : le point tiré entre les deux rayons aux images de tirage (`FUN_0062c740` →
-     `FUN_0062c4f0`, mode 8), les sous-états 1 à 3 (`FUN_0061b700`, `FUN_00625740`, `FUN_0062c540`, `FUN_0061b6a0`) et le petit
-     rayon (+0x6c) comme arrêt, au lieu du grand ;
-   - les conditions encore jugées -1 dans `1_02` : `WeaponNeedInit` (+0x120 de l'objet arme +0x1d0, sa valeur pour un piéton
-     sans arme), `ConversationActive`, `PedIsInOutfit` (`FUN_006ca890`), `OnMission` (`FUN_005fc940` : les états de mission du
-     moteur, 0, 1 et 11, à faire correspondre à ceux de l'outil), `MissionCond` dans les arbres d'actions, `ParametricTime`
-     (le +0x38 du contexte), `PropTargetInteractive` ;
-   - la parade du bully (`BLOCK` de `CombatActions` : `F_CanBlock` rend 1 par moments, mais la banque ne redescend qu'à la fin
-     du `ControlNode`) ;
+   - les conditions encore jugées -1 dans `1_02` : `ParametricTime` (le flottant en +0x157c du piéton, que pose le vélo,
+     `FUN_004e9160`), `PropTargetInteractive` (`FUN_00655110`), #3bb83b8f,
+     à lire ;
+   - la mort d'un piéton par la piste `Death` (`FUN_0060fdc0` → `FUN_00479110`, +0x1c98) au lieu de la santé nulle ;
+   - ce qui reste supposé dans `CombatLoco` : la cible vue (`FUN_0048d320`), le point valable (`FUN_006254c0`), la recherche de chemin ;
    - le choix d'une cible (`FUN_004992a0`, `FUN_004988b0`, `FUN_00496b60`), les sphères des os des coups (au lieu du demi-espace
      avant) ;
    - les `SpeechTrack` sans tenue ; puis la mission suivante, `1_03`.
@@ -89,6 +87,13 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- La vitesse de l'IA et la parade (27.10, soir ; 5e778b1, 9d2108e, 85a3bd9, 0d5f9fc, 70ebb21, 7c260a7, 36fca42, 379089e, 004063b) :
+  les entrées vidées (`FUN_005f38e0`, `IDLE`, la garde `FUN_00484490`), la vitesse de la navigation (`FUN_005e4a60`), l'arrêt de
+  `CombatLoco` au petit rayon et ses quatre sous-états (`FUN_0062e120`), la course de `RunStart` établie (il n'y en a pas), les boutons
+  des piétons de l'IA (`ActionRequest` = `FUN_005fd570`, la piste `FUN_006260d0`), `SetWeaponInfo` et `WeaponNeedInit`,
+  `ConversationActive`, `OnMission`, `MissionCond`, la garde-robe (`PedIsInOutfit`), `AttackerConditionGroup`, la fin demandée par une
+  `Opportunity` prise : **le bully pare, `1_02` reste réussie à 121,94 s** en quinze jabs.
 
 - Les conditions du 27.10 (1a93702, c2d4361, 435c68a, 49ca373, 786e4c3, 79bece1, 30ac742, 0678b57, 2e9d430) : le HUD (48
   composants, `HudComponentVisible`), `CollisionStart` (+0x4e5, jamais remis à 0) et `AttackPhase` (la phase +0x71c et son

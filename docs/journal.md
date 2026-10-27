@@ -788,3 +788,31 @@ en échec plutôt que de les masquer.
 - **Ce qui bloque encore** : la vitesse de `RunStart` ; le reste de `CombatLoco` (le point tiré, les sous-états) ; la parade du
   bully (`BLOCK` attend la fin du `ControlNode`) ; `WeaponNeedInit`, `OnMission`, `ConversationActive`.
 - **Bilan** : 614 fonctions recréées (4,1 % du code), contre 549 (3,6 %) ; 1 388 comprises (8,4 %) ; 10 commits.
+
+## 27.10.2026 (soir)
+
+- **La course de `RunStart`, établie** : il n'y en a pas. Trois angles : les vidages des entrées (`FUN_005f38e0`, l'écriture de +0x1c
+  qui manquait au relevé des 35 : la piste `IDLE`, `FUN_0061d8e0`, et la garde de l'IA `FUN_00484490`, mort +0x1c98, endormi +0x1358,
+  `DAT_00c2b108`), la vitesse de la navigation (`FUN_005e4c60` → `FUN_005e4a60` : 0 arrivé ou immobile, × cos de l'écart de cap près du
+  point, au moins 0,1) et `FleeObjective` (aucune mise à jour, pas de branche 22). L'IA du bully reste dans `CombatLoco`, le joueur est
+  sous le petit rayon : le pas est le mode 10, sur place, et la vitesse reste 0.
+- **`CombatLoco` complet pour le combat à mains nues** : l'arrêt au petit rayon (`FUN_0062c740`), et les quatre sous-états
+  (`FUN_0062c540`, `FUN_0062c740`, `FUN_0061b700`, `FUN_00625740`, le retour en 0x6257c0) : le point tiré entre les deux rayons, l'attente,
+  le retour par le mode 12. Le bully tourne autour du joueur en lui faisant face.
+- **La parade** : `ActionRequest` est `FUN_005fd570` (le bouton brut ; l'attribution à `FUN_005fd650`, `ActionRequestButton`, était
+  inversée) ; la piste `ActionRequest` de l'IA appuie le bouton 12 (`FUN_006260d0`, `FUN_005f3930`), qui mène l'arbre d'actions dans
+  `Defence/Block` ; avec `AttackerConditionGroup` (`FUN_00601e00`), un coup reçu là va dans `HitTree/Standing/BlockHits`. Une `Opportunity`
+  prise fait finir son nœud même sans nœud visé (`FUN_005f7440` → `FUN_005f3bc0(…, 1)`, `FUN_005f49a0`) : l'IA sort de `Block`. Un premier
+  commit concluait « le bully ne pare pas » ; le neuvième le corrige.
+- **Huit conditions** : `WeaponNeedInit` (le +0x120 du `CWeapon`, posé par `SetWeaponInfo`, `FUN_00660f50`), `ConversationActive`
+  (fausse avec un piéton, lue à l'assembleur), `BlockTimer`, `OnMission` (les états de `FUN_006ad3e0` relevés), `MissionCond` dans les
+  arbres d'actions (la charge de prise se lâche tant que `C_Wrestling_1` n'est pas réussi), `PedIsInOutfit` et la garde-robe du joueur
+  (`src/peds/Clothing`, `tests/test_clothing`), `AttackerConditionGroup`. Au bilan de `1_02` ne restent que `PropTargetInteractive`,
+  `ParametricTime` et #3bb83b8f (8 jugements en tout).
+- **Chronos** : `1_01` à 10,46 s à chaque commit ; `1_02` à 119,03 s, puis 118,93 s (le petit rayon : l'humiliation commence 0,1 s plus
+  tôt), puis **121,94 s** (le bully pare quatre jabs : la commande de docs/missions.md en tape quinze et humilie à 87 s).
+- **Ce qui bloque encore** : la mort par la piste `Death` (l'outil tient un piéton pour mort à santé nulle) ; dans `CombatLoco`, la cible
+  vue (`FUN_0048d320`), le point valable (`FUN_006254c0`), la recherche de chemin ; `ParametricTime`, `PropTargetInteractive`.
+  `tests/test_surface` plante déjà sur `main` avec `surface.dat` (hors CI, non touché).
+- **Bilan** : 667 fonctions recréées (4,3 % du code), contre 614 (4,1 %) ; 1 446 comprises (8,6 %) ; 10 commits.
+

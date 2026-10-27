@@ -88,7 +88,7 @@ Or …)`, six armes en `OR`. `TargetConditionGroup` porte son groupe de la même
 |---|---|
 | `ConditionGroup`, `TargetConditionGroup` | +4 : renvoi de la seconde table vers le groupe |
 | `WeaponEquiped` | +4 : le nom de l'arme, cité par la première table (`unarmed`, `any`, `bat`, `leadpipe`…) |
-| `ActionRequest` | (`ConditionActionRequestButton`, `FUN_005fd650`) +4 : le numéro de l'action (0x16, 3, 1…), +8 : le mode (3 : bouton lâché, `(état & 3) == 0` ; 2 : `état & 3` ; sinon `état & 1`), +0xc / +0x10 : un seuil et son comparateur sur la durée tenue (`FUN_005fbc30`), +0x14 : si non nul, seule la durée compte |
+| `ActionRequest` | (`ConditionActionIntentionActionRequest` 0x9368d4, `FUN_005fd570` ; corrigé le 27.10 au soir, par le registre : la chaîne 0x939b90 a le créateur 0x6456d0) +4 : le **bouton brut** (0x16, 3, 1, 12…), +8 : le mode (3 : bouton lâché, `(état & 3) == 0` ; 2 : `état & 3` ; sinon `état & 1`), +0xc / +0x10 : un seuil et son comparateur sur la durée tenue (`FUN_005fbc30`), +0x14 : 1, la durée (+8 du bouton) positive. `ActionRequestButton` (0x9368fc, `FUN_005fd650`, créateur 0x645750) fait de même par `ActionMapButes` (Globals.cat, `DAT_020c88d0` : le bouton de l'action n en +0x18 + 4 × n) |
 | `ActionNodePlayTime` | (`FUN_005fb940`) +4 : un temps (s), +8 : le comparateur de `FUN_005fb750` sur le temps du nœud ; deux champs |
 | `TargetPlaying` | +4 : un nom de nœud haché (`RollAway`…), +8 : 1 ; deux champs |
 | `LuaCond` | +0x10 : `mission`, +0x14 : la fonction du script (`F_PlayerGroundKicks`, `F_FinalAttacks`…) |
@@ -506,6 +506,118 @@ l'octet +0x15), `HUDComponentGetVisibility` (0x5bd590), `HUDClearAllElements` (0
 testent les invites sociales (23 à 36 : `HUDSocialApologize` … `HUDSocialBurn`), `HUDSocial` (37), `HUDClothing` (14),
 `HUDBarber` (18), `HUDTattoo` (19) ; dans `1_02`, `main` ne fait que cacher la santé, le radar et la retenue (4, 11, 0) et
 montrer l'historique des boutons (21) : les 1 306 jugements se décident, faux.
+
+## La vitesse de l'intention, lue le 27.10.2026 (soir)
+
+**Les entrées vidées** (`FUN_005f38e0`, ecx = le composant d'actions +0x2e0) : les 47 boutons (+0x20, 12 octets chacun : la
+valeur passe en précédente puis à 0, l'octet d'appui à 0), l'intention (+0x254) et la **vitesse de l'intention de mouvement**
+(+0x1c) ; la direction (+0) reste. Cette écriture-là manquait au relevé des 35 : elle passe par le composant lui-même, pas par
+le piéton. Ses appelants : le lancement d'une piste `IDLE` (`IdleTrack` 0x934cd8, `FUN_0061d8e0`, vérifié à l'assembleur : ecx =
+piéton +0x2e0 en 0x61d97b ; sa mise à jour `FUN_0061d850` la garde en vie tant que le piéton existe), la garde de l'image de
+l'IA (`FUN_00484490`), `PlayerSetControl` (0x5d12f0), l'initialisation du composant (`FUN_00484d10`), les portes (`FUN_004151e0`,
+`FUN_00416a00`) et le ballon prisonnier.
+
+**La garde de l'IA** (`FUN_00484490`, lue à l'assembleur de 0x484490 à 0x484506) : le contrôleur de l'IA (+0x290) n'avance
+(`FUN_005f49a0`, après la redescente `FUN_00483ec0` s'il ne joue rien) que si le piéton n'est pas mort (+0x1c98), pas endormi
+(+0x1358, `PedSetAsleep` 0x5caa30) et que tous ne dorment pas (`DAT_00c2b108`, `PedSetGlobalSleep` 0x5c6e40) ; sinon les entrées
+sont vidées, et, mort, le contrôleur est arrêté (`FUN_005f3f40`). +0x1c98 est posé à 1 par l'emplacement 42 de `CPed`
+(`FUN_00479110`, 0x479308), qu'appelle le lancement d'une piste `Death` (`DeathTrack` 0x934aa0, `FUN_0060fdc0`, dans `HitTree`) ;
+seules les stats le remettent à 0 (`FUN_00476fa0`, `FUN_004788d0`, `FUN_00478e30`).
+
+**Il n'y a donc pas de remise à 0 à chaque image** : la vitesse reste celle que la dernière piste de navigation, ou ces vidages,
+ont posée. L'outil la remettait à 0 à chaque image pour un piéton de l'IA sans geste ; il suit maintenant ces règles
+(`CScriptPedPool::ViderEntrees`, `IAAvance`, `CActionController::repos`). Dans `1_02`, rien ne change (119,03 s) : le bully reste
+dans `Combat/…/CombatLoco` d'un bout à l'autre et l'outil le tient pour mort dès que sa santé tombe à 0 (89,43 s), alors que le
+jeu attend la piste `Death`.
+
+
+**La vitesse de la navigation** (`ScriptPedVitesseDuTrajet`). `FUN_004a4eb0` (le but d'une piste de locomotion) range dans le
+navigateur du piéton (+0xdac, l'ecx de `FUN_005e4c60` ; les décalages du pseudo-code, +0x12e0 et +0x12d4, sont ceux du piéton) la
+vitesse demandée (+0x534, son cinquième argument) et le rayon d'arrivée (+0x528, le sixième : 0,2 m, `_DAT_00900484`, pour le pas de
+`CombatLoco`), puis `FUN_005e4c60` pose l'intention : la direction du point suivant (`FUN_005e4970`) et la vitesse de
+`FUN_005e4a60`, lue à l'assembleur (0x5e4a60 … 0x5e4c4f) :
+
+- 0 si le piéton est immobile (l'octet +0x4e4, `PedSetStationary` 0x5c7950, la piste `SetStationary` `FUN_00626920`, `FUN_005e09c0`
+  qui recopie la vitesse en +0x450), si elle est sous 0,1 (le double 0x900128), ou s'il est arrivé (`FUN_005e2fb0` : à plat, à moins
+  du rayon d'arrivée) ;
+- à moins de 3 m (d² < 9, 0x900e04) : l'écart entre le devant du piéton (`FUN_00415350`) et la direction du point, ramené entre −π
+  et π (`FUN_00432830`) ; jusqu'à π (le double 0x900160) la vitesse × cos(écart) (`FUN_0085ad50` est le `_CIcos` du CRT : `fcos`
+  en 0x85adbd), × d / 0,3 sous 0,3 m (0x90cfc8, le double 0x900d78), au moins 0,1 (`FUN_00414340` est un max) ;
+- au-delà de 3 m, la vitesse demandée.
+
+Le chemin (+0x508, +0x53f), `FUN_00473b90` et `FUN_005e2720` (qui sautent le ralenti) ne sont pas suivis. Dans l'outil, la vitesse
+de `CombatLoco` y passe (le cap du piéton contre la direction de la cible) : dans `1_02`, rien ne change, le bully court vers le
+joueur en face de lui.
+
+**La course de `RunStart`, après trois angles** (relecture des pistes le 27.10 dans la nuit, puis les vidages et la navigation ce
+soir). Ce qui est établi : aucune piste de `RunStart` n'écrit la vitesse ; `FleeObjective` (type 22) n'a aucune méthode de mise à
+jour (sa table 0x911894 : destructeur `FUN_0048e660`, type `FUN_0048e5f0`, `FUN_00828240` qui rend 0, `FUN_0049a500` vide) et
+`AI_FightTutorial` n'a pas de branche 22 (`GeneralObjectives` n'a que les types 0 à 4, 9 et 12) : rien ne fait fuir le bully. Son
+contrôleur de l'IA, lui, reste dans `Combat/…/CombatLoco` : la banque `Combat` n'est jugée qu'à la descente, et la piste `CombatLoco`
+vit tant que sa cible est valide (`FUN_00625270` → `FUN_0048bee0` : +0x538, un piéton, pas mort) et sa zone prise (`FUN_006252d0`) ;
+`ClearCurrentObjective` ne la touche pas. Le jeu ne le tient pour mort qu'à la piste `Death` de `HitTree` (`FUN_0060fdc0`), pas à
+santé nulle. La vitesse que `Locomotion` lit pendant `RunStart` est donc celle que le pas de `CombatLoco` fait poser à la navigation
+chaque image.
+
+**L'approche de `CombatLoco` s'arrête au petit rayon** (`FUN_0062c740`, lu de 0x62c98b à la fin : le sous-état 0 hors des images de
+tirage). À plat, plus près de la cible que le petit rayon (`FUN_0041a380(cible, soi, +0x6c)`, d² − r² < 0), le mode 10 sur sa propre
+position : la navigation le dit arrivé (rayon 0,2 m), vitesse 0 ; sinon le mode 11 vers la cible elle-même, à 1,5. L'outil s'arrêtait
+au grand rayon (+0x70, 1,5 m pour la zone 0) ; il s'arrête maintenant au petit (+0x6c, 0,9 m, AIButes +0x28). Dans `1_02`, le bully se
+tient à 0,9 m du joueur ; l'humiliation commence plus tôt (le joueur arrive à 0,75 m par `SeekEntityPosition` à 84,08 s, `GV` à
+84,12 s au lieu de 84,22 s, `RCV/END` à 89,33 s) et **`1_02` se termine réussie à 118,93 s** (119,03 s avant).
+
+**Les sous-états de `CombatLoco`** (`ScriptPedCombatLocoChoisir`), lus dans `FUN_0062e120` : avant chaque image, la garde
+`FUN_0062c540` (hors du sous-état 3) renvoie au retour (`FUN_0061b6a0` : le sous-état 3, un tirage forcé, un angle tiré entre ±π/4,
+`DAT_00b0c0a0`) si le piéton est plus loin de la cible que le grand rayon + 2 m (le double 0x900980) ou si la cible n'est pas vue
+(`FUN_0048d320`) depuis plus de 1 000 ms (+0x4c). Puis :
+
+| Sous-état | Fonction | Ce qu'il fait |
+|---|---|---|
+| 0, l'approche | `FUN_0062c740` | à l'image de tirage, un point tiré autour de la cible : distance rand × (grand − petit) + petit, angle de π/8 à 3π/8 (`DAT_00b0c0a4`, `DAT_00b0c0a0`) d'un côté ou de l'autre du cap de la cible vers le piéton (`FUN_00433200`, `FUN_00432ca0`) ; s'il est valable (`FUN_006254c0` : `FUN_004996f0`, `FUN_0048a5b0`, `FUN_005eb050`), le mode 8 et le sous-état 1 ; sinon le mode 10 sur place sous le petit rayon, le mode 11 vers la cible au-delà |
+| 1, l'aller | `FUN_0061b700` | une minuterie (+0x44) ; à moins de 0,3 m du point (le double 0x933490), le sous-état 2 ; passé 10 000 ms, le sous-état 0 (à vélo, plus tôt : `FUN_004ce540`, non suivi) |
+| 2, l'attente | `FUN_00625740` | une minuterie (+0x48) ; passé 300 ms, un `rand()` impair ramène au sous-état 0, sinon elle repart |
+| 3, le retour | `FUN_0062e120` (0x6257c0) | dans le grand rayon, la cible vue, le sous-état 0 ; sinon le mode 12 vers la cible (`FUN_0061b820` ralentit près d'elle), par la recherche de chemin (`FUN_005e9df0`, non suivie) |
+
+Chaque changement de sous-état force le tirage de l'image suivante (+0x79). Les minuteries comptent le pas de l'image en ms
+(`FUN_00446720`, 0,02 × `CTimer::ms_fTimeStep` × 1000). Le pas (`FUN_00625970`) fait suivre la cible au point aux images de tirage (la
+cible + le décalage +0x38, s'il tombe à plus de 0,5 m du piéton, `_DAT_009055a0`) et, sauf aux modes 3, 7 et 12, tourne le cap voulu
+vers la cible : le piéton tourne autour de sa cible en lui faisant face, et la navigation le ralentit (cos de l'écart). Dans `1_02`, le
+bully arrive par le retour (mode 12, de 30,10 à 31,32 s) puis enchaîne les points tirés autour du joueur (sous-états 1 et 2, toutes
+les 1,5 à 3 s) ; ses coups pendant la leçon de parade sont les mêmes, et `1_02` reste réussie à 118,93 s. Supposés : la cible toujours
+vue, le point toujours valable, l'arme à distance (+0x7a, `FUN_00625540`), la hauteur (le mode 1 au-delà de 2 m d'écart, 0x900bfc).
+
+**La parade du bully** (lue le 27.10 au soir). La feuille `Block` de `CombatActions` (`AI_FightTutorial`) porte une piste
+`ActionRequest` (`ActionRequestTrack` 0x9348a0 : lancement `FUN_0061ba70`, mise à jour `FUN_006260d0`, arrêt `FUN_00626160`) : à
+chaque image, elle appuie le bouton brut +0x18 (12) du composant d'actions au mode +0x1c (2 : appuyé et tenu, l'état 3,
+`FUN_005f3930` ; 3 : lâché, 8 ; sinon 1), que `FUN_005f3720` fait vieillir (3 → 2, 1 → 0, 8 → 0) ; le bouton 12 pose aussi
+l'instant de la parade (+0x4d0), que lit `BlockTimer` (`ConditionBlockTimerPlayTime`, `FUN_00600160`, dans `AI_2_02` seulement) ;
+l'arrêt d'une piste au mode 2 lâche le bouton. Le nœud qui l'attend est `BLOCK` de `Block.cat` (`ActionRequest[12, 2]`, puis
+`BlockHits`), monté sous `/Global/Actions/Defence` : le bully y entre (73,09 s), son arbre d'actions y passant par un chemin
+de `Fight_Tutorial` (sa banque `Defense` propre, #202d180c, est vide, mais le nœud `Defence/Block` est atteint), dès que son IA tient le
+bouton 12. **Le bully de `1_02` pare donc** (correction de ce soir : le commit de la parade concluait l'inverse, faute de juger
+`AttackerConditionGroup`) : un coup reçu pendant ce `Block` va dans `HitTree/Standing/BlockHits` (`HitLocation[1,1]`, le bully joue
+`0_BLOCK_0` ou `#2f4befd2`, et pas `AttackerConditionGroup(MePlaying[0x5cad38ae])`), qui ne blesse pas. `F_CanBlock` (fonction 45 de
+`1_02.lur`, lue par `tools/lur.py`) rend 1 une fois sur cinq (`math.random(1, 100) > 80`).
+
+**`AttackerConditionGroup`** (`ConditionAttackerConditionGroup` 0x9370a0, `FUN_00601e00`) : le groupe +4 jugé pour l'attaquant du
+dernier coup reçu (le +4 de `PedGetLastHitWeapon`, +0x40c du composant +0x2e0), dans son contexte (l'emplacement +0x40) ; faux sans
+piéton ni attaquant (le véhicule du contexte, +0xc, non suivi).
+
+**Une `Opportunity` prise fait finir le nœud, même sans nœud visé** : son arrêt (`FUN_005f7440`) appelle `FUN_005f3bc0(nœud, priorité,
+1)`, dont le dernier octet pose +1 du contrôleur ; `FUN_005f49a0` arrête alors le nœud quelles que soient les pistes qui le retiennent,
+puis joue la demande s'il y en a une (`FUN_005f48f0`). L'outil ignorait une demande sans nœud (`CActionController::finDemandee`) :
+l'IA du bully restait dans `Block` ; elle en sort maintenant quand le joueur n'attaque plus (la troisième `Opportunity`, sans chemin),
+et `WaitForVictim` finit sans partenaire de prise.
+
+Dans `1_02`, quatre jabs sont parés (73,16, 82,14, 84,15 et 86,16 s) : il en faut quinze au lieu de onze pour mener le bully à 5
+points (la commande de docs/missions.md tape jusqu'à 86 s et humilie à 87 s), et **`1_02` se termine réussie à 121,94 s**.
+
+**La course de `RunStart` est donc établie : il n'y en a pas.** À 89,33 s le joueur est à 0,75 m, sous le petit rayon : le pas de
+`CombatLoco` est le mode 10, sur place, et la navigation, arrivée, laisse la vitesse à 0 (`FUN_004a4eb0` la pose à 0 quand
+`FUN_005e4c60` échoue). `Locomotion` ne fait pas bouger le bully, qui se retourne (`FaceTarget` à 180 degrés) et tombe sur place
+(`KnockOuts/Rear`) : c'est ce que l'outil joue. Restent des écarts de l'outil qui n'y changent rien ici : il tient le bully pour mort
+à santé nulle (le jeu attend la piste `Death`) et coupe son IA, et il ne joue pas les images de tirage (le point tiré entre les deux
+rayons, mode 8, et les sous-états 1 à 3).
 
 ## Le chemin d'un nœud (18.10.2026)
 

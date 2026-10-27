@@ -576,7 +576,8 @@ main(void)
 				bool debut = false;
 				for(const CActionController::Drapeau &d : c.drapeauxPoses) if(d.numero == 123 && d.valeur == 1) debut = true;
 				size_t avant = debut ? 1 : 0;
-				c.drapeauxPoses.clear();
+				// Sans partenaire de prise, son Opportunity sans chemin (« not HasGrappleTarget ») est prise et fait finir le
+				// nœud dès cette image (FUN_005f7440 → FUN_005f3bc0(…, 1)) : le drapeau peut déjà être remis à 0.
 				c.Jouer(g, give, 0.02f);                          // le nœud change : SetPedFlags 123 à 0 (entrée -1) se lance
 				bool fin = false;
 				for(const CActionController::Drapeau &d : c.drapeauxPoses) if(d.numero == 123 && d.valeur == 0) fin = true;
@@ -643,6 +644,54 @@ main(void)
 				d.Avancer(ia, nil, rien, 0.133f);                               // fini : la piste meurt (+0x1e nul)
 				VERIF(d.joue != feuille || (!d.demandesNoeud.empty() && !d.demandesNoeud[0].vivante));
 			}else VERIF(false);
+			// La feuille Block de CombatActions : sa piste ActionRequest (FUN_006260d0) appuie le bouton brut 12 au mode 2 à chaque
+			// image et retient le nœud ; à l'arrêt (FUN_00626160), le bouton est lâché.
+			const CActionNode *parade = ia.Trouver("/Global/AI_FightTutorial/CombatActions/CombatActions/Block/Block");
+			if(parade){
+				struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return -1; } } rien;
+				CActionController d;
+				d.sousControleurs = true;
+				d.Jouer(ia, parade, 0.0f, &rien);
+				VERIF(d.demandesBouton.size() == 1 && d.demandesBouton[0].bouton == 12 && d.demandesBouton[0].mode == 2 && d.finParRetenues);
+				d.Avancer(ia, nil, rien, 0.033f);
+				VERIF(d.appuis.size() == 1 && d.appuis[0].first == 12 && d.joue == parade);
+				d.Avancer(ia, nil, rien, 0.066f);
+				VERIF(d.appuis.size() == 1 && d.laches.empty());
+				d.Jouer(ia, nil, 0.1f);
+				VERIF(d.laches.size() == 1 && d.laches[0] == 12);
+			}else VERIF(false);
+			// Sans objectif d'attaque ni focus, la descente tombe dans AMBIENT/IDLE : sa piste IDLE (FUN_0061d8e0) se lance à
+			// la première image et vide les entrées du piéton ; elle retient le nœud (l'octet +8), qui ne finit pas.
+			struct : CJugeAction {
+				int Juger(const CActionTreeFile &, int32, uint32 type, const uint32 *) const override {
+					static const uint32 kInterdites = ActionHash("AttacksDisabled");
+					return type == kInterdites ? 0 : -1;
+				}
+			} ambiant;
+			CActionController r;
+			r.sousControleurs = true;
+			VERIF(racine && r.Poser(ia, racine, ambiant, 0.0f));
+			VERIF(r.joue && (r.joue->hachage & 0x7fffffff) == ActionHash("IDLE") && r.repos.size() == 1 && r.retenu && r.fin < 0.0f);
+			r.Avancer(ia, nil, ambiant, 0.033f);
+			VERIF(r.reposLances == 1);
+			r.Avancer(ia, nil, ambiant, 0.066f);
+			VERIF(r.reposLances == 0 && r.joue && (r.joue->hachage & 0x7fffffff) == ActionHash("IDLE"));
+		}
+		// Weapons.cat, NeedInit/…/NoWeapon : la piste SetWeaponInfo (FUN_00660f50) pose le +0x120 de l'objet arme à son champ
+		// +0x2c (7 à mains nues), ce qui ferme la banque NeedInit (WeaponNeedInit attend -1).
+		{
+			const CActionNode *init = g.Trouver("/Global/Weapons/NeedInit");
+			const CActionNode *sans = init && !init->enfants.empty() && !init->enfants[0].enfants.empty() ? &init->enfants[0].enfants[0] : nil;
+			const CActionNode *feuille = sans && !sans->enfants.empty() ? &sans->enfants[0] : nil;
+			VERIF(sans && sans->hachage == ActionHash("NoWeapon") && feuille);
+			if(feuille){
+				CActionController c;
+				c.Jouer(g, feuille, 0.0f);
+				VERIF(c.infosArme.size() == 1 && c.infosArme[0].init == 7.0f);
+				struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return -1; } } rien;
+				c.Avancer(g, nil, rien, 0.033f);
+				VERIF(c.infosArmeLancees.size() == 1);
+			}
 		}
 		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());
 		// Les références montées (FUN_005f6bb0 → FUN_005f6960) : Locomotion.act, référencé par B_Striker_A (un des arbres
