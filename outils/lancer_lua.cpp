@@ -393,6 +393,17 @@ struct CJugeOutil : CJugeAction {
 			if(it != coups.end() && it->second.attaquant >= 0) pietons.PrendreAttaquant(ped, it->second.attaquant);
 			return 1;
 		}
+		// FightClass (FUN_00601440) : la classe de combat du piéton (+0x714, la colonne S de pedstats.dat) est +4.
+		// RangeToFocus (FUN_006008e0, lu à l'assembleur de 0x6008e0 à 0x60096c) : sans focus (+0x53c), faux ; sinon la
+		// distance à plat (x, y) entre les deux, comparée à +4 par +8 (FUN_005fb750).
+		static const uint32 kClasse = ActionHash("FightClass"), kFocus = ActionHash("RangeToFocus");
+		if(type == kClasse) return moi && moi->classeCombat == (int32)mots[0];
+		if(type == kFocus){
+			const CScriptPed *f = moi ? pietons.Acceder(moi->focus) : nil;
+			if(f == nil) return 0;
+			float dx = f->pos.x - moi->pos.x, dy = f->pos.y - moi->pos.y;
+			return ComparerCondition(sqrtf(fabsf(dx * dx + dy * dy)), seuil, mots[1]);
+		}
 		// HudComponentVisible (FUN_0065aee0) : l'emplacement 4 du composant +4 de la table du HUD (DAT_00c674a0), l'octet
 		// +8 pour tous ceux que les arbres relevés testent (14, 18, 19, 23 à 37 ; HUDMoney et HUDClockWarnings ont le leur).
 		static const uint32 kHud = ActionHash("HudComponentVisible");

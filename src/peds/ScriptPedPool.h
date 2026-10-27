@@ -78,6 +78,12 @@ struct CScriptPed {
 	float sprint = 0;
 	bool discretion = false;     // +0x1398 : un piéton de mission de discrétion (PedSetIsStealthMissionPed, 0x5d0110 →
 	                             // FUN_005d0080) ; la condition IsStealthMissionChar le lit (FUN_00602cf0)
+	// +0x714 : la classe de combat, la colonne S de l'entrée de pedstats.dat (+0x60 de l'entrée, GetCharacterClassId
+	// 0x488a00 : Generic, Ranged…), que FUN_00478e30 recopie ; la condition FightClass la compare (FUN_00601440).
+	int32 classeCombat = 0;
+	// +0x53c (+0x180 du composant de visée +0x3bc, FUN_0048bf20) : le piéton que celui-ci regarde, nul à la construction
+	// (FUN_0048c1b0) ; FUN_00488b60 le pose, non suivi. La condition RangeToFocus en mesure la distance (FUN_006008e0).
+	int focus = -1;
 	int32 systemeCombat = 0;     // +0x16dc, PedSetFightingSystem (0x5ca590) ; 0 à la création (FUN_00474f50)
 	// +0x1314 : les drapeaux du piéton, un mot chacun (le drapeau n en +0x1314 + 4n) ; les pistes SetPedFlags les posent
 	// (PedFlagsTrack 0x931380, lancement FUN_0060f8e0 : le drapeau +0x1c reçoit l'octet +0x18), la condition PedFlags

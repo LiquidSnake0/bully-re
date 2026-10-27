@@ -241,6 +241,14 @@ main(void)
 		VERIF(p->verrou == SCRIPT_PED_JOUEUR && p->cibleObjectif == SCRIPT_PED_JOUEUR && p->agresseur == SCRIPT_PED_JOUEUR);
 		VERIF(p->zoneCombat == -1 && q.Acceder(c)->combattants[0].empty());
 	}
+	// FUN_00478e30 : la classe de combat (+0x714) est la colonne S ; le focus (+0x53c) naît nul (FUN_0048c1b0).
+	{
+		CScriptPedPool q;
+		int b = q.Creer(146, CVector(0, 0, 0), 0, 1);
+		int32 col[64] = {}; col[4] = 95; col[17] = 3;
+		VERIF(q.Acceder(b)->classeCombat == 0 && q.Acceder(b)->focus == -1);
+		VERIF(q.PoserStats(b, col) && q.Acceder(b)->classeCombat == 3 && q.Stat(b, 17) == 3);
+	}
 	// La vitesse du pas des pistes de locomotion de l'IA (FUN_00625970, FUN_0061b820, FUN_0061b8e0).
 	VERIF(ScriptPedVitesseDuPas(PAS_SUR_PLACE, 100, 100, 1.5f) == 0.0f && ScriptPedVitesseDuPas(PAS_ATTENDRE, 100, 100, 1.5f) == 0.0f);
 	VERIF(ScriptPedVitesseDuPas(PAS_VERS_CIBLE, 100, 100, 1.5f) == 1.5f && ScriptPedVitesseDuPas(PAS_ARRIVE, 0, 0, 1.5f) == 1.5f);
