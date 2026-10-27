@@ -557,11 +557,21 @@ contrôleur de l'IA, lui, reste dans `Combat/…/CombatLoco` : la banque `Combat
 vit tant que sa cible est valide (`FUN_00625270` → `FUN_0048bee0` : +0x538, un piéton, pas mort) et sa zone prise (`FUN_006252d0`) ;
 `ClearCurrentObjective` ne la touche pas. Le jeu ne le tient pour mort qu'à la piste `Death` de `HitTree` (`FUN_0060fdc0`), pas à
 santé nulle. La vitesse que `Locomotion` lit pendant `RunStart` est donc celle que le pas de `CombatLoco` fait poser à la navigation
-chaque image : le joueur à 0,97 m (entre le petit rayon 0,9 et le grand 1,5 de la zone 0), l'approche vers lui (mode 11, 1,5), et le
-bully tourné de 180 degrés par `FaceTarget` : l'écart vaut π, d'où max(1,5 × cos π, 0,1) = **0,1**, le seuil de `walk`
-(`MotionIntentionSpeed` ≥ 0,1), pas une course. Ce qui reste supposé : la distance exacte à 89,43 s (le point de l'approche,
-`FUN_0062c740`, peut ne pas être le joueur lui-même) ; l'outil, lui, tient le bully pour mort à santé nulle et arrête son IA, et
-s'arrête au grand rayon : il pose 0.
+chaque image.
+
+**L'approche de `CombatLoco` s'arrête au petit rayon** (`FUN_0062c740`, lu de 0x62c98b à la fin : le sous-état 0 hors des images de
+tirage). À plat, plus près de la cible que le petit rayon (`FUN_0041a380(cible, soi, +0x6c)`, d² − r² < 0), le mode 10 sur sa propre
+position : la navigation le dit arrivé (rayon 0,2 m), vitesse 0 ; sinon le mode 11 vers la cible elle-même, à 1,5. L'outil s'arrêtait
+au grand rayon (+0x70, 1,5 m pour la zone 0) ; il s'arrête maintenant au petit (+0x6c, 0,9 m, AIButes +0x28). Dans `1_02`, le bully se
+tient à 0,9 m du joueur ; l'humiliation commence plus tôt (le joueur arrive à 0,75 m par `SeekEntityPosition` à 84,08 s, `GV` à
+84,12 s au lieu de 84,22 s, `RCV/END` à 89,33 s) et **`1_02` se termine réussie à 118,93 s** (119,03 s avant).
+
+**La course de `RunStart` est donc établie : il n'y en a pas.** À 89,33 s le joueur est à 0,75 m, sous le petit rayon : le pas de
+`CombatLoco` est le mode 10, sur place, et la navigation, arrivée, laisse la vitesse à 0 (`FUN_004a4eb0` la pose à 0 quand
+`FUN_005e4c60` échoue). `Locomotion` ne fait pas bouger le bully, qui se retourne (`FaceTarget` à 180 degrés) et tombe sur place
+(`KnockOuts/Rear`) : c'est ce que l'outil joue. Restent des écarts de l'outil qui n'y changent rien ici : il tient le bully pour mort
+à santé nulle (le jeu attend la piste `Death`) et coupe son IA, et il ne joue pas les images de tirage (le point tiré entre les deux
+rayons, mode 8, et les sous-états 1 à 3).
 
 ## Le chemin d'un nœud (18.10.2026)
 

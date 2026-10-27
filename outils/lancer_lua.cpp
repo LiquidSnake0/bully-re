@@ -2164,10 +2164,14 @@ GererCibles(int ped, bool joueur)
 // La mise à jour d'une piste CombatLoco (FUN_0062ea40) : la cible (FUN_00625270 : le joueur si l'octet +0x18, sinon
 // +0x538) ; une image sur le tirage de période 8, ou à la première, le piéton prend une zone de combat autour d'elle
 // (FUN_006252d0 : PedJoinCombatZone, la zone 0, sinon 1, sinon 2) ; les rayons de sa zone (FUN_006253e0 : +0x66c, AIButes
-// +0x28 / +0x2c pour la zone 0, +0x2c / +0x30, +0x30 / +0x34, sinon +0x34 / +0x38 ; un demi-mètre de plus si son émotion
-// envers la cible est 4 à 6, non suivie) ; puis l'intention de mouvement (FUN_0062e120, FUN_0061b430) : le piéton va
-// vers sa cible tant qu'il est plus loin que le grand rayon. Supposé : à l'allure de course de l'outil, tout droit (le
-// moteur passe par la recherche de chemin, FUN_005e9df0) ; le petit rayon (reculer) n'est pas suivi.
+// +0x28 / +0x2c pour la zone 0, +0x2c / +0x30, +0x30 / +0x34, sinon +0x34 / +0x38, rangés en +0x6c et +0x70 de la piste ;
+// un demi-mètre de plus si son émotion envers la cible est 4 à 6, non suivie) ; puis le choix du point (FUN_0062e120) et le
+// pas (FUN_00625970). Le sous-état 0 (+0x28), hors des images de tirage, est l'approche de FUN_0062c740 (lue de 0x62c98b à
+// la fin) : à plat, plus près de la cible que le petit rayon (FUN_0041a380(cible, soi, +0x6c) < 0), le mode 10 sur sa propre
+// position, où la navigation le dit arrivé (vitesse 0) ; sinon le mode 11 vers la cible elle-même, à 1,5, avec le rayon
+// d'arrivée 0,2 m : le piéton ne s'arrête donc qu'au petit rayon. Supposé : tout droit (le moteur passe par la recherche
+// de chemin, FUN_005e9df0) ; aux images de tirage, le point tiré entre les deux rayons (FUN_0062c4f0, mode 8) et les
+// sous-états 1 à 3 qui suivent (FUN_0061b700, FUN_00625740, l'arrêt) ne sont pas joués : l'outil reste au sous-état 0.
 static void
 CombatLoco(int ped, bool joueur, bool premiere)
 {
@@ -2179,20 +2183,17 @@ CombatLoco(int ped, bool joueur, bool premiere)
 	if(q == nil) return;
 	if(premiere || TirageOpportunite(8, (uint16)ped, imageCourante))
 		for(int z = 0; z < 3; z++) if(pietons.JoindreZoneCombat(ped, c, z, false)) break;
-	static const uint16 kGrands[5] = {44, 48, 52, 56, 56};
+	static const uint16 kPetits[5] = {40, 44, 48, 52, 52};
 	int z = p->zoneCombat < 0 || p->zoneCombat > 3 ? 3 : p->zoneCombat;
-	float rayon = ButeIA(kGrands[z], 1.5f);
+	float petit = ButeIA(kPetits[z], 0.9f);
 	float dx = q->pos.x - p->pos.x, dy = q->pos.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
 	if(d > 0) p->intention = CVector(dx / d, dy / d, 0);
-	if(d <= rayon){ p->intentionVitesse = 0; return; }
-	// L'intention de mouvement vers la cible : l'approche de FUN_0062c740 est le mode 11, auquel le pas (FUN_00625970)
-	// donne 1,5. Supposé : tout droit, sans le point tiré entre les deux rayons aux images de tirage (FUN_0062c4f0, mode 8,
-	// aussi 1,5) ni l'attente qui suit (FUN_0061b700, FUN_00625740).
-	// La navigation (FUN_004a4eb0, le rayon d'arrivée 0,2 m que le pas passe, _DAT_00900484) en fait la vitesse de
-	// l'intention (FUN_005e4a60) : ralentie par l'écart entre le cap du piéton et la direction de la cible.
+	if(d * d - petit * petit < 0.0f){ p->intentionVitesse = 0; return; }   // mode 10 : arrivé sur place
+	// Le mode 11 : le pas (FUN_00625970) donne 1,5, la navigation (FUN_005e4a60) la ralentit par l'écart entre le cap du
+	// piéton et la direction de la cible.
 	float ecart = remainderf(atan2f(dy, dx) - p->cap * 3.14159265f / 180.0f, 2.0f * 3.14159265f);
 	p->intentionVitesse = ScriptPedVitesseDuTrajet(ScriptPedVitesseDuPas(PAS_VERS_CIBLE, d * d, d * d, ButeIA(44, 1.5f)), d * d, ecart, 0.2f);
-	float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f, k = d - rayon < pas ? (d - rayon) / d : pas / d;
+	float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f, k = d - petit < pas ? (d - petit) / d : pas / d;
 	p->pos.x += dx * k; p->pos.y += dy * k;
 	p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
 }
