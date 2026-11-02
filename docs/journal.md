@@ -850,3 +850,40 @@ en échec plutôt que de les masquer.
   fonctions citées dans `src/` : une part du saut vient de fonctions seulement citées en commentaire (la méthode du coup `FUN_0047b810`,
   `CPed` `FUN_004812d0`), pas recréées.
 
+## 02.11.2026
+
+- **La poursuite de `1_03`** : `--suivre PIETON[,d]@s` joue la manette du joueur, au sprint sur la trace du piéton poursuivi, sauf
+  quand le script a repris le contrôle. `1_03` n'échoue plus à 28,81 s : Davis finit `_1_03_SCHOOLFLEE` (18,51 s), `ChaseTwoSetup`
+  le lance sur `_1_03_FLEETOFOUNTAIN` et crée six threads. `_1_03_DAVISREGISTERHIT` est une dalle d'un mètre de haut que la trace de
+  Davis frôle 0,5 m plus bas : l'origine d'un piéton est bien à ses pieds (`CTempColModels::Initialise`, `FUN_005712f0` : trois
+  sphères de 0,35 m à 0,35, 0,95 et 1,55 m, boîte de z = 0 à 1,9), c'est le sol du monde qui manque ; l'outil y entre par `--entrer`.
+- **`PedSetPosPoint`, `PedFaceObject`, `PedFaceObjectNow`** : la pose par `FUN_005c74a0` (le sol sous -20 m, la distance du centre à
+  la base du modèle, `FUN_00465fc0`, nulle pour un piéton), le cap par `CPed::SetHeading` (`FUN_004755e0` : +0x1700, +0x10 et la
+  direction de l'intention), le virage immédiat vers une entité (`FUN_005c73c0`, `FUN_00470b40`).
+- **Le coup reçu prévient les scripts** : `RegisterPedEventHandler` (0x5bbdf0, lu à l'assembleur) et sa table de paires (piéton,
+  rappel) (`FUN_005b4600`, `FUN_005b4030`, `FUN_005b42d0`, `FUN_005b40b0`) ; la méthode du coup appelle le rappel de l'événement 0
+  (`FUN_005b2190`, 0x47c5c9) après ses sorties anticipées (drapeau 12, invulnérable, attitude 4). `--viser PIETON@s` (le bouton de
+  verrouillage) : dans `1_03`, le joueur frappe le bully 5 à 38,15 s, `cbDavisGroupHit` passe, `DavisBreakForGarage` lance Davis et
+  le bully 5 attaque le joueur.
+- **`PedClearObjectives`, `PedAttackPlayer`, `PedMakeTargetable`** réelles : Davis s'arrête à la pause (sa piste coupée avec sa
+  file), file au garage par `_1_03_DAVISRUN` et y attend, tourné vers le joueur (50,56 s).
+- **Les actions des nœuds de trajet** (`FUN_0062e780`) : virage (type 0) ou arrêt (type 1), leur attente, le rappel +0x34 de
+  l'objectif (le huitième argument de `PedFollowPath`, lu en 0x62e076) ; les 62 actions de `Trigger.img` sont de type 0, aucune
+  dans `1_01` à `1_03` (test unitaire sur `hallspatrol_1A`).
+- **`PedOverrideStat`, `PedSetFlag`, `PedGetFlag`** réelles : 0x89 drapeaux par piéton, le 12 interdit aux scripts.
+- **Les attitudes** : `CAttitudeSet`, `CVariableAttitudeSet` (une attitude jamais posée se lit 4), le gestionnaire (`FUN_0046f1f0`),
+  l'ensemble propre du piéton (+0x2e8), les cinq fonctions Lua, `SetFactionRespect` et `GetFactionRespect`.
+- **Le choix d'une cible par l'IA** (`FUN_004992a0`, à chaque image comme `FUN_00499340`) : la cible de l'objectif (`FUN_004988b0`,
+  `FUN_00496b60`), la cible déjà prise, l'agresseur récent (`FUN_00498930`, `FUN_00496e60`), la validité (`FUN_00497080` : style,
+  portée de 30 m, vue, 6 s sans la voir) ; `AcquireTarget` ne suppose plus la cible de l'objectif.
+- **Chronos** : `1_01` à 10,46 s et `1_02` à 121,94 s à chaque commit, journaux identiques (hors le piéton 2 de `1_02`, posé à son
+  point par `PedSetPosPoint`, qui atteint un nœud de plus, et les lignes de changement de cible). `1_03`, avec
+  `--suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@29 --suivre 5,0.8@35 --viser 5@35 --jouer …/LightAttacks@38 --suivre 6,1@38.5`,
+  va jusqu'au garage (50,56 s) ; le bully 5 y tue le joueur à 62,67 s.
+- **Ce qui bloque encore** : le bully 5 attaque par le geste réduit de l'outil (10 points toutes les 0,8 s) faute d'arbre de l'IA :
+  le modèle 146 a `/Global/AI` (`Act/AI/AI.act`) dans les `.idb`, que le constructeur de `CPed` doit poser, l'outil ne le fait pas ;
+  les vagues de `1_03` (`_1_03_FIGHT3`, `FIGHT4`, `FIGHT5`, `_1_03_LADDER_DROP`) demandent ces combats. Le sol du monde (les
+  déclencheurs plus hauts que les nœuds). Dans le choix d'une cible : la riposte (`FUN_00496ee0`), les piétons proches
+  (`FUN_00498fc0`, la liste +0x3c0), la conversation, les zones interdites (`FUN_0046ee60`). Restent aussi le point valable de
+  `CombatLoco` (`FUN_006254c0` : le maillage de navigation), les sphères des os et les `SpeechTrack` sans tenue.
+- **Bilan** : 750 fonctions recréées (5,2 % du code), contre 710 (5,0 %) ; 1 542 comprises (9,1 %) ; 10 commits.
