@@ -24,7 +24,7 @@
 // lance celle dont le joueur touche le corona, et celles qui se lancent seules (champ 51) : 1_02 après 1_01.
 // Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
 // de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s[,s2…]]... [--demander N@s]... [--sequence @s]... [--suivre PIETON[,d]@s]...
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s[,s2…]]... [--demander N@s]... [--sequence @s]... [--suivre PIETON[,d]@s]... [--viser PIETON@s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -2648,6 +2648,45 @@ PedAttack(lua_State *L)
 	return 0;
 }
 
+// PedAttackPlayer(ped[, style[, devant]]) (0x5d2620) : un AttackPedObjective (FUN_00470c10) contre le joueur (FUN_005c7220(0, 3)),
+// comme PedAttack : un deuxième argument nombre est le style et le troisième (faux par défaut) le met devant (FUN_00471320) ;
+// sinon les deuxième et troisième, deux booléens (vrais par défaut, FUN_005d8fa0), donnent le style par FUN_004969a0.
+static int
+PedAttackPlayer(lua_State *L)
+{
+	Journal("PedAttackPlayer", L, 1);
+	if(!lua_isnumber(L, 1)) return 0;
+	int32 style = 0; bool devant = false;
+	if(lua_isnumber(L, 2)){ style = (int32)lua_tonumber(L, 2); devant = lua_toboolean(L, 3) != 0; }
+	else {
+		bool a = lua_isboolean(L, 2) || lua_isnumber(L, 2) ? lua_toboolean(L, 2) != 0 : true, b = lua_isboolean(L, 3) || lua_isnumber(L, 3) ? lua_toboolean(L, 3) != 0 : true;
+		style = !a ? (b ? 0 : 1) : (b ? 2 : 3);
+	}
+	pietons.Attaquer((int)lua_tonumber(L, 1), SCRIPT_PED_JOUEUR, style, devant);
+	return 0;
+}
+
+// PedClearObjectives(ped) (0x5ca8e0) : CScriptPedPool::ViderObjectifs, puis le contrôleur de l'IA arrêté (FUN_005f3f40) ; la
+// piste FollowPath, qui n'a plus d'objectif, s'arrête (FUN_0062c230).
+static int
+PedClearObjectives(lua_State *L)
+{
+	Journal("PedClearObjectives", L, 1);
+	int ped = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	if(!pietons.ViderObjectifs(ped)) return 0;
+	if(controleursIA.count(ped)) controleursIA[ped].Jouer(arbres, nil, maintenant / 1000.0f);
+	return 0;
+}
+
+// PedMakeTargetable(ped, b) (0x5ca980) : +0xc0 du piéton reçoit la négation de b (FUN_005d8f20).
+static int
+PedMakeTargetable(lua_State *L)
+{
+	Journal("PedMakeTargetable", L, 1);
+	if(CScriptPed *p = PedArg(L, 1)) p->pasCiblable = !lua_toboolean(L, 2);
+	return 0;
+}
+
 // PedMakeAmbient(ped) (0x5ca850) : rendu à la population ; le script ne le ramasse plus.
 static int
 PedMakeAmbient(lua_State *L)
@@ -3521,6 +3560,7 @@ main(int argc, char **argv)
 	std::vector<uint32> sequences;                         // --sequence @s : le joueur réussit la séquence de boutons à s secondes
 	std::vector<std::pair<uint32, uint32>> attentes;      // --demander N@s : une ActionRequest n° N du joueur à s secondes (tenue 0,25 s)
 	std::vector<std::pair<uint32, std::string>> gestes;    // --jouer CHEMIN@s : le joueur joue ce nœud d'action à s secondes (la manette : parer, frapper)
+	std::vector<std::pair<uint32, int>> visees;           // --viser PIETON@s : le joueur verrouille ce piéton à s secondes
 	std::vector<const char*> pos;
 	for(int i = 1; i < argc; i++){
 		if(strcmp(argv[i], "--mission") == 0 && i + 1 < argc) aLancer = argv[++i];
@@ -3557,6 +3597,11 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--porte") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
 			poussees.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
+		}
+		else if(strcmp(argv[i], "--viser") == 0 && i + 1 < argc){
+			// --viser PIETON@s : le bouton de verrouillage de la manette, le joueur prend le piéton pour cible (FUN_00497d20).
+			std::string e = argv[++i]; size_t at = e.find('@');
+			visees.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), atoi(e.c_str())});
 		}
 		else if(strcmp(argv[i], "--suivre") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@'), v = e.find(',');
@@ -3682,6 +3727,9 @@ main(int argc, char **argv)
 	lua_register(L, "PedSetPosPoint", PedSetPosPoint);
 	lua_register(L, "PedFaceObject", PedFaceObject);
 	lua_register(L, "RegisterPedEventHandler", RegisterPedEventHandler);
+	lua_register(L, "PedAttackPlayer", PedAttackPlayer);
+	lua_register(L, "PedClearObjectives", PedClearObjectives);
+	lua_register(L, "PedMakeTargetable", PedMakeTargetable);
 	lua_register(L, "PedGetHeading", PedGetHeading);
 	lua_register(L, "PedFaceXYZ", PedFaceXYZ);
 	lua_register(L, "PedIsDead", PedIsDead);
@@ -3771,6 +3819,11 @@ main(int argc, char **argv)
 		}
 		for(auto &e : entrees) if(!e.second.empty() && maintenant >= e.first){ EntrerDansDeclencheur(e.second.c_str()); e.second.clear(); }
 		for(auto &e : allers) if(!e.second.empty() && maintenant >= e.first){ AllerAuPoint(e.second.c_str()); e.second.clear(); }
+		for(auto &e : visees) if(e.second >= 0 && maintenant >= e.first){
+			bool pris = pietons.Verrouiller(SCRIPT_PED_JOUEUR, e.second, 0);
+			printf("%6.2f s  le joueur vise le piéton %d%s\n", maintenant / 1000.0, e.second, pris ? "" : " : refusé");
+			e.second = -1;
+		}
 		// Une porte DT_ poussée : FUN_00415160 pose l'objet de porte en cours (+0x394) ; le moteur le fait depuis
 		// l'animation de la porte (FUN_00610ed0, non jouée), l'outil le fait au nom du déclencheur.
 		for(auto &e : gestes) if(!e.second.empty() && maintenant >= e.first){

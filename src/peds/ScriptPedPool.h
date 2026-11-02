@@ -239,6 +239,7 @@ struct CScriptPed {
 	// sans agresseur).
 	int dernierAgresseur = -1;
 	float tempsAgresseur = 0;
+	bool pasCiblable = false;    // +0xc0 : PedMakeTargetable (0x5ca980) y range la négation de son second argument
 	bool immortel = false;       // +0x13fc : PedSetImmortalFlag (0x5ce6e0) / PedGetImmortalFlag (0x5ce730)
 	uint32 instantMort = 0;      // +0x18b8 : l'horloge (ms) à la mort d'un autre que le joueur
 	// Le geste en cours.
@@ -335,6 +336,11 @@ public:
 	// l'attitude de la cible envers le type de l'attaquant (PedGetPedToTypeAttitude, 4 sans arme), l'octet +0x1e94 du joueur,
 	// le coup plus faible qu'un coup reçu à la même image (le relevé +0x408, +0x434, +0x440).
 	bool CoupRecevable(int cible, int attaquant) const;
+	// lua_PedClearObjectives (0x5ca8e0) : la file des objectifs vidée (FUN_00470200, du premier au dernier : le rappel Lua
+	// d'un objectif qui en a un est appelé avec son type, non suivi), le dernier agresseur oublié (FUN_004973d0(0) : +0x1dbc
+	// à nul, +0x1dc0 à 0) ; lancer_lua arrête le contrôleur de l'IA (FUN_005f3f40). Le geste d'attaque de l'outil, que mène
+	// l'objectif d'attaque, cesse avec lui.
+	bool ViderObjectifs(int handle);
 	// FUN_00490ef0 : le groupe d'humiliation (+0xd44) du premier piéton du pool, du dernier au premier, qui tombe entre
 	// `de` et `a` ; -1 si aucun. Tous les piétons d'une même taille partagent ainsi le groupe déjà chargé.
 	int GroupeHumiliationDans(int de, int a) const;

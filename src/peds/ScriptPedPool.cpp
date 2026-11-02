@@ -250,6 +250,17 @@ CScriptPedPool::CoupRecevable(int cible, int attaquant) const
 	return true;
 }
 
+bool
+CScriptPedPool::ViderObjectifs(int h)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return false;
+	p->nombreObjectifs = 0;
+	p->attaque = -1;
+	p->dernierAgresseur = -1; p->tempsAgresseur = 0;
+	return true;
+}
+
 void
 CGestionnairesPietons::Ajouter(int ped)
 {
