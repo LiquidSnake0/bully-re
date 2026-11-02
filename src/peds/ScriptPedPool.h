@@ -292,6 +292,8 @@ struct CScriptPed {
 	// (0x5cb480 → 0x473080) l'écrit, PedGetPedToTypeAttitude (0x475230) le lit, puis la table du type du piéton s'il vaut 5.
 	CAttitudeSet attitudes;
 	bool pasCiblable = false;    // +0xc0 : PedMakeTargetable (0x5ca980) y range la négation de son second argument
+	float tempsNonVu = 0;        // +0x1db8 : depuis quand le piéton ne voit plus sa cible (s), FUN_00499340 ; 0 au verrouillage
+	uint32 instantVerrou = 0;    // +0x1dc4 : l'horloge du dernier verrouillage (FUN_00497d20 y ajoute un tirage, non suivi)
 	bool immortel = false;       // +0x13fc : PedSetImmortalFlag (0x5ce6e0) / PedGetImmortalFlag (0x5ce730)
 	uint32 instantMort = 0;      // +0x18b8 : l'horloge (ms) à la mort d'un autre que le joueur
 	// Le geste en cours.
@@ -388,6 +390,35 @@ public:
 	// l'octet +0x1e94 du joueur, le coup plus faible qu'un coup reçu à la même image (le relevé +0x408, +0x434, +0x440). Une
 	// cible dont l'attitude envers le type de l'attaquant vaut 4 n'est pas frappée par un coup sans arme (l'outil n'a pas
 	// d'armes : toujours), sauf par le joueur sur sa cible verrouillée (param_14, FUN_004d5980 : non suivi, supposé faux).
+	// Le choix d'une cible par l'IA (types autres que 13). Les AIButes qu'il lit (Globals.cat, DAT_020c889c) : +0x64 le temps
+	// sans voir sa cible (6 s), +0x68 la portée de la visée (30 m), +0x6c le minimum de points de punition d'un agresseur (-1),
+	// +0x70 et +0x74 la marge de l'attache (1 m, 2 pour la cible déjà prise).
+	struct ButesCibles { float nonVuMax = 6.0f, portee = 30.0f; int32 punitionMin = -1; float marge = 1.0f, margeCible = 2.0f; };
+	// FUN_00496b60 : la cible de l'objectif courant (FUN_004701f0) et son style (3 par défaut) : attaque (7) et 16, la cible +0x14
+	// et le style +0x10 ; fuite (22), la cible fuie +0x10. Les autres (4, 8, 0xb, 0x13 à 0x15 : objets, véhicules) ne sont pas
+	// suivis. -1 sans cible.
+	int CibleDeLObjectif(int handle, int32 &style) const;
+	// FUN_00496e60 : un agresseur qu'on peut prendre pour cible : un autre piéton, vivant ; si le piéton ne le hait pas (son attitude
+	// envers le type de l'agresseur au-dessus de 0), seulement s'il est une autorité (FUN_0041a900 : types 0, 7, 8) et que
+	// l'agresseur a au moins +0x6c points de punition (+0x1d40, 0 dans l'outil).
+	bool AgresseurPossible(int handle, int agresseur, const ButesCibles &b) const;
+	// FUN_00497080(cible, style, aPortee, vivante) pour un piéton de l'IA : rien sans cible, ni soi-même, ni un mort si `vivante`.
+	// Les styles autres que 0 et 2 (FUN_00496960) s'arrêtent là : valable. Pour 0 et 2 : avec `aPortee`, à moins de +0x68 m
+	// (FUN_00487d00) ; l'attache du piéton (FUN_004996f0, +0x34) admet la cible à sa marge près, faute d'attache toujours ; puis
+	// valable pour les styles 2 et 3 (FUN_00496980), sans `aPortee`, ou si le piéton la voit (FUN_0048d320) ; sinon seulement
+	// la cible déjà prise, vue il y a au plus +0x64 s. Non suivis : la conversation (PedInConversation), les zones interdites
+	// (FUN_0046ee60), le modèle DAT_00bf42dc, la liste +0x198 du composant de visée (FUN_0048bf30), le joueur en voiture.
+	bool CibleValable(int handle, int cible, int32 style, bool aPortee, bool vivante, const ButesCibles &b, int (*tirer)(void *), void *ctx);
+	// FUN_004992a0 : la cible de l'objectif si elle est valable (FUN_004988b0, l'octet +0x1de5 levé pendant le jugement), sinon
+	// la cible déjà prise si son style n'est ni 0 ni 2 (+0x1db4) ou si elle est récente (+0x1dc4), sinon l'agresseur des cinq
+	// dernières secondes (FUN_00498930, _DAT_00900188) s'il est possible et valable (style 0). Verrouillé par FUN_00497d20 (+0x1db4
+	// le style, +0x1db8 à 0, +0x1dc4 l'horloge). Non suivis : la riposte qui pousse un objectif d'attaque contre l'agresseur
+	// (FUN_00496ee0) et les piétons proches notés (FUN_00498fc0, la liste +0x3c0).
+	void ChoisirCible(int handle, uint32 maintenantMs, const ButesCibles &b, int (*tirer)(void *), void *ctx);
+	// FUN_00499340, pour chaque piéton autre que le joueur : le temps sans voir sa cible avance (+0x1db8), une cible qui n'est plus
+	// valable (FUN_00497080 avec son style, à portée, vivante) est lâchée (FUN_004989c0(0)), puis la cible est choisie de nouveau
+	// (l'octet +0x1de4 levé à chaque image, FUN_004992a0). Un mort ne choisit plus (supposé).
+	void SuivreCibles(float dt, uint32 maintenantMs, const ButesCibles &b, int (*tirer)(void *), void *ctx);
 	// PedGetPedToTypeAttitude (0x475230) : l'attitude du piéton envers un type (sans piéton, 2).
 	int32 Attitude(int handle, int type) const;
 	CAttitudes attitudesTypes;     // le gestionnaire des attitudes entre types (FUN_0046f1f0)

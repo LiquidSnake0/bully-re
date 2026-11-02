@@ -242,6 +242,8 @@ static std::map<int, std::pair<int, uint32>> partenaires;   // le piéton qui no
 // arbre de l'IA y pose (FUN_005f35e0), lu par la condition ActionNodeRequest de son arbre d'actions, effacé en fin d'image
 // avec l'état des boutons (FUN_005f3720).
 static std::map<int, uint32> intentionsPietons;
+static std::set<int> choisis;   // les piétons dont FUN_00499340 a déjà rabattu l'octet +0x1de4
+static int TirerVue(void *);
 // AIButes (Globals.cat, DAT_020c889c, FUN_0072ae00) : +0x18 à +0x20 la capacité des trois zones de combat ; +0x28 à
 // +0x38 les rayons des zones (0,9 / 1,5 / 3 / 6 / 8 m) ; +0x54 la portée et +0x58 le cosinus du cône d'attaque.
 static CActionTrack butesIA;
@@ -673,11 +675,17 @@ struct CJugeOutil : CJugeAction {
 		if(type == kInterdites) return 0;   // AttacksDisabled (FUN_006094f0) rend toujours faux
 		if(type == kPrint) return 1;        // Print (FUN_00609b30) : un message de mise au point, vraie
 		// AcquireTarget (FUN_00601760 → FUN_00499320) : si l'octet +0x1de4 le demande, la cible est choisie de nouveau
-		// (FUN_004992a0, parmi les objectifs : FUN_004988b0, FUN_00496b60 ; non lu en détail) ; vraie si le piéton a une
-		// cible (PedGetTargetPed). Supposé : sans cible, il prend celle de son objectif d'attaque (+0x540).
+		// (FUN_004992a0, CScriptPedPool::ChoisirCible) ; vraie si le piéton a une cible (PedGetTargetPed). FUN_00499340 lève cet
+		// octet puis le rabat en choisissant, à chaque image de chaque piéton de l'IA (CScriptPedPool::SuivreCibles) : il ne reste
+		// levé que pour un piéton qui n'a pas encore eu son image, celui qu'on vient de créer.
 		if(type == kAcquerir){
 			if(moi == nil) return 0;
-			if(CibleDe(ped) < 0 && pietons.Acceder(moi->cibleObjectif)) pietons.Verrouiller(ped, moi->cibleObjectif, 0);
+			if(!choisis.count(ped)){
+				CScriptPedPool::ButesCibles b;
+				b.nonVuMax = ButeIA(100, 6.0f); b.portee = ButeIA(104, 30.0f); b.punitionMin = (int32)butesIA.Mot(108);
+				b.marge = ButeIA(112, 1.0f); b.margeCible = ButeIA(116, 2.0f);
+				pietons.ChoisirCible(ped, maintenant, b, TirerVue, nil);
+			}
 			return CibleDe(ped) >= 0;
 		}
 		// JoinCombatZone (FUN_00601550) : la cible +0x538, un piéton ; la zone +8 (0 à 2, sinon la première des trois qui
@@ -3036,12 +3044,27 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 }
 
 // Une image des piétons : les gestes avancent, et ce qui aboutit se journalise.
+static int TirerVue(void *);
 static void
 AvancerPietons(void)
 {
 	pietons.Avancer(0.033f);
 	if(etatLua) AvancerSuivis(etatLua);   // les pistes FollowPath
 	pietons.AvancerVue(0.033f);   // CPed (FUN_004812d0) : FUN_0048ccf0, FUN_00499340
+	// FUN_00499340, la suite : la cible des piétons de l'IA (CScriptPedPool::SuivreCibles), avec les AIButes de la visée.
+	CScriptPedPool::ButesCibles b;
+	b.nonVuMax = ButeIA(100, 6.0f); b.portee = ButeIA(104, 30.0f); b.punitionMin = (int32)butesIA.Mot(108);
+	b.marge = ButeIA(112, 1.0f); b.margeCible = ButeIA(116, 2.0f);
+	int avant[SCRIPT_PED_POOL_SIZE];
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){ const CScriptPed *p = pietons.Acceder(i); avant[i] = p ? p->verrou : -1; }
+	pietons.SuivreCibles(0.033f, maintenant, b, TirerVue, nil);
+	choisis.clear();
+	for(int i = 1; i < SCRIPT_PED_POOL_SIZE; i++) if(pietons.Acceder(i)) choisis.insert(i);
+	for(int i = 1; i < SCRIPT_PED_POOL_SIZE; i++){
+		const CScriptPed *p = pietons.Acceder(i);
+		if(p && p->verrou != avant[i])
+			printf("%6.2f s  piéton %d : cible %d → %d (style %d)\n", maintenant / 1000.0, i, avant[i], p->verrou, p->verrouMode);
+	}
 	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
 		const CScriptPed *p = pietons.Acceder(i);
 		if(p == nil || journalRestant <= 0) continue;

@@ -469,6 +469,34 @@ main(void)
 		c.Acceder(b)->attitudes.Ecrire(SCRIPT_PED_TYPE_JOUEUR, 4);
 		VERIF(!c.CoupRecevable(b, SCRIPT_PED_JOUEUR));
 	}
+	{
+		// FUN_004992a0 : la cible de l'objectif d'attaque (style 3 : valable sans autre jugement), puis l'agresseur récent d'un
+		// piéton qui le hait (attitude 0) ; FUN_00499340 lâche une cible morte ; FUN_00497080 en style 0 : la portée de 30 m.
+		CScriptPedPool c;
+		CScriptPedPool::ButesCibles b;
+		int bully = c.Creer(146, CVector(0, 0, 0), 0, 1), eleve = c.Creer(102, CVector(3, 0, 0), 0, 1);
+		c.Acceder(bully)->type = 11; c.Acceder(eleve)->type = 1;
+		auto tirer = [](void *) -> int { return 0; };
+		c.Attaquer(bully, SCRIPT_PED_JOUEUR, 3);
+		c.SuivreCibles(0.033f, 1000, b, tirer, nil);
+		VERIF(c.Acceder(bully)->verrou == SCRIPT_PED_JOUEUR && c.Acceder(bully)->verrouMode == 3 && c.Acceder(eleve)->verrou == -1);
+		c.Agresse(eleve, bully);                                 // l'élève, frappé par le bully, ne l'aime pas
+		c.attitudesTypes.PoserDefaut(1, 11, 0);
+		c.SuivreCibles(0.033f, 1033, b, tirer, nil);
+		VERIF(c.Acceder(eleve)->verrou == bully && c.Acceder(eleve)->verrouMode == 0);
+		c.attitudesTypes.PoserDefaut(1, 11, 2);                  // neutre et pas une autorité : il ne riposte pas
+		int autre = c.Creer(102, CVector(3, 0, 0), 0, 1);
+		c.Acceder(autre)->type = 1; c.Agresse(autre, bully);
+		c.SuivreCibles(0.033f, 1066, b, tirer, nil);
+		VERIF(c.Acceder(autre)->verrou == -1);
+		c.Acceder(bully)->mort = true;                           // une cible morte est lâchée
+		c.SuivreCibles(0.033f, 1100, b, tirer, nil);
+		VERIF(c.Acceder(eleve)->verrou == -1);
+		c.Acceder(bully)->mort = false;
+		c.Acceder(bully)->pos = CVector(40, 0, 0);
+		VERIF(!c.CibleValable(eleve, bully, 0, true, true, b, tirer, nil) && c.CibleValable(eleve, bully, 0, false, true, b, tirer, nil));
+		VERIF(c.CibleValable(eleve, bully, 3, true, true, b, tirer, nil) && !c.CibleValable(eleve, eleve, 3, false, true, b, tirer, nil));
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }

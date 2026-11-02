@@ -251,6 +251,87 @@ CScriptPedPool::CoupRecevable(int cible, int attaquant) const
 	return true;
 }
 
+int
+CScriptPedPool::CibleDeLObjectif(int h, int32 &style) const
+{
+	const CObjectifPieton *o = ObjectifCourant(h);
+	style = 3;
+	if(o == nil) return -1;
+	if(o->type == OBJECTIF_ATTAQUER_PIETON || o->type == OBJECTIF_ATTAQUER_16){ style = o->style; return o->cible; }
+	if(o->type == OBJECTIF_FUIR) return o->cible;
+	return -1;
+}
+
+static bool
+Autorite(const CScriptPed &p)   // FUN_0041a900 : préfet, policier, professeur
+{
+	return p.type == 0 || p.type == 7 || p.type == 8;
+}
+
+bool
+CScriptPedPool::AgresseurPossible(int h, int a, const ButesCibles &b) const
+{
+	const CScriptPed *p = Acceder(h), *q = Acceder(a);
+	if(p == nil || q == nil || a == h || q->mort) return false;
+	if(Attitude(h, q->type) > 0){
+		if(!Autorite(*p)) return false;
+		if(0 < b.punitionMin) return false;    // +0x1d40 de l'agresseur : 0 dans l'outil
+	}
+	return true;
+}
+
+bool
+CScriptPedPool::CibleValable(int h, int cible, int32 style, bool aPortee, bool vivante, const ButesCibles &b, int (*tirer)(void *), void *ctx)
+{
+	CScriptPed *p = Acceder(h);
+	const CScriptPed *c = Acceder(cible);
+	if(p == nil || c == nil || cible == h) return false;
+	if(vivante && c->mort) return false;
+	if(style != 0 && style != 2) return true;              // FUN_00496960
+	if(aPortee){
+		float dx = c->pos.x - p->pos.x, dy = c->pos.y - p->pos.y, dz = c->pos.z - p->pos.z;
+		if(dx * dx + dy * dy + dz * dz - b.portee * b.portee > 0.0f) return false;   // FUN_00487d00
+	}
+	if(style == 2 || style == 3 || !aPortee) return true;   // FUN_00496980
+	if(Voit(h, cible, tirer, ctx)) return true;
+	return p->verrou == cible && p->tempsNonVu <= b.nonVuMax;
+}
+
+void
+CScriptPedPool::ChoisirCible(int h, uint32 maintenantMs, const ButesCibles &b, int (*tirer)(void *), void *ctx)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return;
+	auto verrouiller = [&](int cible, int32 style){   // FUN_00497d20
+		if(p->verrou != cible) p->tempsNonVu = 0;
+		Verrouiller(h, cible, style);
+		p->instantVerrou = maintenantMs;
+	};
+	int32 style = 3;
+	int c = CibleDeLObjectif(h, style);               // FUN_004988b0
+	if(c >= 0 && CibleValable(h, c, style, false, true, b, tirer, ctx)){ verrouiller(c, style); return; }
+	if(Acceder(p->verrou) && ((p->verrouMode != 0 && p->verrouMode != 2) || maintenantMs < p->instantVerrou)) return;
+	if(p->dernierAgresseur >= 0 && p->tempsAgresseur < 5.0f && AgresseurPossible(h, p->dernierAgresseur, b)   // FUN_00498930
+	   && CibleValable(h, p->dernierAgresseur, 0, false, true, b, tirer, ctx))
+		verrouiller(p->dernierAgresseur, 0);
+}
+
+void
+CScriptPedPool::SuivreCibles(float dt, uint32 maintenantMs, const ButesCibles &b, int (*tirer)(void *), void *ctx)
+{
+	for(int i = 1; i < SCRIPT_PED_POOL_SIZE; i++){
+		CScriptPed &p = peds[i];
+		// Supposé : un mort ne choisit plus (son contrôleur de l'IA est arrêté, FUN_00484490) ; la garde de FUN_004812d0 (+0x1e25)
+		// n'est pas lue.
+		if(!p.vivant || p.mort || p.type == SCRIPT_PED_TYPE_JOUEUR) continue;
+		if(Acceder(p.verrou)){
+			p.tempsNonVu = Voit(i, p.verrou, tirer, ctx) ? 0.0f : p.tempsNonVu + dt;
+			if(!CibleValable(i, p.verrou, p.verrouMode, true, true, b, tirer, ctx)) Verrouiller(i, -1, 0);
+		}
+		ChoisirCible(i, maintenantMs, b, tirer, ctx);
+	}
+}
+
 int32
 CScriptPedPool::Attitude(int h, int type) const
 {
