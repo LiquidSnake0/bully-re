@@ -404,6 +404,31 @@ main(void)
 		CScriptPedPool rq;
 		VERIF(rq.Acceder(rq.Creer(85, CVector(), 0, 1))->rayonNoeud == 1.0f);   // FUN_0048c430 : 1 m par défaut
 	}
+	{
+		// RegisterPedEventHandler (0x5bbdf0) : la table des paires (piéton, rappel). Ajouter une seconde fois ne double pas la
+		// paire (FUN_005b4600), retirer fait avancer les suivantes (FUN_005b4130), rien n'est retiré pendant un appel.
+		CGestionnairesPietons g;
+		g.Ajouter(6); g.Ajouter(5); g.Ajouter(6);
+		VERIF(g.paires.size() == 2 && !g.Pret(6) && g.Case(7) == nil);
+		*g.Case(6) = 42;
+		VERIF(g.Pret(6) && !g.Pret(5));
+		g.enAppel = true;
+		VERIF(g.Retirer(6) == CGestionnairesPietons::SANS_RAPPEL && g.paires.size() == 2);
+		g.enAppel = false;
+		VERIF(g.Retirer(6) == 42 && g.paires.size() == 1 && g.paires[0].ped == 5 && !g.Pret(6));
+		// FUN_0047b810 : la méthode du coup ne prévient pas les scripts d'un coup sur un piéton du drapeau 12, ni sur un
+		// invulnérable (30) sauf le joueur, ni d'un coup du joueur sur un invulnérable au joueur (20).
+		CScriptPedPool c;
+		int davis = c.Creer(99, CVector(), 0, 1), bully = c.Creer(146, CVector(), 0, 1);
+		VERIF(c.CoupRecevable(bully, SCRIPT_PED_JOUEUR) && c.CoupRecevable(davis, SCRIPT_PED_JOUEUR));
+		c.Acceder(davis)->drapeaux[DRAPEAU_INVULNERABLE] = 1;
+		c.Acceder(bully)->drapeaux[DRAPEAU_INVULNERABLE_JOUEUR] = 1;
+		c.Acceder(SCRIPT_PED_JOUEUR)->drapeaux[DRAPEAU_INVULNERABLE] = 1;
+		VERIF(!c.CoupRecevable(davis, SCRIPT_PED_JOUEUR) && !c.CoupRecevable(bully, SCRIPT_PED_JOUEUR) && c.CoupRecevable(bully, davis));
+		VERIF(c.CoupRecevable(SCRIPT_PED_JOUEUR, bully));
+		c.Acceder(SCRIPT_PED_JOUEUR)->drapeaux[DRAPEAU_INTOUCHABLE] = 1;
+		VERIF(!c.CoupRecevable(SCRIPT_PED_JOUEUR, bully));
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }

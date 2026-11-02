@@ -2475,6 +2475,49 @@ AvancerSuivis(lua_State *L)
 	}
 }
 
+// RegisterPedEventHandler(ped, événement, fonction) (0x5bbdf0, lu à l'assembleur : Ghidra ne l'a pas en fonction) : le piéton
+// (FUN_005c7220), puis, si le troisième argument est une fonction (FUN_005d84f0), la paire du piéton (FUN_005b4600) et sa case
+// (FUN_005b4030) reçoivent le rappel (FUN_005d9f00) ; sinon la case est vidée et la paire retirée (FUN_005b42d0). Seul
+// l'événement 0 a sa propre case (CGestionnairesPietons) : l'outil ignore les autres.
+static CGestionnairesPietons gestionnaires;
+
+static int
+RegisterPedEventHandler(lua_State *L)
+{
+	Journal("RegisterPedEventHandler", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	int ped = p ? (int)lua_tonumber(L, 1) : -1, evenement = (int)luaL_optnumber(L, 2, 0);
+	if(p == nil || evenement != 0) return 0;
+	if(lua_isfunction(L, 3)){
+		gestionnaires.Ajouter(ped);
+		int *c = gestionnaires.Case(ped);
+		if(c == nil) return 0;
+		if(*c != CGestionnairesPietons::SANS_RAPPEL) luaL_unref(L, LUA_REGISTRYINDEX, *c);
+		lua_pushvalue(L, 3);
+		*c = luaL_ref(L, LUA_REGISTRYINDEX);
+	}
+	else{
+		int r = gestionnaires.Retirer(ped);
+		if(r != CGestionnairesPietons::SANS_RAPPEL) luaL_unref(L, LUA_REGISTRYINDEX, r);
+	}
+	return 0;
+}
+
+// FUN_005b2190, depuis la méthode du coup (FUN_0047b810) : le rappel de l'événement 0 du piéton frappé (FUN_005b40b0,
+// FUN_005b4030), appelé avec (frappé, attaquant). Les gestionnaires globaux de l'événement 7 (FUN_005b1ce0) ne sont pas suivis.
+static void
+PrevenirCoupRecu(int cible, int attaquant)
+{
+	if(etatLua == nil || !gestionnaires.Pret(cible)) return;
+	lua_State *L = etatLua;
+	printf("%6.2f s  le rappel du coup reçu de %d est appelé (%d, %d)\n", maintenant / 1000.0, cible, cible, attaquant);
+	lua_rawgeti(L, LUA_REGISTRYINDEX, *gestionnaires.Case(cible));
+	lua_pushnumber(L, cible); lua_pushnumber(L, attaquant);
+	gestionnaires.enAppel = true;
+	if(lua_pcall(L, 2, 0, 0) != 0){ printf("        rappel du coup : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+	gestionnaires.enAppel = false;
+}
+
 // PedFollowPath(ped, trajet, mode, allure, rappel, départ, rappel2, rappel3) (0x5cfbf0) : rien sans piéton, sans trajet
 // (FUN_005ed240), pour un trajet vide, ou d'un seul nœud hors du mode 3. Avec plus de cinq arguments, ou si l'objectif
 // FollowPath de sa file (FUN_005cf670 : le premier de type 12) suit un autre trajet : le contrôleur de l'IA s'arrête
@@ -3638,6 +3681,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedSetPosXYZ", PedSetPosXYZ);
 	lua_register(L, "PedSetPosPoint", PedSetPosPoint);
 	lua_register(L, "PedFaceObject", PedFaceObject);
+	lua_register(L, "RegisterPedEventHandler", RegisterPedEventHandler);
 	lua_register(L, "PedGetHeading", PedGetHeading);
 	lua_register(L, "PedFaceXYZ", PedFaceXYZ);
 	lua_register(L, "PedIsDead", PedIsDead);
@@ -3828,6 +3872,7 @@ main(int argc, char **argv)
 				bool pris = arbreCoups && v.Entrer(arbres, arbreCoups, CJugeOutil(cible, maintenant / 1000.0f), maintenant / 1000.0f);
 				printf("%6.2f s  le coup de %d porte sur %d (%s)%s%s\n", maintenant / 1000.0, c.first, cible, CheminVu(c.second, k.porteur).c_str(),
 				       pris ? " : il joue " : "", pris ? CheminVu(v, v.joue).c_str() : "");
+				if(pietons.CoupRecevable(cible, c.first)) PrevenirCoupRecu(cible, c.first);   // FUN_0047b810 → FUN_005b2190
 				if(!k.surCoup.empty())
 					if(const CActionNode *n = arbres.Relatif(k.porteur, k.surCoup.c_str()))
 						c.second.Entrer(arbres, n, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f);

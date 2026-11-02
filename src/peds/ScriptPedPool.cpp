@@ -238,6 +238,52 @@ CScriptPedPool::Blesser(int cible, float degats, int attaquant)
 	return true;
 }
 
+bool
+CScriptPedPool::CoupRecevable(int cible, int attaquant) const
+{
+	const CScriptPed *c = Acceder(cible);
+	if(c == nil) return false;
+	if(c->drapeaux[DRAPEAU_INTOUCHABLE]) return false;
+	if(c->drapeaux[DRAPEAU_INVULNERABLE] && c->type != SCRIPT_PED_TYPE_JOUEUR) return false;
+	const CScriptPed *a = Acceder(attaquant);
+	if(a && a->type == SCRIPT_PED_TYPE_JOUEUR && c->drapeaux[DRAPEAU_INVULNERABLE_JOUEUR]) return false;
+	return true;
+}
+
+void
+CGestionnairesPietons::Ajouter(int ped)
+{
+	for(const Paire &p : paires) if(p.ped == ped) return;
+	paires.push_back({ped, SANS_RAPPEL});
+}
+
+int *
+CGestionnairesPietons::Case(int ped)
+{
+	for(Paire &p : paires) if(p.ped == ped) return &p.rappel;
+	return nil;
+}
+
+int
+CGestionnairesPietons::Retirer(int ped)
+{
+	if(enAppel) return SANS_RAPPEL;
+	for(size_t i = 0; i < paires.size(); i++){
+		if(paires[i].ped != ped) continue;
+		int r = paires[i].rappel;
+		paires.erase(paires.begin() + i);
+		return r;
+	}
+	return SANS_RAPPEL;
+}
+
+bool
+CGestionnairesPietons::Pret(int ped) const
+{
+	for(const Paire &p : paires) if(p.ped == ped) return p.rappel != SANS_RAPPEL;
+	return false;
+}
+
 void
 CScriptPedPool::ViderEntrees(int h)
 {

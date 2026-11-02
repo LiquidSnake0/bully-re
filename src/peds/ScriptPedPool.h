@@ -329,6 +329,12 @@ public:
 	// (+0x1ca8).
 	// Renvoie vrai si le coup a porté.
 	bool Blesser(int cible, float degats, int attaquant);
+	// Les sorties anticipées de la méthode du coup (slot 15 de CPed, FUN_0047b810) avant qu'elle ne prévienne les scripts
+	// (FUN_005b2190) : rien si la cible a le drapeau 12 (+0x1344, param_1[0x4d1]), si elle est invulnérable (30, +0x138c) sans
+	// être le joueur, si l'attaquant est le joueur et la cible invulnérable au joueur (20, +0x1364). Ne sont pas suivis :
+	// l'attitude de la cible envers le type de l'attaquant (PedGetPedToTypeAttitude, 4 sans arme), l'octet +0x1e94 du joueur,
+	// le coup plus faible qu'un coup reçu à la même image (le relevé +0x408, +0x434, +0x440).
+	bool CoupRecevable(int cible, int attaquant) const;
 	// FUN_00490ef0 : le groupe d'humiliation (+0xd44) du premier piéton du pool, du dernier au premier, qui tombe entre
 	// `de` et `a` ; -1 si aucun. Tous les piétons d'une même taille partagent ainsi le groupe déjà chargé.
 	int GroupeHumiliationDans(int de, int a) const;
@@ -414,4 +420,27 @@ public:
 private:
 	CScriptPed peds[SCRIPT_PED_POOL_SIZE];
 	int manettes[2] = {SCRIPT_PED_JOUEUR, -1};
+};
+
+// La table des gestionnaires d'événements des piétons (RegisterPedEventHandler, 0x5bbdf0) : des paires (piéton, rappel Lua),
+// dix en place (DAT_00cfaf28) puis sur le tas (DAT_00cfaf78), leur nombre en DAT_00cfaf80. Une paire n'a qu'une case de rappel :
+// l'événement est un décalage de 4 octets dans la paire (FUN_005b4030 : +4 + 4 × événement), seul 0 tombe dans sa propre case.
+// L'événement 0 est le coup reçu : la méthode du coup (FUN_0047b810) appelle FUN_005b2190, qui appelle le rappel du piéton
+// frappé avec (sa poignée, celle de l'attaquant ; -1 sans attaquant), par l'emplacement 43 (+0xac) de CPed.
+class CGestionnairesPietons
+{
+public:
+	enum { SANS_RAPPEL = -2 };   // LUA_NOREF : une case vide (FUN_005d7f80 faux)
+	struct Paire { int ped; int rappel; };
+	// FUN_005b4600 : ajoute le piéton au bout s'il n'y est pas (FUN_005b4590 agrandit le tas en doublant).
+	void Ajouter(int ped);
+	// FUN_005b4030 : la case du rappel du piéton, nil s'il n'y est pas (le moteur rend alors la case de la première paire).
+	int *Case(int ped);
+	// FUN_005b42d0 : vide la case du piéton (FUN_005b3fe0) et retire la paire (FUN_005b4130, les suivantes avancent d'un
+	// cran) ; rend l'ancien rappel, SANS_RAPPEL sinon. Rien pendant l'appel des rappels (DAT_00cfaf84).
+	int Retirer(int ped);
+	// FUN_005b40b0 : le piéton a un rappel pour l'événement 0.
+	bool Pret(int ped) const;
+	std::vector<Paire> paires;
+	bool enAppel = false;        // DAT_00cfaf84
 };
