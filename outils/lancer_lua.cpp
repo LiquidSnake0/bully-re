@@ -2352,6 +2352,40 @@ GameSetPedStat(lua_State *L)
 	return 0;
 }
 
+// PedOverrideStat(ped, n, valeur) (0x5c9070) : la colonne n de ses stats par FUN_00476fa0, comme GameSetPedStat.
+static int
+PedOverrideStat(lua_State *L)
+{
+	Journal("PedOverrideStat", L, 1);
+	if(lua_isnumber(L, 1)) pietons.PoserStat((int)lua_tonumber(L, 1), (int)luaL_checknumber(L, 2), (int32)luaL_checknumber(L, 3));
+	return 0;
+}
+
+// PedSetFlag(ped, n, b) (lua_PedSetFlag 0x5cc0b0) : le mot +0x1314 + 4n reçoit l'octet de b (FUN_005d8f20), sauf le drapeau 12
+// (+0x1344, que la méthode du coup lit : un script ne peut pas le poser) et au-delà de 0x88. PedGetFlag(ped, n) (0x5cc110) le
+// rend, vrai s'il n'est pas nul (sans borne sur n dans le moteur ; l'outil rend faux au-delà).
+static int
+PedSetFlag(lua_State *L)
+{
+	Journal("PedSetFlag", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p == nil) return 0;
+	uint32 n = (uint32)(int32)luaL_optnumber(L, 2, -1);
+	if(n != DRAPEAU_INTOUCHABLE && n < SCRIPT_PED_DRAPEAUX) p->drapeaux[n] = lua_toboolean(L, 3) ? 1 : 0;
+	return 0;
+}
+
+static int
+PedGetFlag(lua_State *L)
+{
+	appels["PedGetFlag"]++;
+	const CScriptPed *p = PedArg(L, 1);
+	if(p == nil) return 0;
+	uint32 n = (uint32)(int32)luaL_optnumber(L, 2, -1);
+	lua_pushboolean(L, n < SCRIPT_PED_DRAPEAUX && p->drapeaux[n] != 0);
+	return 1;
+}
+
 // --- Les gestes des piétons : marche, course, arrêt, bagarre (src/peds/ScriptPedPool.h). ---
 
 // PedMoveToPoint(ped, allure, liste, n) (0x5c7df0) : vers le n-ième point de la liste.
@@ -3769,6 +3803,9 @@ main(int argc, char **argv)
 	lua_register(L, "GameGetPedStat", GameGetPedStat);
 	lua_register(L, "PedSetFightingSystem", PedSetFightingSystem);
 	lua_register(L, "GameSetPedStat", GameSetPedStat);
+	lua_register(L, "PedOverrideStat", PedOverrideStat);
+	lua_register(L, "PedSetFlag", PedSetFlag);
+	lua_register(L, "PedGetFlag", PedGetFlag);
 	lua_register(L, "PedCreateXYZ", PedCreateXYZ);
 	lua_register(L, "PedDelete", PedDelete);
 	lua_register(L, "PedIsValid", PedIsValid);

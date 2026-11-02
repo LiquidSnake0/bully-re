@@ -13,7 +13,8 @@
 
 enum { SCRIPT_PED_POOL_SIZE = 24, SCRIPT_PED_JOUEUR = 0 };
 // Les drapeaux de +0x1314 (CScriptPed::drapeaux) : jusqu'à 123 dans les arbres d'actions relevés.
-enum { SCRIPT_PED_DRAPEAUX = 128, DRAPEAU_INTOUCHABLE = 12, DRAPEAU_INVULNERABLE_JOUEUR = 20, DRAPEAU_INVULNERABLE = 30 };
+// Les drapeaux d'un piéton : 0x89 mots en +0x1314 (PedSetFlag, 0x5cc0b0, n'écrit que sous 0x89).
+enum { SCRIPT_PED_DRAPEAUX = 0x89, DRAPEAU_INTOUCHABLE = 12, DRAPEAU_INVULNERABLE_JOUEUR = 20, DRAPEAU_INVULNERABLE = 30 };
 
 // Le deuxième argument de PedMoveToPoint / PedMoveToXYZ dans les scripts : 0 et 1 dans LibPed
 // et les missions pour marcher, 2 pour courir, 3 pour sprinter (1_01 : `PedMoveToPoint(k, 3, …)`
