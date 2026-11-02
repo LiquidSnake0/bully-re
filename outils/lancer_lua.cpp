@@ -2131,6 +2131,15 @@ PoserCap(CScriptPed *p, float capDegres)
 	p->intention = CVector(cosf(a), sinf(a), 0);
 }
 
+// FUN_005c73c0 (et FUN_00470b40) : la direction à plat vers l'entité, normée (FUN_00414cc0), son angle (FUN_00432e90) moins π/2
+// (_DAT_00900960), ramené dans [0, 2π[ (_DAT_009009b0), au piéton par FUN_004755e0. Rien sur place.
+static void
+TournerVers(CScriptPed *p, const CScriptPed *e)
+{
+	float dx = e->pos.x - p->pos.x, dy = e->pos.y - p->pos.y;
+	if(dx * dx + dy * dy > 0.0f) PoserCap(p, atan2f(dy, dx) * 180.0f / 3.14159265f);
+}
+
 // PedSetPosPoint(ped, liste[, n]) (0x5c82c0) : le n-ième point de la liste (le premier, puis FUN_006d58a0 tant qu'il y en a :
 // au-delà, le dernier), posé par FUN_005c74a0, puis le cap du lacet du point (+0x1c, (lacet − 90) × π / 180, FUN_004755e0).
 // FUN_005c74a0 : sous z = -20 (_DAT_00a14a8c), z vient du sol (FUN_00463350, non suivi : pas de monde) ; le joueur (type 13)
@@ -2169,8 +2178,7 @@ PedFaceObject(lua_State *L)
 	int id = (int)luaL_optnumber(L, 2, -1), genre = (int)luaL_optnumber(L, 3, -1), mode = (int)luaL_optnumber(L, 4, 0);
 	const CScriptPed *e = genre == 2 ? pietons.Acceder(id) : genre == 3 ? pietons.Acceder(SCRIPT_PED_JOUEUR) : nil;
 	if(e == nil || mode != 0) return 0;
-	float dx = e->pos.x - p->pos.x, dy = e->pos.y - p->pos.y;
-	if(dx * dx + dy * dy > 0.0f) PoserCap(p, atan2f(dy, dx) * 180.0f / 3.14159265f);
+	TournerVers(p, e);
 	return 0;
 }
 
@@ -2352,7 +2360,9 @@ struct SuiviPieton {
 	CSuiviTrajet s;
 	bool lance = false;
 	uint32 echeance = 0;
-	int rappelAtteint = LUA_NOREF, rappelQuitte = LUA_NOREF;
+	int rappelAtteint = LUA_NOREF, rappelQuitte = LUA_NOREF, rappelAction = LUA_NOREF;
+	bool enActions = false;      // +0x64 de la piste : les actions du nœud en cours (FUN_0062eb70)
+	int32 action = 0;            // +0x2c : l'action suivante
 };
 static std::map<int, SuiviPieton> suivis;
 static void Oublier(lua_State *L, int &ref);
@@ -2362,7 +2372,7 @@ OublierSuivi(int h)
 {
 	auto it = suivis.find(h);
 	if(it == suivis.end()) return;
-	if(etatLua){ Oublier(etatLua, it->second.rappelAtteint); Oublier(etatLua, it->second.rappelQuitte); }
+	if(etatLua){ Oublier(etatLua, it->second.rappelAtteint); Oublier(etatLua, it->second.rappelQuitte); Oublier(etatLua, it->second.rappelAction); }
 	suivis.erase(it);
 }
 
@@ -2371,7 +2381,11 @@ NoeudsDuTrajet(int trajet)
 {
 	std::vector<CNoeudTrajet> n;
 	if(const CTriggerPath *t = donnees.TrajetParHandle(trajet))
-		for(const CTriggerPathPoint &p : t->points){ CNoeudTrajet x; x.pos = p.pos; x.attente = p.attente; x.actions = !p.actions.empty(); n.push_back(x); }
+		for(const CTriggerPathPoint &p : t->points){
+			CNoeudTrajet x; x.pos = p.pos; x.attente = p.attente; x.actions = !p.actions.empty();
+			for(const CTriggerAction &a : p.actions){ CActionNoeud c; c.type = a.type; c.lacet = a.orientation[0]; c.attente = a.attente; x.listeActions.push_back(c); }
+			n.push_back(x);
+		}
 	return n;
 }
 
@@ -2394,7 +2408,7 @@ AvancerSuivis(lua_State *L)
 		SuiviPieton &v = it->second;
 		CScriptPed *p = pietons.Acceder(ped);
 		const CObjectifPieton *o = p ? pietons.ObjectifCourant(ped) : nil;
-		if(p == nil || p->mort){ Oublier(L, v.rappelAtteint); Oublier(L, v.rappelQuitte); it = suivis.erase(it); continue; }
+		if(p == nil || p->mort){ Oublier(L, v.rappelAtteint); Oublier(L, v.rappelQuitte); Oublier(L, v.rappelAction); it = suivis.erase(it); continue; }
 		// Pas l'objectif courant : la piste s'arrête et rend son état à l'objectif (FUN_0062c230 : le nœud, le mode, le sens) ;
 		// relancée, elle repart de ce nœud sans précédent ni plan (FUN_0062c290).
 		if(o == nil || o->type != OBJECTIF_SUIVRE_TRAJET){ v.s.precedent = -1; v.s.plan = -1; ++it; continue; }
@@ -2419,9 +2433,29 @@ AvancerSuivis(lua_State *L)
 			pietons.RetirerObjectifs(ped, OBJECTIF_SUIVRE_TRAJET);
 			fini = true;
 		};
+		// FUN_0062e780 : l'action suivante du nœud (un virage ou un arrêt, puis son attente), le rappel +0x34 (FUN_0062e040, avec le
+		// piéton, le trajet, le nœud et le rang de l'action) ; la liste finie, le nœud suivant (FUN_0062e5f0), sans pas à cette image.
+		auto jouerAction = [&](void){
+			CActionNoeud a;
+			if(ScriptPedSuiviAction(noeuds[s.noeud], v.action, maintenant, v.echeance, a)){
+				if(a.type == 0){ PoserCap(p, a.lacet); }   // FUN_00621c00 : la direction de l'intention au lacet du virage
+				p->intentionVitesse = 0;
+				printf("%6.2f s  piéton %d, trajet %d : nœud %d, action %d (type %d, %.2f s)\n", maintenant / 1000.0, ped, trajet, s.noeud, v.action, a.type, a.attente);
+				if(v.rappelAction != LUA_NOREF){
+					lua_rawgeti(L, LUA_REGISTRYINDEX, v.rappelAction);
+					lua_pushnumber(L, ped); lua_pushnumber(L, trajet); lua_pushnumber(L, s.noeud); lua_pushnumber(L, v.action);
+					if(lua_pcall(L, 4, 0, 0) != 0){ printf("        rappel de l'action : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+				}
+				return;
+			}
+			v.enActions = false;
+			suivant();
+			p->intentionVitesse = 0;
+		};
 		if(v.echeance != 0){   // FUN_0062eb70 : l'attente d'un nœud
 			if(maintenant <= v.echeance){ p->intentionVitesse = 0; ++it; continue; }
 			v.echeance = 0;
+			if(v.enActions){ jouerAction(); ++it; continue; }
 			suivant();
 			if(fini){ p->intentionVitesse = 0; ++it; continue; }
 		}
@@ -2434,13 +2468,14 @@ AvancerSuivis(lua_State *L)
 				if(ScriptPedSuiviSuivant(s, nombre, r)) ScriptPedSuiviPoserPlan(s, noeuds, q, r); else s.plan = -1;
 			}
 			RappelerSuivi(L, v.rappelAtteint, ped, trajet, s.noeud, "atteint");
+			if(noeuds[s.noeud].actions){ v.enActions = true; v.action = 0; jouerAction(); ++it; continue; }
 			if(noeuds[s.noeud].attente > 0.0f){
 				v.echeance = ScriptPedSuiviEcheance(noeuds[s.noeud].attente, maintenant);
 				p->cap = ScriptPedSuiviCap(donnees.TrajetParHandle(trajet)->points[s.noeud].lacetTangageRoulis[0], false);   // FUN_0062c300
 				p->intentionVitesse = 0;
 				++it; continue;
 			}
-			suivant();   // les actions du nœud (FUN_0062e780) ne sont pas suivies
+			suivant();
 			if(fini){ p->intentionVitesse = 0; ++it; continue; }
 		}
 		// Le pas (FUN_0062ee20) : le but lissé (FUN_00621a30 → FUN_005e7560), puis le passage d'un plan (FUN_0062eaa0).
@@ -2558,6 +2593,8 @@ PedFollowPath(lua_State *L)
 	Oublier(L, v.rappelAtteint); Oublier(L, v.rappelQuitte);
 	if(lua_isfunction(L, 5)){ lua_pushvalue(L, 5); v.rappelAtteint = luaL_ref(L, LUA_REGISTRYINDEX); }
 	if(lua_isfunction(L, 7)){ lua_pushvalue(L, 7); v.rappelQuitte = luaL_ref(L, LUA_REGISTRYINDEX); }
+	Oublier(L, v.rappelAction);   // le huitième (+0x34) : le rappel des actions des nœuds (FUN_0062e040, lu en 0x62e076)
+	if(lua_isfunction(L, 8)){ lua_pushvalue(L, 8); v.rappelAction = luaL_ref(L, LUA_REGISTRYINDEX); }
 	return 0;
 }
 

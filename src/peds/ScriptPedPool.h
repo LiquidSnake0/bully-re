@@ -94,7 +94,10 @@ struct CSuiviTrajet {
 	CVector planNormale;         // +0x54 : la normale du plan de passage, vers la suite du trajet
 };
 // Un nœud du trajet tel que la piste le lit (FUN_005ec760) : sa position, son attente (+0x1c, en secondes) et ses actions (+0x20).
-struct CNoeudTrajet { CVector pos; float attente = 0; bool actions = false; };
+// Une action d'un nœud de trajet (la liste +0x20 du nœud, FUN_005ec760 : des pointeurs en [0], leur nombre en [2]) : son type
+// (+0 : 0 tourner, 1 s'arrêter), son lacet (+4, degrés), son attente (+0x10, secondes).
+struct CActionNoeud { int32 type = 0; float lacet = 0; float attente = 0; };
+struct CNoeudTrajet { CVector pos; float attente = 0; bool actions = false; std::vector<CActionNoeud> listeActions; };
 // FUN_0061acc0 : le nœud qui suit `noeud` selon le mode (le sens change aux bouts de l'aller-retour) ; faux à la fin du mode 0,
 // pour un mode inconnu ou un trajet vide. Le mode 3 garde le nœud.
 bool ScriptPedSuiviSuivant(CSuiviTrajet &s, int nombre, int32 &noeud);
@@ -120,6 +123,12 @@ uint32 ScriptPedSuiviEcheance(float attente, uint32 maintenantMs);
 // `avance`, sa projection. L'avance est 3 × la vitesse de l'intention + 3 (_DAT_00900c14, _DAT_00900988).
 CVector ScriptPedSuiviBut(const CVector &a, const CVector &b, const CVector &pos, float avance, float &t);
 float ScriptPedSuiviCap(float lacetNoeud, bool velo);
+// FUN_0062e780 : l'action `index` (+0x2c de la piste) du nœud : un virage (type 0, FUN_00621c00 : la direction de l'intention de
+// mouvement prise au lacet moins 90 degrés, sa vitesse à 0) ou un arrêt (type 1 : la vitesse de l'intention, +0x1c du composant
+// +0x2e0, à 0) ; l'index avance et l'échéance (+0x1c de la piste) vaut maintenant + attente × 1000 (_DAT_0090d3d8 = -1000,
+// soustrait, tronqué), même pour une attente nulle. Rend vrai et l'action jouée ; faux quand la liste est finie (l'index revient
+// à 0, l'échéance à 0 : le nœud suivant, FUN_0062e5f0).
+bool ScriptPedSuiviAction(const CNoeudTrajet &n, int32 &index, uint32 maintenantMs, uint32 &echeance, CActionNoeud &action);
 
 // `tirer` rend un rand() du CRT (0 à 32767) ; les positions sont lues à plat.
 void ScriptPedCombatLocoChoisir(CCombatLoco &c, const CVector &soi, const CVector &cible, float petit, float grand,

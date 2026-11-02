@@ -809,6 +809,15 @@ ScriptPedSuiviEcheance(float attente, uint32 maintenantMs)
 	return maintenantMs - (uint32)(int32)(attente * -1000.0);   // fistp, arrondi par troncature (le mot de contrôle | 0xc00)
 }
 
+bool
+ScriptPedSuiviAction(const CNoeudTrajet &n, int32 &index, uint32 maintenantMs, uint32 &echeance, CActionNoeud &action)
+{
+	if(index < 0 || index >= (int32)n.listeActions.size()){ index = 0; echeance = 0; return false; }
+	action = n.listeActions[index++];
+	echeance = maintenantMs - (uint32)(int32)(action.attente * -1000.0);
+	return true;
+}
+
 float
 ScriptPedSuiviCap(float lacetNoeud, bool velo)
 {

@@ -429,6 +429,18 @@ main(void)
 		c.Acceder(SCRIPT_PED_JOUEUR)->drapeaux[DRAPEAU_INTOUCHABLE] = 1;
 		VERIF(!c.CoupRecevable(SCRIPT_PED_JOUEUR, bully));
 	}
+	{
+		// FUN_0062e780 : les actions d'un nœud de trajet, une par une (le premier nœud de hallspatrol_1A, Patrol_School.dat :
+		// un virage vers 165 degrés et 2 s d'attente), l'échéance même pour une attente nulle, puis la fin de la liste.
+		CNoeudTrajet n;
+		CActionNoeud a1; a1.type = 0; a1.lacet = 165.0f; a1.attente = 2.0f;
+		CActionNoeud a2; a2.type = 1; a2.attente = 0.0f;
+		n.actions = true; n.listeActions = {a1, a2};
+		int32 index = 0; uint32 echeance = 0; CActionNoeud joue;
+		VERIF(ScriptPedSuiviAction(n, index, 5000, echeance, joue) && joue.type == 0 && joue.lacet == 165.0f && index == 1 && echeance == 7000);
+		VERIF(ScriptPedSuiviAction(n, index, 7033, echeance, joue) && joue.type == 1 && index == 2 && echeance == 7033);
+		VERIF(!ScriptPedSuiviAction(n, index, 7066, echeance, joue) && index == 0 && echeance == 0);
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }
