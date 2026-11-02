@@ -2182,6 +2182,21 @@ PedFaceObject(lua_State *L)
 	return 0;
 }
 
+// PedFaceObjectNow(ped, id, genre) (0x5c78b0) : un FaceEntityObjective sur la pile (FUN_00470ac0), son cap (FUN_00470b40 : vers
+// l'entité comme FUN_005c73c0, sinon le cap visé +0x1700), posé par FUN_004755e0, puis la matrice et le cadre de rendu mis à
+// jour (FUN_00443950, FUN_006c9990) et l'objectif détruit (FUN_00470b10) : le piéton est tourné à l'image même.
+static int
+PedFaceObjectNow(lua_State *L)
+{
+	Journal("PedFaceObjectNow", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p == nil) return 0;
+	int id = (int)luaL_optnumber(L, 2, -1), genre = (int)luaL_optnumber(L, 3, -1);
+	const CScriptPed *e = genre == 2 ? pietons.Acceder(id) : genre == 3 ? pietons.Acceder(SCRIPT_PED_JOUEUR) : nil;
+	if(e) TournerVers(p, e);
+	return 0;
+}
+
 static int
 PedGetHeading(lua_State *L)
 {
@@ -3763,6 +3778,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedSetPosXYZ", PedSetPosXYZ);
 	lua_register(L, "PedSetPosPoint", PedSetPosPoint);
 	lua_register(L, "PedFaceObject", PedFaceObject);
+	lua_register(L, "PedFaceObjectNow", PedFaceObjectNow);
 	lua_register(L, "RegisterPedEventHandler", RegisterPedEventHandler);
 	lua_register(L, "PedAttackPlayer", PedAttackPlayer);
 	lua_register(L, "PedClearObjectives", PedClearObjectives);

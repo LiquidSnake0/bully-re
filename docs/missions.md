@@ -460,6 +460,19 @@ d'un mètre (z de 7,30 à 8,30) que la trace de Davis frôle 0,5 m plus bas : sa
 
     build/outils/lancer_lua 120 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@29
 
+La suite (02.11.2026) : `T_ChasePartTwo` attend que le joueur frappe Davis ou le bully 5 (`DavisGroupHitRegister` enregistre
+`cbDavisGroupHit` sur eux deux à chaque image, `RegisterPedEventHandler`, l'événement 0 que la méthode du coup déclenche) ou
+qu'il entre dans `_1_03_FIGHT1`. `--viser 5@35` (le bouton de verrouillage) et un `LightAttacks` à 38 s : le coup porte à 38,15 s,
+le rappel pose `bDavisGroupHit` et `DavisBreakForGarage` lance Davis sur `_1_03_FLEEFROMFOUNTAIN` (trajet 55) et le bully 5 sur le
+joueur (`PedClearObjectives`, `PedAttackPlayer`). Derrière Davis, le joueur entre dans `_1_03_DAVISRUN` (41,05 s) ; Davis file au
+garage (`_1_03_FLEETOGARAGE`, trajet 54) et y attend, endormi, tourné vers le joueur (50,56 s). Les vagues de `WaveInit` attendent
+le joueur dans `_1_03_FIGHT3` (derrière les tonneaux), `_1_03_FIGHT4` (le garage), `_1_03_FIGHT5` et `_1_03_LADDER_DROP`. Le bully 5
+n'a pas d'arbre de l'IA (`1_03` ne lui en pose pas ; celui des `.idb`, `/Global/AI`, n'est pas posé par l'outil) : le geste réduit
+de l'outil le fait rattraper et tuer le joueur à 62,67 s.
+
+    build/outils/lancer_lua 120 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@29 \
+      --suivre 5,0.8@35 --viser 5@35 --jouer /Global/Player/Attacks/Strikes/LightAttacks@38 --suivre 6,1@38.5
+
 ## Suite
 
 1. Ce que `1_01` ne joue pas encore pour de vrai : les nœuds d'action (`PedSetActionNode` cherche le nœud dans
