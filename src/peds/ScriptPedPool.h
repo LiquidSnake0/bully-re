@@ -13,7 +13,8 @@
 
 enum { SCRIPT_PED_POOL_SIZE = 24, SCRIPT_PED_JOUEUR = 0 };
 // Les drapeaux de +0x1314 (CScriptPed::drapeaux) : jusqu'à 123 dans les arbres d'actions relevés.
-enum { SCRIPT_PED_DRAPEAUX = 128, DRAPEAU_INTOUCHABLE = 12, DRAPEAU_INVULNERABLE_JOUEUR = 20, DRAPEAU_INVULNERABLE = 30 };
+// Les drapeaux d'un piéton : 0x89 mots en +0x1314 (PedSetFlag, 0x5cc0b0, n'écrit que sous 0x89).
+enum { SCRIPT_PED_DRAPEAUX = 0x89, DRAPEAU_INTOUCHABLE = 12, DRAPEAU_INVULNERABLE_JOUEUR = 20, DRAPEAU_INVULNERABLE = 30 };
 
 // Le deuxième argument de PedMoveToPoint / PedMoveToXYZ dans les scripts : 0 et 1 dans LibPed
 // et les missions pour marcher, 2 pour courir, 3 pour sprinter (1_01 : `PedMoveToPoint(k, 3, …)`
@@ -94,7 +95,10 @@ struct CSuiviTrajet {
 	CVector planNormale;         // +0x54 : la normale du plan de passage, vers la suite du trajet
 };
 // Un nœud du trajet tel que la piste le lit (FUN_005ec760) : sa position, son attente (+0x1c, en secondes) et ses actions (+0x20).
-struct CNoeudTrajet { CVector pos; float attente = 0; bool actions = false; };
+// Une action d'un nœud de trajet (la liste +0x20 du nœud, FUN_005ec760 : des pointeurs en [0], leur nombre en [2]) : son type
+// (+0 : 0 tourner, 1 s'arrêter), son lacet (+4, degrés), son attente (+0x10, secondes).
+struct CActionNoeud { int32 type = 0; float lacet = 0; float attente = 0; };
+struct CNoeudTrajet { CVector pos; float attente = 0; bool actions = false; std::vector<CActionNoeud> listeActions; };
 // FUN_0061acc0 : le nœud qui suit `noeud` selon le mode (le sens change aux bouts de l'aller-retour) ; faux à la fin du mode 0,
 // pour un mode inconnu ou un trajet vide. Le mode 3 garde le nœud.
 bool ScriptPedSuiviSuivant(CSuiviTrajet &s, int nombre, int32 &noeud);
@@ -120,6 +124,12 @@ uint32 ScriptPedSuiviEcheance(float attente, uint32 maintenantMs);
 // `avance`, sa projection. L'avance est 3 × la vitesse de l'intention + 3 (_DAT_00900c14, _DAT_00900988).
 CVector ScriptPedSuiviBut(const CVector &a, const CVector &b, const CVector &pos, float avance, float &t);
 float ScriptPedSuiviCap(float lacetNoeud, bool velo);
+// FUN_0062e780 : l'action `index` (+0x2c de la piste) du nœud : un virage (type 0, FUN_00621c00 : la direction de l'intention de
+// mouvement prise au lacet moins 90 degrés, sa vitesse à 0) ou un arrêt (type 1 : la vitesse de l'intention, +0x1c du composant
+// +0x2e0, à 0) ; l'index avance et l'échéance (+0x1c de la piste) vaut maintenant + attente × 1000 (_DAT_0090d3d8 = -1000,
+// soustrait, tronqué), même pour une attente nulle. Rend vrai et l'action jouée ; faux quand la liste est finie (l'index revient
+// à 0, l'échéance à 0 : le nœud suivant, FUN_0062e5f0).
+bool ScriptPedSuiviAction(const CNoeudTrajet &n, int32 &index, uint32 maintenantMs, uint32 &echeance, CActionNoeud &action);
 
 // `tirer` rend un rand() du CRT (0 à 32767) ; les positions sont lues à plat.
 void ScriptPedCombatLocoChoisir(CCombatLoco &c, const CVector &soi, const CVector &cible, float petit, float grand,
@@ -152,6 +162,45 @@ struct CObjectifPieton {
 	int32 trajet = -1, noeudDepart = 0, mode = 1;
 	float vitesse = 0.3f;
 	int32 allure = -1;           // l'allure du script (le quatrième argument), pour la vitesse du geste de l'outil
+};
+
+// Les attitudes (0 à 4 ; 2 neutre ; 5 « rien de propre », on passe au niveau suivant). CAttitudeSet (table 0x90c98c, constructeur
+// FUN_0046f120 : tout à 5) : une attitude par type de piéton visé, les types 0 à 11 en +4 + 4 × type et le joueur (13) en +0x34 ;
+// les autres types (12, au-delà) rendent 2 et ne s'écrivent pas (FUN_0046f3c0, FUN_0046f400).
+struct CAttitudeSet {
+	int32 valeurs[13] = {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
+	static int Case(int type){ return type == SCRIPT_PED_TYPE_JOUEUR ? 12 : type >= 0 && type < 12 ? type : -1; }
+	int32 Lire(int type) const { int c = Case(type); return c < 0 ? 2 : valeurs[c]; }
+	void Ecrire(int type, int32 v){ int c = Case(type); if(c >= 0) valeurs[c] = v; }
+};
+// CVariableAttitudeSet (0x90c998, 0x70 octets) : la même table plus un écart par type (+0x38 + 4 × type, le joueur en +0x68),
+// nul à la construction (FUN_0046f1f0) ; lue (FUN_0046f430), l'attitude vaut la base plus l'écart / 3 (division entière), bornée
+// à 0 et 4 ; écrite (FUN_0046f4b0), la base reçoit la valeur et l'écart revient à 0.
+struct CVariableAttitudeSet : CAttitudeSet {
+	int32 ecarts[13] = {};
+	int32 Lire(int type) const {
+		int c = Case(type);
+		if(c < 0) return 2;
+		int32 v = valeurs[c] + ecarts[c] / 3;
+		return v < 0 ? 0 : v > 4 ? 4 : v;
+	}
+	void Ecrire(int type, int32 v){ int c = Case(type); if(c >= 0){ valeurs[c] = v; ecarts[c] = 0; } }
+};
+// Le gestionnaire des attitudes entre types (FUN_0046f1f0) : douze CVariableAttitudeSet, celles par défaut (+0x70 × type), puis
+// douze CAttitudeSet, les courantes (+0x540 + 0x38 × type). PedGetTypeToTypeAttitude (0x46f6e0) : 2 pour un type de départ 13 ou
+// au-delà de 11 ; sinon la courante, et la défaut si elle vaut 5. PedSetTypeToTypeAttitude (0x46f760) et
+// PedSetDefaultTypeToTypeAttitude (0x46f7a0) ramènent le type 13 à 12 et les autres au-delà de 11 à 13 : ces cases tombent hors
+// des douze tables (l'objet voisin), l'outil ne les écrit pas.
+struct CAttitudes {
+	CVariableAttitudeSet defaut[12];
+	CAttitudeSet courante[12];
+	int32 TypeVersType(int de, int vers) const {
+		if(de == SCRIPT_PED_TYPE_JOUEUR || de < 0 || de >= 12) return 2;
+		int32 v = courante[de].Lire(vers);
+		return v == 5 ? defaut[de].Lire(vers) : v;
+	}
+	void PoserTypeVersType(int de, int vers, int32 v){ if(de >= 0 && de < 12) courante[de].Ecrire(vers, v); }
+	void PoserDefaut(int de, int vers, int32 v){ if(de >= 0 && de < 12) defaut[de].Ecrire(vers, v); }
 };
 
 struct CScriptPed {
@@ -239,6 +288,12 @@ struct CScriptPed {
 	// sans agresseur).
 	int dernierAgresseur = -1;
 	float tempsAgresseur = 0;
+	// +0x2e8 : son propre CAttitudeSet, créé à 5 par le constructeur de CPed (FUN_0047ffe0 → FUN_0046f120) ; PedSetPedToTypeAttitude
+	// (0x5cb480 → 0x473080) l'écrit, PedGetPedToTypeAttitude (0x475230) le lit, puis la table du type du piéton s'il vaut 5.
+	CAttitudeSet attitudes;
+	bool pasCiblable = false;    // +0xc0 : PedMakeTargetable (0x5ca980) y range la négation de son second argument
+	float tempsNonVu = 0;        // +0x1db8 : depuis quand le piéton ne voit plus sa cible (s), FUN_00499340 ; 0 au verrouillage
+	uint32 instantVerrou = 0;    // +0x1dc4 : l'horloge du dernier verrouillage (FUN_00497d20 y ajoute un tirage, non suivi)
 	bool immortel = false;       // +0x13fc : PedSetImmortalFlag (0x5ce6e0) / PedGetImmortalFlag (0x5ce730)
 	uint32 instantMort = 0;      // +0x18b8 : l'horloge (ms) à la mort d'un autre que le joueur
 	// Le geste en cours.
@@ -329,6 +384,51 @@ public:
 	// (+0x1ca8).
 	// Renvoie vrai si le coup a porté.
 	bool Blesser(int cible, float degats, int attaquant);
+	// Les sorties anticipées de la méthode du coup (slot 15 de CPed, FUN_0047b810) avant qu'elle ne prévienne les scripts
+	// (FUN_005b2190) : rien si la cible a le drapeau 12 (+0x1344, param_1[0x4d1]), si elle est invulnérable (30, +0x138c) sans
+	// être le joueur, si l'attaquant est le joueur et la cible invulnérable au joueur (20, +0x1364). Ne sont pas suivis :
+	// l'octet +0x1e94 du joueur, le coup plus faible qu'un coup reçu à la même image (le relevé +0x408, +0x434, +0x440). Une
+	// cible dont l'attitude envers le type de l'attaquant vaut 4 n'est pas frappée par un coup sans arme (l'outil n'a pas
+	// d'armes : toujours), sauf par le joueur sur sa cible verrouillée (param_14, FUN_004d5980 : non suivi, supposé faux).
+	// Le choix d'une cible par l'IA (types autres que 13). Les AIButes qu'il lit (Globals.cat, DAT_020c889c) : +0x64 le temps
+	// sans voir sa cible (6 s), +0x68 la portée de la visée (30 m), +0x6c le minimum de points de punition d'un agresseur (-1),
+	// +0x70 et +0x74 la marge de l'attache (1 m, 2 pour la cible déjà prise).
+	struct ButesCibles { float nonVuMax = 6.0f, portee = 30.0f; int32 punitionMin = -1; float marge = 1.0f, margeCible = 2.0f; };
+	// FUN_00496b60 : la cible de l'objectif courant (FUN_004701f0) et son style (3 par défaut) : attaque (7) et 16, la cible +0x14
+	// et le style +0x10 ; fuite (22), la cible fuie +0x10. Les autres (4, 8, 0xb, 0x13 à 0x15 : objets, véhicules) ne sont pas
+	// suivis. -1 sans cible.
+	int CibleDeLObjectif(int handle, int32 &style) const;
+	// FUN_00496e60 : un agresseur qu'on peut prendre pour cible : un autre piéton, vivant ; si le piéton ne le hait pas (son attitude
+	// envers le type de l'agresseur au-dessus de 0), seulement s'il est une autorité (FUN_0041a900 : types 0, 7, 8) et que
+	// l'agresseur a au moins +0x6c points de punition (+0x1d40, 0 dans l'outil).
+	bool AgresseurPossible(int handle, int agresseur, const ButesCibles &b) const;
+	// FUN_00497080(cible, style, aPortee, vivante) pour un piéton de l'IA : rien sans cible, ni soi-même, ni un mort si `vivante`.
+	// Les styles autres que 0 et 2 (FUN_00496960) s'arrêtent là : valable. Pour 0 et 2 : avec `aPortee`, à moins de +0x68 m
+	// (FUN_00487d00) ; l'attache du piéton (FUN_004996f0, +0x34) admet la cible à sa marge près, faute d'attache toujours ; puis
+	// valable pour les styles 2 et 3 (FUN_00496980), sans `aPortee`, ou si le piéton la voit (FUN_0048d320) ; sinon seulement
+	// la cible déjà prise, vue il y a au plus +0x64 s. Non suivis : la conversation (PedInConversation), les zones interdites
+	// (FUN_0046ee60), le modèle DAT_00bf42dc, la liste +0x198 du composant de visée (FUN_0048bf30), le joueur en voiture.
+	bool CibleValable(int handle, int cible, int32 style, bool aPortee, bool vivante, const ButesCibles &b, int (*tirer)(void *), void *ctx);
+	// FUN_004992a0 : la cible de l'objectif si elle est valable (FUN_004988b0, l'octet +0x1de5 levé pendant le jugement), sinon
+	// la cible déjà prise si son style n'est ni 0 ni 2 (+0x1db4) ou si elle est récente (+0x1dc4), sinon l'agresseur des cinq
+	// dernières secondes (FUN_00498930, _DAT_00900188) s'il est possible et valable (style 0). Verrouillé par FUN_00497d20 (+0x1db4
+	// le style, +0x1db8 à 0, +0x1dc4 l'horloge). Non suivis : la riposte qui pousse un objectif d'attaque contre l'agresseur
+	// (FUN_00496ee0) et les piétons proches notés (FUN_00498fc0, la liste +0x3c0).
+	void ChoisirCible(int handle, uint32 maintenantMs, const ButesCibles &b, int (*tirer)(void *), void *ctx);
+	// FUN_00499340, pour chaque piéton autre que le joueur : le temps sans voir sa cible avance (+0x1db8), une cible qui n'est plus
+	// valable (FUN_00497080 avec son style, à portée, vivante) est lâchée (FUN_004989c0(0)), puis la cible est choisie de nouveau
+	// (l'octet +0x1de4 levé à chaque image, FUN_004992a0). Un mort ne choisit plus (supposé).
+	void SuivreCibles(float dt, uint32 maintenantMs, const ButesCibles &b, int (*tirer)(void *), void *ctx);
+	// PedGetPedToTypeAttitude (0x475230) : l'attitude du piéton envers un type (sans piéton, 2).
+	int32 Attitude(int handle, int type) const;
+	CAttitudes attitudesTypes;     // le gestionnaire des attitudes entre types (FUN_0046f1f0)
+	int32 respect[16] = {};        // +0x1b0 + 4 × faction des données du joueur (0xc1aea8) : SetFactionRespect, GetFactionRespect
+	bool CoupRecevable(int cible, int attaquant) const;
+	// lua_PedClearObjectives (0x5ca8e0) : la file des objectifs vidée (FUN_00470200, du premier au dernier : le rappel Lua
+	// d'un objectif qui en a un est appelé avec son type, non suivi), le dernier agresseur oublié (FUN_004973d0(0) : +0x1dbc
+	// à nul, +0x1dc0 à 0) ; lancer_lua arrête le contrôleur de l'IA (FUN_005f3f40). Le geste d'attaque de l'outil, que mène
+	// l'objectif d'attaque, cesse avec lui.
+	bool ViderObjectifs(int handle);
 	// FUN_00490ef0 : le groupe d'humiliation (+0xd44) du premier piéton du pool, du dernier au premier, qui tombe entre
 	// `de` et `a` ; -1 si aucun. Tous les piétons d'une même taille partagent ainsi le groupe déjà chargé.
 	int GroupeHumiliationDans(int de, int a) const;
@@ -414,4 +514,27 @@ public:
 private:
 	CScriptPed peds[SCRIPT_PED_POOL_SIZE];
 	int manettes[2] = {SCRIPT_PED_JOUEUR, -1};
+};
+
+// La table des gestionnaires d'événements des piétons (RegisterPedEventHandler, 0x5bbdf0) : des paires (piéton, rappel Lua),
+// dix en place (DAT_00cfaf28) puis sur le tas (DAT_00cfaf78), leur nombre en DAT_00cfaf80. Une paire n'a qu'une case de rappel :
+// l'événement est un décalage de 4 octets dans la paire (FUN_005b4030 : +4 + 4 × événement), seul 0 tombe dans sa propre case.
+// L'événement 0 est le coup reçu : la méthode du coup (FUN_0047b810) appelle FUN_005b2190, qui appelle le rappel du piéton
+// frappé avec (sa poignée, celle de l'attaquant ; -1 sans attaquant), par l'emplacement 43 (+0xac) de CPed.
+class CGestionnairesPietons
+{
+public:
+	enum { SANS_RAPPEL = -2 };   // LUA_NOREF : une case vide (FUN_005d7f80 faux)
+	struct Paire { int ped; int rappel; };
+	// FUN_005b4600 : ajoute le piéton au bout s'il n'y est pas (FUN_005b4590 agrandit le tas en doublant).
+	void Ajouter(int ped);
+	// FUN_005b4030 : la case du rappel du piéton, nil s'il n'y est pas (le moteur rend alors la case de la première paire).
+	int *Case(int ped);
+	// FUN_005b42d0 : vide la case du piéton (FUN_005b3fe0) et retire la paire (FUN_005b4130, les suivantes avancent d'un
+	// cran) ; rend l'ancien rappel, SANS_RAPPEL sinon. Rien pendant l'appel des rappels (DAT_00cfaf84).
+	int Retirer(int ped);
+	// FUN_005b40b0 : le piéton a un rappel pour l'événement 0.
+	bool Pret(int ped) const;
+	std::vector<Paire> paires;
+	bool enAppel = false;        // DAT_00cfaf84
 };

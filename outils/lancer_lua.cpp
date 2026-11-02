@@ -24,7 +24,7 @@
 // lance celle dont le joueur touche le corona, et celles qui se lancent seules (champ 51) : 1_02 après 1_01.
 // Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
 // de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s[,s2…]]... [--demander N@s]... [--sequence @s]...
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s[,s2…]]... [--demander N@s]... [--sequence @s]... [--suivre PIETON[,d]@s]... [--viser PIETON@s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -242,6 +242,8 @@ static std::map<int, std::pair<int, uint32>> partenaires;   // le piéton qui no
 // arbre de l'IA y pose (FUN_005f35e0), lu par la condition ActionNodeRequest de son arbre d'actions, effacé en fin d'image
 // avec l'état des boutons (FUN_005f3720).
 static std::map<int, uint32> intentionsPietons;
+static std::set<int> choisis;   // les piétons dont FUN_00499340 a déjà rabattu l'octet +0x1de4
+static int TirerVue(void *);
 // AIButes (Globals.cat, DAT_020c889c, FUN_0072ae00) : +0x18 à +0x20 la capacité des trois zones de combat ; +0x28 à
 // +0x38 les rayons des zones (0,9 / 1,5 / 3 / 6 / 8 m) ; +0x54 la portée et +0x58 le cosinus du cône d'attaque.
 static CActionTrack butesIA;
@@ -673,11 +675,17 @@ struct CJugeOutil : CJugeAction {
 		if(type == kInterdites) return 0;   // AttacksDisabled (FUN_006094f0) rend toujours faux
 		if(type == kPrint) return 1;        // Print (FUN_00609b30) : un message de mise au point, vraie
 		// AcquireTarget (FUN_00601760 → FUN_00499320) : si l'octet +0x1de4 le demande, la cible est choisie de nouveau
-		// (FUN_004992a0, parmi les objectifs : FUN_004988b0, FUN_00496b60 ; non lu en détail) ; vraie si le piéton a une
-		// cible (PedGetTargetPed). Supposé : sans cible, il prend celle de son objectif d'attaque (+0x540).
+		// (FUN_004992a0, CScriptPedPool::ChoisirCible) ; vraie si le piéton a une cible (PedGetTargetPed). FUN_00499340 lève cet
+		// octet puis le rabat en choisissant, à chaque image de chaque piéton de l'IA (CScriptPedPool::SuivreCibles) : il ne reste
+		// levé que pour un piéton qui n'a pas encore eu son image, celui qu'on vient de créer.
 		if(type == kAcquerir){
 			if(moi == nil) return 0;
-			if(CibleDe(ped) < 0 && pietons.Acceder(moi->cibleObjectif)) pietons.Verrouiller(ped, moi->cibleObjectif, 0);
+			if(!choisis.count(ped)){
+				CScriptPedPool::ButesCibles b;
+				b.nonVuMax = ButeIA(100, 6.0f); b.portee = ButeIA(104, 30.0f); b.punitionMin = (int32)butesIA.Mot(108);
+				b.marge = ButeIA(112, 1.0f); b.margeCible = ButeIA(116, 2.0f);
+				pietons.ChoisirCible(ped, maintenant, b, TirerVue, nil);
+			}
 			return CibleDe(ped) >= 0;
 		}
 		// JoinCombatZone (FUN_00601550) : la cible +0x538, un piéton ; la zone +8 (0 à 2, sinon la première des trois qui
@@ -1682,6 +1690,49 @@ AllerAuPoint(const char *cible)
 	printf("%6.2f s  le joueur va au point %d de %s (%d) en (%.1f, %.1f, %.1f), toujours en zone %d\n", maintenant / 1000.0, n, nom.c_str(), h, pt->pos.x, pt->pos.y, pt->pos.z, zones.zoneVisible);
 }
 
+// --suivre PIETON[,d]@s : à partir de s secondes, la manette du joueur le mène au sprint vers le piéton PIETON tant qu'il en
+// est à plus de d mètres (2 par défaut) ; la dernière poursuite commencée l'emporte, elle cesse quand le piéton n'existe plus.
+// Comme le stick dans le jeu, elle ne fait rien quand le script a repris le contrôle (PlayerSetControl(0)) ni quand le joueur
+// suit lui-même un trajet (l'objectif FollowPath de sa file passe devant).
+struct Poursuite { uint32 debut; int ped; float distance; bool annoncee; std::vector<CVector> trace; CVector dernier; };
+static std::vector<Poursuite> poursuites;
+
+static void
+PoursuivrePieton(void)
+{
+	Poursuite *active = nil;
+	for(Poursuite &q : poursuites) if(maintenant >= q.debut) active = &q;
+	if(active == nil) return;
+	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	const CScriptPed *c = pietons.Acceder(active->ped);
+	if(c == nil || c->mort) return;
+	// La trace du piéton poursuivi : ses positions, une tous les 0,5 m ; le joueur court dessus, il passe où il est passé.
+	auto ecart = [](const CVector &a, const CVector &b){ return sqrtf((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z)); };
+	if(active->trace.empty() || ecart(active->trace.back(), c->pos) > 0.5f) active->trace.push_back(c->pos);
+	if(controleJoueur != 1) return;
+	const CObjectifPieton *o = pietons.ObjectifCourant(SCRIPT_PED_JOUEUR);
+	if(o && o->type == OBJECTIF_SUIVRE_TRAJET) return;
+	if(!active->annoncee){
+		active->annoncee = true;
+		active->trace.clear(); active->trace.push_back(c->pos);
+		printf("%6.2f s  le joueur poursuit le piéton %d (à %.1f m)\n", maintenant / 1000.0, active->ped, active->distance);
+	}
+	else if(ecart(j->pos, active->dernier) > 0.01f){ active->trace.clear(); active->trace.push_back(c->pos); }   // posé ailleurs (--entrer, un script)
+	float reste = ScriptPedVitesse(ALLURE_SPRINT) * 0.033f;
+	j->intentionVitesse = 0;
+	while(reste > 0 && sqrtf((c->pos.x - j->pos.x) * (c->pos.x - j->pos.x) + (c->pos.y - j->pos.y) * (c->pos.y - j->pos.y)) > active->distance && !active->trace.empty()){
+		CVector v(active->trace.front().x - j->pos.x, active->trace.front().y - j->pos.y, active->trace.front().z - j->pos.z);
+		float d = ecart(active->trace.front(), j->pos);
+		if(d <= reste){ j->pos = active->trace.front(); reste -= d; active->trace.erase(active->trace.begin()); continue; }
+		j->pos = CVector(j->pos.x + v.x * reste / d, j->pos.y + v.y * reste / d, j->pos.z + v.z * reste / d);
+		j->cap = atan2f(v.y, v.x) * 180.0f / 3.14159265f;
+		j->intention = CVector(v.x / d, v.y / d, 0);
+		j->intentionVitesse = ScriptPedIntentionVitesse(ALLURE_SPRINT, 1.5f);
+		reste = 0;
+	}
+	active->dernier = j->pos;
+}
+
 // --entrer NOM@s : à s secondes, le joueur est posé dans le déclencheur NOM (à la position du
 // déclencheur), comme s'il y avait marché. C'est l'outil qui joue le joueur, pas le moteur.
 static void
@@ -2077,6 +2128,83 @@ PedSetPosXYZ(lua_State *L)
 	return 0;
 }
 
+// CPed::SetHeading (FUN_004755e0) : le cap visé (+0x1700) et celui de l'entité (+0x10, et sa matrice), puis la direction de
+// l'intention de mouvement (+0, +0xc du composant +0x2e0) tournée vers l'avant (FUN_00415350). L'outil garde le cap en degrés
+// depuis +x : le moteur prend le lacet d'un point moins 90 degrés, en radians (0 vers +y), la même direction.
+static void
+PoserCap(CScriptPed *p, float capDegres)
+{
+	p->cap = capDegres;
+	float a = capDegres * 3.14159265f / 180.0f;
+	p->intention = CVector(cosf(a), sinf(a), 0);
+}
+
+// FUN_005c73c0 (et FUN_00470b40) : la direction à plat vers l'entité, normée (FUN_00414cc0), son angle (FUN_00432e90) moins π/2
+// (_DAT_00900960), ramené dans [0, 2π[ (_DAT_009009b0), au piéton par FUN_004755e0. Rien sur place.
+static void
+TournerVers(CScriptPed *p, const CScriptPed *e)
+{
+	float dx = e->pos.x - p->pos.x, dy = e->pos.y - p->pos.y;
+	if(dx * dx + dy * dy > 0.0f) PoserCap(p, atan2f(dy, dx) * 180.0f / 3.14159265f);
+}
+
+// PedSetPosPoint(ped, liste[, n]) (0x5c82c0) : le n-ième point de la liste (le premier, puis FUN_006d58a0 tant qu'il y en a :
+// au-delà, le dernier), posé par FUN_005c74a0, puis le cap du lacet du point (+0x1c, (lacet − 90) × π / 180, FUN_004755e0).
+// FUN_005c74a0 : sous z = -20 (_DAT_00a14a8c), z vient du sol (FUN_00463350, non suivi : pas de monde) ; le joueur (type 13)
+// passe par une demande de zone dans la zone visible (FUN_00415730, DAT_00bd1008) ; un autre piéton est posé (son véhicule s'il
+// en a un, +0x1554), z plus la distance du centre à la base du modèle (FUN_00465fc0 : −min.z de la boîte du modèle de
+// collision, +0xc du modelinfo). Pour un piéton, c'est 0 : CTempColModels::Initialise (FUN_005712f0) bâtit le modèle des
+// piétons (DAT_00cf312c, que le chargeur des .idb leur donne, FUN_0042bfd0 → FUN_0050e9e0) de trois sphères de 0,35 m
+// (_DAT_0090d0a8) à 0,35, 0,95 et 1,55 m (_DAT_0091c100, _DAT_0091c0fc) et d'une boîte de z = 0 à 1,9 : l'origine d'un
+// piéton est à ses pieds.
+static int
+PedSetPosPoint(lua_State *L)
+{
+	Journal("PedSetPosPoint", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p == nil || !lua_isnumber(L, 2)) return 0;
+	int h = (int)lua_tonumber(L, 2), n = lua_gettop(L) == 3 && lua_isnumber(L, 3) ? (int)lua_tonumber(L, 3) : 1;
+	const CTriggerPointPoint *pt = nil;
+	for(int k = n < 1 ? 1 : n; k >= 1 && pt == nil; k--) pt = donnees.Point(h, k);
+	if(pt == nil) return 0;
+	if(p == pietons.Acceder(SCRIPT_PED_JOUEUR)) DemanderZone("PedSetPosPoint", pt->pos, pt->lacetTangageRoulis[0], -1);
+	else p->pos = pt->pos;
+	PoserCap(p, pt->lacetTangageRoulis[0]);
+	return 0;
+}
+
+// PedFaceObject(ped, id, genre, mode[, b]) (0x5c77b0) : l'entité de LuaGetEntity(id, genre) (2 un piéton, 3 le joueur ; les
+// objets et les véhicules ne sont pas suivis). Mode 0 : FUN_005c73c0 tourne le piéton tout de suite vers elle (la direction à
+// plat, normée, son angle moins π/2, ramené dans [0, 2π[ : FUN_004755e0). Sinon un FaceEntityObjective (type 4, FUN_00470ac0 :
+// l'entité en +0x14, l'octet b en +0x18, vrai par défaut) va au bout de la file ; l'outil ne joue pas cet objectif.
+static int
+PedFaceObject(lua_State *L)
+{
+	Journal("PedFaceObject", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p == nil) return 0;
+	int id = (int)luaL_optnumber(L, 2, -1), genre = (int)luaL_optnumber(L, 3, -1), mode = (int)luaL_optnumber(L, 4, 0);
+	const CScriptPed *e = genre == 2 ? pietons.Acceder(id) : genre == 3 ? pietons.Acceder(SCRIPT_PED_JOUEUR) : nil;
+	if(e == nil || mode != 0) return 0;
+	TournerVers(p, e);
+	return 0;
+}
+
+// PedFaceObjectNow(ped, id, genre) (0x5c78b0) : un FaceEntityObjective sur la pile (FUN_00470ac0), son cap (FUN_00470b40 : vers
+// l'entité comme FUN_005c73c0, sinon le cap visé +0x1700), posé par FUN_004755e0, puis la matrice et le cadre de rendu mis à
+// jour (FUN_00443950, FUN_006c9990) et l'objectif détruit (FUN_00470b10) : le piéton est tourné à l'image même.
+static int
+PedFaceObjectNow(lua_State *L)
+{
+	Journal("PedFaceObjectNow", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p == nil) return 0;
+	int id = (int)luaL_optnumber(L, 2, -1), genre = (int)luaL_optnumber(L, 3, -1);
+	const CScriptPed *e = genre == 2 ? pietons.Acceder(id) : genre == 3 ? pietons.Acceder(SCRIPT_PED_JOUEUR) : nil;
+	if(e) TournerVers(p, e);
+	return 0;
+}
+
 static int
 PedGetHeading(lua_State *L)
 {
@@ -2232,6 +2360,102 @@ GameSetPedStat(lua_State *L)
 	return 0;
 }
 
+// Les attitudes (CScriptPedPool::attitudesTypes, CAttitudeSet du piéton). PedSetDefaultTypeToTypeAttitude(de, vers, v)
+// (0x5c6b30 → 0x46f7a0), PedSetTypeToTypeAttitude (0x5c6af0 → 0x46f760), PedGetTypeToTypeAttitude(de, vers) (0x5c6b80 →
+// 0x46f6e0) ; PedSetPedToTypeAttitude(ped, type, v) (0x5cb480 → 0x473080), PedGetPedToTypeAttitude(ped, type) (0x5cb4d0 →
+// 0x475230, 2 sans piéton).
+static int
+PedSetDefaultTypeToTypeAttitude(lua_State *L)
+{
+	Journal("PedSetDefaultTypeToTypeAttitude", L, 1);
+	pietons.attitudesTypes.PoserDefaut((int)luaL_optnumber(L, 1, -1), (int)luaL_optnumber(L, 2, -1), (int32)luaL_optnumber(L, 3, 2));
+	return 0;
+}
+static int
+PedSetTypeToTypeAttitude(lua_State *L)
+{
+	Journal("PedSetTypeToTypeAttitude", L, 1);
+	pietons.attitudesTypes.PoserTypeVersType((int)luaL_optnumber(L, 1, -1), (int)luaL_optnumber(L, 2, -1), (int32)luaL_optnumber(L, 3, 2));
+	return 0;
+}
+static int
+PedGetTypeToTypeAttitude(lua_State *L)
+{
+	appels["PedGetTypeToTypeAttitude"]++;
+	lua_pushnumber(L, pietons.attitudesTypes.TypeVersType((int)luaL_optnumber(L, 1, -1), (int)luaL_optnumber(L, 2, -1)));
+	return 1;
+}
+static int
+PedSetPedToTypeAttitude(lua_State *L)
+{
+	Journal("PedSetPedToTypeAttitude", L, 1);
+	if(CScriptPed *p = PedArg(L, 1)) p->attitudes.Ecrire((int)luaL_optnumber(L, 2, -1), (int32)luaL_optnumber(L, 3, 2));
+	return 0;
+}
+static int
+PedGetPedToTypeAttitude(lua_State *L)
+{
+	appels["PedGetPedToTypeAttitude"]++;
+	lua_pushnumber(L, PedArg(L, 1) ? pietons.Attitude((int)lua_tonumber(L, 1), (int)luaL_optnumber(L, 2, -1)) : 2);
+	return 1;
+}
+
+// SetFactionRespect(faction, respect) (0x5c1130, lu à l'assembleur) : le respect, en flottant, ramené à 0 s'il est négatif et à
+// 100 au-delà (_DAT_00900130, 0x900490), tronqué (_ftol) et rangé par FUN_00446610 en +0x1b0 + 4 × faction des données du
+// joueur (0xc1aea8) ; GetFactionRespect(faction) (0x5c11b0 → FUN_00446630) le rend.
+static int
+SetFactionRespect(lua_State *L)
+{
+	Journal("SetFactionRespect", L, 1);
+	int f = (int)luaL_optnumber(L, 1, -1);
+	float r = (float)luaL_optnumber(L, 2, 0);
+	if(!(r > 0.0f)) r = 0.0f; else if(r > 100.0f) r = 100.0f;
+	if(f >= 0 && f < 16) pietons.respect[f] = (int32)r;
+	return 0;
+}
+static int
+GetFactionRespect(lua_State *L)
+{
+	appels["GetFactionRespect"]++;
+	int f = (int)luaL_optnumber(L, 1, -1);
+	lua_pushnumber(L, f >= 0 && f < 16 ? pietons.respect[f] : 0);
+	return 1;
+}
+
+// PedOverrideStat(ped, n, valeur) (0x5c9070) : la colonne n de ses stats par FUN_00476fa0, comme GameSetPedStat.
+static int
+PedOverrideStat(lua_State *L)
+{
+	Journal("PedOverrideStat", L, 1);
+	if(lua_isnumber(L, 1)) pietons.PoserStat((int)lua_tonumber(L, 1), (int)luaL_checknumber(L, 2), (int32)luaL_checknumber(L, 3));
+	return 0;
+}
+
+// PedSetFlag(ped, n, b) (lua_PedSetFlag 0x5cc0b0) : le mot +0x1314 + 4n reçoit l'octet de b (FUN_005d8f20), sauf le drapeau 12
+// (+0x1344, que la méthode du coup lit : un script ne peut pas le poser) et au-delà de 0x88. PedGetFlag(ped, n) (0x5cc110) le
+// rend, vrai s'il n'est pas nul (sans borne sur n dans le moteur ; l'outil rend faux au-delà).
+static int
+PedSetFlag(lua_State *L)
+{
+	Journal("PedSetFlag", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p == nil) return 0;
+	uint32 n = (uint32)(int32)luaL_optnumber(L, 2, -1);
+	if(n != DRAPEAU_INTOUCHABLE && n < SCRIPT_PED_DRAPEAUX) p->drapeaux[n] = lua_toboolean(L, 3) ? 1 : 0;
+	return 0;
+}
+
+static int
+PedGetFlag(lua_State *L)
+{
+	appels["PedGetFlag"]++;
+	const CScriptPed *p = PedArg(L, 1);
+	if(p == nil) return 0;
+	uint32 n = (uint32)(int32)luaL_optnumber(L, 2, -1);
+	lua_pushboolean(L, n < SCRIPT_PED_DRAPEAUX && p->drapeaux[n] != 0);
+	return 1;
+}
+
 // --- Les gestes des piétons : marche, course, arrêt, bagarre (src/peds/ScriptPedPool.h). ---
 
 // PedMoveToPoint(ped, allure, liste, n) (0x5c7df0) : vers le n-ième point de la liste.
@@ -2255,7 +2479,9 @@ struct SuiviPieton {
 	CSuiviTrajet s;
 	bool lance = false;
 	uint32 echeance = 0;
-	int rappelAtteint = LUA_NOREF, rappelQuitte = LUA_NOREF;
+	int rappelAtteint = LUA_NOREF, rappelQuitte = LUA_NOREF, rappelAction = LUA_NOREF;
+	bool enActions = false;      // +0x64 de la piste : les actions du nœud en cours (FUN_0062eb70)
+	int32 action = 0;            // +0x2c : l'action suivante
 };
 static std::map<int, SuiviPieton> suivis;
 static void Oublier(lua_State *L, int &ref);
@@ -2265,7 +2491,7 @@ OublierSuivi(int h)
 {
 	auto it = suivis.find(h);
 	if(it == suivis.end()) return;
-	if(etatLua){ Oublier(etatLua, it->second.rappelAtteint); Oublier(etatLua, it->second.rappelQuitte); }
+	if(etatLua){ Oublier(etatLua, it->second.rappelAtteint); Oublier(etatLua, it->second.rappelQuitte); Oublier(etatLua, it->second.rappelAction); }
 	suivis.erase(it);
 }
 
@@ -2274,7 +2500,11 @@ NoeudsDuTrajet(int trajet)
 {
 	std::vector<CNoeudTrajet> n;
 	if(const CTriggerPath *t = donnees.TrajetParHandle(trajet))
-		for(const CTriggerPathPoint &p : t->points){ CNoeudTrajet x; x.pos = p.pos; x.attente = p.attente; x.actions = !p.actions.empty(); n.push_back(x); }
+		for(const CTriggerPathPoint &p : t->points){
+			CNoeudTrajet x; x.pos = p.pos; x.attente = p.attente; x.actions = !p.actions.empty();
+			for(const CTriggerAction &a : p.actions){ CActionNoeud c; c.type = a.type; c.lacet = a.orientation[0]; c.attente = a.attente; x.listeActions.push_back(c); }
+			n.push_back(x);
+		}
 	return n;
 }
 
@@ -2297,7 +2527,7 @@ AvancerSuivis(lua_State *L)
 		SuiviPieton &v = it->second;
 		CScriptPed *p = pietons.Acceder(ped);
 		const CObjectifPieton *o = p ? pietons.ObjectifCourant(ped) : nil;
-		if(p == nil || p->mort){ Oublier(L, v.rappelAtteint); Oublier(L, v.rappelQuitte); it = suivis.erase(it); continue; }
+		if(p == nil || p->mort){ Oublier(L, v.rappelAtteint); Oublier(L, v.rappelQuitte); Oublier(L, v.rappelAction); it = suivis.erase(it); continue; }
 		// Pas l'objectif courant : la piste s'arrête et rend son état à l'objectif (FUN_0062c230 : le nœud, le mode, le sens) ;
 		// relancée, elle repart de ce nœud sans précédent ni plan (FUN_0062c290).
 		if(o == nil || o->type != OBJECTIF_SUIVRE_TRAJET){ v.s.precedent = -1; v.s.plan = -1; ++it; continue; }
@@ -2322,9 +2552,29 @@ AvancerSuivis(lua_State *L)
 			pietons.RetirerObjectifs(ped, OBJECTIF_SUIVRE_TRAJET);
 			fini = true;
 		};
+		// FUN_0062e780 : l'action suivante du nœud (un virage ou un arrêt, puis son attente), le rappel +0x34 (FUN_0062e040, avec le
+		// piéton, le trajet, le nœud et le rang de l'action) ; la liste finie, le nœud suivant (FUN_0062e5f0), sans pas à cette image.
+		auto jouerAction = [&](void){
+			CActionNoeud a;
+			if(ScriptPedSuiviAction(noeuds[s.noeud], v.action, maintenant, v.echeance, a)){
+				if(a.type == 0){ PoserCap(p, a.lacet); }   // FUN_00621c00 : la direction de l'intention au lacet du virage
+				p->intentionVitesse = 0;
+				printf("%6.2f s  piéton %d, trajet %d : nœud %d, action %d (type %d, %.2f s)\n", maintenant / 1000.0, ped, trajet, s.noeud, v.action, a.type, a.attente);
+				if(v.rappelAction != LUA_NOREF){
+					lua_rawgeti(L, LUA_REGISTRYINDEX, v.rappelAction);
+					lua_pushnumber(L, ped); lua_pushnumber(L, trajet); lua_pushnumber(L, s.noeud); lua_pushnumber(L, v.action);
+					if(lua_pcall(L, 4, 0, 0) != 0){ printf("        rappel de l'action : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+				}
+				return;
+			}
+			v.enActions = false;
+			suivant();
+			p->intentionVitesse = 0;
+		};
 		if(v.echeance != 0){   // FUN_0062eb70 : l'attente d'un nœud
 			if(maintenant <= v.echeance){ p->intentionVitesse = 0; ++it; continue; }
 			v.echeance = 0;
+			if(v.enActions){ jouerAction(); ++it; continue; }
 			suivant();
 			if(fini){ p->intentionVitesse = 0; ++it; continue; }
 		}
@@ -2337,13 +2587,14 @@ AvancerSuivis(lua_State *L)
 				if(ScriptPedSuiviSuivant(s, nombre, r)) ScriptPedSuiviPoserPlan(s, noeuds, q, r); else s.plan = -1;
 			}
 			RappelerSuivi(L, v.rappelAtteint, ped, trajet, s.noeud, "atteint");
+			if(noeuds[s.noeud].actions){ v.enActions = true; v.action = 0; jouerAction(); ++it; continue; }
 			if(noeuds[s.noeud].attente > 0.0f){
 				v.echeance = ScriptPedSuiviEcheance(noeuds[s.noeud].attente, maintenant);
 				p->cap = ScriptPedSuiviCap(donnees.TrajetParHandle(trajet)->points[s.noeud].lacetTangageRoulis[0], false);   // FUN_0062c300
 				p->intentionVitesse = 0;
 				++it; continue;
 			}
-			suivant();   // les actions du nœud (FUN_0062e780) ne sont pas suivies
+			suivant();
 			if(fini){ p->intentionVitesse = 0; ++it; continue; }
 		}
 		// Le pas (FUN_0062ee20) : le but lissé (FUN_00621a30 → FUN_005e7560), puis le passage d'un plan (FUN_0062eaa0).
@@ -2376,6 +2627,49 @@ AvancerSuivis(lua_State *L)
 		}
 		++it;
 	}
+}
+
+// RegisterPedEventHandler(ped, événement, fonction) (0x5bbdf0, lu à l'assembleur : Ghidra ne l'a pas en fonction) : le piéton
+// (FUN_005c7220), puis, si le troisième argument est une fonction (FUN_005d84f0), la paire du piéton (FUN_005b4600) et sa case
+// (FUN_005b4030) reçoivent le rappel (FUN_005d9f00) ; sinon la case est vidée et la paire retirée (FUN_005b42d0). Seul
+// l'événement 0 a sa propre case (CGestionnairesPietons) : l'outil ignore les autres.
+static CGestionnairesPietons gestionnaires;
+
+static int
+RegisterPedEventHandler(lua_State *L)
+{
+	Journal("RegisterPedEventHandler", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	int ped = p ? (int)lua_tonumber(L, 1) : -1, evenement = (int)luaL_optnumber(L, 2, 0);
+	if(p == nil || evenement != 0) return 0;
+	if(lua_isfunction(L, 3)){
+		gestionnaires.Ajouter(ped);
+		int *c = gestionnaires.Case(ped);
+		if(c == nil) return 0;
+		if(*c != CGestionnairesPietons::SANS_RAPPEL) luaL_unref(L, LUA_REGISTRYINDEX, *c);
+		lua_pushvalue(L, 3);
+		*c = luaL_ref(L, LUA_REGISTRYINDEX);
+	}
+	else{
+		int r = gestionnaires.Retirer(ped);
+		if(r != CGestionnairesPietons::SANS_RAPPEL) luaL_unref(L, LUA_REGISTRYINDEX, r);
+	}
+	return 0;
+}
+
+// FUN_005b2190, depuis la méthode du coup (FUN_0047b810) : le rappel de l'événement 0 du piéton frappé (FUN_005b40b0,
+// FUN_005b4030), appelé avec (frappé, attaquant). Les gestionnaires globaux de l'événement 7 (FUN_005b1ce0) ne sont pas suivis.
+static void
+PrevenirCoupRecu(int cible, int attaquant)
+{
+	if(etatLua == nil || !gestionnaires.Pret(cible)) return;
+	lua_State *L = etatLua;
+	printf("%6.2f s  le rappel du coup reçu de %d est appelé (%d, %d)\n", maintenant / 1000.0, cible, cible, attaquant);
+	lua_rawgeti(L, LUA_REGISTRYINDEX, *gestionnaires.Case(cible));
+	lua_pushnumber(L, cible); lua_pushnumber(L, attaquant);
+	gestionnaires.enAppel = true;
+	if(lua_pcall(L, 2, 0, 0) != 0){ printf("        rappel du coup : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+	gestionnaires.enAppel = false;
 }
 
 // PedFollowPath(ped, trajet, mode, allure, rappel, départ, rappel2, rappel3) (0x5cfbf0) : rien sans piéton, sans trajet
@@ -2418,6 +2712,8 @@ PedFollowPath(lua_State *L)
 	Oublier(L, v.rappelAtteint); Oublier(L, v.rappelQuitte);
 	if(lua_isfunction(L, 5)){ lua_pushvalue(L, 5); v.rappelAtteint = luaL_ref(L, LUA_REGISTRYINDEX); }
 	if(lua_isfunction(L, 7)){ lua_pushvalue(L, 7); v.rappelQuitte = luaL_ref(L, LUA_REGISTRYINDEX); }
+	Oublier(L, v.rappelAction);   // le huitième (+0x34) : le rappel des actions des nœuds (FUN_0062e040, lu en 0x62e076)
+	if(lua_isfunction(L, 8)){ lua_pushvalue(L, 8); v.rappelAction = luaL_ref(L, LUA_REGISTRYINDEX); }
 	return 0;
 }
 
@@ -2505,6 +2801,45 @@ PedAttack(lua_State *L)
 		style = !a ? (b ? 0 : 1) : (b ? 2 : 3);
 	}
 	pietons.Attaquer((int)lua_tonumber(L, 1), (int)lua_tonumber(L, 2), style, devant);
+	return 0;
+}
+
+// PedAttackPlayer(ped[, style[, devant]]) (0x5d2620) : un AttackPedObjective (FUN_00470c10) contre le joueur (FUN_005c7220(0, 3)),
+// comme PedAttack : un deuxième argument nombre est le style et le troisième (faux par défaut) le met devant (FUN_00471320) ;
+// sinon les deuxième et troisième, deux booléens (vrais par défaut, FUN_005d8fa0), donnent le style par FUN_004969a0.
+static int
+PedAttackPlayer(lua_State *L)
+{
+	Journal("PedAttackPlayer", L, 1);
+	if(!lua_isnumber(L, 1)) return 0;
+	int32 style = 0; bool devant = false;
+	if(lua_isnumber(L, 2)){ style = (int32)lua_tonumber(L, 2); devant = lua_toboolean(L, 3) != 0; }
+	else {
+		bool a = lua_isboolean(L, 2) || lua_isnumber(L, 2) ? lua_toboolean(L, 2) != 0 : true, b = lua_isboolean(L, 3) || lua_isnumber(L, 3) ? lua_toboolean(L, 3) != 0 : true;
+		style = !a ? (b ? 0 : 1) : (b ? 2 : 3);
+	}
+	pietons.Attaquer((int)lua_tonumber(L, 1), SCRIPT_PED_JOUEUR, style, devant);
+	return 0;
+}
+
+// PedClearObjectives(ped) (0x5ca8e0) : CScriptPedPool::ViderObjectifs, puis le contrôleur de l'IA arrêté (FUN_005f3f40) ; la
+// piste FollowPath, qui n'a plus d'objectif, s'arrête (FUN_0062c230).
+static int
+PedClearObjectives(lua_State *L)
+{
+	Journal("PedClearObjectives", L, 1);
+	int ped = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	if(!pietons.ViderObjectifs(ped)) return 0;
+	if(controleursIA.count(ped)) controleursIA[ped].Jouer(arbres, nil, maintenant / 1000.0f);
+	return 0;
+}
+
+// PedMakeTargetable(ped, b) (0x5ca980) : +0xc0 du piéton reçoit la négation de b (FUN_005d8f20).
+static int
+PedMakeTargetable(lua_State *L)
+{
+	Journal("PedMakeTargetable", L, 1);
+	if(CScriptPed *p = PedArg(L, 1)) p->pasCiblable = !lua_toboolean(L, 2);
 	return 0;
 }
 
@@ -2709,12 +3044,27 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 }
 
 // Une image des piétons : les gestes avancent, et ce qui aboutit se journalise.
+static int TirerVue(void *);
 static void
 AvancerPietons(void)
 {
 	pietons.Avancer(0.033f);
 	if(etatLua) AvancerSuivis(etatLua);   // les pistes FollowPath
 	pietons.AvancerVue(0.033f);   // CPed (FUN_004812d0) : FUN_0048ccf0, FUN_00499340
+	// FUN_00499340, la suite : la cible des piétons de l'IA (CScriptPedPool::SuivreCibles), avec les AIButes de la visée.
+	CScriptPedPool::ButesCibles b;
+	b.nonVuMax = ButeIA(100, 6.0f); b.portee = ButeIA(104, 30.0f); b.punitionMin = (int32)butesIA.Mot(108);
+	b.marge = ButeIA(112, 1.0f); b.margeCible = ButeIA(116, 2.0f);
+	int avant[SCRIPT_PED_POOL_SIZE];
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){ const CScriptPed *p = pietons.Acceder(i); avant[i] = p ? p->verrou : -1; }
+	pietons.SuivreCibles(0.033f, maintenant, b, TirerVue, nil);
+	choisis.clear();
+	for(int i = 1; i < SCRIPT_PED_POOL_SIZE; i++) if(pietons.Acceder(i)) choisis.insert(i);
+	for(int i = 1; i < SCRIPT_PED_POOL_SIZE; i++){
+		const CScriptPed *p = pietons.Acceder(i);
+		if(p && p->verrou != avant[i])
+			printf("%6.2f s  piéton %d : cible %d → %d (style %d)\n", maintenant / 1000.0, i, avant[i], p->verrou, p->verrouMode);
+	}
 	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
 		const CScriptPed *p = pietons.Acceder(i);
 		if(p == nil || journalRestant <= 0) continue;
@@ -3381,6 +3731,7 @@ main(int argc, char **argv)
 	std::vector<uint32> sequences;                         // --sequence @s : le joueur réussit la séquence de boutons à s secondes
 	std::vector<std::pair<uint32, uint32>> attentes;      // --demander N@s : une ActionRequest n° N du joueur à s secondes (tenue 0,25 s)
 	std::vector<std::pair<uint32, std::string>> gestes;    // --jouer CHEMIN@s : le joueur joue ce nœud d'action à s secondes (la manette : parer, frapper)
+	std::vector<std::pair<uint32, int>> visees;           // --viser PIETON@s : le joueur verrouille ce piéton à s secondes
 	std::vector<const char*> pos;
 	for(int i = 1; i < argc; i++){
 		if(strcmp(argv[i], "--mission") == 0 && i + 1 < argc) aLancer = argv[++i];
@@ -3417,6 +3768,20 @@ main(int argc, char **argv)
 		else if(strcmp(argv[i], "--porte") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
 			poussees.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
+		}
+		else if(strcmp(argv[i], "--viser") == 0 && i + 1 < argc){
+			// --viser PIETON@s : le bouton de verrouillage de la manette, le joueur prend le piéton pour cible (FUN_00497d20).
+			std::string e = argv[++i]; size_t at = e.find('@');
+			visees.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), atoi(e.c_str())});
+		}
+		else if(strcmp(argv[i], "--suivre") == 0 && i + 1 < argc){
+			std::string e = argv[++i]; size_t at = e.find('@'), v = e.find(',');
+			Poursuite q;
+			q.debut = (uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000);
+			q.ped = atoi(e.c_str());
+			q.distance = v != std::string::npos && (at == std::string::npos || v < at) ? (float)atof(e.c_str() + v + 1) : 2.0f;
+			q.annoncee = false;
+			poursuites.push_back(q);
 		}
 		else if(strcmp(argv[i], "--aller") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
@@ -3523,6 +3888,16 @@ main(int argc, char **argv)
 	lua_register(L, "GameGetPedStat", GameGetPedStat);
 	lua_register(L, "PedSetFightingSystem", PedSetFightingSystem);
 	lua_register(L, "GameSetPedStat", GameSetPedStat);
+	lua_register(L, "PedOverrideStat", PedOverrideStat);
+	lua_register(L, "PedSetDefaultTypeToTypeAttitude", PedSetDefaultTypeToTypeAttitude);
+	lua_register(L, "PedSetTypeToTypeAttitude", PedSetTypeToTypeAttitude);
+	lua_register(L, "PedGetTypeToTypeAttitude", PedGetTypeToTypeAttitude);
+	lua_register(L, "PedSetPedToTypeAttitude", PedSetPedToTypeAttitude);
+	lua_register(L, "PedGetPedToTypeAttitude", PedGetPedToTypeAttitude);
+	lua_register(L, "SetFactionRespect", SetFactionRespect);
+	lua_register(L, "GetFactionRespect", GetFactionRespect);
+	lua_register(L, "PedSetFlag", PedSetFlag);
+	lua_register(L, "PedGetFlag", PedGetFlag);
 	lua_register(L, "PedCreateXYZ", PedCreateXYZ);
 	lua_register(L, "PedDelete", PedDelete);
 	lua_register(L, "PedIsValid", PedIsValid);
@@ -3530,6 +3905,13 @@ main(int argc, char **argv)
 	lua_register(L, "PlayerGetPedIndex", PlayerGetPedIndex);
 	lua_register(L, "PedGetPosXYZ", PedGetPosXYZ);
 	lua_register(L, "PedSetPosXYZ", PedSetPosXYZ);
+	lua_register(L, "PedSetPosPoint", PedSetPosPoint);
+	lua_register(L, "PedFaceObject", PedFaceObject);
+	lua_register(L, "PedFaceObjectNow", PedFaceObjectNow);
+	lua_register(L, "RegisterPedEventHandler", RegisterPedEventHandler);
+	lua_register(L, "PedAttackPlayer", PedAttackPlayer);
+	lua_register(L, "PedClearObjectives", PedClearObjectives);
+	lua_register(L, "PedMakeTargetable", PedMakeTargetable);
 	lua_register(L, "PedGetHeading", PedGetHeading);
 	lua_register(L, "PedFaceXYZ", PedFaceXYZ);
 	lua_register(L, "PedIsDead", PedIsDead);
@@ -3619,6 +4001,11 @@ main(int argc, char **argv)
 		}
 		for(auto &e : entrees) if(!e.second.empty() && maintenant >= e.first){ EntrerDansDeclencheur(e.second.c_str()); e.second.clear(); }
 		for(auto &e : allers) if(!e.second.empty() && maintenant >= e.first){ AllerAuPoint(e.second.c_str()); e.second.clear(); }
+		for(auto &e : visees) if(e.second >= 0 && maintenant >= e.first){
+			bool pris = pietons.Verrouiller(SCRIPT_PED_JOUEUR, e.second, 0);
+			printf("%6.2f s  le joueur vise le piéton %d%s\n", maintenant / 1000.0, e.second, pris ? "" : " : refusé");
+			e.second = -1;
+		}
 		// Une porte DT_ poussée : FUN_00415160 pose l'objet de porte en cours (+0x394) ; le moteur le fait depuis
 		// l'animation de la porte (FUN_00610ed0, non jouée), l'outil le fait au nom du déclencheur.
 		for(auto &e : gestes) if(!e.second.empty() && maintenant >= e.first){
@@ -3720,6 +4107,7 @@ main(int argc, char **argv)
 				bool pris = arbreCoups && v.Entrer(arbres, arbreCoups, CJugeOutil(cible, maintenant / 1000.0f), maintenant / 1000.0f);
 				printf("%6.2f s  le coup de %d porte sur %d (%s)%s%s\n", maintenant / 1000.0, c.first, cible, CheminVu(c.second, k.porteur).c_str(),
 				       pris ? " : il joue " : "", pris ? CheminVu(v, v.joue).c_str() : "");
+				if(pietons.CoupRecevable(cible, c.first)) PrevenirCoupRecu(cible, c.first);   // FUN_0047b810 → FUN_005b2190
 				if(!k.surCoup.empty())
 					if(const CActionNode *n = arbres.Relatif(k.porteur, k.surCoup.c_str()))
 						c.second.Entrer(arbres, n, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f);
@@ -3864,6 +4252,7 @@ main(int argc, char **argv)
 		if(fondu.enCours && maintenant >= fondu.fin){ fondu.enCours = false; fondu.noir = fondu.versNoir; if(journalRestant > 0){ journalRestant--; printf("%6.2f s  fondu : l'écran est %s\n", maintenant / 1000.0, fondu.versNoir ? "noir" : "rendu"); } }
 		MettreAJour(L);
 		AvancerPietons();
+		PoursuivrePieton();   // --suivre : la manette du joueur
 		AvancerCinematique();
 		AvancerZones(L);
 		AvancerGestionnaire(L);

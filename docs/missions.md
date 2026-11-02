@@ -447,6 +447,32 @@ Ce qui est lu du suivi d'un trajet (le code est dans `src/peds/ScriptPedPool` et
   `MissionFail("1_03_D11")` à 28,81 s. La suite est de jouer la poursuite (`--aller` sur le trajet de Davis). Dans `1_02`, le piéton 2
   suit le trajet 21 depuis 2,11 s, jusqu'à ce que le script le supprime (22,04 s) : rien d'autre ne change.
 
+**La poursuite jouée (02.11.2026).** `--suivre PIETON[,d]@s` joue la manette du joueur : à partir de s secondes, il court au sprint
+sur la trace du piéton (ses positions, une tous les 0,5 m) tant qu'il en est à plus de d mètres, sauf quand le script a repris le
+contrôle (`PlayerSetControl(0)`) ou que le joueur suit lui-même un trajet. Lu dans `1_03.lur` : `ChaseOneLoop` échoue par
+`F_CheckDistanceFailure` (`PlayerTooFarFromDavis` : plus de 35 m, `DistanceBetweenPeds3D` de la bibliothèque Lua sur `PedGetPosXYZ` ;
+ou les déclencheurs `_1_03_FAILTRIGGER01`, `02`, `04`), et passe à `ChaseTwoSetup` quand `cbSchoolFlee` voit Davis au dernier nœud de
+`_1_03_SCHOOLFLEE`. Avec `--suivre 6,3@3.4`, `1_03` n'échoue plus : Davis finit `_1_03_SCHOOLFLEE` à 18,51 s, `ChaseTwoSetup` le lance
+sur `_1_03_FLEETOFOUNTAIN` (trajet 56, jusqu'au nœud 9 à 34,42 s) et crée `T_Chase2_MeetPeter`, `T_ChasePartTwo`, `T_RunFights`,
+`L_MonitorTriggers`, `T_WaveMonitor`, `T_DoorMonitor`. `T_ChasePartTwo` attend le joueur dans `_1_03_DAVISREGISTERHIT`, une dalle
+d'un mètre (z de 7,30 à 8,30) que la trace de Davis frôle 0,5 m plus bas : sans le sol du monde, l'outil y entre par
+`--entrer _1_03_DAVISREGISTERHIT@29`, et le script pose Davis à `_1_03_DAVISBRAG` (34,45 s).
+
+    build/outils/lancer_lua 120 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@29
+
+La suite (02.11.2026) : `T_ChasePartTwo` attend que le joueur frappe Davis ou le bully 5 (`DavisGroupHitRegister` enregistre
+`cbDavisGroupHit` sur eux deux à chaque image, `RegisterPedEventHandler`, l'événement 0 que la méthode du coup déclenche) ou
+qu'il entre dans `_1_03_FIGHT1`. `--viser 5@35` (le bouton de verrouillage) et un `LightAttacks` à 38 s : le coup porte à 38,15 s,
+le rappel pose `bDavisGroupHit` et `DavisBreakForGarage` lance Davis sur `_1_03_FLEEFROMFOUNTAIN` (trajet 55) et le bully 5 sur le
+joueur (`PedClearObjectives`, `PedAttackPlayer`). Derrière Davis, le joueur entre dans `_1_03_DAVISRUN` (41,05 s) ; Davis file au
+garage (`_1_03_FLEETOGARAGE`, trajet 54) et y attend, endormi, tourné vers le joueur (50,56 s). Les vagues de `WaveInit` attendent
+le joueur dans `_1_03_FIGHT3` (derrière les tonneaux), `_1_03_FIGHT4` (le garage), `_1_03_FIGHT5` et `_1_03_LADDER_DROP`. Le bully 5
+n'a pas d'arbre de l'IA (`1_03` ne lui en pose pas ; celui des `.idb`, `/Global/AI`, n'est pas posé par l'outil) : le geste réduit
+de l'outil le fait rattraper et tuer le joueur à 62,67 s.
+
+    build/outils/lancer_lua 120 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@29 \
+      --suivre 5,0.8@35 --viser 5@35 --jouer /Global/Player/Attacks/Strikes/LightAttacks@38 --suivre 6,1@38.5
+
 ## Suite
 
 1. Ce que `1_01` ne joue pas encore pour de vrai : les nœuds d'action (`PedSetActionNode` cherche le nœud dans

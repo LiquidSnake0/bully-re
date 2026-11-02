@@ -404,6 +404,99 @@ main(void)
 		CScriptPedPool rq;
 		VERIF(rq.Acceder(rq.Creer(85, CVector(), 0, 1))->rayonNoeud == 1.0f);   // FUN_0048c430 : 1 m par défaut
 	}
+	{
+		// RegisterPedEventHandler (0x5bbdf0) : la table des paires (piéton, rappel). Ajouter une seconde fois ne double pas la
+		// paire (FUN_005b4600), retirer fait avancer les suivantes (FUN_005b4130), rien n'est retiré pendant un appel.
+		CGestionnairesPietons g;
+		g.Ajouter(6); g.Ajouter(5); g.Ajouter(6);
+		VERIF(g.paires.size() == 2 && !g.Pret(6) && g.Case(7) == nil);
+		*g.Case(6) = 42;
+		VERIF(g.Pret(6) && !g.Pret(5));
+		g.enAppel = true;
+		VERIF(g.Retirer(6) == CGestionnairesPietons::SANS_RAPPEL && g.paires.size() == 2);
+		g.enAppel = false;
+		VERIF(g.Retirer(6) == 42 && g.paires.size() == 1 && g.paires[0].ped == 5 && !g.Pret(6));
+		// FUN_0047b810 : la méthode du coup ne prévient pas les scripts d'un coup sur un piéton du drapeau 12, ni sur un
+		// invulnérable (30) sauf le joueur, ni d'un coup du joueur sur un invulnérable au joueur (20).
+		CScriptPedPool c;
+		int davis = c.Creer(99, CVector(), 0, 1), bully = c.Creer(146, CVector(), 0, 1);
+		VERIF(c.CoupRecevable(bully, SCRIPT_PED_JOUEUR) && c.CoupRecevable(davis, SCRIPT_PED_JOUEUR));
+		c.Acceder(davis)->drapeaux[DRAPEAU_INVULNERABLE] = 1;
+		c.Acceder(bully)->drapeaux[DRAPEAU_INVULNERABLE_JOUEUR] = 1;
+		c.Acceder(SCRIPT_PED_JOUEUR)->drapeaux[DRAPEAU_INVULNERABLE] = 1;
+		VERIF(!c.CoupRecevable(davis, SCRIPT_PED_JOUEUR) && !c.CoupRecevable(bully, SCRIPT_PED_JOUEUR) && c.CoupRecevable(bully, davis));
+		VERIF(c.CoupRecevable(SCRIPT_PED_JOUEUR, bully));
+		c.Acceder(SCRIPT_PED_JOUEUR)->drapeaux[DRAPEAU_INTOUCHABLE] = 1;
+		VERIF(!c.CoupRecevable(SCRIPT_PED_JOUEUR, bully));
+	}
+	{
+		// FUN_0062e780 : les actions d'un nœud de trajet, une par une (le premier nœud de hallspatrol_1A, Patrol_School.dat :
+		// un virage vers 165 degrés et 2 s d'attente), l'échéance même pour une attente nulle, puis la fin de la liste.
+		CNoeudTrajet n;
+		CActionNoeud a1; a1.type = 0; a1.lacet = 165.0f; a1.attente = 2.0f;
+		CActionNoeud a2; a2.type = 1; a2.attente = 0.0f;
+		n.actions = true; n.listeActions = {a1, a2};
+		int32 index = 0; uint32 echeance = 0; CActionNoeud joue;
+		VERIF(ScriptPedSuiviAction(n, index, 5000, echeance, joue) && joue.type == 0 && joue.lacet == 165.0f && index == 1 && echeance == 7000);
+		VERIF(ScriptPedSuiviAction(n, index, 7033, echeance, joue) && joue.type == 1 && index == 2 && echeance == 7033);
+		VERIF(!ScriptPedSuiviAction(n, index, 7066, echeance, joue) && index == 0 && echeance == 0);
+	}
+	{
+		// Les attitudes : la courante, puis la défaut si elle vaut 5 (0x46f6e0) ; l'écart d'un CVariableAttitudeSet compté par
+		// tiers et borné (FUN_0046f430), remis à 0 par l'écriture (FUN_0046f4b0) ; le piéton d'abord, puis son type (0x475230).
+		CScriptPedPool c;
+		CAttitudes &t = c.attitudesTypes;
+		// Jamais posée, la défaut vaut 5, que la lecture d'un CVariableAttitudeSet borne à 4.
+		VERIF(t.TypeVersType(11, SCRIPT_PED_TYPE_JOUEUR) == 4 && t.TypeVersType(SCRIPT_PED_TYPE_JOUEUR, 11) == 2 && t.TypeVersType(12, 0) == 2);
+		t.PoserDefaut(11, SCRIPT_PED_TYPE_JOUEUR, 1);           // gamemain : PedSetDefaultTypeToTypeAttitude(11, 13, 1)
+		VERIF(t.TypeVersType(11, SCRIPT_PED_TYPE_JOUEUR) == 1);
+		t.defaut[11].ecarts[12] = 10;                           // 1 + 10 / 3 = 4
+		VERIF(t.TypeVersType(11, SCRIPT_PED_TYPE_JOUEUR) == 4);
+		t.defaut[11].ecarts[12] = -7;                           // 1 - 2 : borné à 0
+		VERIF(t.TypeVersType(11, SCRIPT_PED_TYPE_JOUEUR) == 0);
+		t.PoserDefaut(11, SCRIPT_PED_TYPE_JOUEUR, 1);
+		VERIF(t.defaut[11].ecarts[12] == 0);
+		t.PoserTypeVersType(11, SCRIPT_PED_TYPE_JOUEUR, 3);
+		VERIF(t.TypeVersType(11, SCRIPT_PED_TYPE_JOUEUR) == 3);
+		t.PoserDefaut(12, 0, 4);                                // hors des douze tables : rien
+		VERIF(t.TypeVersType(0, 0) == 4);
+		int b = c.Creer(146, CVector(), 0, 1);
+		c.Acceder(b)->type = 11;
+		VERIF(c.Attitude(b, SCRIPT_PED_TYPE_JOUEUR) == 3);
+		c.Acceder(b)->attitudes.Ecrire(SCRIPT_PED_TYPE_JOUEUR, 0);   // 1_02 : PedSetPedToTypeAttitude(1, 13, 0)
+		VERIF(c.Attitude(b, SCRIPT_PED_TYPE_JOUEUR) == 0 && c.Attitude(-1, 0) == 2);
+		// La méthode du coup écarte un coup sans arme sur une cible qui aime le type de l'attaquant (4).
+		c.Acceder(b)->attitudes.Ecrire(SCRIPT_PED_TYPE_JOUEUR, 4);
+		VERIF(!c.CoupRecevable(b, SCRIPT_PED_JOUEUR));
+	}
+	{
+		// FUN_004992a0 : la cible de l'objectif d'attaque (style 3 : valable sans autre jugement), puis l'agresseur récent d'un
+		// piéton qui le hait (attitude 0) ; FUN_00499340 lâche une cible morte ; FUN_00497080 en style 0 : la portée de 30 m.
+		CScriptPedPool c;
+		CScriptPedPool::ButesCibles b;
+		int bully = c.Creer(146, CVector(0, 0, 0), 0, 1), eleve = c.Creer(102, CVector(3, 0, 0), 0, 1);
+		c.Acceder(bully)->type = 11; c.Acceder(eleve)->type = 1;
+		auto tirer = [](void *) -> int { return 0; };
+		c.Attaquer(bully, SCRIPT_PED_JOUEUR, 3);
+		c.SuivreCibles(0.033f, 1000, b, tirer, nil);
+		VERIF(c.Acceder(bully)->verrou == SCRIPT_PED_JOUEUR && c.Acceder(bully)->verrouMode == 3 && c.Acceder(eleve)->verrou == -1);
+		c.Agresse(eleve, bully);                                 // l'élève, frappé par le bully, ne l'aime pas
+		c.attitudesTypes.PoserDefaut(1, 11, 0);
+		c.SuivreCibles(0.033f, 1033, b, tirer, nil);
+		VERIF(c.Acceder(eleve)->verrou == bully && c.Acceder(eleve)->verrouMode == 0);
+		c.attitudesTypes.PoserDefaut(1, 11, 2);                  // neutre et pas une autorité : il ne riposte pas
+		int autre = c.Creer(102, CVector(3, 0, 0), 0, 1);
+		c.Acceder(autre)->type = 1; c.Agresse(autre, bully);
+		c.SuivreCibles(0.033f, 1066, b, tirer, nil);
+		VERIF(c.Acceder(autre)->verrou == -1);
+		c.Acceder(bully)->mort = true;                           // une cible morte est lâchée
+		c.SuivreCibles(0.033f, 1100, b, tirer, nil);
+		VERIF(c.Acceder(eleve)->verrou == -1);
+		c.Acceder(bully)->mort = false;
+		c.Acceder(bully)->pos = CVector(40, 0, 0);
+		VERIF(!c.CibleValable(eleve, bully, 0, true, true, b, tirer, nil) && c.CibleValable(eleve, bully, 0, false, true, b, tirer, nil));
+		VERIF(c.CibleValable(eleve, bully, 3, true, true, b, tirer, nil) && !c.CibleValable(eleve, eleve, 3, false, true, b, tirer, nil));
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }

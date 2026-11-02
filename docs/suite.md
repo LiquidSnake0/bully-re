@@ -51,14 +51,22 @@ chantier. Un point fini passe en bas, avec son commit.
    conversation, missions, tenues, `AttackerConditionGroup`). `1_02` est réussie à 121,94 s (quinze jabs, docs/missions.md).
    La mort passe par la piste `Death`, `1_02` n'a plus de condition jugée -1 (`MissionUnlocked` ; `HitTime` vaut -1 sans coup), la vue
    des piétons et `DamageTarget` sont lues ; `1_03` démarre (la piste `FollowPath`, docs/missions.md). `1_02` reste réussie à 121,94 s.
+   Le 02.11, `1_03` va jusqu'au garage : la poursuite jouée (`--suivre`, `--viser`), le coup reçu qui prévient les scripts
+   (`RegisterPedEventHandler`), `PedSetPosPoint`, `PedFaceObject(Now)`, `PedClearObjectives`, `PedAttackPlayer`, les actions des
+   nœuds de trajet, les drapeaux et les stats, les attitudes, le choix d'une cible par l'IA (docs/missions.md, « 1_03 »).
    Suite, dans l'ordre :
+   - l'arbre de l'IA posé à la création (le constructeur de `CPed`, `FUN_0047ffe0` : les colonnes de l'arbre d'actions et de l'arbre
+     de l'IA des `.idb`, `/Global/AI` dans `Act/AI/AI.act` pour les bullies) : sans lui, le bully 5 de `1_03` attaque par le geste
+     réduit de l'outil et tue le joueur à 62,67 s ; à mesurer de près sur `1_01` et `1_02`, où tous les piétons en recevraient un ;
+   - les combats de `1_03` (`WaveInit` : `_1_03_FIGHT3` derrière les tonneaux, `_1_03_FIGHT4` au garage, `_1_03_FIGHT5`,
+     `_1_03_LADDER_DROP`), puis `CutsceneDavisBegs` et `MissionSucceed` ;
+   - ce qui reste du choix d'une cible : la riposte (`FUN_00496ee0`), les piétons proches (`FUN_00498fc0`, la liste +0x3c0 du
+     composant de visée, que remplit `FUN_004991e0`), la conversation, les zones interdites (`FUN_0046ee60`) ;
+   - le sol du monde (les collisions des `.col` posées par les `.ipb`, déjà lues par `outils/visite`) : les déclencheurs comme
+     `_1_03_DAVISREGISTERHIT` sont plus hauts que les nœuds des trajets ;
    - ce qui reste supposé dans `CombatLoco` : le point valable (`FUN_006254c0`), la recherche de chemin ;
-   - le choix d'une cible (`FUN_004992a0`, `FUN_004988b0`, `FUN_00496b60`), les sphères des os des coups (au lieu du demi-espace
-     avant) ;
-   - les `SpeechTrack` sans tenue ;
-   - `1_03` (docs/missions.md, « 1_03 ») : la piste `FollowPath` est jouée, la poursuite démarre et Davis file ; reste à jouer la
-     poursuite du joueur (une commande `--aller` le long de `_1_03_SCHOOLFLEE`, ou un `--suivre`), puis ce que `main` attend ensuite ;
-     les actions des nœuds de trajet (`FUN_0062e780`).
+   - les sphères des os des coups (`FUN_005f8e20`) au lieu du demi-espace avant ;
+   - les `SpeechTrack` sans tenue.
 
 3. **Outillage : REA** (fork github.com/LiquidSnake0/rea, branche `delai-ghidra-reglable`, rebasée sur rea-agents 4.1.0 le 07.10 ; **à chaque séance, regarder les commits amont** : `git fetch upstream --tags` : délai Ghidra réglable, 15 min ; Ghidra 12.1.4 et JDK 21 dans ~/opt ; l’analyse de Bully.exe prend environ 6 min 30, à sauver en snapshot à la première ouverture ; **attention** : le snapshot de `close_binary` ne garde que les résultats de requêtes déjà faites (2,8 Ko, 0 entrée le 07.10), pas l'analyse Ghidra : chaque ouverture refait les 6 min 30, donc garder la session ouverte tant qu'on s'en sert) pour interroger Ghidra
    directement au lieu des exports headless. Prérequis : Ghidra 12.1.4 et
@@ -88,6 +96,13 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- `1_03` jusqu'au garage (02.11 ; 860a312, 126b5b0, 958b996, 69a6217, d2a992b, a7edecd, e5c2942, 37ada88, 41fbf52) : `--suivre`
+  et `--viser`, `PedSetPosPoint` (l'origine d'un piéton est à ses pieds, `FUN_005712f0`), `PedFaceObject`, `PedFaceObjectNow`,
+  `RegisterPedEventHandler` et le coup reçu (`FUN_005b2190`), `PedClearObjectives`, `PedAttackPlayer`, `PedMakeTargetable`, les
+  actions des nœuds de trajet (`FUN_0062e780`), `PedOverrideStat`, `PedSetFlag`, les attitudes (`CAttitudeSet`,
+  `CVariableAttitudeSet`) et le respect des factions, le choix d'une cible par l'IA (`FUN_004992a0`) : **`1_02` reste réussie à
+  121,94 s**, `1_03` va jusqu'au garage.
 
 - La mort, les dernières conditions et le suivi de trajet (27.10, nuit, 2 ; bd5a363, fb991db, 01693c4, 082a35e, 474710f, 9befc54,
   e40e7a5, 82d730e, 40241d1) : la piste `Death` (`FUN_00479110`) au lieu de la santé nulle, `ParametricTime`, `PropTargetInteractive`,
