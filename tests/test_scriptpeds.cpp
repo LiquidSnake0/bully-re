@@ -441,6 +441,34 @@ main(void)
 		VERIF(ScriptPedSuiviAction(n, index, 7033, echeance, joue) && joue.type == 1 && index == 2 && echeance == 7033);
 		VERIF(!ScriptPedSuiviAction(n, index, 7066, echeance, joue) && index == 0 && echeance == 0);
 	}
+	{
+		// Les attitudes : la courante, puis la défaut si elle vaut 5 (0x46f6e0) ; l'écart d'un CVariableAttitudeSet compté par
+		// tiers et borné (FUN_0046f430), remis à 0 par l'écriture (FUN_0046f4b0) ; le piéton d'abord, puis son type (0x475230).
+		CScriptPedPool c;
+		CAttitudes &t = c.attitudesTypes;
+		// Jamais posée, la défaut vaut 5, que la lecture d'un CVariableAttitudeSet borne à 4.
+		VERIF(t.TypeVersType(11, SCRIPT_PED_TYPE_JOUEUR) == 4 && t.TypeVersType(SCRIPT_PED_TYPE_JOUEUR, 11) == 2 && t.TypeVersType(12, 0) == 2);
+		t.PoserDefaut(11, SCRIPT_PED_TYPE_JOUEUR, 1);           // gamemain : PedSetDefaultTypeToTypeAttitude(11, 13, 1)
+		VERIF(t.TypeVersType(11, SCRIPT_PED_TYPE_JOUEUR) == 1);
+		t.defaut[11].ecarts[12] = 10;                           // 1 + 10 / 3 = 4
+		VERIF(t.TypeVersType(11, SCRIPT_PED_TYPE_JOUEUR) == 4);
+		t.defaut[11].ecarts[12] = -7;                           // 1 - 2 : borné à 0
+		VERIF(t.TypeVersType(11, SCRIPT_PED_TYPE_JOUEUR) == 0);
+		t.PoserDefaut(11, SCRIPT_PED_TYPE_JOUEUR, 1);
+		VERIF(t.defaut[11].ecarts[12] == 0);
+		t.PoserTypeVersType(11, SCRIPT_PED_TYPE_JOUEUR, 3);
+		VERIF(t.TypeVersType(11, SCRIPT_PED_TYPE_JOUEUR) == 3);
+		t.PoserDefaut(12, 0, 4);                                // hors des douze tables : rien
+		VERIF(t.TypeVersType(0, 0) == 4);
+		int b = c.Creer(146, CVector(), 0, 1);
+		c.Acceder(b)->type = 11;
+		VERIF(c.Attitude(b, SCRIPT_PED_TYPE_JOUEUR) == 3);
+		c.Acceder(b)->attitudes.Ecrire(SCRIPT_PED_TYPE_JOUEUR, 0);   // 1_02 : PedSetPedToTypeAttitude(1, 13, 0)
+		VERIF(c.Attitude(b, SCRIPT_PED_TYPE_JOUEUR) == 0 && c.Attitude(-1, 0) == 2);
+		// La méthode du coup écarte un coup sans arme sur une cible qui aime le type de l'attaquant (4).
+		c.Acceder(b)->attitudes.Ecrire(SCRIPT_PED_TYPE_JOUEUR, 4);
+		VERIF(!c.CoupRecevable(b, SCRIPT_PED_JOUEUR));
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }

@@ -247,7 +247,17 @@ CScriptPedPool::CoupRecevable(int cible, int attaquant) const
 	if(c->drapeaux[DRAPEAU_INVULNERABLE] && c->type != SCRIPT_PED_TYPE_JOUEUR) return false;
 	const CScriptPed *a = Acceder(attaquant);
 	if(a && a->type == SCRIPT_PED_TYPE_JOUEUR && c->drapeaux[DRAPEAU_INVULNERABLE_JOUEUR]) return false;
+	if(a && Attitude(cible, a->type) == 4) return false;   // FUN_0047b810 : PedGetPedToTypeAttitude == 4, sans arme
 	return true;
+}
+
+int32
+CScriptPedPool::Attitude(int h, int type) const
+{
+	const CScriptPed *p = Acceder(h);
+	if(p == nil) return 2;
+	int32 v = p->attitudes.Lire(type);
+	return v == 5 ? attitudesTypes.TypeVersType(p->type, type) : v;
 }
 
 bool

@@ -2352,6 +2352,68 @@ GameSetPedStat(lua_State *L)
 	return 0;
 }
 
+// Les attitudes (CScriptPedPool::attitudesTypes, CAttitudeSet du piéton). PedSetDefaultTypeToTypeAttitude(de, vers, v)
+// (0x5c6b30 → 0x46f7a0), PedSetTypeToTypeAttitude (0x5c6af0 → 0x46f760), PedGetTypeToTypeAttitude(de, vers) (0x5c6b80 →
+// 0x46f6e0) ; PedSetPedToTypeAttitude(ped, type, v) (0x5cb480 → 0x473080), PedGetPedToTypeAttitude(ped, type) (0x5cb4d0 →
+// 0x475230, 2 sans piéton).
+static int
+PedSetDefaultTypeToTypeAttitude(lua_State *L)
+{
+	Journal("PedSetDefaultTypeToTypeAttitude", L, 1);
+	pietons.attitudesTypes.PoserDefaut((int)luaL_optnumber(L, 1, -1), (int)luaL_optnumber(L, 2, -1), (int32)luaL_optnumber(L, 3, 2));
+	return 0;
+}
+static int
+PedSetTypeToTypeAttitude(lua_State *L)
+{
+	Journal("PedSetTypeToTypeAttitude", L, 1);
+	pietons.attitudesTypes.PoserTypeVersType((int)luaL_optnumber(L, 1, -1), (int)luaL_optnumber(L, 2, -1), (int32)luaL_optnumber(L, 3, 2));
+	return 0;
+}
+static int
+PedGetTypeToTypeAttitude(lua_State *L)
+{
+	appels["PedGetTypeToTypeAttitude"]++;
+	lua_pushnumber(L, pietons.attitudesTypes.TypeVersType((int)luaL_optnumber(L, 1, -1), (int)luaL_optnumber(L, 2, -1)));
+	return 1;
+}
+static int
+PedSetPedToTypeAttitude(lua_State *L)
+{
+	Journal("PedSetPedToTypeAttitude", L, 1);
+	if(CScriptPed *p = PedArg(L, 1)) p->attitudes.Ecrire((int)luaL_optnumber(L, 2, -1), (int32)luaL_optnumber(L, 3, 2));
+	return 0;
+}
+static int
+PedGetPedToTypeAttitude(lua_State *L)
+{
+	appels["PedGetPedToTypeAttitude"]++;
+	lua_pushnumber(L, PedArg(L, 1) ? pietons.Attitude((int)lua_tonumber(L, 1), (int)luaL_optnumber(L, 2, -1)) : 2);
+	return 1;
+}
+
+// SetFactionRespect(faction, respect) (0x5c1130, lu à l'assembleur) : le respect, en flottant, ramené à 0 s'il est négatif et à
+// 100 au-delà (_DAT_00900130, 0x900490), tronqué (_ftol) et rangé par FUN_00446610 en +0x1b0 + 4 × faction des données du
+// joueur (0xc1aea8) ; GetFactionRespect(faction) (0x5c11b0 → FUN_00446630) le rend.
+static int
+SetFactionRespect(lua_State *L)
+{
+	Journal("SetFactionRespect", L, 1);
+	int f = (int)luaL_optnumber(L, 1, -1);
+	float r = (float)luaL_optnumber(L, 2, 0);
+	if(!(r > 0.0f)) r = 0.0f; else if(r > 100.0f) r = 100.0f;
+	if(f >= 0 && f < 16) pietons.respect[f] = (int32)r;
+	return 0;
+}
+static int
+GetFactionRespect(lua_State *L)
+{
+	appels["GetFactionRespect"]++;
+	int f = (int)luaL_optnumber(L, 1, -1);
+	lua_pushnumber(L, f >= 0 && f < 16 ? pietons.respect[f] : 0);
+	return 1;
+}
+
 // PedOverrideStat(ped, n, valeur) (0x5c9070) : la colonne n de ses stats par FUN_00476fa0, comme GameSetPedStat.
 static int
 PedOverrideStat(lua_State *L)
@@ -3804,6 +3866,13 @@ main(int argc, char **argv)
 	lua_register(L, "PedSetFightingSystem", PedSetFightingSystem);
 	lua_register(L, "GameSetPedStat", GameSetPedStat);
 	lua_register(L, "PedOverrideStat", PedOverrideStat);
+	lua_register(L, "PedSetDefaultTypeToTypeAttitude", PedSetDefaultTypeToTypeAttitude);
+	lua_register(L, "PedSetTypeToTypeAttitude", PedSetTypeToTypeAttitude);
+	lua_register(L, "PedGetTypeToTypeAttitude", PedGetTypeToTypeAttitude);
+	lua_register(L, "PedSetPedToTypeAttitude", PedSetPedToTypeAttitude);
+	lua_register(L, "PedGetPedToTypeAttitude", PedGetPedToTypeAttitude);
+	lua_register(L, "SetFactionRespect", SetFactionRespect);
+	lua_register(L, "GetFactionRespect", GetFactionRespect);
 	lua_register(L, "PedSetFlag", PedSetFlag);
 	lua_register(L, "PedGetFlag", PedGetFlag);
 	lua_register(L, "PedCreateXYZ", PedCreateXYZ);

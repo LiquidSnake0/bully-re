@@ -164,6 +164,45 @@ struct CObjectifPieton {
 	int32 allure = -1;           // l'allure du script (le quatrième argument), pour la vitesse du geste de l'outil
 };
 
+// Les attitudes (0 à 4 ; 2 neutre ; 5 « rien de propre », on passe au niveau suivant). CAttitudeSet (table 0x90c98c, constructeur
+// FUN_0046f120 : tout à 5) : une attitude par type de piéton visé, les types 0 à 11 en +4 + 4 × type et le joueur (13) en +0x34 ;
+// les autres types (12, au-delà) rendent 2 et ne s'écrivent pas (FUN_0046f3c0, FUN_0046f400).
+struct CAttitudeSet {
+	int32 valeurs[13] = {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
+	static int Case(int type){ return type == SCRIPT_PED_TYPE_JOUEUR ? 12 : type >= 0 && type < 12 ? type : -1; }
+	int32 Lire(int type) const { int c = Case(type); return c < 0 ? 2 : valeurs[c]; }
+	void Ecrire(int type, int32 v){ int c = Case(type); if(c >= 0) valeurs[c] = v; }
+};
+// CVariableAttitudeSet (0x90c998, 0x70 octets) : la même table plus un écart par type (+0x38 + 4 × type, le joueur en +0x68),
+// nul à la construction (FUN_0046f1f0) ; lue (FUN_0046f430), l'attitude vaut la base plus l'écart / 3 (division entière), bornée
+// à 0 et 4 ; écrite (FUN_0046f4b0), la base reçoit la valeur et l'écart revient à 0.
+struct CVariableAttitudeSet : CAttitudeSet {
+	int32 ecarts[13] = {};
+	int32 Lire(int type) const {
+		int c = Case(type);
+		if(c < 0) return 2;
+		int32 v = valeurs[c] + ecarts[c] / 3;
+		return v < 0 ? 0 : v > 4 ? 4 : v;
+	}
+	void Ecrire(int type, int32 v){ int c = Case(type); if(c >= 0){ valeurs[c] = v; ecarts[c] = 0; } }
+};
+// Le gestionnaire des attitudes entre types (FUN_0046f1f0) : douze CVariableAttitudeSet, celles par défaut (+0x70 × type), puis
+// douze CAttitudeSet, les courantes (+0x540 + 0x38 × type). PedGetTypeToTypeAttitude (0x46f6e0) : 2 pour un type de départ 13 ou
+// au-delà de 11 ; sinon la courante, et la défaut si elle vaut 5. PedSetTypeToTypeAttitude (0x46f760) et
+// PedSetDefaultTypeToTypeAttitude (0x46f7a0) ramènent le type 13 à 12 et les autres au-delà de 11 à 13 : ces cases tombent hors
+// des douze tables (l'objet voisin), l'outil ne les écrit pas.
+struct CAttitudes {
+	CVariableAttitudeSet defaut[12];
+	CAttitudeSet courante[12];
+	int32 TypeVersType(int de, int vers) const {
+		if(de == SCRIPT_PED_TYPE_JOUEUR || de < 0 || de >= 12) return 2;
+		int32 v = courante[de].Lire(vers);
+		return v == 5 ? defaut[de].Lire(vers) : v;
+	}
+	void PoserTypeVersType(int de, int vers, int32 v){ if(de >= 0 && de < 12) courante[de].Ecrire(vers, v); }
+	void PoserDefaut(int de, int vers, int32 v){ if(de >= 0 && de < 12) defaut[de].Ecrire(vers, v); }
+};
+
 struct CScriptPed {
 	bool vivant = false;         // l'entrée est prise
 	int32 modele = -1;
@@ -249,6 +288,9 @@ struct CScriptPed {
 	// sans agresseur).
 	int dernierAgresseur = -1;
 	float tempsAgresseur = 0;
+	// +0x2e8 : son propre CAttitudeSet, créé à 5 par le constructeur de CPed (FUN_0047ffe0 → FUN_0046f120) ; PedSetPedToTypeAttitude
+	// (0x5cb480 → 0x473080) l'écrit, PedGetPedToTypeAttitude (0x475230) le lit, puis la table du type du piéton s'il vaut 5.
+	CAttitudeSet attitudes;
 	bool pasCiblable = false;    // +0xc0 : PedMakeTargetable (0x5ca980) y range la négation de son second argument
 	bool immortel = false;       // +0x13fc : PedSetImmortalFlag (0x5ce6e0) / PedGetImmortalFlag (0x5ce730)
 	uint32 instantMort = 0;      // +0x18b8 : l'horloge (ms) à la mort d'un autre que le joueur
@@ -343,8 +385,13 @@ public:
 	// Les sorties anticipées de la méthode du coup (slot 15 de CPed, FUN_0047b810) avant qu'elle ne prévienne les scripts
 	// (FUN_005b2190) : rien si la cible a le drapeau 12 (+0x1344, param_1[0x4d1]), si elle est invulnérable (30, +0x138c) sans
 	// être le joueur, si l'attaquant est le joueur et la cible invulnérable au joueur (20, +0x1364). Ne sont pas suivis :
-	// l'attitude de la cible envers le type de l'attaquant (PedGetPedToTypeAttitude, 4 sans arme), l'octet +0x1e94 du joueur,
-	// le coup plus faible qu'un coup reçu à la même image (le relevé +0x408, +0x434, +0x440).
+	// l'octet +0x1e94 du joueur, le coup plus faible qu'un coup reçu à la même image (le relevé +0x408, +0x434, +0x440). Une
+	// cible dont l'attitude envers le type de l'attaquant vaut 4 n'est pas frappée par un coup sans arme (l'outil n'a pas
+	// d'armes : toujours), sauf par le joueur sur sa cible verrouillée (param_14, FUN_004d5980 : non suivi, supposé faux).
+	// PedGetPedToTypeAttitude (0x475230) : l'attitude du piéton envers un type (sans piéton, 2).
+	int32 Attitude(int handle, int type) const;
+	CAttitudes attitudesTypes;     // le gestionnaire des attitudes entre types (FUN_0046f1f0)
+	int32 respect[16] = {};        // +0x1b0 + 4 × faction des données du joueur (0xc1aea8) : SetFactionRespect, GetFactionRespect
 	bool CoupRecevable(int cible, int attaquant) const;
 	// lua_PedClearObjectives (0x5ca8e0) : la file des objectifs vidée (FUN_00470200, du premier au dernier : le rappel Lua
 	// d'un objectif qui en a un est appelé avec son type, non suivi), le dernier agresseur oublié (FUN_004973d0(0) : +0x1dbc
