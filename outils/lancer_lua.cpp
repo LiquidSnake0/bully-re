@@ -24,7 +24,7 @@
 // lance celle dont le joueur touche le corona, et celles qui se lancent seules (champ 51) : 1_02 après 1_01.
 // Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
 // de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s[,s2…]]... [--demander N@s]... [--sequence @s]...
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s[,s2…]]... [--demander N@s]... [--sequence @s]... [--suivre PIETON[,d]@s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -1680,6 +1680,49 @@ AllerAuPoint(const char *cible)
 	// La zone ne change pas : c'est une porte qui la change (--zone), pas une marche.
 	j->pos = pt->pos; j->cap = pt->lacetTangageRoulis[0];
 	printf("%6.2f s  le joueur va au point %d de %s (%d) en (%.1f, %.1f, %.1f), toujours en zone %d\n", maintenant / 1000.0, n, nom.c_str(), h, pt->pos.x, pt->pos.y, pt->pos.z, zones.zoneVisible);
+}
+
+// --suivre PIETON[,d]@s : à partir de s secondes, la manette du joueur le mène au sprint vers le piéton PIETON tant qu'il en
+// est à plus de d mètres (2 par défaut) ; la dernière poursuite commencée l'emporte, elle cesse quand le piéton n'existe plus.
+// Comme le stick dans le jeu, elle ne fait rien quand le script a repris le contrôle (PlayerSetControl(0)) ni quand le joueur
+// suit lui-même un trajet (l'objectif FollowPath de sa file passe devant).
+struct Poursuite { uint32 debut; int ped; float distance; bool annoncee; std::vector<CVector> trace; CVector dernier; };
+static std::vector<Poursuite> poursuites;
+
+static void
+PoursuivrePieton(void)
+{
+	Poursuite *active = nil;
+	for(Poursuite &q : poursuites) if(maintenant >= q.debut) active = &q;
+	if(active == nil) return;
+	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	const CScriptPed *c = pietons.Acceder(active->ped);
+	if(c == nil || c->mort) return;
+	// La trace du piéton poursuivi : ses positions, une tous les 0,5 m ; le joueur court dessus, il passe où il est passé.
+	auto ecart = [](const CVector &a, const CVector &b){ return sqrtf((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z)); };
+	if(active->trace.empty() || ecart(active->trace.back(), c->pos) > 0.5f) active->trace.push_back(c->pos);
+	if(controleJoueur != 1) return;
+	const CObjectifPieton *o = pietons.ObjectifCourant(SCRIPT_PED_JOUEUR);
+	if(o && o->type == OBJECTIF_SUIVRE_TRAJET) return;
+	if(!active->annoncee){
+		active->annoncee = true;
+		active->trace.clear(); active->trace.push_back(c->pos);
+		printf("%6.2f s  le joueur poursuit le piéton %d (à %.1f m)\n", maintenant / 1000.0, active->ped, active->distance);
+	}
+	else if(ecart(j->pos, active->dernier) > 0.01f){ active->trace.clear(); active->trace.push_back(c->pos); }   // posé ailleurs (--entrer, un script)
+	float reste = ScriptPedVitesse(ALLURE_SPRINT) * 0.033f;
+	j->intentionVitesse = 0;
+	while(reste > 0 && sqrtf((c->pos.x - j->pos.x) * (c->pos.x - j->pos.x) + (c->pos.y - j->pos.y) * (c->pos.y - j->pos.y)) > active->distance && !active->trace.empty()){
+		CVector v(active->trace.front().x - j->pos.x, active->trace.front().y - j->pos.y, active->trace.front().z - j->pos.z);
+		float d = ecart(active->trace.front(), j->pos);
+		if(d <= reste){ j->pos = active->trace.front(); reste -= d; active->trace.erase(active->trace.begin()); continue; }
+		j->pos = CVector(j->pos.x + v.x * reste / d, j->pos.y + v.y * reste / d, j->pos.z + v.z * reste / d);
+		j->cap = atan2f(v.y, v.x) * 180.0f / 3.14159265f;
+		j->intention = CVector(v.x / d, v.y / d, 0);
+		j->intentionVitesse = ScriptPedIntentionVitesse(ALLURE_SPRINT, 1.5f);
+		reste = 0;
+	}
+	active->dernier = j->pos;
 }
 
 // --entrer NOM@s : à s secondes, le joueur est posé dans le déclencheur NOM (à la position du
@@ -3418,6 +3461,15 @@ main(int argc, char **argv)
 			std::string e = argv[++i]; size_t at = e.find('@');
 			poussees.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
 		}
+		else if(strcmp(argv[i], "--suivre") == 0 && i + 1 < argc){
+			std::string e = argv[++i]; size_t at = e.find('@'), v = e.find(',');
+			Poursuite q;
+			q.debut = (uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000);
+			q.ped = atoi(e.c_str());
+			q.distance = v != std::string::npos && (at == std::string::npos || v < at) ? (float)atof(e.c_str() + v + 1) : 2.0f;
+			q.annoncee = false;
+			poursuites.push_back(q);
+		}
 		else if(strcmp(argv[i], "--aller") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
 			allers.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
@@ -3864,6 +3916,7 @@ main(int argc, char **argv)
 		if(fondu.enCours && maintenant >= fondu.fin){ fondu.enCours = false; fondu.noir = fondu.versNoir; if(journalRestant > 0){ journalRestant--; printf("%6.2f s  fondu : l'écran est %s\n", maintenant / 1000.0, fondu.versNoir ? "noir" : "rendu"); } }
 		MettreAJour(L);
 		AvancerPietons();
+		PoursuivrePieton();   // --suivre : la manette du joueur
 		AvancerCinematique();
 		AvancerZones(L);
 		AvancerGestionnaire(L);
