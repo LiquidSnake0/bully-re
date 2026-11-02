@@ -2120,6 +2120,60 @@ PedSetPosXYZ(lua_State *L)
 	return 0;
 }
 
+// CPed::SetHeading (FUN_004755e0) : le cap visé (+0x1700) et celui de l'entité (+0x10, et sa matrice), puis la direction de
+// l'intention de mouvement (+0, +0xc du composant +0x2e0) tournée vers l'avant (FUN_00415350). L'outil garde le cap en degrés
+// depuis +x : le moteur prend le lacet d'un point moins 90 degrés, en radians (0 vers +y), la même direction.
+static void
+PoserCap(CScriptPed *p, float capDegres)
+{
+	p->cap = capDegres;
+	float a = capDegres * 3.14159265f / 180.0f;
+	p->intention = CVector(cosf(a), sinf(a), 0);
+}
+
+// PedSetPosPoint(ped, liste[, n]) (0x5c82c0) : le n-ième point de la liste (le premier, puis FUN_006d58a0 tant qu'il y en a :
+// au-delà, le dernier), posé par FUN_005c74a0, puis le cap du lacet du point (+0x1c, (lacet − 90) × π / 180, FUN_004755e0).
+// FUN_005c74a0 : sous z = -20 (_DAT_00a14a8c), z vient du sol (FUN_00463350, non suivi : pas de monde) ; le joueur (type 13)
+// passe par une demande de zone dans la zone visible (FUN_00415730, DAT_00bd1008) ; un autre piéton est posé (son véhicule s'il
+// en a un, +0x1554), z plus la distance du centre à la base du modèle (FUN_00465fc0 : −min.z de la boîte du modèle de
+// collision, +0xc du modelinfo). Pour un piéton, c'est 0 : CTempColModels::Initialise (FUN_005712f0) bâtit le modèle des
+// piétons (DAT_00cf312c, que le chargeur des .idb leur donne, FUN_0042bfd0 → FUN_0050e9e0) de trois sphères de 0,35 m
+// (_DAT_0090d0a8) à 0,35, 0,95 et 1,55 m (_DAT_0091c100, _DAT_0091c0fc) et d'une boîte de z = 0 à 1,9 : l'origine d'un
+// piéton est à ses pieds.
+static int
+PedSetPosPoint(lua_State *L)
+{
+	Journal("PedSetPosPoint", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p == nil || !lua_isnumber(L, 2)) return 0;
+	int h = (int)lua_tonumber(L, 2), n = lua_gettop(L) == 3 && lua_isnumber(L, 3) ? (int)lua_tonumber(L, 3) : 1;
+	const CTriggerPointPoint *pt = nil;
+	for(int k = n < 1 ? 1 : n; k >= 1 && pt == nil; k--) pt = donnees.Point(h, k);
+	if(pt == nil) return 0;
+	if(p == pietons.Acceder(SCRIPT_PED_JOUEUR)) DemanderZone("PedSetPosPoint", pt->pos, pt->lacetTangageRoulis[0], -1);
+	else p->pos = pt->pos;
+	PoserCap(p, pt->lacetTangageRoulis[0]);
+	return 0;
+}
+
+// PedFaceObject(ped, id, genre, mode[, b]) (0x5c77b0) : l'entité de LuaGetEntity(id, genre) (2 un piéton, 3 le joueur ; les
+// objets et les véhicules ne sont pas suivis). Mode 0 : FUN_005c73c0 tourne le piéton tout de suite vers elle (la direction à
+// plat, normée, son angle moins π/2, ramené dans [0, 2π[ : FUN_004755e0). Sinon un FaceEntityObjective (type 4, FUN_00470ac0 :
+// l'entité en +0x14, l'octet b en +0x18, vrai par défaut) va au bout de la file ; l'outil ne joue pas cet objectif.
+static int
+PedFaceObject(lua_State *L)
+{
+	Journal("PedFaceObject", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p == nil) return 0;
+	int id = (int)luaL_optnumber(L, 2, -1), genre = (int)luaL_optnumber(L, 3, -1), mode = (int)luaL_optnumber(L, 4, 0);
+	const CScriptPed *e = genre == 2 ? pietons.Acceder(id) : genre == 3 ? pietons.Acceder(SCRIPT_PED_JOUEUR) : nil;
+	if(e == nil || mode != 0) return 0;
+	float dx = e->pos.x - p->pos.x, dy = e->pos.y - p->pos.y;
+	if(dx * dx + dy * dy > 0.0f) PoserCap(p, atan2f(dy, dx) * 180.0f / 3.14159265f);
+	return 0;
+}
+
 static int
 PedGetHeading(lua_State *L)
 {
@@ -3582,6 +3636,8 @@ main(int argc, char **argv)
 	lua_register(L, "PlayerGetPedIndex", PlayerGetPedIndex);
 	lua_register(L, "PedGetPosXYZ", PedGetPosXYZ);
 	lua_register(L, "PedSetPosXYZ", PedSetPosXYZ);
+	lua_register(L, "PedSetPosPoint", PedSetPosPoint);
+	lua_register(L, "PedFaceObject", PedFaceObject);
 	lua_register(L, "PedGetHeading", PedGetHeading);
 	lua_register(L, "PedFaceXYZ", PedFaceXYZ);
 	lua_register(L, "PedIsDead", PedIsDead);
