@@ -399,6 +399,16 @@ jabs (73,16, 82,14, 84,15, 86,16 s) ; la commande devient :
 
 et **`1_02` se termine réussie à 121,94 s** (`1_02_HumiliateHim` après le jab de 85,14 s, 7 → 5 points).
 
+Le 03.11 (la condition `stat` et son tirage, 0x5ffff0 : la colonne de pedstats.dat devient une chance en pour cent), le bully pare
+selon sa colonne de parade : six ou sept jabs sur quinze. La commande allonge la série et repousse l'humiliation :
+
+    build/outils/lancer_lua 140 --mission 1_02 … (les mêmes options, sauf :)
+      --jouer /Global/TrainingPlayer/Attacks/Strikes/LightAttacks@72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89 \
+      --jouer /Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init:Act/Player.act@90
+
+Le bully tombe à 5 points à 89,13 s (`1_02_HumiliateHim`), `RCV/END` à 95,37 s, `KnockOuts/Rear/Rear` à 99,40 s, puis la rencontre
+avec Russell : **`1_02` se termine réussie à 124,97 s**.
+
 ## `1_03` (27.10.2026, nuit)
 
 `1_03` (« The Setup ») s'enchaîne après `1_02C` et `1_02B`, entre 8 h et 19 h (« Les conditions »). Lancée seule
@@ -472,6 +482,14 @@ de l'outil le fait rattraper et tuer le joueur à 62,67 s.
 
     build/outils/lancer_lua 120 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@29 \
       --suivre 5,0.8@35 --viser 5@35 --jouer /Global/Player/Attacks/Strikes/LightAttacks@38 --suivre 6,1@38.5
+
+Le 03.11 (docs/suite.md) : les piétons reçoivent les arbres de leur modèle à la création (`FUN_00484d10` : `/Global/B_Striker_A` et
+`/Global/AI` pour les bullies). Avec la même commande, Peter finit `FistShakeEnd` (27,59 s) ; le bully 5 attaque le joueur par la
+banque `Combat` de `AI.act` (39,04 s) et tourne en `CombatLoco` ; le joueur reçoit les jetons de combat de ses agresseurs
+(`FightToken`, `FUN_00486e40` : le bully 5 à 39,77 s) ; le bully 1, sorti de sa cachette par `T_RunFights` (45,24 s), puis le bully 5
+prennent les droits d'attaque (62,20 et 66,83 s) et frappent par `/Global/B_Striker_A/Offense` (`LightAttacks`, `Windmill_L`,
+`HeavyAttacks`, 6 et 8 points). Le joueur de l'outil ne riposte pas : il tombe à 0 point vers 98 s (`HitTree/KnockOuts`) et meurt par
+la piste `Death` à 101,31 s. La suite est de le faire se battre (`--viser`, `--jouer`) pour entrer dans les vagues.
 
 ## Suite
 

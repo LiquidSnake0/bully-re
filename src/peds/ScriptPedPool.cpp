@@ -1,5 +1,6 @@
 #include "ScriptPedPool.h"
 #include <cmath>
+#include <algorithm>
 
 float
 ScriptPedVitesse(int allure)
@@ -217,11 +218,211 @@ CScriptPedPool::Verrouiller(int h, int cible, int mode)
 {
 	CScriptPed *p = Acceder(h);
 	if(p == nil) return false;
-	if(cible == -1){ p->verrou = -1; p->verrouMode = 0; return true; }
+	if(cible == -1){ LacherDroits(h); p->verrou = -1; p->verrouMode = 0; return true; }
 	if(Acceder(cible) == nil) return false;
+	if(cible != p->verrou) LacherDroits(h);   // FUN_00497d20 → FUN_00486c00, avant de changer de cible
 	p->verrou = cible;
 	p->verrouMode = mode;
 	return true;
+}
+
+void
+CScriptPedPool::ReleverProches(int h, bool refaire)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return;
+	auto d2 = [&](int i){ const CScriptPed *q = Acceder(i); float dx = q->pos.x - p->pos.x, dy = q->pos.y - p->pos.y; return dx * dx + dy * dy; };
+	if(refaire){
+		std::vector<int> v;
+		for(int i = SCRIPT_PED_POOL_SIZE - 1; i >= 0; i--){   // le pool parcouru du dernier au premier
+			const CScriptPed *q = Acceder(i);
+			if(q == nil || i == h || q->mort || v.size() >= 50) continue;
+			if(d2(i) - 900.0f <= 0.0f) v.push_back(i);
+		}
+		std::stable_sort(v.begin(), v.end(), [&](int a, int b){ return d2(a) < d2(b); });   // FUN_004753e0
+		if(v.size() > 16) v.resize(16);
+		p->proches = v;
+		return;
+	}
+	for(size_t k = 0; k < p->proches.size(); ){
+		if(Acceder(p->proches[k]) == nil || d2(p->proches[k]) - 900.0f > 0.0f) p->proches.erase(p->proches.begin() + k);   // FUN_0047d0d0
+		else k++;
+	}
+	for(size_t k = 0; k + 1 < p->proches.size(); k++)    // une passe, FUN_0047d130
+		if(d2(p->proches[k + 1]) < d2(p->proches[k])) std::swap(p->proches[k], p->proches[k + 1]);
+}
+
+void
+CScriptPedPool::PoserJetons(int h, const int32 nombres[4])
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return;
+	for(int k = 0; k < 4; k++){
+		p->nombreJetons[k] = nombres[k] < 0 ? 0 : nombres[k] > 6 ? 6 : nombres[k];
+		for(int i = 0; i < 6; i++){ p->jetons[k][i] = CScriptPed::Jeton(); p->jetons[k][i].categorie = k; }
+	}
+	p->jetonCone = CScriptPed::Jeton();
+}
+
+// FUN_004867e0 : le piéton tient un jeton de la cible (une entrée ou la place du cône), coupé ou non.
+static bool
+TientUnJeton(const CScriptPed &c, int qui)
+{
+	for(int k = 0; k < 4; k++) for(int i = 0; i < c.nombreJetons[k]; i++) if(c.jetons[k][i].detenteur == qui) return true;
+	return c.jetonCone.detenteur == qui;
+}
+
+// FUN_00486850 : son entrée, ou la place du cône, ou rien.
+static CScriptPed::Jeton *
+JetonDe(CScriptPed &c, int qui)
+{
+	for(int k = 0; k < 4; k++) for(int i = 0; i < c.nombreJetons[k]; i++) if(c.jetons[k][i].detenteur == qui) return &c.jetons[k][i];
+	return c.jetonCone.detenteur == qui ? &c.jetonCone : nil;
+}
+
+// FUN_004868e0 : tout ce que le piéton tient, rendu (détenteur, précédent, filtre et instant à 0).
+static void
+RendreJetons(CScriptPed &c, int qui)
+{
+	for(int k = 0; k < 4; k++) for(int i = 0; i < c.nombreJetons[k]; i++){
+		CScriptPed::Jeton &j = c.jetons[k][i];
+		if(j.detenteur == qui){ j.detenteur = j.precedent = -1; j.filtre = 0; j.instant = 0; }
+	}
+	if(c.jetonCone.detenteur == qui){ c.jetonCone.detenteur = c.jetonCone.precedent = -1; c.jetonCone.filtre = 0; c.jetonCone.instant = 0; }
+}
+
+void
+CScriptPedPool::DistribuerJetons(int h, uint32 maintenant, const ButesJetons &b, int (*tirer)(void *), void *ctx)
+{
+	CScriptPed *c = Acceder(h);
+	if(c == nil) return;
+	// 1. Le jeton que ce piéton tient sur sa propre cible : rendu si son dernier coup (+0x550), ou l'instant du jeton s'il est
+	// plus tard, date de plus que l'échéance (AIButes +0x4c, +0x50 pour la catégorie 3 ; rien si elle n'est pas positive).
+	if(CScriptPed *x = Acceder(c->verrou))
+		if(CScriptPed::Jeton *j = JetonDe(*x, h)){
+			uint32 depuis = c->dernierCoup > j->instant ? c->dernierCoup : j->instant;
+			float e = j->categorie == 3 ? b.echeanceVelo : b.echeance;
+			if(e > 0.0f && e * 1000.0f < (float)(int32)(maintenant - depuis)){ j->detenteur = j->precedent = -1; j->filtre = 0; j->instant = 0; }
+		}
+	// FUN_004865a0 : `q` a la cible `cible` dans son cône d'attaque (à moins d'AIButes +0x54, à moins de l'angle de +0x58 de
+	// son cap ; le test de vue de la fin, FUN_0048d320, supposé vrai comme pour InAttackCone).
+	auto dansCone = [&](const CScriptPed *q, const CScriptPed *cible){
+		float dx = cible->pos.x - q->pos.x, dy = cible->pos.y - q->pos.y, n = sqrtf(dx * dx + dy * dy);
+		if(n > b.porteeCone) return false;
+		if(n <= 0.0f) return true;
+		float a = q->cap * 3.14159265f / 180.0f;
+		return (cosf(a) * dx + sinf(a) * dy) / n >= b.cosCone;
+	};
+	// 2. La place du cône : le premier proche qui vise ce piéton, l'a dans son cône, n'est pas armé (l'outil n'a pas d'armes)
+	// et ne tient pas encore de jeton ; si un proche l'a dans son cône mais que la place reste vide, le plus proche de ceux
+	// qui le visent rend ses jetons et la prend ; si aucun proche ne l'a dans son cône, elle est vidée.
+	bool unDansCone = false;
+	int plusProche = -1; float dMin = 0.0f;
+	for(int q : c->proches){
+		const CScriptPed *p = Acceder(q);
+		if(p == nil) continue;
+		if(dansCone(p, c)) unDansCone = true;
+		if(p->verrou != h || !dansCone(p, c)) continue;
+		float dx = p->pos.x - c->pos.x, dy = p->pos.y - c->pos.y, dz = p->pos.z - c->pos.z, d = sqrtf(dx * dx + dy * dy + dz * dz);   // FUN_0041a800
+		if(plusProche < 0 || d < dMin){ plusProche = q; dMin = d; }
+		if(!TientUnJeton(*c, q)){ c->jetonCone.detenteur = c->jetonCone.precedent = q; c->jetonCone.instant = maintenant; break; }
+	}
+	if(unDansCone){
+		if(c->jetonCone.detenteur < 0 && plusProche >= 0){
+			RendreJetons(*c, plusProche);
+			c->jetonCone.detenteur = c->jetonCone.precedent = plusProche; c->jetonCone.instant = maintenant;
+		}
+	}else if(c->jetonCone.detenteur >= 0){ c->jetonCone.detenteur = c->jetonCone.precedent = -1; c->jetonCone.filtre = 0; c->jetonCone.instant = 0; }
+	// 3 à 6. Pour chaque catégorie, la première entrée libre ; le départ dans la liste des proches est rand() / 0x7fff (une
+	// division entière : 0, sauf quand rand() rend 0x7fff) ; un proche qui ne tient rien et vise ce piéton la reçoit s'il
+	// remplit la condition de la catégorie ; le précédent détenteur passe son tour une fois (son +4 effacé) ; le filtre de
+	// l'entrée revient à 0 après la recherche.
+	auto dansZones = [&](int q, int n){ for(int z = 0; z < n; z++) for(int x : c->combattants[z]) if(x == q) return true; return false; };
+	auto chercher = [&](CScriptPed::Jeton *e, int categorie){
+		if(e == nil) return;
+		int r = tirer(ctx) / 0x7fff;
+		for(int k = r; k < (int)c->proches.size(); k++){
+			int q = c->proches[k];
+			const CScriptPed *p = Acceder(q);
+			if(p == nil || TientUnJeton(*c, q) || p->verrou != h) continue;
+			if(e->precedent == q){ e->precedent = -1; continue; }
+			bool filtre = e->filtre == p->classeCombat || e->filtre == 0;
+			bool donne = false;
+			if(categorie == 2) donne = p->type == 0 || p->type == 8 || p->type == 7;   // les autorités (0x487106)
+			else if(categorie == 3) donne = false;              // filtre et un véhicule (+0x1554) : l'outil n'en a pas
+			else if(categorie == 0) donne = filtre && dansZones(q, 2);   // zone 0 ou 1, sans arme (0x4872d2)
+			else donne = false;                                 // zones 0 à 2 et une arme à distance (0x487440)
+			if(donne){ e->detenteur = e->precedent = q; e->instant = maintenant; break; }
+		}
+		e->filtre = 0;
+	};
+	auto libre = [&](int k) -> CScriptPed::Jeton * {
+		for(int i = 0; i < c->nombreJetons[k]; i++) if(c->jetons[k][i].detenteur < 0) return &c->jetons[k][i];
+		return nil;
+	};
+	chercher(libre(2), 2);
+	chercher(libre(3), 3);
+	CScriptPed::Jeton *e0 = libre(0);
+	if(e0 == nil && c->jetonCone.detenteur < 0) e0 = &c->jetonCone;
+	chercher(e0, 0);
+	chercher(libre(1), 1);
+}
+
+bool
+CScriptPedPool::TientJeton(int h) const
+{
+	const CScriptPed *p = Acceder(h);
+	const CScriptPed *c = p ? Acceder(p->verrou) : nil;
+	if(c == nil) return false;
+	for(int k = 0; k < 4; k++) for(int i = 0; i < c->nombreJetons[k]; i++)
+		if(c->jetons[k][i].detenteur == h && !c->jetons[k][i].coupe) return true;
+	return c->jetonCone.detenteur == h && !c->jetonCone.coupe;
+}
+
+bool
+CScriptPedPool::PrendreDroits(int h, uint32 maintenant)
+{
+	const CScriptPed *p = Acceder(h);
+	CScriptPed *c = p ? Acceder(p->verrou) : nil;
+	if(c == nil) return false;
+	c->droitsPris = true;               // FUN_00486c40 : +0x344
+	c->detenteurDroits = h;             // +0x340
+	c->echeanceDroits = maintenant + 15000;   // +0x348 : DAT_00c1a9b4 + 15 000
+	return true;
+}
+
+bool
+CScriptPedPool::RendreDroits(int h)
+{
+	const CScriptPed *p = Acceder(h);
+	CScriptPed *c = p ? Acceder(p->verrou) : nil;
+	if(c == nil || c->detenteurDroits != h || !c->droitsPris) return false;   // FUN_004861c0
+	c->droitsPris = false;
+	c->detenteurDroits = -1;
+	return true;
+}
+
+void
+CScriptPedPool::LacherDroits(int h)
+{
+	RendreDroits(h);   // FUN_00486c00 : le même test (détenteur et octet), sur la cible courante
+}
+
+void
+CScriptPedPool::AvancerDroits(uint32 maintenant)
+{
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
+		CScriptPed &c = peds[i];
+		if(c.vivant && c.droitsPris && c.echeanceDroits <= maintenant){ c.droitsPris = false; c.detenteurDroits = -1; }
+	}
+}
+
+bool
+CScriptPedPool::DroitsPrisSurCible(int h) const
+{
+	const CScriptPed *p = Acceder(h);
+	const CScriptPed *c = p ? Acceder(p->verrou) : nil;
+	return c && c->droitsPris;
 }
 
 bool

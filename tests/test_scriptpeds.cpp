@@ -497,6 +497,46 @@ main(void)
 		VERIF(!c.CibleValable(eleve, bully, 0, true, true, b, tirer, nil) && c.CibleValable(eleve, bully, 0, false, true, b, tirer, nil));
 		VERIF(c.CibleValable(eleve, bully, 3, true, true, b, tirer, nil) && !c.CibleValable(eleve, eleve, 3, false, true, b, tirer, nil));
 	}
+	{
+		// Les droits d'attaque (FUN_00486c40, FUN_004861c0, FUN_00486c00, FUN_00487780) : un seul détenteur, rendus par lui
+		// seul, lâchés quand il change de cible, échus après 15 s.
+		CScriptPedPool c;
+		int a = c.Creer(146, CVector(), 0, 1), b = c.Creer(102, CVector(), 0, 1);
+		VERIF(!c.PrendreDroits(a, 1000));                       // sans cible, rien
+		c.Verrouiller(a, SCRIPT_PED_JOUEUR, 0); c.Verrouiller(b, SCRIPT_PED_JOUEUR, 0);
+		VERIF(c.PrendreDroits(a, 1000) && c.DroitsPrisSurCible(a) && c.DroitsPrisSurCible(b));
+		VERIF(!c.RendreDroits(b) && c.DroitsPrisSurCible(a));   // b ne les tient pas
+		c.Verrouiller(a, b, 0);                                  // a change de cible : il lâche ceux du joueur
+		VERIF(!c.DroitsPrisSurCible(b) && c.Acceder(SCRIPT_PED_JOUEUR)->detenteurDroits == -1);
+		VERIF(c.PrendreDroits(b, 2000));
+		c.AvancerDroits(16999); VERIF(c.DroitsPrisSurCible(b));
+		c.AvancerDroits(17000); VERIF(!c.DroitsPrisSurCible(b));
+	}
+	{
+		// Les piétons proches (FUN_0047d1d0 : 30 m à plat, triés) et les jetons de combat (FUN_00486e40) : un attaquant à 3 m
+		// dans la zone 0 du joueur reçoit un jeton de la catégorie 0 ; à 1 m, face au joueur, la place du cône.
+		CScriptPedPool c;
+		int32 n[4] = {2, 1, 1, 1};
+		c.PoserJetons(SCRIPT_PED_JOUEUR, n);
+		int a = c.Creer(146, CVector(3, 0, 0), 180, 1), loin = c.Creer(102, CVector(40, 0, 0), 0, 1);
+		c.ReleverProches(SCRIPT_PED_JOUEUR, true);
+		VERIF(c.Acceder(SCRIPT_PED_JOUEUR)->proches.size() == 1 && c.Acceder(SCRIPT_PED_JOUEUR)->proches[0] == a);
+		c.Verrouiller(a, SCRIPT_PED_JOUEUR, 0); c.Verrouiller(loin, SCRIPT_PED_JOUEUR, 0);
+		auto zero = [](void *) -> int { return 0; };
+		CScriptPedPool::ButesJetons b;
+		c.DistribuerJetons(SCRIPT_PED_JOUEUR, 1000, b, zero, nil);
+		VERIF(!c.TientJeton(a));                                 // hors de toute zone de combat : rien
+		c.Acceder(SCRIPT_PED_JOUEUR)->combattants[0].push_back(a);
+		c.DistribuerJetons(SCRIPT_PED_JOUEUR, 1033, b, zero, nil);
+		VERIF(c.TientJeton(a) && c.Acceder(SCRIPT_PED_JOUEUR)->jetons[0][0].detenteur == a && !c.TientJeton(loin));
+		c.Acceder(SCRIPT_PED_JOUEUR)->jetons[0][0].coupe = true; VERIF(!c.TientJeton(a));
+		c.Acceder(SCRIPT_PED_JOUEUR)->jetons[0][0].coupe = false;
+		c.DistribuerJetons(a, 12000, b, zero, nil);              // l'attaquant n'a pas frappé depuis 11 s : son jeton échoit
+		VERIF(!c.TientJeton(a));
+		c.Acceder(a)->pos = CVector(1, 0, 0);                    // à 1 m, tourné vers le joueur (180 degrés)
+		c.DistribuerJetons(SCRIPT_PED_JOUEUR, 12033, b, zero, nil);
+		VERIF(c.Acceder(SCRIPT_PED_JOUEUR)->jetonCone.detenteur == a && c.TientJeton(a));
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }

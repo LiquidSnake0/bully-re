@@ -264,6 +264,33 @@ struct CScriptPed {
 	bool arbreIA = false;        // +0x4b4 du composant +0x2e0 : un arbre de l'IA posé (PedSetAITree) ; l'outil ne joue
 	                             // alors plus le geste de PedAttack, c'est l'arbre qui mène le piéton
 	int zoneCombat = -1;
+	// Les droits d'attaque sur ce piéton, dans son composant de combat (+0x668) : l'octet +0x344 (+0x9ac du piéton, pris),
+	// le piéton qui les tient +0x340 (+0x9a8) et leur échéance +0x348 (+0x9b0, en ms du jeu). Un seul attaquant à la fois
+	// les prend (FUN_00486c40) ; la condition IsTargetAttackRightsTaken lit l'octet sur la cible de l'attaquant.
+	// +0x1e0c : la minuterie d'action, en secondes du jeu (0 par le constructeur de CPed, param_1[0x783]) ; la piste
+	// SetActionTimer la pose à maintenant + sa durée (FUN_00474840), la condition CheckActionTimer la compare (FUN_00474870).
+	float minuterieAction = 0.0f;
+	// Les piétons proches (+0x3c0 leur nombre, +0x3c4 la liste, 16 au plus) : CPed::BuildPedLists (FUN_0047d1d0).
+	std::vector<int> proches;
+	// +0x550 : l'instant (ms) du dernier coup du piéton (la minuterie que posent ses pistes Collision, recopiée par
+	// l'appelant depuis son contrôleur d'actions) ; le composant de combat de sa cible y mesure l'échéance de son jeton.
+	uint32 dernierCoup = 0;
+	// Les jetons de combat sur ce piéton (son composant de combat +0x668) : quatre catégories (+0xc4 + 4k leur nombre,
+	// AIButes +0x3c à +0x48 ; les entrées en +0xd4 + 0x94 k, 0x18 octets chacune : le détenteur +0, le précédent +4, le
+	// filtre de classe +8, l'octet coupé +0xc, la catégorie +0x10, l'instant +0x14), et la place du cône (+0x324, son
+	// précédent +0x328, son filtre +0x32c, coupée +0x330, son instant +0x338). FUN_00486cd0 les pose, FUN_00486e40 les
+	// distribue à chaque image, la condition FightToken les lit (FUN_00486760).
+	struct Jeton { int detenteur = -1, precedent = -1; int32 filtre = 0; bool coupe = false; int32 categorie = 0; uint32 instant = 0; };
+	Jeton jetons[4][6];
+	int32 nombreJetons[4] = {0, 0, 0, 0};
+	Jeton jetonCone;
+	// +0x1748 : un tirage par piéton, rand() du CRT / 32767, posé par la remise (FUN_00474f50, 0x4750b3) et refait à
+	// chaque image par la mise à jour de CPed (FUN_004812d0, 0x4818f8 … 0x48191c, après FUN_00499340) ; Random le lit
+	// sans son octet +0xe (FUN_00600a50, 0x600acc). L'appelant le tire (le rand() est le sien).
+	float hasardImage = 0.0f;
+	bool droitsPris = false;
+	int detenteurDroits = -1;
+	uint32 echeanceDroits = 0;
 	bool masqueZones[3] = {true, true, true};
 	int32 capaciteZones[3] = {1, 2, 4};
 	std::vector<int> combattants[3];
@@ -358,6 +385,38 @@ public:
 	// lua_PedLockTarget (0x5cb060) : rien si le piéton n'existe pas ; cible -1 lève le verrou (FUN_004989c0(0)) ;
 	// sinon, si la cible existe, FUN_00497d20 la verrouille avec le mode donné. Vrai si quelque chose a changé.
 	bool Verrouiller(int handle, int cible, int mode);
+	// Les droits d'attaque (le composant de combat +0x668). PrendreDroits : la piste TargetAttackRightsAcquire (table
+	// 0x93610c, lancement FUN_0062a1a0) : si la cible du piéton (PedGetTargetPed) est un piéton, FUN_00486c40 sur son
+	// composant de combat : pris, tenus par le piéton, jusqu'à maintenant + 15 000 ms ; écrase un détenteur précédent.
+	// RendreDroits : TargetAttackRightsRelease (0x936124, FUN_0062a1e0 → FUN_004861c0) : rendus si le piéton les tient.
+	// LacherDroits : FUN_00486c00 (ecx = le composant de combat du piéton) : ceux qu'il tient sur sa cible, rendus ; appelée
+	// par FUN_00497d20 quand la cible change, par PedLeaveCombatZone et les remises du composant de visée (FUN_0048c3b0,
+	// FUN_0048c430). AvancerDroits : la mise à jour du composant de combat (FUN_00487780, lue à l'assembleur de 0x48781a à
+	// 0x487838) rend les droits échus (+0x348 au plus maintenant). DroitsPrisSurCible : la condition
+	// IsTargetAttackRightsTaken (0x936da4, FUN_005ffc70, lue à l'assembleur) : la cible du piéton est un piéton (l'octet
+	// +0x108 & 7 vaut 3) et ses droits sont pris, par qui que ce soit (FUN_004861b0 : l'octet +0x344).
+	// CPed::BuildPedLists (FUN_0047d1d0) : avec `refaire` (son argument, ou le tirage de l'image FUN_00465910(16) que fait
+	// l'appelant), la liste refaite : les autres piétons vivants (pas morts, +0x1c98) à 30 m au plus à plat (le double
+	// 0x900b00 = 900, comparé au carré), 50 au plus, triés par distance (FUN_004753e0), gardés à 16 ; sinon, ceux qui ont
+	// disparu ou passé 30 m retirés (FUN_0047d0d0), et une passe de tri entre voisins (FUN_0047d130).
+	void ReleverProches(int handle, bool refaire);
+	// FUN_00486cd0 (le constructeur du composant de combat FUN_00486d50, sa remise FUN_0048c430) : chaque catégorie vidée et
+	// mise à son nombre (FUN_004866e0 : détenteur, précédent et filtre à 0, la catégorie notée), la place du cône vidée.
+	void PoserJetons(int handle, const int32 nombres[4]);
+	// FUN_00486e40, à chaque image dans la mise à jour du composant de combat (FUN_00487780, 0x4877cf), sauf l'octet +0x1e25
+	// (non suivi). Les AIButes : +0x4c et +0x50 l'échéance d'un jeton (s, la catégorie 3 prend la seconde), +0x54 et +0x58 le
+	// cône d'attaque (FUN_004865a0). `tirer` : le rand() du CRT.
+	struct ButesJetons { float echeance = 10.0f, echeanceVelo = 30.0f, porteeCone = 1.5f, cosCone = 0.76f; };
+	void DistribuerJetons(int handle, uint32 maintenant, const ButesJetons &b, int (*tirer)(void *), void *ctx);
+	// La condition FightToken (ConditionFightToken 0x936b30, FUN_00601f70, lue à l'assembleur) : la cible du piéton est un
+	// piéton et il y tient un jeton qui n'est pas coupé, ou la place du cône (FUN_00486760) ; une cible qui n'est pas un
+	// piéton donne vrai, pas de cible faux.
+	bool TientJeton(int handle) const;
+	bool PrendreDroits(int handle, uint32 maintenant);
+	bool RendreDroits(int handle);
+	void LacherDroits(int handle);
+	void AvancerDroits(uint32 maintenant);
+	bool DroitsPrisSurCible(int handle) const;
 	// FUN_00478190 (lua_PedSetHealth, la piste SetHealth) : la santé (+0x1cb8), jamais sous la santé minimale (+0x1ca8).
 	// Une santé nulle ne tue pas : seul le rappel Lua du piéton (+0x141c, rangé en +0x18e8, non suivi) est appelé. Le
 	// piéton ne meurt que par Mourir, la piste Death.

@@ -34,6 +34,14 @@ public:
 	std::map<int32, bool> femme;
 	// Le nom du modèle tel que l'IDE l'écrit (le HashString de ce nom est le +4 du modelinfo, que PedModelID compare).
 	std::map<int32, std::string> nomDuModele;
+	// Les colonnes ACTIONTREE ROOT / FILE et AITREE ROOT / FILE des entrées peds, que LoadPeds (0x42bfd0) passe à
+	// FUN_00522580 (le modelinfo garde la racine et le fichier de l'arbre d'actions en +0x64 et +0x68) et à FUN_00522680
+	// (ceux de l'arbre de l'IA en +0x6c et +0x70) ; chacune libère les anciennes chaînes et recopie les nouvelles : une
+	// entrée relue pour le même modèle (FUN_0051b210) remplace la précédente. Au démarrage, sans l'octet DAT_00bf3809,
+	// l'arbre absent de l'arbre global (FUN_005f59b0) voit son fichier chargé (FUN_005f6c50, FUN_005dbd50). L'initialisation
+	// du composant d'actions du piéton (FUN_00484d10) les pose. Indice du modèle → les quatre chaînes.
+	struct Arbres { std::string actions, fichierActions, ia, fichierIA; };
+	std::map<int32, Arbres> arbresDuPieton;
 	static const char *const typesDePietons[15];
 	int32 doublons = 0;                    // un même nom sous deux indices : le premier gagne
 };

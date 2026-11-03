@@ -80,7 +80,9 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kDemandeNoeud = ActionHash("ActionNodeRequest"), kEffacer = ActionHash("ClearCurrentObjective"),
 	                    kFuite = ActionHash("FleeObjective"), kRepos = ActionHash("IDLE"), kBouton = ActionHash("ActionRequest"),
 	                    kInfoArme = ActionHash("SetWeaponInfo"), kMort = ActionHash("Death"),
-	                    kDegatsCible = ActionHash("DamageTarget");
+	                    kDegatsCible = ActionHash("DamageTarget"), kPrendreDroits = ActionHash("TargetAttackRightsAcquire"),
+	                    kRendreDroits = ActionHash("TargetAttackRightsRelease"), kDe = ActionHash("RandomDiceRoll"),
+	                    kMinuterie = ActionHash("SetActionTimer");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -128,6 +130,12 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			regards.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(32), Reel(p, 40, 0.0f)});
 		}else if(p.type == kPoursuite){
 			poursuites.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(28), Reel(p, 40, 0.0f)});
+		}else if(p.type == kMinuterie){
+			minuteries.push_back({a, Reel(p, 24, 0.0f), false});
+		}else if(p.type == kDe){
+			desPistes.push_back({a, p.Mot(24), false, Octet(p, 8)});
+		}else if(p.type == kPrendreDroits || p.type == kRendreDroits){
+			droits.push_back({a, p.type == kPrendreDroits, false, Octet(p, 8)});
 		}else if(p.type == kEffacer){
 			effacements.push_back({a, (int32)p.Mot(24), false});
 		}else if(p.type == kFuite){
@@ -240,7 +248,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	for(const DemandeBouton &d : demandesBouton)   // FUN_00626160 : l'arrêt d'une piste au mode 2 lâche son bouton
 		if(!d.morte && d.lancee && d.mode == 2) laches.push_back(d.bouton);
 	demandesBouton.clear();
-	effacements.clear(); fuites.clear(); repos.clear(); infosArme.clear();
+	effacements.clear(); fuites.clear(); repos.clear(); infosArme.clear(); droits.clear(); desPistes.clear(); minuteries.clear();
 	lances.clear();                    // FUN_005f7390 : l'arrêt d'une piste spawn arrête son contrôleur
 	finExecutees = -1.0f;
 	retenu = false;
@@ -289,6 +297,10 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 		for(const DemandeNoeud &g : demandesNoeud) finParRetenues |= g.retient;
 		for(const DemandeBouton &g : demandesBouton) finParRetenues |= g.retient;
 		if(sousControleurs) for(const COpportunite &o : occasions) finParRetenues |= o.retient;
+		// TargetAttackRightsAcquire / Release et RandomDiceRoll : leur lancement rend faux (FUN_0062a1a0, FUN_0062a1e0,
+		// FUN_00632810), la piste meurt aussitôt ; à l'octet +8, elle ne retient le nœud que jusque-là.
+		for(const Droits &g : droits) finParRetenues |= g.retient;
+		for(const De &g : desPistes) finParRetenues |= g.retient;
 	}
 }
 
@@ -496,6 +508,15 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; parolesLancees.push_back(d); }
 	for(Depart &d : departs)      // FUN_00619950
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; departsLances++; }
+	minuteriesLancees.clear();
+	for(Minuterie &d : minuteries)   // FUN_00628e50
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; minuteriesLancees.push_back(d.duree); }
+	desLances.clear();
+	for(De &d : desPistes)        // FUN_00632810
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; desLances.push_back(d.indice); }
+	droitsLances.clear();
+	for(Droits &d : droits)       // FUN_0062a1a0, FUN_0062a1e0
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; droitsLances.push_back(d.prendre); }
 	effacementsLances.clear(); fuitesLancees.clear();
 	for(Effacement &d : effacements)   // FUN_0062a180
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; effacementsLances.push_back(d); }
@@ -536,6 +557,8 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		for(const DemandeNoeud &g : demandesNoeud) retenu |= g.retient && g.vivante;
 		for(const DemandeBouton &g : demandesBouton) retenu |= g.retient && !g.morte;
 		if(sousControleurs) for(const COpportunite &o : occasions) retenu |= o.retient && !o.arretee;
+		for(const Droits &g : droits) retenu |= g.retient && !g.fait;
+		for(const De &g : desPistes) retenu |= g.retient && !g.fait;
 		fini = !retenu;
 	}
 	// Une Opportunity prise sans nœud (un chemin vide) a demandé la fin du nœud (FUN_005f49a0 : l'octet +1, quelles que
