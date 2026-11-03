@@ -168,6 +168,18 @@ public:
 	// TargetAttackRightsAcquire (0x93610c, lancement FUN_0062a1a0) et TargetAttackRightsRelease (0x936124, FUN_0062a1e0) : au
 	// lancement, le piéton prend ou rend les droits d'attaque sur sa cible (CScriptPedPool::PrendreDroits, RendreDroits) ; le
 	// lancement rend faux, la piste meurt aussitôt. `droitsLances` : celles lancées à cette image (prendre vrai, rendre faux).
+	// Les tirages du contexte du contrôleur (+0x24, puis quatre dés en +0x28 à +0x34), mis à 0 par le constructeur du
+	// composant d'actions (FUN_00484ab0 : +0x324 à +0x334 pour le contexte des actions, +0x37c à +0x38c pour celui de
+	// l'IA) : WeightedRandom (FUN_00600b00) compare le premier et le renouvelle quand elle passe ; Random (FUN_00600a50)
+	// relance un dé avec son octet +0xd et le lit avec son octet +0xe ; stat (0x5ffff0) en lit un avec son octet +0x10 ;
+	// la piste RandomDiceRoll (RandomDiceRollTrack, lancement FUN_00632810) relance le dé +0x18. Chaque piste spawn a son
+	// propre contexte (+0x2c), donc ses propres tirages. `desLances` : les dés des pistes RandomDiceRoll lancées à cette
+	// image, que l'appelant relance (le rand() du CRT est le sien).
+	mutable float tirageContexte = 0.0f;
+	mutable float des[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+	struct De { float entree; uint32 indice; bool fait; };
+	std::vector<De> desPistes;
+	std::vector<uint32> desLances;
 	struct Droits { float entree; bool prendre, fait; };
 	std::vector<Droits> droits;
 	std::vector<bool> droitsLances;

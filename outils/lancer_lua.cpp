@@ -277,11 +277,20 @@ static bool rumbleAmbiant = false, rumbleMission = false;
 static bool CinematiqueEnCours(void);   // DAT_020c5be4
 struct CJugeOutil : CJugeAction {
 	int ped; float t;
-	// Le tirage du contexte (+0x24) que WeightedRandom compare puis renouvelle (FUN_00600b00) : tiré à chaque nouveau
-	// contexte, donc à chaque descente (supposé : le contexte le tire à sa remise à zéro). Les seuils de branches
-	// sœurs étant croissants (0,2 puis 1), la première qui passe l'emporte avec la probabilité de son écart.
-	mutable float tirage;
-	CJugeOutil(int p, float t_) : ped(p), t(t_) { tirage = (float)RandCrt(graineIA) / 32767.0f; }
+	// Les tirages du contexte qui juge (+0x24 et les dés +0x28 à +0x34, CActionController::tirageContexte et des) : ceux
+	// du contrôleur qui juge, sinon du contrôleur d'actions du piéton ; sans contrôleur, ceux du juge, à 0.
+	mutable float tirageSeul = 0.0f, desSeuls[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+	float &Tirage(void) const {
+		const CActionController *c = controleur;
+		if(c == nil){ auto it = controleurs.find(ped); if(it != controleurs.end()) c = &it->second; }
+		return c ? c->tirageContexte : tirageSeul;
+	}
+	float &De(uint32 i) const {
+		const CActionController *c = controleur;
+		if(c == nil){ auto it = controleurs.find(ped); if(it != controleurs.end()) c = &it->second; }
+		return c ? c->des[i & 3] : desSeuls[i & 3];
+	}
+	CJugeOutil(int p, float t_) : ped(p), t(t_) {}
 	int JoueNom(uint32 nom) const override { return arbres.JoueHachage(NoeudJoue(ped), nom & 0x7fffffff); }
 	bool ACible(void) const override { return CibleDe(ped) >= 0; }
 	// Le temps du nœud joué par le contrôleur qui juge (le +0x10 du contexte), sinon celui du contrôleur d'actions.
@@ -296,7 +305,7 @@ struct CJugeOutil : CJugeAction {
 		int r = JugerClasse(f, d, type, mots);
 		static int quiTrace = -2; static float de = 0, a = 0;
 		if(quiTrace == -2){ quiTrace = -1; if(const char *e = getenv("LANCER_JUGES")) sscanf(e, "%d@%f-%f", &quiTrace, &de, &a); }
-		if(ped == quiTrace && t >= de && t <= a) printf("%6.2f s  juge %d : #%08x (%08x %08x) → %d\n", t, ped, type & 0x7fffffff, mots[0], mots[1], r);
+		if(ped == quiTrace && t >= de && t <= a) printf("%6.2f s  juge %d : #%08x (%08x %08x %08x %08x %08x) → %d\n", t, ped, type & 0x7fffffff, mots[0], mots[1], mots[2], mots[3], mots[4], r);
 		return r;
 	}
 	int JugerClasse(const CActionTreeFile &f, int32 d, uint32 type, const uint32 mots[6]) const {
@@ -604,15 +613,14 @@ struct CJugeOutil : CJugeAction {
 		// contrôleur de l'IA du piéton (+0x290 du composant +0x2e0) joue le nœud de DAT_01b65288 (FUN_005f46a0 ; non suivi :
 		// l'octet est nul dans les arbres relevés) ; puis la colonne +0xc (FUN_00476f10, GameGetPedStat), un entier passé en
 		// flottant. L'octet +8 nul : vrai si elle vaut au moins +4. L'octet +8 posé, un tirage : avec l'octet +0x10, le
-		// flottant +0x28 + 4 × (+0x14) du contexte × 100 (non suivi) ; sinon rand() du CRT (0x85c6ca) / 32767 × 100 (les
+		// dé +0x14 du contexte (+0x28 + 4 × (+0x14)) × 100 ; sinon rand() du CRT (0x85c6ca) / 32767 × 100 (les
 		// doubles 0x900ce8 et 0x900130), et vrai si la colonne le dépasse strictement (fcompp, test ah, 0x41) : la colonne
 		// est une chance en pour cent.
 		if(type == kStat){
 			if((mots[1] & 0xff00) != 0 || moi == nil || mots[2] >= 64) return -1;
 			float v = (float)(int32)moi->stats[mots[2]];
 			if((mots[1] & 0xff) == 0) return v >= seuil;
-			if(mots[3] & 0xff) return -1;
-			float x = (float)((double)RandCrt(graineIA) / 32767.0 * 100.0);
+			float x = (mots[3] & 0xff) ? De(mots[4]) * 100.0f : (float)((double)RandCrt(graineIA) / 32767.0 * 100.0);
 			return v > x;
 		}
 		// HitTime (FUN_005fc400) : le temps depuis le coup (+0x434), ou l'intervalle d'avant (+0x438) si l'octet +0xc,
@@ -726,15 +734,23 @@ struct CJugeOutil : CJugeAction {
 		// Interval (FUN_006033b0) : avec un piéton, le tirage de FUN_00465910 à la période +4 (son mot +0x10c, ici son
 		// numéro, et le compteur d'images) ; sans piéton, une image sur +4.
 		if(type == kIntervalle) return TirageOpportunite(mots[0], (uint16)ped, imageCourante);
-		// Random (FUN_00600a50) : une valeur tirée (l'octet +0xd la tire dans le contexte, sinon la valeur +0x1748 du
-		// piéton) comparée à +4 par +8. Supposé : un tirage neuf ; la garde de l'octet +0xc (un nœud joué) n'est pas suivie.
-		if(type == kHasard) return ComparerCondition((float)RandCrt(graineIA) / 32767.0f, seuil, mots[1]);
-		// WeightedRandom (FUN_00600b00) : faux si le seuil +8 est sous le tirage du contexte (+0x24) ; sinon le tirage est
-		// renouvelé et la condition vraie. Les gardes des octets +0xc et +0xd ne sont pas suivies.
+		// Random (ConditionRandom, FUN_00600a50) : l'octet +0xd relance le dé +0x10 du contexte (rand() / 32767) ; la valeur
+		// est ce dé avec l'octet +0xe, sinon le tirage de l'image du piéton (+0x1748) ; comparée à +4 par +8 (FUN_005fb750).
+		// La garde de l'octet +0xc (faux quand le contrôleur de l'IA joue le nœud de DAT_01b65288) n'est pas suivie : nulle
+		// dans les arbres relevés.
+		if(type == kHasard){
+			uint32 i = mots[3];
+			if((mots[2] >> 8) & 0xff) De(i) = (float)RandCrt(graineIA) / 32767.0f;
+			float v = ((mots[2] >> 16) & 0xff) ? De(i) : moi ? moi->hasardImage : 0.0f;
+			return ComparerCondition(v, seuil, mots[1]);
+		}
+		// WeightedRandom (FUN_00600b00) : faux si le seuil +8 est sous le tirage du contexte (+0x24, 0 au départ) ; sinon le
+		// tirage est renouvelé (rand() / 32767) et la condition vraie. Les gardes des octets +0xc (le nœud de DAT_01b65288)
+		// et +0xd (FUN_00486760 sur la cible) ne sont pas suivies.
 		if(type == kPondere){
 			float s8; memcpy(&s8, &mots[1], 4);
-			if(s8 < tirage) return 0;
-			tirage = (float)RandCrt(graineIA) / 32767.0f;
+			if(s8 < Tirage()) return 0;
+			Tirage() = (float)RandCrt(graineIA) / 32767.0f;
 			return 1;
 		}
 		// RangeToTarget (FUN_00600780) : la distance à la cible (+0x434, sinon PedGetTargetPed) comparée à +4 par +8.
@@ -3125,6 +3141,8 @@ AppliquerDroits(int ped, CActionController &c)
 		if(fait) printf("%6.2f s  le piéton %d %s les droits d'attaque sur %d\n", maintenant / 1000.0, ped, prendre ? "prend" : "rend", cible);
 	}
 	c.droitsLances.clear();
+	for(uint32 i : c.desLances) c.des[i & 3] = (float)RandCrt(graineIA) / 32767.0f;   // FUN_00632810
+	c.desLances.clear();
 }
 
 // Une image du contrôleur de l'IA d'un piéton (FUN_00484490), puis ce que font ses pistes et celles des contrôleurs de
@@ -3192,6 +3210,9 @@ AvancerPietons(void)
 	int avant[SCRIPT_PED_POOL_SIZE];
 	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){ const CScriptPed *p = pietons.Acceder(i); avant[i] = p ? p->verrou : -1; }
 	pietons.SuivreCibles(0.033f, maintenant, b, TirerVue, nil);
+	// FUN_004812d0, 0x4818f8 : après FUN_00499340, le tirage de l'image de chaque piéton (+0x1748).
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++)
+		if(CScriptPed *q = pietons.Acceder(i)) q->hasardImage = (float)RandCrt(graineIA) / 32767.0f;
 	choisis.clear();
 	for(int i = 1; i < SCRIPT_PED_POOL_SIZE; i++) if(pietons.Acceder(i)) choisis.insert(i);
 	for(int i = 1; i < SCRIPT_PED_POOL_SIZE; i++){
