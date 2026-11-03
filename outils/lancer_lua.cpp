@@ -253,6 +253,7 @@ ButeIA(uint16 position, float defaut)
 	return butesIA.Champ(position) ? CActionBank::ButesReel(butesIA, position) : defaut;
 }
 static uint32 graineIA = 7;   // le rand() du CRT des conditions Random et WeightedRandom (l'outil a sa propre graine)
+static int TirerCrt(void *){ return RandCrt(graineIA); }   // le même rand(), pour le pool des piétons (les jetons)
 // La cible d'un piéton (PedGetTargetPed, FUN_00496fb0) : pour un autre que le joueur, +0x538 (dans l'outil, la cible
 // verrouillée : PedLockTarget et FUN_00497d20 la posent) ; la cible forcée +0xbb4 n'est pas suivie. -1 sans cible.
 static int
@@ -841,6 +842,12 @@ struct CJugeOutil : CJugeAction {
 		// IsTargetAttackRightsTaken (0x936da4, FUN_005ffc70, lue à l'assembleur de 0x5ffc70 à 0x5ffc9e) : la cible du piéton
 		// (PedGetTargetPed, FUN_00496fb0) est un piéton et l'octet +0x344 de son composant de combat (+0x668, FUN_004861b0) est
 		// posé : ses droits d'attaque sont pris, par n'importe quel attaquant (CScriptPedPool::DroitsPrisSurCible).
+		// FightToken (ConditionFightToken 0x936b30, FUN_00601f70, lue à l'assembleur de 0x601f70 à 0x601fb8) : la cible
+		// (PedGetTargetPed) est un piéton et FUN_00486760 (ecx = son composant de combat +0x668) trouve au piéton un jeton non
+		// coupé (l'octet +0xc de l'entrée) ou la place du cône (+0x324, non coupée +0x330) ; vrai pour une cible qui n'est
+		// pas un piéton, faux sans cible (CScriptPedPool::TientJeton).
+		static const uint32 kJeton = ActionHash("FightToken");
+		if(type == kJeton) return pietons.TientJeton(ped);
 		static const uint32 kDroitsPris = ActionHash("IsTargetAttackRightsTaken");
 		if(type == kDroitsPris) return pietons.DroitsPrisSurCible(ped);
 		static const uint32 kVelo = ActionHash("OnBike"), kVoiture = ActionHash("InCar"),
@@ -1930,6 +1937,15 @@ PoserArbresDuModele(int h, int32 modele)
 	       ac ? "" : " (absent)", a.ia.c_str(), ia ? "" : " (absent)");
 }
 
+// FUN_00486cd0 : les jetons de combat d'un piéton, autant par catégorie qu'AIButes +0x3c, +0x40, +0x44, +0x48 (2, 1, 1, 1).
+static void
+PoserJetonsDe(int h)
+{
+	int32 n[4];
+	for(int k = 0; k < 4; k++) n[k] = butesIA.Champ((uint16)(60 + 4 * k)) ? (int32)butesIA.Mot((uint16)(60 + 4 * k)) : (k == 0 ? 2 : 1);
+	pietons.PoserJetons(h, n);
+}
+
 // FUN_005cf6b0 : la création commune, notée à l'objet script courant ; le piéton reçoit l'entrée de pedstats.dat
 // de son modèle (FUN_00478e30) et les arbres de son modèle (FUN_00484d10).
 static int
@@ -1939,6 +1955,7 @@ CreerPed(lua_State *L, const char *quoi, int32 modele, const CVector &pos, float
 	if(h < 0) printf("        %s : le pool des piétons est plein (%d)\n", quoi, SCRIPT_PED_POOL_SIZE);
 	else{
 		PoserArbresDuModele(h, modele);
+		PoserJetonsDe(h);
 		auto ty = modeles.typeDuPieton.find(modele);   // FUN_0047ffe0 : le type du modelinfo (+0x4c) en +0x1310
 		if(ty != modeles.typeDuPieton.end() && ty->second >= 0) pietons.Acceder(h)->type = ty->second;
 		auto st = modeles.statDuPieton.find(modele);
@@ -3201,6 +3218,29 @@ AvancerPietons(void)
 {
 	pietons.Avancer(0.033f);
 	if(etatLua) AvancerSuivis(etatLua);   // les pistes FollowPath
+	// CPed (FUN_004812d0), pour chaque piéton : les proches (FUN_0047d1d0, refaits au tirage de l'image FUN_00465910(16)), puis
+	// le composant de combat (FUN_00487780) et ses jetons (FUN_00486e40), avec le dernier coup du piéton (+0x550).
+	{
+		CScriptPedPool::ButesJetons bj;
+		bj.echeance = ButeIA(76, 10.0f); bj.echeanceVelo = ButeIA(80, 30.0f); bj.porteeCone = ButeIA(84, 1.5f); bj.cosCone = ButeIA(88, 0.76f);
+		for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
+			CScriptPed *q = pietons.Acceder(i);
+			if(q == nil) continue;
+			auto it = controleurs.find(i);
+			q->dernierCoup = it != controleurs.end() ? it->second.minuterieAttaque : 0;
+			pietons.ReleverProches(i, TirageOpportunite(16, (uint16)i, imageCourante));
+			std::vector<int> avant;
+			for(int k = 0; k < 4; k++) for(int j = 0; j < q->nombreJetons[k]; j++) avant.push_back(q->jetons[k][j].detenteur);
+			avant.push_back(q->jetonCone.detenteur);
+			pietons.DistribuerJetons(i, maintenant, bj, TirerCrt, nil);
+			size_t n = 0;
+			for(int k = 0; k < 4; k++) for(int j = 0; j < q->nombreJetons[k]; j++, n++)
+				if(q->jetons[k][j].detenteur != avant[n] && journalRestant > 0)
+					printf("%6.2f s  jeton %d.%d de %d : %d → %d\n", maintenant / 1000.0, k, j, i, avant[n], q->jetons[k][j].detenteur);
+			if(q->jetonCone.detenteur != avant[n])
+				printf("%6.2f s  place du cône de %d : %d → %d\n", maintenant / 1000.0, i, avant[n], q->jetonCone.detenteur);
+		}
+	}
 	pietons.AvancerVue(0.033f);   // CPed (FUN_004812d0) : FUN_0048ccf0, FUN_00499340
 	pietons.AvancerDroits(maintenant);   // le composant de combat (FUN_00487780) : les droits d'attaque échus
 	// FUN_00499340, la suite : la cible des piétons de l'IA (CScriptPedPool::SuivreCibles), avec les AIButes de la visée.
@@ -3646,6 +3686,7 @@ ChargerMissions(void)
 		CActionTrack pb;  // FUN_0072ae00 : PlayerButes → DAT_020c88b8 ; +0xac, +0xb0, +0xb4 : le facteur des coups du joueur
 		if(CActionBank::Butes("PlayerButes", pb)) facteurCoupsJoueur = CActionBank::ButesReel(pb, 172);
 		CActionBank::Butes("AIButes", butesIA);   // FUN_0072ae00 : AIButes → DAT_020c889c
+		PoserJetonsDe(SCRIPT_PED_JOUEUR);   // le composant de combat du joueur (FUN_00486cd0)
 		CActionTrack t;   // FUN_0072ae00 : AreaTransitionButes → DAT_020c8910
 		if(CActionBank::Butes("AreaTransitionButes", t)){
 			fonduNoirMs = CActionBank::ButesReel(t, 24) * 1000;

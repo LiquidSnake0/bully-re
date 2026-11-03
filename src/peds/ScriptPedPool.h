@@ -267,6 +267,20 @@ struct CScriptPed {
 	// Les droits d'attaque sur ce piéton, dans son composant de combat (+0x668) : l'octet +0x344 (+0x9ac du piéton, pris),
 	// le piéton qui les tient +0x340 (+0x9a8) et leur échéance +0x348 (+0x9b0, en ms du jeu). Un seul attaquant à la fois
 	// les prend (FUN_00486c40) ; la condition IsTargetAttackRightsTaken lit l'octet sur la cible de l'attaquant.
+	// Les piétons proches (+0x3c0 leur nombre, +0x3c4 la liste, 16 au plus) : CPed::BuildPedLists (FUN_0047d1d0).
+	std::vector<int> proches;
+	// +0x550 : l'instant (ms) du dernier coup du piéton (la minuterie que posent ses pistes Collision, recopiée par
+	// l'appelant depuis son contrôleur d'actions) ; le composant de combat de sa cible y mesure l'échéance de son jeton.
+	uint32 dernierCoup = 0;
+	// Les jetons de combat sur ce piéton (son composant de combat +0x668) : quatre catégories (+0xc4 + 4k leur nombre,
+	// AIButes +0x3c à +0x48 ; les entrées en +0xd4 + 0x94 k, 0x18 octets chacune : le détenteur +0, le précédent +4, le
+	// filtre de classe +8, l'octet coupé +0xc, la catégorie +0x10, l'instant +0x14), et la place du cône (+0x324, son
+	// précédent +0x328, son filtre +0x32c, coupée +0x330, son instant +0x338). FUN_00486cd0 les pose, FUN_00486e40 les
+	// distribue à chaque image, la condition FightToken les lit (FUN_00486760).
+	struct Jeton { int detenteur = -1, precedent = -1; int32 filtre = 0; bool coupe = false; int32 categorie = 0; uint32 instant = 0; };
+	Jeton jetons[4][6];
+	int32 nombreJetons[4] = {0, 0, 0, 0};
+	Jeton jetonCone;
 	// +0x1748 : un tirage par piéton, rand() du CRT / 32767, posé par la remise (FUN_00474f50, 0x4750b3) et refait à
 	// chaque image par la mise à jour de CPed (FUN_004812d0, 0x4818f8 … 0x48191c, après FUN_00499340) ; Random le lit
 	// sans son octet +0xe (FUN_00600a50, 0x600acc). L'appelant le tire (le rand() est le sien).
@@ -378,6 +392,23 @@ public:
 	// 0x487838) rend les droits échus (+0x348 au plus maintenant). DroitsPrisSurCible : la condition
 	// IsTargetAttackRightsTaken (0x936da4, FUN_005ffc70, lue à l'assembleur) : la cible du piéton est un piéton (l'octet
 	// +0x108 & 7 vaut 3) et ses droits sont pris, par qui que ce soit (FUN_004861b0 : l'octet +0x344).
+	// CPed::BuildPedLists (FUN_0047d1d0) : avec `refaire` (son argument, ou le tirage de l'image FUN_00465910(16) que fait
+	// l'appelant), la liste refaite : les autres piétons vivants (pas morts, +0x1c98) à 30 m au plus à plat (le double
+	// 0x900b00 = 900, comparé au carré), 50 au plus, triés par distance (FUN_004753e0), gardés à 16 ; sinon, ceux qui ont
+	// disparu ou passé 30 m retirés (FUN_0047d0d0), et une passe de tri entre voisins (FUN_0047d130).
+	void ReleverProches(int handle, bool refaire);
+	// FUN_00486cd0 (le constructeur du composant de combat FUN_00486d50, sa remise FUN_0048c430) : chaque catégorie vidée et
+	// mise à son nombre (FUN_004866e0 : détenteur, précédent et filtre à 0, la catégorie notée), la place du cône vidée.
+	void PoserJetons(int handle, const int32 nombres[4]);
+	// FUN_00486e40, à chaque image dans la mise à jour du composant de combat (FUN_00487780, 0x4877cf), sauf l'octet +0x1e25
+	// (non suivi). Les AIButes : +0x4c et +0x50 l'échéance d'un jeton (s, la catégorie 3 prend la seconde), +0x54 et +0x58 le
+	// cône d'attaque (FUN_004865a0). `tirer` : le rand() du CRT.
+	struct ButesJetons { float echeance = 10.0f, echeanceVelo = 30.0f, porteeCone = 1.5f, cosCone = 0.76f; };
+	void DistribuerJetons(int handle, uint32 maintenant, const ButesJetons &b, int (*tirer)(void *), void *ctx);
+	// La condition FightToken (ConditionFightToken 0x936b30, FUN_00601f70, lue à l'assembleur) : la cible du piéton est un
+	// piéton et il y tient un jeton qui n'est pas coupé, ou la place du cône (FUN_00486760) ; une cible qui n'est pas un
+	// piéton donne vrai, pas de cible faux.
+	bool TientJeton(int handle) const;
 	bool PrendreDroits(int handle, uint32 maintenant);
 	bool RendreDroits(int handle);
 	void LacherDroits(int handle);

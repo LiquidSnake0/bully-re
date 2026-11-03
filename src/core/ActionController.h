@@ -177,10 +177,10 @@ public:
 	// image, que l'appelant relance (le rand() du CRT est le sien).
 	mutable float tirageContexte = 0.0f;
 	mutable float des[4] = {0.0f, 0.0f, 0.0f, 0.0f};
-	struct De { float entree; uint32 indice; bool fait; };
+	struct De { float entree; uint32 indice; bool fait, retient; };
 	std::vector<De> desPistes;
 	std::vector<uint32> desLances;
-	struct Droits { float entree; bool prendre, fait; };
+	struct Droits { float entree; bool prendre, fait, retient; };   // retient : l'octet +8, jusqu'au lancement
 	std::vector<Droits> droits;
 	std::vector<bool> droitsLances;
 	struct Effacement { float entree; int32 type; bool fait; };
