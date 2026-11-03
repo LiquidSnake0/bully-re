@@ -291,7 +291,15 @@ struct CJugeOutil : CJugeAction {
 		*ok = it != controleurs.end();
 		return *ok ? it->second.Temps(t) : 0.0f;
 	}
+	// LANCER_JUGES=PIETON@DEBUT-FIN : chaque jugement de ce piéton entre ces instants (s), la classe hachée et la réponse.
 	int Juger(const CActionTreeFile &f, int32 d, uint32 type, const uint32 mots[6]) const override {
+		int r = JugerClasse(f, d, type, mots);
+		static int quiTrace = -2; static float de = 0, a = 0;
+		if(quiTrace == -2){ quiTrace = -1; if(const char *e = getenv("LANCER_JUGES")) sscanf(e, "%d@%f-%f", &quiTrace, &de, &a); }
+		if(ped == quiTrace && t >= de && t <= a) printf("%6.2f s  juge %d : #%08x (%08x %08x) → %d\n", t, ped, type & 0x7fffffff, mots[0], mots[1], r);
+		return r;
+	}
+	int JugerClasse(const CActionTreeFile &f, int32 d, uint32 type, const uint32 mots[6]) const {
 		static const uint32 kArme = ActionHash("WeaponEquiped"), kDemande = ActionHash("ActionRequest"),
 		                    kTemps = ActionHash("ActionNodePlayTime"), kLua = ActionHash("LuaCond"),
 		                    kCible = ActionHash("TargetPlaying"), kMoi = ActionHash("MePlaying"),
@@ -592,12 +600,20 @@ struct CJugeOutil : CJugeAction {
 			if(moi == nil || moi->stats[0x3f] <= 0 || moi->santeMax <= 0) return 0;
 			return moi->sante / moi->santeMax < moi->stats[0x3f] / 100.0f;
 		}
-		// stat (0x5ffff0, hors de l'index) : si l'octet +9, faux quand le piéton joue le nœud de DAT_01b65288 (non
-		// suivi : l'octet est nul dans les arbres relevés) ; la colonne +0xc (GameGetPedStat) au moins égale à +4 quand
-		// l'octet +8 est nul (sinon un tirage, non suivi).
+		// stat (0x5ffff0, hors de l'index, lue à l'assembleur de 0x5ffff0 à 0x6000b3) : si l'octet +9, faux quand le
+		// contrôleur de l'IA du piéton (+0x290 du composant +0x2e0) joue le nœud de DAT_01b65288 (FUN_005f46a0 ; non suivi :
+		// l'octet est nul dans les arbres relevés) ; puis la colonne +0xc (FUN_00476f10, GameGetPedStat), un entier passé en
+		// flottant. L'octet +8 nul : vrai si elle vaut au moins +4. L'octet +8 posé, un tirage : avec l'octet +0x10, le
+		// flottant +0x28 + 4 × (+0x14) du contexte × 100 (non suivi) ; sinon rand() du CRT (0x85c6ca) / 32767 × 100 (les
+		// doubles 0x900ce8 et 0x900130), et vrai si la colonne le dépasse strictement (fcompp, test ah, 0x41) : la colonne
+		// est une chance en pour cent.
 		if(type == kStat){
-			if((mots[1] & 0xff00) != 0 || (mots[1] & 0xff) != 0 || moi == nil || mots[2] >= 64) return -1;
-			return (float)moi->stats[mots[2]] >= seuil;
+			if((mots[1] & 0xff00) != 0 || moi == nil || mots[2] >= 64) return -1;
+			float v = (float)(int32)moi->stats[mots[2]];
+			if((mots[1] & 0xff) == 0) return v >= seuil;
+			if(mots[3] & 0xff) return -1;
+			float x = (float)((double)RandCrt(graineIA) / 32767.0 * 100.0);
+			return v > x;
 		}
 		// HitTime (FUN_005fc400) : le temps depuis le coup (+0x434), ou l'intervalle d'avant (+0x438) si l'octet +0xc,
 		// comparé à +4 par +8. Sans coup reçu, +0x434 et +0x438 valent -1 : le constructeur du relevé (FUN_005f3ab0, ecx =
