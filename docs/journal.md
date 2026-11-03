@@ -887,3 +887,49 @@ en échec plutôt que de les masquer.
   (`FUN_00498fc0`, la liste +0x3c0), la conversation, les zones interdites (`FUN_0046ee60`). Restent aussi le point valable de
   `CombatLoco` (`FUN_006254c0` : le maillage de navigation), les sphères des os et les `SpeechTrack` sans tenue.
 - **Bilan** : 750 fonctions recréées (5,2 % du code), contre 710 (5,0 %) ; 1 542 comprises (9,1 %) ; 10 commits.
+
+## 03.11.2026
+
+- **Les arbres du modèle posés à la création** : l'initialisation du composant d'actions (`FUN_00484d10`, appelée par
+  `CPed::SetModelIndex` `FUN_004788d0` depuis le constructeur `FUN_0047ffe0`) prend l'arbre de l'IA et l'arbre d'actions dans
+  les noms que `PedSetAITree` / `PedSetActionTree` ont gardés, sinon dans le modelinfo (+0x6c / +0x70 et +0x64 / +0x68, rangés par
+  `FUN_00522680` et `FUN_00522580` depuis `LoadPeds`) ; faute de nœud joué, chaque contrôleur redescend depuis sa racine
+  (`FUN_00484040`, `FUN_00483ec0`). Tous les piétons des scripts ont `/Global/AI` ; Peter finit `FistShakeEnd` dans `1_03`.
+- **26 classes de conditions de `AI.act`**, retrouvées par leur hachage dans le RTTI et lues dans l'index et à l'assembleur : les
+  véhicules (`OnBike`, `InCar`, `TargetVehicleCar`, `TargetVehicleBike`), le lieu et le rôle (`IsHangingOut`, `HavePOI`,
+  `HaveDynamicPOI`, `IsScriptedAmbient`, `IsScenarioPed`, `NearbyDockLocation`, `IsGuarding`, `IsTethered`, `IsPatrolPed`,
+  `NeedsToDive`), l'état global (`VisibleArea`, `IsNISorCutsceneRunning` avec `EnterNIS` / `ExitNIS` réelles, les deux modes
+  rumble et `PedSetGlobalAttitude_Rumble`, `PlayerIsInStealthProp`, `TimeCond` dans un arbre), les dernières (`DetectProjectile`,
+  `DetectGrenade`, `LiquidLevel`, les alliés, `IsTandemHelper`, `Stimulus`, `IsStimulusPriority`, `WeaponEquipedType`,
+  `PedIsTrigger`, `CheckActionTimer` et la piste `SetActionTimer`, `IsSpeechBusy`, `SocialAnimIs`, `IsWantingToSocialize`).
+- **Les droits d'attaque** (`TargetAttackRightsAcquire` / `Release`, `FUN_00486c40`, `FUN_004861c0`, `FUN_00486c00`, l'échéance de
+  15 s dans `FUN_00487780`) et `IsTargetAttackRightsTaken` ; une piste à l'octet +8 qui meurt à son lancement ne retient plus son
+  nœud pour toujours.
+- **`stat` et son tirage** (0x5ffff0, lu à l'assembleur) : la colonne de pedstats.dat devient une chance en pour cent. Le bully de
+  `1_02` pare désormais selon sa colonne : la commande passe à dix-huit jabs (72 à 89 s) et l'humiliation à 90 s.
+- **Les tirages des arbres** : le tirage +0x24 et les quatre dés +0x28 … +0x34 de chaque contexte (`FUN_00484ab0`), `WeightedRandom`
+  qui ne renouvelle son tirage que quand elle passe, `Random` sur ses dés ou le tirage de l'image du piéton (+0x1748, refait par
+  `FUN_004812d0` en 0x4818f8), la piste `RandomDiceRoll`.
+- **Les jetons de combat** (`FightToken`, `FUN_00601f70`, `FUN_00486760`, la distribution `FUN_00486e40` lue en entier : quatre
+  catégories et la place du cône, l'échéance de 10 s) et **les piétons proches** (`CPed::BuildPedLists`, `FUN_0047d1d0` : 30 m à
+  plat, 16 au plus) : dans `1_03`, le bully 1 (62,20 s) puis le bully 5 (66,83 s) prennent les droits et frappent le joueur par
+  `/Global/B_Striker_A/Offense`.
+- **`LANCER_JUGES=PIETON@DEBUT-FIN`** dans `lancer_lua` : chaque jugement d'un piéton, la classe hachée, ses mots, la réponse.
+- **REA amont** : 412 commits en attente (375 au 02.11), le dernier du 04.11. Touchent ce que bully-re utilise : le mode « projet
+  Ghidra existant » (`REA_GHIDRA_PROJECT_PATH`, #7922, #8222), qui répond aux 6 min 30 d'analyse refaites à chaque ouverture (point 3
+  de docs/suite.md) ; le décompilé par lots rendu en résumé gardé (#8631, #8629) ; la comparaison des preuves de fonctions Ghidra
+  (#8672), la poignée de main refusée avant la première requête (#8630), les symboles de relocation (#8531), les adresses
+  d'instructions non listées (#7823, rupture) ; côté PE, les noms des certificats (#8494, #8011, #7817), les entrées non MZ refusées
+  (#7709), l'imphash borné (#7830). Rien fusionné. La séance n'a pas ouvert REA : l'index `export/index.sqlite` et le désassemblage
+  `objdump` de `bully.exe` ont suffi.
+- **Chronos** : `1_01` à 10,46 s à chaque commit, journaux identiques hors le bilan des conditions non lues (et le bully 5 qui
+  attaque le 4 par l'arbre au lieu du geste). `1_02` à 121,94 s jusqu'au tirage de `stat`, puis 124,97 s avec la nouvelle commande
+  (docs/missions.md). `1_03`, avec la commande du 02.11 : le bully 5 ne tue plus le joueur à 62,67 s par le geste réduit de l'outil ;
+  il l'attaque par son arbre, le joueur de l'outil ne riposte pas et meurt par la piste `Death` à 101,31 s.
+- **Ce qui bloque encore** : la riposte du joueur dans `1_03` (la commande ne le fait pas se battre : `T_RunFights` attend toujours
+  les vagues `_1_03_FIGHT3` à `FIGHT5`) ; les classes suivantes de `AI.act` (`IsSocializingWithPlayer`, `TargetedByPlayer`,
+  `TargetFriendsAttacker`, `AcquirePunishableTarget`, `FactionScan`, `HasRangedWeapon`, `InTriggerVolume`, `TargetProp`, `HitByPed`,
+  `HasNodeCooldown`, `PedSphereHit`, `HitFlagClear`, `#53408a0c`, `AcquirePOI`) ; les arbres du joueur (`/Global/Player`,
+  `/Global/PlayerAI`), que l'outil ne lui pose pas ; les pistes `Enable` / `DisableFightTokens` ; puis ce qui restait (la riposte de
+  l'IA `FUN_00496ee0`, le sol du monde, le point valable, les sphères des os, les `SpeechTrack` sans tenue).
+- **Bilan** : 781 fonctions recréées (5,3 % du code), contre 750 (5,2 %) ; 1 642 comprises (9,7 %) ; 10 commits.

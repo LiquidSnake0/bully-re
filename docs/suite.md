@@ -54,14 +54,23 @@ chantier. Un point fini passe en bas, avec son commit.
    Le 02.11, `1_03` va jusqu'au garage : la poursuite jouée (`--suivre`, `--viser`), le coup reçu qui prévient les scripts
    (`RegisterPedEventHandler`), `PedSetPosPoint`, `PedFaceObject(Now)`, `PedClearObjectives`, `PedAttackPlayer`, les actions des
    nœuds de trajet, les drapeaux et les stats, les attitudes, le choix d'une cible par l'IA (docs/missions.md, « 1_03 »).
+   Le 03.11, le bully 5 de `1_03` frappe par son arbre : les arbres du modèle posés à la création (`FUN_00484d10`), 26 classes de
+   `AI.act`, `stat` et son tirage, les dés des contextes, les droits d'attaque, les jetons de combat et les piétons proches
+   (`FUN_00486e40`, `FUN_0047d1d0`). `1_02` est réussie à 124,97 s (dix-huit jabs, docs/missions.md).
    Suite, dans l'ordre :
-   - l'arbre de l'IA posé à la création (le constructeur de `CPed`, `FUN_0047ffe0` : les colonnes de l'arbre d'actions et de l'arbre
-     de l'IA des `.idb`, `/Global/AI` dans `Act/AI/AI.act` pour les bullies) : sans lui, le bully 5 de `1_03` attaque par le geste
-     réduit de l'outil et tue le joueur à 62,67 s ; à mesurer de près sur `1_01` et `1_02`, où tous les piétons en recevraient un ;
-   - les combats de `1_03` (`WaveInit` : `_1_03_FIGHT3` derrière les tonneaux, `_1_03_FIGHT4` au garage, `_1_03_FIGHT5`,
-     `_1_03_LADDER_DROP`), puis `CutsceneDavisBegs` et `MissionSucceed` ;
-   - ce qui reste du choix d'une cible : la riposte (`FUN_00496ee0`), les piétons proches (`FUN_00498fc0`, la liste +0x3c0 du
-     composant de visée, que remplit `FUN_004991e0`), la conversation, les zones interdites (`FUN_0046ee60`) ;
+   - les combats de `1_03` : faire riposter le joueur de l'outil (`--viser` et `--jouer …/LightAttacks` sur les bullies 1 et 5,
+     qui le tuent à 101,31 s), puis `WaveInit` (`_1_03_FIGHT3` derrière les tonneaux, `_1_03_FIGHT4` au garage, `_1_03_FIGHT5`,
+     `_1_03_LADDER_DROP`), `CutsceneDavisBegs` et `MissionSucceed` ;
+   - les classes de `AI.act` jugées derrière celles du 03.11 : `IsSocializingWithPlayer` (`FUN_00603a70`), `TargetedByPlayer`
+     (`FUN_00601be0`), `TargetFriendsAttacker` (`FUN_00601010`), `AcquirePunishableTarget` (`FUN_00601780`), `FactionScan`
+     (`FUN_00600bb0`), `HasRangedWeapon` (`FUN_00605a80`), `InTriggerVolume` (`FUN_005ff8d0`), `TargetProp` (`FUN_0065c250`),
+     `HitByPed` (`FUN_005fdae0`), `HasNodeCooldown` (`FUN_006064c0`), `PedSphereHit` (`FUN_00605af0`), `HitFlagClear`
+     (`FUN_005fbfa0`), `AcquirePOI` (`FUN_00448a40`, le pool des POI `DAT_020c7c58`), et `#53408a0c`, qu'aucun nom du RTTI ni des
+     arbres ne donne ;
+   - les arbres du joueur (`/Global/Player`, `/Global/PlayerAI`) : `FUN_00484d10` les lui pose aussi, l'outil pas encore ;
+   - les pistes `EnableFightTokens` / `DisableFightTokens` (`FUN_00486960`, `FUN_004869c0` : l'octet coupé des jetons, l'échéance
+     +0xc0) et l'octet +0x1e25 du composant de combat ;
+   - ce qui reste du choix d'une cible : la riposte (`FUN_00496ee0`), la conversation, les zones interdites (`FUN_0046ee60`) ;
    - le sol du monde (les collisions des `.col` posées par les `.ipb`, déjà lues par `outils/visite`) : les déclencheurs comme
      `_1_03_DAVISREGISTERHIT` sont plus hauts que les nœuds des trajets ;
    - ce qui reste supposé dans `CombatLoco` : le point valable (`FUN_006254c0`), la recherche de chemin ;
@@ -96,6 +105,14 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- Le bully 5 de `1_03` frappe par son arbre (03.11 ; cbf3095, 1d2506a, 0372668, 925d09f, 45b2db1, ad3d979, 888d4c3, e3d11ce,
+  1148862) : les arbres du modèle posés à la création (`FUN_00484d10`, le modelinfo +0x64 … +0x70), 26 classes de conditions de
+  `AI.act` (véhicules, lieu et rôle, état global avec `EnterNIS` / `ExitNIS`, les dernières avec la piste `SetActionTimer`), les
+  droits d'attaque (`FUN_00486c40`, `IsTargetAttackRightsTaken`), `stat` et son tirage (0x5ffff0), les dés des contextes
+  (`WeightedRandom`, `Random`, `RandomDiceRoll`, le tirage de l'image +0x1748), les jetons de combat (`FightToken`, `FUN_00486e40`) et
+  les piétons proches (`FUN_0047d1d0`) : **`1_02` reste réussie, à 124,97 s** avec dix-huit jabs ; dans `1_03`, le joueur, qui ne
+  riposte pas, meurt sous les coups des bullies 1 et 5 à 101,31 s.
 
 - `1_03` jusqu'au garage (02.11 ; 860a312, 126b5b0, 958b996, 69a6217, d2a992b, a7edecd, e5c2942, 37ada88, 41fbf52) : `--suivre`
   et `--viser`, `PedSetPosPoint` (l'origine d'un piéton est à ses pieds, `FUN_005712f0`), `PedFaceObject`, `PedFaceObjectNow`,
