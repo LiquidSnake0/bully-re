@@ -269,6 +269,12 @@ DistancePietons(const CScriptPed *a, const CScriptPed *b)
 	float dx = b->pos.x - a->pos.x, dy = b->pos.y - a->pos.y, dz = b->pos.z - a->pos.z;
 	return sqrtf(dx * dx + dy * dy + dz * dz);
 }
+// EnterNIS (0x5bb3c0) et ExitNIS (0x5bb400) : l'octet DAT_00cfb340 (un NIS en cours), puis chaque véhicule du pool
+// (DAT_00c0f5f4) arrêté ou rendu (FUN_004cb3e0(1) / (0)) ; l'outil n'a pas de véhicules.
+static bool nisEnCours = false;
+// PedSetGlobalAttitude_Rumble(ambiant, mission) (0x5c6bd0) : DAT_00c2afa0 et DAT_00c2afa1 (FUN_005d8fa0, faux par défaut).
+static bool rumbleAmbiant = false, rumbleMission = false;
+static bool CinematiqueEnCours(void);   // DAT_020c5be4
 struct CJugeOutil : CJugeAction {
 	int ped; float t;
 	// Le tirage du contexte (+0x24) que WeightedRandom compare puis renouvelle (FUN_00600b00) : tiré à chaque nouveau
@@ -825,6 +831,24 @@ struct CJugeOutil : CJugeAction {
 		                    kAvoirPoi = ActionHash("HavePOI"), kPoiMobile = ActionHash("HaveDynamicPOI");
 		if(type == kAvoirPoi || type == kPoiMobile || type == kTraine || type == kAmbiantScripte || type == kScenario || type == kArrimage || type == kGarde ||
 		   type == kLaisse || type == kPatrouille || type == kPlonger) return 0;
+		// VisibleArea (ConditionVisibleArea 0x936d14, FUN_005fc7c0) : la zone visible (DAT_00bd1008, AreaGetVisible) est +4.
+		// IsNISorCutsceneRunning (0x937e84, FUN_005fd2c0) : avec l'octet +4, un NIS en cours (FUN_005bb220 : l'octet
+		// DAT_00cfb340, qu'EnterNIS pose et ExitNIS efface) ; avec l'octet +5, une cinématique en cours (DAT_020c5be4,
+		// GetCutsceneRunning). IsRumbleModeAmbient et IsRumbleModeMission (ConditionIsRumbleMode_Ambient 0x937b00, FUN_005fd0f0 ;
+		// _Mission 0x937b14, FUN_005fd100) : les octets DAT_00c2afa0 et DAT_00c2afa1, que PedSetGlobalAttitude_Rumble pose et
+		// que l'initialisation des attitudes (FUN_0046f660) et leur remise (0x46f350) effacent. PlayerIsInStealthProp (0x937ab0,
+		// FUN_005fd000) : l'octet +0x1e91 du joueur (DAT_00c1aea8), que pose l'entrée dans une cachette (casier, poubelle) :
+		// l'outil n'en a pas, faux. TimeCond (CTimeCond 0x9372d4, FUN_006a7380 → FUN_00425cf0) : la même classe que dans
+		// Missions.cat, l'heure du jeu dans [+4 h +0xc min, +8 h +0x10 min[ (CMissionBank::Evaluer).
+		static const uint32 kZoneVisible = ActionHash("VisibleArea"), kNis = ActionHash("IsNISorCutsceneRunning"),
+		                    kRumbleAmbiant = ActionHash("IsRumbleModeAmbient"), kRumbleMission = ActionHash("IsRumbleModeMission"),
+		                    kCachette = ActionHash("PlayerIsInStealthProp"), kHeure = ActionHash("TimeCond");
+		if(type == kZoneVisible) return zones.zoneVisible == (int32)mots[0];
+		if(type == kNis) return ((mots[0] & 0xff) && nisEnCours) || (((mots[0] >> 8) & 0xff) && CinematiqueEnCours());
+		if(type == kRumbleAmbiant) return rumbleAmbiant;
+		if(type == kRumbleMission) return rumbleMission;
+		if(type == kCachette) return 0;
+		if(type == kHeure) return ConditionMission(type, mots);
 		nonLues[type]++;
 		return -1;
 	}
@@ -873,6 +897,7 @@ static struct {
 	size_t sousTitre = 0;           // le prochain sous-titre à afficher
 	std::string nomTable; int tailleTable = 0;   // CutSetCutsceneName (DAT_00bceb08), CutSetCutsceneTableSize (DAT_00bceb00)
 } cinematique;
+static bool CinematiqueEnCours(void){ return cinematique.enCours; }
 static struct {
 	bool enCours = false, versNoir = false, noir = false; uint32 fin = 0;
 	int Etat(void) const { return enCours ? FONDU_EN_COURS : noir ? FONDU_NOIR : FONDU_RENDU; }   // FUN_004f11a0
@@ -3349,6 +3374,32 @@ ReussirSequence(lua_State *L)
 }
 
 static int
+EnterNIS(lua_State *L)
+{
+	Journal("EnterNIS", L, 1);
+	nisEnCours = true;
+	return 0;
+}
+
+static int
+ExitNIS(lua_State *L)
+{
+	Journal("ExitNIS", L, 1);
+	nisEnCours = false;
+	return 0;
+}
+
+static int
+PedSetGlobalAttitude_Rumble(lua_State *L)
+{
+	Journal("PedSetGlobalAttitude_Rumble", L, 1);
+	auto lire = [&](int n){ return lua_isboolean(L, n) ? lua_toboolean(L, n) != 0 : lua_isnumber(L, n) ? lua_tonumber(L, n) != 0 : false; };
+	rumbleAmbiant = lire(1);
+	rumbleMission = lire(2);
+	return 0;
+}
+
+static int
 PlayerSetControl(lua_State *L)
 {
 	Journal("PlayerSetControl", L, 1);
@@ -4004,6 +4055,9 @@ main(int argc, char **argv)
 	lua_register(L, "PedStop", PedStop);
 	lua_register(L, "PedAttack", PedAttack);
 	lua_register(L, "PedSetAITree", PedSetAITree);
+	lua_register(L, "EnterNIS", EnterNIS);
+	lua_register(L, "ExitNIS", ExitNIS);
+	lua_register(L, "PedSetGlobalAttitude_Rumble", PedSetGlobalAttitude_Rumble);
 	lua_register(L, "PedSetFaction", PedSetFaction);
 	lua_register(L, "ChapterSet", ChapterSet);
 	lua_register(L, "PlayerGetPhysicalState", PlayerGetPhysicalState);
