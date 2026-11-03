@@ -217,11 +217,58 @@ CScriptPedPool::Verrouiller(int h, int cible, int mode)
 {
 	CScriptPed *p = Acceder(h);
 	if(p == nil) return false;
-	if(cible == -1){ p->verrou = -1; p->verrouMode = 0; return true; }
+	if(cible == -1){ LacherDroits(h); p->verrou = -1; p->verrouMode = 0; return true; }
 	if(Acceder(cible) == nil) return false;
+	if(cible != p->verrou) LacherDroits(h);   // FUN_00497d20 → FUN_00486c00, avant de changer de cible
 	p->verrou = cible;
 	p->verrouMode = mode;
 	return true;
+}
+
+bool
+CScriptPedPool::PrendreDroits(int h, uint32 maintenant)
+{
+	const CScriptPed *p = Acceder(h);
+	CScriptPed *c = p ? Acceder(p->verrou) : nil;
+	if(c == nil) return false;
+	c->droitsPris = true;               // FUN_00486c40 : +0x344
+	c->detenteurDroits = h;             // +0x340
+	c->echeanceDroits = maintenant + 15000;   // +0x348 : DAT_00c1a9b4 + 15 000
+	return true;
+}
+
+bool
+CScriptPedPool::RendreDroits(int h)
+{
+	const CScriptPed *p = Acceder(h);
+	CScriptPed *c = p ? Acceder(p->verrou) : nil;
+	if(c == nil || c->detenteurDroits != h || !c->droitsPris) return false;   // FUN_004861c0
+	c->droitsPris = false;
+	c->detenteurDroits = -1;
+	return true;
+}
+
+void
+CScriptPedPool::LacherDroits(int h)
+{
+	RendreDroits(h);   // FUN_00486c00 : le même test (détenteur et octet), sur la cible courante
+}
+
+void
+CScriptPedPool::AvancerDroits(uint32 maintenant)
+{
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
+		CScriptPed &c = peds[i];
+		if(c.vivant && c.droitsPris && c.echeanceDroits <= maintenant){ c.droitsPris = false; c.detenteurDroits = -1; }
+	}
+}
+
+bool
+CScriptPedPool::DroitsPrisSurCible(int h) const
+{
+	const CScriptPed *p = Acceder(h);
+	const CScriptPed *c = p ? Acceder(p->verrou) : nil;
+	return c && c->droitsPris;
 }
 
 bool

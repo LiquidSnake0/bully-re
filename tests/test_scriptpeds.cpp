@@ -497,6 +497,21 @@ main(void)
 		VERIF(!c.CibleValable(eleve, bully, 0, true, true, b, tirer, nil) && c.CibleValable(eleve, bully, 0, false, true, b, tirer, nil));
 		VERIF(c.CibleValable(eleve, bully, 3, true, true, b, tirer, nil) && !c.CibleValable(eleve, eleve, 3, false, true, b, tirer, nil));
 	}
+	{
+		// Les droits d'attaque (FUN_00486c40, FUN_004861c0, FUN_00486c00, FUN_00487780) : un seul détenteur, rendus par lui
+		// seul, lâchés quand il change de cible, échus après 15 s.
+		CScriptPedPool c;
+		int a = c.Creer(146, CVector(), 0, 1), b = c.Creer(102, CVector(), 0, 1);
+		VERIF(!c.PrendreDroits(a, 1000));                       // sans cible, rien
+		c.Verrouiller(a, SCRIPT_PED_JOUEUR, 0); c.Verrouiller(b, SCRIPT_PED_JOUEUR, 0);
+		VERIF(c.PrendreDroits(a, 1000) && c.DroitsPrisSurCible(a) && c.DroitsPrisSurCible(b));
+		VERIF(!c.RendreDroits(b) && c.DroitsPrisSurCible(a));   // b ne les tient pas
+		c.Verrouiller(a, b, 0);                                  // a change de cible : il lâche ceux du joueur
+		VERIF(!c.DroitsPrisSurCible(b) && c.Acceder(SCRIPT_PED_JOUEUR)->detenteurDroits == -1);
+		VERIF(c.PrendreDroits(b, 2000));
+		c.AvancerDroits(16999); VERIF(c.DroitsPrisSurCible(b));
+		c.AvancerDroits(17000); VERIF(!c.DroitsPrisSurCible(b));
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }

@@ -264,6 +264,12 @@ struct CScriptPed {
 	bool arbreIA = false;        // +0x4b4 du composant +0x2e0 : un arbre de l'IA posé (PedSetAITree) ; l'outil ne joue
 	                             // alors plus le geste de PedAttack, c'est l'arbre qui mène le piéton
 	int zoneCombat = -1;
+	// Les droits d'attaque sur ce piéton, dans son composant de combat (+0x668) : l'octet +0x344 (+0x9ac du piéton, pris),
+	// le piéton qui les tient +0x340 (+0x9a8) et leur échéance +0x348 (+0x9b0, en ms du jeu). Un seul attaquant à la fois
+	// les prend (FUN_00486c40) ; la condition IsTargetAttackRightsTaken lit l'octet sur la cible de l'attaquant.
+	bool droitsPris = false;
+	int detenteurDroits = -1;
+	uint32 echeanceDroits = 0;
 	bool masqueZones[3] = {true, true, true};
 	int32 capaciteZones[3] = {1, 2, 4};
 	std::vector<int> combattants[3];
@@ -358,6 +364,21 @@ public:
 	// lua_PedLockTarget (0x5cb060) : rien si le piéton n'existe pas ; cible -1 lève le verrou (FUN_004989c0(0)) ;
 	// sinon, si la cible existe, FUN_00497d20 la verrouille avec le mode donné. Vrai si quelque chose a changé.
 	bool Verrouiller(int handle, int cible, int mode);
+	// Les droits d'attaque (le composant de combat +0x668). PrendreDroits : la piste TargetAttackRightsAcquire (table
+	// 0x93610c, lancement FUN_0062a1a0) : si la cible du piéton (PedGetTargetPed) est un piéton, FUN_00486c40 sur son
+	// composant de combat : pris, tenus par le piéton, jusqu'à maintenant + 15 000 ms ; écrase un détenteur précédent.
+	// RendreDroits : TargetAttackRightsRelease (0x936124, FUN_0062a1e0 → FUN_004861c0) : rendus si le piéton les tient.
+	// LacherDroits : FUN_00486c00 (ecx = le composant de combat du piéton) : ceux qu'il tient sur sa cible, rendus ; appelée
+	// par FUN_00497d20 quand la cible change, par PedLeaveCombatZone et les remises du composant de visée (FUN_0048c3b0,
+	// FUN_0048c430). AvancerDroits : la mise à jour du composant de combat (FUN_00487780, lue à l'assembleur de 0x48781a à
+	// 0x487838) rend les droits échus (+0x348 au plus maintenant). DroitsPrisSurCible : la condition
+	// IsTargetAttackRightsTaken (0x936da4, FUN_005ffc70, lue à l'assembleur) : la cible du piéton est un piéton (l'octet
+	// +0x108 & 7 vaut 3) et ses droits sont pris, par qui que ce soit (FUN_004861b0 : l'octet +0x344).
+	bool PrendreDroits(int handle, uint32 maintenant);
+	bool RendreDroits(int handle);
+	void LacherDroits(int handle);
+	void AvancerDroits(uint32 maintenant);
+	bool DroitsPrisSurCible(int handle) const;
 	// FUN_00478190 (lua_PedSetHealth, la piste SetHealth) : la santé (+0x1cb8), jamais sous la santé minimale (+0x1ca8).
 	// Une santé nulle ne tue pas : seul le rappel Lua du piéton (+0x141c, rangé en +0x18e8, non suivi) est appelé. Le
 	// piéton ne meurt que par Mourir, la piste Death.

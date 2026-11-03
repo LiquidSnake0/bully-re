@@ -806,6 +806,11 @@ struct CJugeOutil : CJugeAction {
 		// n'y en a pas ; pour un autre, le véhicule visé déjà retenu (+0x430) s'il est du bon genre, sinon, au tirage de l'image
 		// (FUN_00465910(8), sans effet), le plus proche (FUN_004d32a0) ; sans véhicule, +0x430 est vidé et la condition fausse,
 		// avant tout calcul de distance (FUN_00414a20, FUN_0085c4d0 sous +4). Sans véhicules dans l'outil : fausses.
+		// IsTargetAttackRightsTaken (0x936da4, FUN_005ffc70, lue à l'assembleur de 0x5ffc70 à 0x5ffc9e) : la cible du piéton
+		// (PedGetTargetPed, FUN_00496fb0) est un piéton et l'octet +0x344 de son composant de combat (+0x668, FUN_004861b0) est
+		// posé : ses droits d'attaque sont pris, par n'importe quel attaquant (CScriptPedPool::DroitsPrisSurCible).
+		static const uint32 kDroitsPris = ActionHash("IsTargetAttackRightsTaken");
+		if(type == kDroitsPris) return pietons.DroitsPrisSurCible(ped);
 		static const uint32 kVelo = ActionHash("OnBike"), kVoiture = ActionHash("InCar"),
 		                    kVoitureVisee = ActionHash("TargetVehicleCar"), kVeloVise = ActionHash("TargetVehicleBike");
 		if(type == kVelo || type == kVoiture || type == kVoitureVisee || type == kVeloVise) return 0;
@@ -3093,6 +3098,19 @@ AppliquerDegatsCible(int ped, CActionController &c)
 	c.coupsCible.clear();
 }
 
+// Les pistes TargetAttackRightsAcquire et TargetAttackRightsRelease lancées à cette image (FUN_0062a1a0, FUN_0062a1e0).
+static void
+AppliquerDroits(int ped, CActionController &c)
+{
+	for(bool prendre : c.droitsLances){
+		const CScriptPed *p = pietons.Acceder(ped);
+		int cible = p ? p->verrou : -1;
+		bool fait = prendre ? pietons.PrendreDroits(ped, maintenant) : pietons.RendreDroits(ped);
+		if(fait) printf("%6.2f s  le piéton %d %s les droits d'attaque sur %d\n", maintenant / 1000.0, ped, prendre ? "prend" : "rend", cible);
+	}
+	c.droitsLances.clear();
+}
+
 // Une image du contrôleur de l'IA d'un piéton (FUN_00484490), puis ce que font ses pistes et celles des contrôleurs de
 // ses pistes spawn : l'intention (ActionNodeRequest), ManageTargets, CombatLoco, FaceTarget, SetPedFlags.
 static void
@@ -3136,6 +3154,7 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 		k->drapeauxPoses.clear();
 		AppliquerMorts(ped, *k);
 		AppliquerDegatsCible(ped, *k);
+		AppliquerDroits(ped, *k);
 		for(const CActionController::InfoArme &d : k->infosArmeLancees) p->armeInit = d.init;   // FUN_00660f50
 		AppliquerObjectifs(ped, *k);
 	}
@@ -3149,6 +3168,7 @@ AvancerPietons(void)
 	pietons.Avancer(0.033f);
 	if(etatLua) AvancerSuivis(etatLua);   // les pistes FollowPath
 	pietons.AvancerVue(0.033f);   // CPed (FUN_004812d0) : FUN_0048ccf0, FUN_00499340
+	pietons.AvancerDroits(maintenant);   // le composant de combat (FUN_00487780) : les droits d'attaque échus
 	// FUN_00499340, la suite : la cible des piétons de l'IA (CScriptPedPool::SuivreCibles), avec les AIButes de la visée.
 	CScriptPedPool::ButesCibles b;
 	b.nonVuMax = ButeIA(100, 6.0f); b.portee = ButeIA(104, 30.0f); b.punitionMin = (int32)butesIA.Mot(108);
@@ -4265,6 +4285,7 @@ main(int argc, char **argv)
 			c.second.drapeauxPoses.clear();
 			AppliquerMorts(c.first, c.second);
 			AppliquerDegatsCible(c.first, c.second);
+			AppliquerDroits(c.first, c.second);
 			// SetWeaponInfo (FUN_00660f50) : le +0x120 de l'objet arme du piéton.
 			if(CScriptPed *p = pietons.Acceder(c.first))
 				for(const CActionController::InfoArme &d : c.second.infosArmeLancees) p->armeInit = d.init;

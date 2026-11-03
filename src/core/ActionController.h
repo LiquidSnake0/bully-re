@@ -165,6 +165,12 @@ public:
 	struct Repos { float entree; bool fait; };
 	std::vector<Repos> repos;
 	int reposLances = 0;
+	// TargetAttackRightsAcquire (0x93610c, lancement FUN_0062a1a0) et TargetAttackRightsRelease (0x936124, FUN_0062a1e0) : au
+	// lancement, le piéton prend ou rend les droits d'attaque sur sa cible (CScriptPedPool::PrendreDroits, RendreDroits) ; le
+	// lancement rend faux, la piste meurt aussitôt. `droitsLances` : celles lancées à cette image (prendre vrai, rendre faux).
+	struct Droits { float entree; bool prendre, fait; };
+	std::vector<Droits> droits;
+	std::vector<bool> droitsLances;
 	struct Effacement { float entree; int32 type; bool fait; };
 	std::vector<Effacement> effacements, effacementsLances;
 	struct Fuite { float entree; bool auBout, autreCible, fait; };
