@@ -242,6 +242,10 @@ static std::map<int, std::pair<int, uint32>> partenaires;   // le piéton qui no
 // arbre de l'IA y pose (FUN_005f35e0), lu par la condition ActionNodeRequest de son arbre d'actions, effacé en fin d'image
 // avec l'état des boutons (FUN_005f3720).
 static std::map<int, uint32> intentionsPietons;
+// Les gestionnaires des événements des déclencheurs (RegisterTriggerEventHandler, src/peds/ScriptPedPool.h) et les
+// déclencheurs qui ne suivent que le joueur (le bit 2 de +0x3f, AreaSetTriggerMonitoringRules).
+static CGestionnairesDeclencheurs declencheursEv;
+static std::set<int> declencheursJoueurSeul;
 static std::set<int> choisis;   // les piétons dont FUN_00499340 a déjà rabattu l'octet +0x1de4
 static int TirerVue(void *);
 // AIButes (Globals.cat, DAT_020c889c, FUN_0072ae00) : +0x18 à +0x20 la capacité des trois zones de combat ; +0x28 à
@@ -1469,6 +1473,9 @@ AvancerMission(lua_State *L)
 			}
 			for(Thread &t : scripts[mission.script].threads)
 				if(t.etat < TUE){ t.etat = TUE; luaL_unref(L, LUA_REGISTRYINDEX, t.ref); t.ref = LUA_NOREF; }
+			// FUN_005b2680 (depuis FUN_005d9d30, la fin du thread 0 de l'objet script) → FUN_005b5ae0 : les gestionnaires des
+			// déclencheurs de la mission sont lâchés. Supposé : la fin de l'objet script de la mission, après MissionCleanup.
+			for(int r : declencheursEv.OublierScript(mission.script)) luaL_unref(L, LUA_REGISTRYINDEX, r);
 			mission.etat = AUCUNE;
 			mission.script = -1;
 		}
@@ -2854,6 +2861,65 @@ RegisterPedEventHandler(lua_State *L)
 	return 0;
 }
 
+// SetNumberOfHandledTriggerEventObjects(n[, table]) (FUN_005bbeb0) : n (arrondi par FUN_005d8200) et le script qui appelle
+// (FUN_005db7e0, son +0x44) passent à FUN_005b5e50, pour la table 1 avec un seul argument, pour la table du second sinon ;
+// rien pour n nul ou négatif. LibTriggerNew (L_MonitorTriggers, L_RegisterNumberOfObjectEvents) l'appelle une fois par
+// mission, avant ses RegisterTriggerEventHandler.
+static int
+SetNumberOfHandledTriggerEventObjects(lua_State *L)
+{
+	Journal("SetNumberOfHandledTriggerEventObjects", L, 1);
+	int arguments = lua_gettop(L), n = (int)luaL_optnumber(L, 1, 0);
+	if(n <= 0) return 0;
+	if(arguments == 1) declencheursEv.Dimensionner(1, n, scriptCourant);
+	else if(arguments == 2) declencheursEv.Dimensionner((int)luaL_optnumber(L, 2, 0), n, scriptCourant);
+	return 0;
+}
+
+// RegisterTriggerEventHandler(déclencheur, événement, fonction[, table]) (0x5bbfa0, lu à l'assembleur de 0x5bbfa0 à
+// 0x5bc09e) : le nombre d'arguments (FUN_005d8170), le déclencheur et l'événement (FUN_005d8200) ; rien si le déclencheur
+// est négatif ou libre dans son pool (DAT_020c7c48, l'octet 0x80). Si le troisième est une fonction (FUN_005d84f0) : avec
+// trois arguments, l'entrée du déclencheur dans la table 1 (FUN_005b5d10(·, 1)) et le rappel dans sa case (FUN_005b4ff0,
+// FUN_005d9f00) ; avec quatre, dans la table du quatrième. Sinon, la case est vidée (FUN_005b56f0) : dans la table 1 avec
+// trois arguments, dans la table 0 avec quatre (le moteur pousse 0, quel que soit le quatrième). Le rappel sera appelé avec
+// (déclencheur, piéton).
+static int
+RegisterTriggerEventHandler(lua_State *L)
+{
+	Journal("RegisterTriggerEventHandler", L, 1);
+	int arguments = lua_gettop(L), t = (int)luaL_optnumber(L, 1, -1), e = (int)luaL_optnumber(L, 2, 0);
+	if(t < 0 || donnees.ZoneParHandle(t) == nil) return 0;
+	if(lua_isfunction(L, 3)){
+		int table = arguments == 3 ? 1 : arguments == 4 ? (int)luaL_optnumber(L, 4, 0) : -1;
+		if(table < 0) return 0;
+		declencheursEv.Ajouter(table, t);
+		int *c = declencheursEv.Case(table, t, e);
+		if(c == nil) return 0;
+		if(*c != CGestionnairesDeclencheurs::SANS_RAPPEL) luaL_unref(L, LUA_REGISTRYINDEX, *c);
+		lua_pushvalue(L, 3);
+		*c = luaL_ref(L, LUA_REGISTRYINDEX);
+		for(CGestionnairesDeclencheurs::Entree &n : declencheursEv.tables[table].entrees)
+			if(n.declencheur == t && e >= 0 && e < CGestionnairesDeclencheurs::EVENEMENTS) n.scripts[e] = scriptCourant;
+	}
+	else if(arguments == 3 || arguments == 4){
+		int r = declencheursEv.Retirer(arguments == 3 ? 1 : 0, t, e);
+		if(r != CGestionnairesDeclencheurs::SANS_RAPPEL) luaL_unref(L, LUA_REGISTRYINDEX, r);
+	}
+	return 0;
+}
+
+// AreaSetTriggerMonitoringRules(déclencheur, joueurSeul) (0x5b7f60, lu à l'assembleur de 0x5b7f74 à 0x5b7fa2) : le bit 2 de
+// l'octet +0x3f du déclencheur prend le booléen (FUN_005d8f20) ; FUN_006d6f60 ne suit alors que le joueur dans ce déclencheur.
+static int
+AreaSetTriggerMonitoringRules(lua_State *L)
+{
+	Journal("AreaSetTriggerMonitoringRules", L, 1);
+	int t = (int)luaL_optnumber(L, 1, -1);
+	if(t < 0 || donnees.ZoneParHandle(t) == nil) return 0;
+	if(lua_toboolean(L, 2)) declencheursJoueurSeul.insert(t); else declencheursJoueurSeul.erase(t);
+	return 0;
+}
+
 // FUN_005b2190, depuis la méthode du coup (FUN_0047b810) : le rappel de l'événement 0 du piéton frappé (FUN_005b40b0,
 // FUN_005b4030), appelé avec (frappé, attaquant). Les gestionnaires globaux de l'événement 7 (FUN_005b1ce0) ne sont pas suivis.
 static void
@@ -4179,6 +4245,9 @@ main(int argc, char **argv)
 	lua_register(L, "PedFaceObject", PedFaceObject);
 	lua_register(L, "PedFaceObjectNow", PedFaceObjectNow);
 	lua_register(L, "RegisterPedEventHandler", RegisterPedEventHandler);
+	lua_register(L, "RegisterTriggerEventHandler", RegisterTriggerEventHandler);
+	lua_register(L, "SetNumberOfHandledTriggerEventObjects", SetNumberOfHandledTriggerEventObjects);
+	lua_register(L, "AreaSetTriggerMonitoringRules", AreaSetTriggerMonitoringRules);
 	lua_register(L, "PedAttackPlayer", PedAttackPlayer);
 	lua_register(L, "PedClearObjectives", PedClearObjectives);
 	lua_register(L, "PedMakeTargetable", PedMakeTargetable);

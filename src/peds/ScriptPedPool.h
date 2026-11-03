@@ -597,3 +597,51 @@ public:
 	std::vector<Paire> paires;
 	bool enAppel = false;        // DAT_00cfaf84
 };
+
+// Les gestionnaires des événements des déclencheurs (RegisterTriggerEventHandler 0x5bbfa0, lu à l'assembleur : Ghidra ne l'a
+// pas en fonction). Deux tables de même forme : la table 0 (DAT_00cfb068, son tas DAT_00cfb180, sa capacité en plus
+// DAT_00cfb184, son nombre DAT_00cfb188) pour un quatrième argument nul, la table 1 (DAT_00cfb18c, DAT_00cfb2a4, DAT_00cfb2a8,
+// DAT_00cfb2ac) sinon, et sans quatrième argument. Une entrée fait 0x1c octets : le déclencheur (+0), puis une case de rappel par
+// événement (+4 + 4 × événement, six). Dix entrées en place, puis le tas (FUN_005b4fc0) ; le propriétaire de la table (l'objet
+// script +0x44 de SetNumberOfHandledTriggerEventObjects) en DAT_00cfb2b4 / DAT_00cfb2b8. Les événements, lus dans
+// FUN_005b26b0, FUN_005b2140 et FUN_005b2770 : 0 un piéton entre, 1 le joueur entre, 2 un projectile (non suivi), 3 un piéton
+// sort, 4 le joueur sort, 5 un piéton (ou le joueur) est dedans.
+class CGestionnairesDeclencheurs
+{
+public:
+	enum { SANS_RAPPEL = -2, EVENEMENTS = 6, EN_PLACE = 10, PAIRES = 100 };
+	enum { ENTREE_PIETON = 0, ENTREE_JOUEUR = 1, PROJECTILE = 2, SORTIE_PIETON = 3, SORTIE_JOUEUR = 4, DEDANS = 5 };
+	struct Entree {
+		int declencheur = -1;
+		int rappels[EVENEMENTS] = {SANS_RAPPEL, SANS_RAPPEL, SANS_RAPPEL, SANS_RAPPEL, SANS_RAPPEL, SANS_RAPPEL};
+		int scripts[EVENEMENTS] = {-1, -1, -1, -1, -1, -1};   // le script du rappel (FUN_005d7f50), pour FUN_005b5ae0
+	};
+	struct Table {
+		std::vector<Entree> entrees;
+		int enPlus = 0;              // la capacité du tas, au-delà des dix entrées en place
+		int proprietaire = -1;       // DAT_00cfb2b4 / DAT_00cfb2b8
+	};
+	// SetNumberOfHandledTriggerEventObjects(n[, table]) (FUN_005bbeb0 → FUN_005b5e50) : une table qui a des entrées et le même
+	// propriétaire est vidée (FUN_005b5a60) ; si elle en a encore, rien ; sinon, au-delà de dix, le tas prend n - 10 entrées
+	// (FUN_005b55b0) et le script devient le propriétaire. Un seul argument : la table 1.
+	void Dimensionner(int table, int n, int script);
+	// FUN_005b5d10 : l'entrée du déclencheur, ajoutée au bout si elle n'y est pas et s'il reste de la place (dix + le tas) ;
+	// rend faux si la table est pleine.
+	bool Ajouter(int table, int declencheur);
+	// FUN_005b4ff0 : la case de l'événement de ce déclencheur, nil s'il n'a pas d'entrée (le moteur rend alors la case de la
+	// première entrée).
+	int *Case(int table, int declencheur, int evenement);
+	// FUN_005b5100 : un rappel est posé pour cet événement de ce déclencheur (l'événement sous 6).
+	bool Pret(int table, int declencheur, int evenement) const;
+	// FUN_005b56f0 : vide la case (FUN_005b4f20) ; l'entrée sans plus aucun rappel est retirée (FUN_005b54c0, les suivantes
+	// avancent d'un cran). Rien pendant l'appel des rappels (DAT_00cfb2b0). Rend l'ancien rappel, SANS_RAPPEL sinon.
+	int Retirer(int table, int declencheur, int evenement);
+	// FUN_005b5280 : l'entrée i a un rappel pour l'un des événements 0, 1, 3, 4 ou 5 (pas le projectile) : ses piétons sont
+	// suivis à chaque image.
+	bool Suivie(int table, int i) const;
+	// FUN_005b5ae0 (FUN_005b2680, la fin d'un objet script) : la table dont il est le propriétaire est vidée et perd son
+	// propriétaire ; dans l'autre, ses rappels sont vidés (FUN_005b4f70) et les entrées vides retirées. Rend les rappels lâchés.
+	std::vector<int> OublierScript(int script);
+	Table tables[2];
+	bool enAppel = false;        // DAT_00cfb2b0
+};
