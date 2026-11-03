@@ -803,6 +803,28 @@ struct CJugeOutil : CJugeAction {
 		static const uint32 kVelo = ActionHash("OnBike"), kVoiture = ActionHash("InCar"),
 		                    kVoitureVisee = ActionHash("TargetVehicleCar"), kVeloVise = ActionHash("TargetVehicleBike");
 		if(type == kVelo || type == kVoiture || type == kVoitureVisee || type == kVeloVise) return 0;
+		// Le POI d'un piéton (+0x1d24 : le point d'intérêt qu'il occupe, posé par FUN_004730b0, vidé par la remise FUN_00474f50,
+		// FUN_00479440 et PedClearPOIForAllPeds ; son genre en +0x70). IsHangingOut (ConditionIsHangingOut 0x936d4c,
+		// FUN_005ffb90) : un POI du genre 2 ; HavePOI (0x936b44, FUN_005ffcd0, lue à l'assembleur de 0x5ffcd0 à 0x5ffcf0) : un POI
+		// occupé ou demandé (+0x1d20) ; HaveDynamicPOI (0x93747c, FUN_005ffd30) : un POI mobile libre du gestionnaire des POI
+		// mobiles (FUN_00448310 : ses places, leur nombre en +0xa0, FUN_004481b0) ; IsScriptedAmbient (0x936d94, FUN_005ffc40) : un POI du genre 3 à 15 ;
+		// IsScenarioPed (0x937b28, FUN_005ffbf0 → FUN_004730d0, ecx = le piéton) : un POI du genre 3, ou le scénario +0x14cc
+		// (posé par le système des scénarios, FUN_00716410 et ses voisines). NearbyDockLocation (0x936e70, FUN_00601150) : vrai si
+		// le piéton a déjà une place d'arrimage (+0x1d1c) ; sinon le gestionnaire des places (FUN_0046e8c0) en tire une au rand()
+		// du CRT parmi les siennes (+0xa0), 0 sans place et sans tirage, et la garde si un second rand() tombe sous son octet
+		// +0x100. IsGuarding (0x9373fc, FUN_00602bf0) : l'entité gardée (+0x1e08, la référence que le constructeur de CPed vide,
+		// FUN_0047ffe0) ; IsTethered (0x93744c, FUN_00603040) : la laisse (+0x360, le déclencheur de FUN_00484ab0) ; IsPatrolPed
+		// (0x937a9c, FUN_005ffe60) : l'octet +0x1570, qui dit qui a créé le piéton (FUN_004770a0), vaut 4. NeedsToDive (0x937550,
+		// FUN_005ffe80) : l'octet +0x16d4 positif et l'entité à éviter +0x16d8, puis FUN_004777e0 (devant lui ou non) comparé à
+		// l'octet +4 ; faux sinon. L'outil n'a ni POI, ni scénarios, ni places d'arrimage (AreaAddDockLocation est un bouchon),
+		// ni gardes, ni laisses, ni patrouilles, ni entités qui foncent sur un piéton : les dix sont fausses.
+		static const uint32 kTraine = ActionHash("IsHangingOut"), kAmbiantScripte = ActionHash("IsScriptedAmbient"),
+		                    kScenario = ActionHash("IsScenarioPed"), kArrimage = ActionHash("NearbyDockLocation"),
+		                    kGarde = ActionHash("IsGuarding"), kLaisse = ActionHash("IsTethered"),
+		                    kPatrouille = ActionHash("IsPatrolPed"), kPlonger = ActionHash("NeedsToDive"),
+		                    kAvoirPoi = ActionHash("HavePOI"), kPoiMobile = ActionHash("HaveDynamicPOI");
+		if(type == kAvoirPoi || type == kPoiMobile || type == kTraine || type == kAmbiantScripte || type == kScenario || type == kArrimage || type == kGarde ||
+		   type == kLaisse || type == kPatrouille || type == kPlonger) return 0;
 		nonLues[type]++;
 		return -1;
 	}
