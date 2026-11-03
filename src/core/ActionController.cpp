@@ -81,7 +81,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kFuite = ActionHash("FleeObjective"), kRepos = ActionHash("IDLE"), kBouton = ActionHash("ActionRequest"),
 	                    kInfoArme = ActionHash("SetWeaponInfo"), kMort = ActionHash("Death"),
 	                    kDegatsCible = ActionHash("DamageTarget"), kPrendreDroits = ActionHash("TargetAttackRightsAcquire"),
-	                    kRendreDroits = ActionHash("TargetAttackRightsRelease"), kDe = ActionHash("RandomDiceRoll");
+	                    kRendreDroits = ActionHash("TargetAttackRightsRelease"), kDe = ActionHash("RandomDiceRoll"),
+	                    kMinuterie = ActionHash("SetActionTimer");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -129,6 +130,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			regards.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(32), Reel(p, 40, 0.0f)});
 		}else if(p.type == kPoursuite){
 			poursuites.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(28), Reel(p, 40, 0.0f)});
+		}else if(p.type == kMinuterie){
+			minuteries.push_back({a, Reel(p, 24, 0.0f), false});
 		}else if(p.type == kDe){
 			desPistes.push_back({a, p.Mot(24), false, Octet(p, 8)});
 		}else if(p.type == kPrendreDroits || p.type == kRendreDroits){
@@ -245,7 +248,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	for(const DemandeBouton &d : demandesBouton)   // FUN_00626160 : l'arrêt d'une piste au mode 2 lâche son bouton
 		if(!d.morte && d.lancee && d.mode == 2) laches.push_back(d.bouton);
 	demandesBouton.clear();
-	effacements.clear(); fuites.clear(); repos.clear(); infosArme.clear(); droits.clear(); desPistes.clear();
+	effacements.clear(); fuites.clear(); repos.clear(); infosArme.clear(); droits.clear(); desPistes.clear(); minuteries.clear();
 	lances.clear();                    // FUN_005f7390 : l'arrêt d'une piste spawn arrête son contrôleur
 	finExecutees = -1.0f;
 	retenu = false;
@@ -505,6 +508,9 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; parolesLancees.push_back(d); }
 	for(Depart &d : departs)      // FUN_00619950
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; departsLances++; }
+	minuteriesLancees.clear();
+	for(Minuterie &d : minuteries)   // FUN_00628e50
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; minuteriesLancees.push_back(d.duree); }
 	desLances.clear();
 	for(De &d : desPistes)        // FUN_00632810
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; desLances.push_back(d.indice); }

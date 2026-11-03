@@ -180,6 +180,11 @@ public:
 	struct De { float entree; uint32 indice; bool fait, retient; };
 	std::vector<De> desPistes;
 	std::vector<uint32> desLances;
+	// SetActionTimer (SetActionTimerTrack 0x9355a8, lancement FUN_00628e50 → FUN_00474840) : la minuterie d'action du piéton
+	// (+0x1e0c) à maintenant + la durée +0x18 (s) ; le lancement rend faux. `minuteriesLancees` : les durées de cette image.
+	struct Minuterie { float entree, duree; bool fait; };
+	std::vector<Minuterie> minuteries;
+	std::vector<float> minuteriesLancees;
 	struct Droits { float entree; bool prendre, fait, retient; };   // retient : l'octet +8, jusqu'au lancement
 	std::vector<Droits> droits;
 	std::vector<bool> droitsLances;

@@ -267,6 +267,9 @@ struct CScriptPed {
 	// Les droits d'attaque sur ce piéton, dans son composant de combat (+0x668) : l'octet +0x344 (+0x9ac du piéton, pris),
 	// le piéton qui les tient +0x340 (+0x9a8) et leur échéance +0x348 (+0x9b0, en ms du jeu). Un seul attaquant à la fois
 	// les prend (FUN_00486c40) ; la condition IsTargetAttackRightsTaken lit l'octet sur la cible de l'attaquant.
+	// +0x1e0c : la minuterie d'action, en secondes du jeu (0 par le constructeur de CPed, param_1[0x783]) ; la piste
+	// SetActionTimer la pose à maintenant + sa durée (FUN_00474840), la condition CheckActionTimer la compare (FUN_00474870).
+	float minuterieAction = 0.0f;
 	// Les piétons proches (+0x3c0 leur nombre, +0x3c4 la liste, 16 au plus) : CPed::BuildPedLists (FUN_0047d1d0).
 	std::vector<int> proches;
 	// +0x550 : l'instant (ms) du dernier coup du piéton (la minuterie que posent ses pistes Collision, recopiée par

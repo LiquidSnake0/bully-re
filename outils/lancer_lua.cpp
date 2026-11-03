@@ -276,6 +276,7 @@ static bool nisEnCours = false;
 // PedSetGlobalAttitude_Rumble(ambiant, mission) (0x5c6bd0) : DAT_00c2afa0 et DAT_00c2afa1 (FUN_005d8fa0, faux par défaut).
 static bool rumbleAmbiant = false, rumbleMission = false;
 static bool CinematiqueEnCours(void);   // DAT_020c5be4
+static bool ParoleEnCours(int ped);     // FUN_005a27b0 : une ligne du piéton (ou, à -1, une ligne quelconque) se joue
 struct CJugeOutil : CJugeAction {
 	int ped; float t;
 	// Les tirages du contexte qui juge (+0x24 et les dés +0x28 à +0x34, CActionController::tirageContexte et des) : ceux
@@ -846,6 +847,49 @@ struct CJugeOutil : CJugeAction {
 		// (PedGetTargetPed) est un piéton et FUN_00486760 (ecx = son composant de combat +0x668) trouve au piéton un jeton non
 		// coupé (l'octet +0xc de l'entrée) ou la place du cône (+0x324, non coupée +0x330) ; vrai pour une cible qui n'est
 		// pas un piéton, faux sans cible (CScriptPedPool::TientJeton).
+		// Les dernières classes de AI.act jugées dans 1_01 à 1_03 (lues le 03.11.2026) :
+		// - DetectProjectile (0x9378ec, FUN_00604410 → FUN_0048a300) et DetectGrenade (0x9378dc, FUN_00604380 → FUN_0048a130) :
+		//   les projectiles en vol de la table 0xc3a068 (l'octet actif en -0x1c de chaque entrée, FUN_004d3c80), un qui menace
+		//   le piéton (sa trajectoire, FUN_0041a380 sous +4 m) ; rien sans projectile, et rien pour un piéton à +0x1360. L'outil
+		//   n'a pas de projectiles : fausses.
+		// - LiquidLevel (0x92e5e0, FUN_005ff7f0) : l'octet +0x16cc (dans l'eau), puis la hauteur de la surface (+0x16d0) sous
+		//   le piéton comparée à +4 par +8 ; hors de l'eau, faux. L'outil n'a pas d'eau.
+		// - IsAllyFollower (0x93762c, FUN_006037b0) et IsAllyLeader (0x93761c, FUN_00603790), lues à l'assembleur : ecx = le
+		//   piéton + 0x2f0, puis FUN_004851d0 (+4 non nul : un chef, +0x2f4) et FUN_004851e0 (+8 : un suiveur, +0x2f8) ;
+		//   IsTandemHelper (0x936b0c, FUN_00606f00) : le complice +0x9b4 (vidé s'il ne le désigne plus, +0x9b8) ; PedRecruitAlly
+		//   et les tandems ne sont appelés par aucun script de 1_01 à 1_03 : fausses.
+		// - Stimulus (0x9370c0, FUN_00600340) et IsStimulusPriority (0x93782c, FUN_00603fe0) : le stimulus courant du piéton
+		//   (+0x1d30), son genre +0 comparé à +4, sa priorité (FUN_004a5ba0) comparée à +4 par +8 ; sans stimulus, fausses.
+		//   L'outil n'a pas de stimuli (les pistes CreateStimulus de AI.act ne sont pas jouées).
+		// - WeaponEquipedType (0x9365b8, FUN_0065be50) : le type de l'arme tenue (WeaponGetType, +0x68 / +0x69) ; sans arme
+		//   (FUN_00474aa0 faux) ni arme voulue (+0x1574 à -1), faux.
+		// - PedIsTrigger (0x937344, FUN_00602350, lue à l'assembleur : ecx = 0xbcd098, puis FUN_00424490) : le piéton est l'un
+		//   des déclencheurs de personnage (+0x1804 leur nombre, un handle tous les 0x100 octets, FUN_005c7220(h, 2)) que pose
+		//   PedCharacterTrigger (0x5c6660), qu'aucun script de 1_01 à 1_03 n'appelle : faux.
+		// - CheckActionTimer (0x937500, FUN_006033e0 → FUN_00474870, lue à l'assembleur : sete) : la minuterie d'action
+		//   (+0x1e0c) ne dépasse pas maintenant × 0,001.
+		// - IsSpeechBusy (0x92e754, FUN_006025e0 → FUN_005a27b0) : avec l'octet +4, le piéton parle (la ligne en cours ou la
+		//   précédente, DAT_00cf458c + 0x5c × (DAT_00cf4644 & 1), son locuteur +0x10), sinon une ligne quelconque ; la file
+		//   (FUN_0059f050) et FUN_005a0bd0 ne sont pas suivies : la parole de l'outil, une ligne à la fois.
+		// - SocialAnimIs (0x93767c, FUN_00603940) : dans les états sociaux 1 et 3, l'animation sociale (+0xc24) vaut +4 ; sinon
+		//   +4 vaut 25. IsWantingToSocialize (0x9376cc, FUN_00603ab0) : le bit 4 de l'octet +0xd68 et le partenaire voulu
+		//   (+0xbb8). L'outil ne joue pas le système social (l'état reste 0, aucun partenaire voulu).
+		static const uint32 kProjectile = ActionHash("DetectProjectile"), kGrenade = ActionHash("DetectGrenade"),
+		                    kEau = ActionHash("LiquidLevel"), kSuiveur = ActionHash("IsAllyFollower"),
+		                    kChef = ActionHash("IsAllyLeader"), kTandem = ActionHash("IsTandemHelper"),
+		                    kStimulus = ActionHash("Stimulus"), kPrioriteStimulus = ActionHash("IsStimulusPriority"),
+		                    kTypeArme = ActionHash("WeaponEquipedType"), kDeclencheurPerso = ActionHash("PedIsTrigger"),
+		                    kMinuterieAction = ActionHash("CheckActionTimer"), kParoleOccupee = ActionHash("IsSpeechBusy"),
+		                    kAnimSociale = ActionHash("SocialAnimIs"), kVeutSocialiser = ActionHash("IsWantingToSocialize");
+		if(type == kProjectile || type == kGrenade || type == kEau || type == kSuiveur || type == kChef || type == kTandem ||
+		   type == kStimulus || type == kPrioriteStimulus || type == kTypeArme || type == kDeclencheurPerso || type == kVeutSocialiser)
+			return 0;
+		if(type == kMinuterieAction) return moi ? !(moi->minuterieAction > (float)maintenant * 0.001f) : -1;
+		if(type == kParoleOccupee) return ParoleEnCours((mots[0] & 0xff) ? ped : -1);
+		if(type == kAnimSociale){
+			if(moi && (moi->etatSocial == 1 || moi->etatSocial == 3)) return -1;   // +0xc24 non suivi
+			return mots[0] == 25;
+		}
 		static const uint32 kJeton = ActionHash("FightToken");
 		if(type == kJeton) return pietons.TientJeton(ped);
 		static const uint32 kDroitsPris = ActionHash("IsTargetAttackRightsTaken");
@@ -922,6 +966,7 @@ DureeParole(int ped, int evenement, int ligne)
 	return (uint32)ms;
 }
 static struct { bool enCours = false; int ped = -1, evenement = -1, ligne = -1, id = 0; uint32 fin = 0; } parole;
+static bool ParoleEnCours(int ped){ return parole.enCours && (ped < 0 || parole.ped == ped); }
 // Le préchargement d'une ligne (SoundPreloadSpeech, docs/son.md) : l'outil n'a pas de diffusion, la ligne est
 // prête à l'image qui suit, et le rappel FUN_005d49d0 est joué à chaque image tant qu'elle attend.
 static CSpeechPreload prechargement;
@@ -3160,6 +3205,9 @@ AppliquerDroits(int ped, CActionController &c)
 	c.droitsLances.clear();
 	for(uint32 i : c.desLances) c.des[i & 3] = (float)RandCrt(graineIA) / 32767.0f;   // FUN_00632810
 	c.desLances.clear();
+	if(CScriptPed *p = pietons.Acceder(ped))   // FUN_00474840 : DAT_00c1a9b4 × 0,001 (le flottant 0x900fa0) + la durée
+		for(float d : c.minuteriesLancees) p->minuterieAction = (float)maintenant * 0.001f + d;
+	c.minuteriesLancees.clear();
 }
 
 // Une image du contrôleur de l'IA d'un piéton (FUN_00484490), puis ce que font ses pistes et celles des contrôleurs de
