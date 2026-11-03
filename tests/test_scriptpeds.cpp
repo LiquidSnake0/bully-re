@@ -562,6 +562,27 @@ main(void)
 		g.Ajouter(0, 2); *g.Case(0, 2, 1) = 50; g.tables[0].entrees[0].scripts[1] = 7;
 		std::vector<int> l = g.OublierScript(7);                   // propriétaire de la table 1, auteur d'un rappel de la table 0
 		VERIF(l.size() == 2 && g.tables[1].entrees.empty() && g.tables[1].proprietaire == -1 && g.tables[0].entrees.empty());
+
+		// FUN_006d6f60 : l'entrée (0 pour un piéton, 1 pour le joueur) et l'événement 5 à la première image dedans, 5 ensuite,
+		// la sortie (3 ou 4) à la première image dehors ; un déclencheur « joueur seul » ne suit pas les autres piétons.
+		typedef CGestionnairesDeclencheurs G;
+		g.Ajouter(1, 30); for(int e = 0; e < G::EVENEMENTS; e++) *g.Case(1, 30, e) = 60 + e;
+		bool dedans = true, joueurSeul = false;
+		auto dans = [&](int){ return dedans; };
+		auto seul = [&](int){ return joueurSeul; };
+		std::vector<G::Appel> v = g.Suivre(4, false, dans, seul);
+		VERIF(v.size() == 2 && v[0].evenement == G::ENTREE_PIETON && v[1].evenement == G::DEDANS && g.dedans.size() == 1);
+		v = g.Suivre(4, false, dans, seul);
+		VERIF(v.size() == 1 && v[0].evenement == G::DEDANS);
+		v = g.Suivre(SCRIPT_PED_JOUEUR, true, dans, seul);
+		VERIF(v.size() == 2 && v[0].evenement == G::ENTREE_JOUEUR && g.dedans.size() == 2);
+		dedans = false;
+		v = g.Suivre(4, false, dans, seul);
+		VERIF(v.size() == 1 && v[0].evenement == G::SORTIE_PIETON && g.dedans.size() == 1);
+		v = g.Suivre(4, false, dans, seul);
+		VERIF(v.empty());
+		dedans = true; joueurSeul = true;
+		VERIF(g.Suivre(4, false, dans, seul).empty() && g.Suivre(SCRIPT_PED_JOUEUR, true, dans, seul).size() == 1);
 	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;

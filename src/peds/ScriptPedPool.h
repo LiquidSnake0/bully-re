@@ -644,4 +644,52 @@ public:
 	std::vector<int> OublierScript(int script);
 	Table tables[2];
 	bool enAppel = false;        // DAT_00cfb2b0
+	// Les paires (déclencheur, piéton) dedans à l'image précédente (l'objet 0x20c7e98 : +4, 100 au plus, leur nombre +0x324).
+	struct Paire { int declencheur; int ped; };
+	std::vector<Paire> dedans;
+	// FUN_006d6f60 (ecx = 0x20c7e98), appelée par la mise à jour de CPed (FUN_004812d0, en 0x481c45) pour chaque piéton : pour
+	// chaque entrée suivie des deux tables (la table 0 d'abord), si le déclencheur ne suit que le joueur (le bit 2 de +0x3f,
+	// AreaSetTriggerMonitoringRules 0x5b7f60) et que le piéton n'est pas le joueur, rien ; sinon, `dans` dit s'il est dedans
+	// (FUN_006d6e50 sur sa position, FUN_00415310). Dehors et dans la liste : sa sortie (FUN_005b2770) et la paire retirée ;
+	// dedans et dans la liste : l'événement 5 (FUN_005b2140) ; dedans et pas dans la liste (qui n'est pas pleine) : son entrée
+	// (FUN_005b26b0), l'événement 5, et la paire ajoutée. Les événements à appeler sont rendus dans l'ordre (table, déclencheur,
+	// événement) ; FUN_005b1ec0 appelle chaque rappel posé dans les deux tables.
+	struct Appel { int table; int declencheur; int evenement; };
+	template<class Dans, class SuitJoueur>
+	std::vector<Appel> Suivre(int ped, bool joueur, Dans dans, SuitJoueur suitJoueurSeul);
 };
+
+
+template<class Dans, class SuitJoueur>
+std::vector<CGestionnairesDeclencheurs::Appel>
+CGestionnairesDeclencheurs::Suivre(int ped, bool joueur, Dans dans, SuitJoueur suitJoueurSeul)
+{
+	std::vector<Appel> appels;
+	// FUN_005b26b0 / FUN_005b2770 : l'entrée et la sortie du joueur sont les événements 1 et 4, celles d'un autre piéton 0 et
+	// 3, appelés dans la table 0 puis dans la table 1 (FUN_005b1ec0) ; avant elles, les gestionnaires globaux de stimuli
+	// (FUN_005b1e20 : 4 et 5 pour le joueur, 2 et 3 sinon), que l'outil ne suit pas.
+	auto evenement = [&](int t, int e){ for(int k = 0; k < 2; k++) if(Pret(k, t, e)) appels.push_back({k, t, e}); };
+	for(int table = 0; table < 2; table++){
+		for(int i = 0; i < (int)tables[table].entrees.size(); i++){
+			if(!Suivie(table, i)) continue;
+			int t = tables[table].entrees[i].declencheur;
+			if(suitJoueurSeul(t) && !joueur) continue;
+			size_t j = 0;
+			while(j < dedans.size() && !(dedans[j].declencheur == t && dedans[j].ped == ped)) j++;
+			if(!dans(t)){
+				if(j < dedans.size()){
+					evenement(t, joueur ? SORTIE_JOUEUR : SORTIE_PIETON);
+					dedans.erase(dedans.begin() + j);
+				}
+			}else if(j < dedans.size()){
+				evenement(t, DEDANS);
+			}else if(dedans.size() != PAIRES){
+				evenement(t, joueur ? ENTREE_JOUEUR : ENTREE_PIETON);
+				evenement(t, DEDANS);
+				dedans.push_back({t, ped});
+			}
+		}
+	}
+	return appels;
+}
+

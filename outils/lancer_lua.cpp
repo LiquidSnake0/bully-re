@@ -3325,6 +3325,53 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 	}
 }
 
+// FUN_006d6f60 pour chaque piéton du pool (le joueur compris), puis les rappels des événements rendus : FUN_005b1ec0 pour
+// chaque table où l'événement a un rappel ; FUN_005b1db0 l'appelle dans un thread neuf de l'objet script du rappel
+// (FUN_005d9ac0, FUN_005d8140) avec la poignée du déclencheur (FUN_006d7910) et celle du piéton (l'emplacement 43 de CPed,
+// +0xac). L'outil l'appelle d'un bloc (lua_pcall), dans le script qui l'a posé : un rappel qui attendrait (Wait) n'est pas
+// suivi. Les paires d'un piéton supprimé sont oubliées (supposé : le destructeur de CPed n'est pas lu).
+static const char *const kEvenementsDeclencheur[] = {"un piéton entre", "le joueur entre", "un projectile", "un piéton sort",
+                                                     "le joueur sort", "dedans"};
+
+// Supposé aussi : le joueur de l'outil naît en (0, 0, 0), dans FootFieldTrig (le terrain de football, dont main.lua suit
+// l'entrée et la sortie du joueur dans la table 0), quand le jeu le crée au point de la sauvegarde ; il n'est suivi qu'une fois
+// posé par le gestionnaire de zones.
+static bool joueurPose = false;
+
+static void
+SuivreDeclencheurs(void)
+{
+	auto &d = declencheursEv.dedans;
+	for(size_t j = 0; j < d.size(); ) if(pietons.Acceder(d[j].ped) == nil) d.erase(d.begin() + j); else j++;
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE && etatLua; i++){
+		const CScriptPed *p = pietons.Acceder(i);
+		if(p == nil || (i == SCRIPT_PED_JOUEUR && !joueurPose)) continue;
+		CVector pos = p->pos;
+		std::vector<CGestionnairesDeclencheurs::Appel> appels = declencheursEv.Suivre(i, i == SCRIPT_PED_JOUEUR,
+			[&](int t){ return donnees.DansDeclencheur(t, pos); },
+			[&](int t){ return declencheursJoueurSeul.count(t) != 0; });
+		for(const CGestionnairesDeclencheurs::Appel &a : appels){
+			int *c = declencheursEv.Case(a.table, a.declencheur, a.evenement);
+			if(c == nil || *c == CGestionnairesDeclencheurs::SANS_RAPPEL) continue;
+			int script = -1;
+			for(const CGestionnairesDeclencheurs::Entree &n : declencheursEv.tables[a.table].entrees)
+				if(n.declencheur == a.declencheur) script = n.scripts[a.evenement];
+			if(a.evenement != CGestionnairesDeclencheurs::DEDANS){
+				const CTriggerZone *z = donnees.ZoneParHandle(a.declencheur);
+				printf("%6.2f s  déclencheur %d (%s) : %s (%d), le rappel de la table %d est appelé\n", maintenant / 1000.0,
+				       a.declencheur, z ? z->nom.c_str() : "?", kEvenementsDeclencheur[a.evenement], i, a.table);
+			}
+			lua_State *L = etatLua;
+			int avant = scriptCourant;
+			if(script >= 0) scriptCourant = script;
+			lua_rawgeti(L, LUA_REGISTRYINDEX, *c);
+			lua_pushnumber(L, a.declencheur); lua_pushnumber(L, i);
+			if(lua_pcall(L, 2, 0, 0) != 0){ printf("        rappel du déclencheur : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+			scriptCourant = avant;
+		}
+	}
+}
+
 // Une image des piétons : les gestes avancent, et ce qui aboutit se journalise.
 static int TirerVue(void *);
 static void
@@ -3374,6 +3421,8 @@ AvancerPietons(void)
 		if(p && p->verrou != avant[i])
 			printf("%6.2f s  piéton %d : cible %d → %d (style %d)\n", maintenant / 1000.0, i, avant[i], p->verrou, p->verrouMode);
 	}
+	// FUN_004812d0, 0x481c45 : les déclencheurs suivis (FUN_006d6f60), piéton par piéton, après le reste de son image.
+	SuivreDeclencheurs();
 	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
 		const CScriptPed *p = pietons.Acceder(i);
 		if(p == nil || journalRestant <= 0) continue;
@@ -4008,6 +4057,7 @@ AvancerZones(lua_State *L)
 	if(e.joueurPose){
 		CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
 		j->pos = zones.demande.pos; j->cap = zones.demande.cap;
+		joueurPose = true;
 		printf("%6.2f s  zones : le joueur est posé en (%.1f, %.1f, %.1f), cap %.0f, zone %d\n", maintenant / 1000.0, j->pos.x, j->pos.y, j->pos.z, j->cap, zones.zoneVisible);
 	}
 	if(e.fonduRetour) LancerFondu(fonduRetourMs, false);
