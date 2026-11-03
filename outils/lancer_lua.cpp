@@ -791,6 +791,18 @@ struct CJugeOutil : CJugeAction {
 			const float h = 1.8f;
 			return moi->pos.z + bas * h <= c->pos.z + h && c->pos.z <= moi->pos.z + haut * h;
 		}
+		// Le véhicule du piéton (+0x1554, le CVehicle où il est ; l'octet +0x1558 : il y est assis) et son genre (+0x46c du
+		// véhicule : 0 une voiture, 1 un vélo). FUN_004ce540 (ecx = le piéton) rend l'octet +0x1558, faux sans véhicule.
+		// OnBike (ConditionOnBike 0x936ec0, FUN_00600600) : FUN_004ce540 et le genre 1 ; InCar (ConditionInCar 0x936eb0,
+		// FUN_006005c0) : FUN_004ce540 et le genre 0. L'outil n'a pas de véhicules : les deux sont fausses.
+		// TargetVehicleCar (0x93725c, FUN_005fe260) et TargetVehicleBike (0x937270, FUN_005fe4d0) : pour le joueur (type 13), le
+		// véhicule le plus proche à moins de +4 m (FUN_004d32a0 ; un genre 0, puis 1) devient le véhicule visé (+0x430), faux s'il
+		// n'y en a pas ; pour un autre, le véhicule visé déjà retenu (+0x430) s'il est du bon genre, sinon, au tirage de l'image
+		// (FUN_00465910(8), sans effet), le plus proche (FUN_004d32a0) ; sans véhicule, +0x430 est vidé et la condition fausse,
+		// avant tout calcul de distance (FUN_00414a20, FUN_0085c4d0 sous +4). Sans véhicules dans l'outil : fausses.
+		static const uint32 kVelo = ActionHash("OnBike"), kVoiture = ActionHash("InCar"),
+		                    kVoitureVisee = ActionHash("TargetVehicleCar"), kVeloVise = ActionHash("TargetVehicleBike");
+		if(type == kVelo || type == kVoiture || type == kVoitureVisee || type == kVeloVise) return 0;
 		nonLues[type]++;
 		return -1;
 	}
