@@ -37,6 +37,11 @@ main(int argc, char **argv)
 	VERIF(m.typeDuPieton.count(146) && m.typeDuPieton.at(146) == 11 && m.femme.count(146) && !m.femme.at(146));
 	VERIF(m.femme.count(59) && m.femme.at(59) && m.typeDuPieton.count(0) && m.typeDuPieton.at(0) == 13);
 	VERIF(m.nomDuModele.count(146) && m.nomDuModele.at(146) == "GN_Bully05");
+	// Les arbres des entrées peds (FUN_00522580, FUN_00522680) : le bully de 1_02 et de 1_03 (146), le joueur (0).
+	VERIF(m.arbresDuPieton.count(146) && m.arbresDuPieton.at(146).actions == "/Global/B_Striker_A" &&
+	      m.arbresDuPieton.at(146).fichierActions == "Act/Anim/B_Striker_A.act" && m.arbresDuPieton.at(146).ia == "/Global/AI" &&
+	      m.arbresDuPieton.at(146).fichierIA == "Act/AI/AI.act");
+	VERIF(m.arbresDuPieton.count(0) && m.arbresDuPieton.at(0).actions == "/Global/Player" && m.arbresDuPieton.at(0).ia == "/Global/PlayerAI");
 	{
 		int types[16] = {0};
 		for(auto &e : m.typeDuPieton) types[e.second >= 0 && e.second < 15 ? e.second : 15]++;

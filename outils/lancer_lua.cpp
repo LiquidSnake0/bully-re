@@ -1796,14 +1796,53 @@ ChargerPedStats(void)
 	printf("%zu entrées de pedstats.dat\n", statsParNom.size());
 }
 
+// L'initialisation du composant d'actions (FUN_00484d10, ecx = le composant +0x2e0 ; appelée par CPed::SetModelIndex,
+// FUN_004788d0, depuis le constructeur de CPed FUN_0047ffe0) : les trois contrôleurs arrêtés (FUN_005f3f40), les entrées
+// vidées (FUN_005f38e0), puis les arbres. L'arbre de l'IA (+0x4b4) : les noms gardés par PedSetAITree (+0x540, +0x580)
+// s'ils sont posés, sinon la racine et le fichier du modelinfo (+0x6c, +0x70 : la colonne AITREE de l'entrée peds) ;
+// l'arbre trouvé dans l'arbre global (FUN_005f59b0), sinon son fichier chargé s'il ne l'est pas déjà (FUN_00484130 :
+// FUN_005dbe60, FUN_005f6c50) et l'arbre recherché, nul si le fichier l'était. L'arbre d'actions (+0x4b0) de même, avec
+// les noms +0x4c0, +0x500 et le modelinfo +0x64, +0x68 (ACTIONTREE). Chacun devient la racine de son contexte
+// (FUN_005f36d0) ; à chaque image, faute de nœud joué, son contrôleur y redescend (FUN_00484040 pour les actions,
+// FUN_00483ec0 dans FUN_00484490 pour l'IA). Le contrôleur du visage (+0x4bc : /Global/PlayerFacial pour le type 13,
+// sinon DAT_01b649bc hors de quatre modèles) n'est pas suivi.
+static void
+PoserArbresDuModele(int h, int32 modele)
+{
+	auto it = modeles.arbresDuPieton.find(modele);
+	CScriptPed *p = pietons.Acceder(h);
+	if(it == modeles.arbresDuPieton.end() || p == nil) return;
+	const CModelEnum::Arbres &a = it->second;
+	float t = maintenant / 1000.0f;
+	const CActionNode *ia = arbres.TrouverOuCharger(a.ia.c_str(), a.fichierIA.c_str()) ? arbres.Trouver(a.ia.c_str()) : nil;
+	if(ia){
+		CActionController &c = controleursIA[h];
+		c = CActionController();
+		c.sousControleurs = true;
+		c.arbre = ia;
+		c.Racine(arbres, ia);
+		p->arbreIA = true;
+	}
+	const CActionNode *ac = arbres.TrouverOuCharger(a.actions.c_str(), a.fichierActions.c_str()) ? arbres.Trouver(a.actions.c_str()) : nil;
+	if(ac){
+		CActionController &c = controleurs[h];
+		c = CActionController();
+		c.arbre = ac;
+		c.Racine(arbres, ac);
+	}
+	printf("%6.2f s  piéton %d (modèle %d) : arbre d'actions %s%s, arbre de l'IA %s%s\n", t, h, modele, a.actions.c_str(),
+	       ac ? "" : " (absent)", a.ia.c_str(), ia ? "" : " (absent)");
+}
+
 // FUN_005cf6b0 : la création commune, notée à l'objet script courant ; le piéton reçoit l'entrée de pedstats.dat
-// de son modèle (FUN_00478e30).
+// de son modèle (FUN_00478e30) et les arbres de son modèle (FUN_00484d10).
 static int
 CreerPed(lua_State *L, const char *quoi, int32 modele, const CVector &pos, float cap)
 {
 	int h = pietons.Creer(modele, pos, cap, scriptCourant);
 	if(h < 0) printf("        %s : le pool des piétons est plein (%d)\n", quoi, SCRIPT_PED_POOL_SIZE);
 	else{
+		PoserArbresDuModele(h, modele);
 		auto ty = modeles.typeDuPieton.find(modele);   // FUN_0047ffe0 : le type du modelinfo (+0x4c) en +0x1310
 		if(ty != modeles.typeDuPieton.end() && ty->second >= 0) pietons.Acceder(h)->type = ty->second;
 		auto st = modeles.statDuPieton.find(modele);
@@ -4053,6 +4092,13 @@ main(int argc, char **argv)
 			c.second.image = (uint32)images;
 			c.second.graine = (uint16)c.first;
 			bool d = c.first == SCRIPT_PED_JOUEUR && (demande || !demandes.empty());
+			// FUN_00484040 : sans nœud joué (+0x268), le contrôleur redescend depuis la racine de son contexte (+0x340),
+			// s'il a un arbre (+0x4b0), avant d'avancer.
+			if(c.second.joue == nil && c.second.arbre){
+				c.second.Poser(arbres, c.second.arbre, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f);
+				if(c.second.joue && (c.first == SCRIPT_PED_JOUEUR || tousLesControleurs))
+					printf("%6.2f s  contrôleur de %d : %s\n", maintenant / 1000.0, c.first, CheminVu(c.second, c.second.joue).c_str());
+			}
 			if(c.second.Avancer(arbres, nil, CJugeOutil(c.first, maintenant / 1000.0f), maintenant / 1000.0f, d) && c.second.joue != avant){
 				if(c.first == SCRIPT_PED_JOUEUR)
 					printf("%6.2f s  contrôleur du joueur : %s\n", maintenant / 1000.0, CheminVu(c.second, c.second.joue).c_str());

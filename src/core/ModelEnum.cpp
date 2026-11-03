@@ -54,6 +54,7 @@ Ped(const CPedIdeEntry &e)
 	gEnCours->typeDuPieton.insert({e.id, TypeDePieton(e.type)});   // modelinfo +0x4c
 	gEnCours->femme.insert({e.id, e.female != 0});                   // modelinfo +0x50
 	gEnCours->nomDuModele.insert({e.id, e.model});
+	gEnCours->arbresDuPieton[e.id] = {e.actionRoot, e.actionFile, e.aiRoot, e.aiFile};   // FUN_00522580, FUN_00522680
 	return 0;
 }
 static int32 Obj(const CObjIdeEntry &e){ Noter(e.model, e.id); return 0; }
