@@ -129,6 +129,14 @@ public:
 	// fichier (Globals.cat pour AreaTransitionButes, TimeCycleButes…) ; FUN_0072ae00 les range au démarrage
 	// (DAT_020c8910 pour AreaTransitionButes). Faux si le fichier ou la piste manque.
 	static bool Butes(const char *nom, CActionTrack &piste, const char *cat = "Globals.cat");
+	// FUN_0072ad50 : la piste « Butes » d'un type (HashString de son nom) au bout d'un chemin de noms hachés (FUN_005fa760 :
+	// un compte et une liste), descendu un enfant à la fois (FUN_00727e60) depuis l'arbre des réglages (DAT_020c8874, le
+	// nœud Globals de Globals.cat, sous lequel la référence Global_Weapons.act monte la banque Weapons : une référence montée
+	// porte le nom de son arbre) ; FUN_00727ed0 y prend la piste du type. L'outil part de la banque de tête du fichier `cat`
+	// (le premier nom du chemin doit être le sien) ; les fichiers lus restent en mémoire. Les chaînes que citent les attributs
+	// de la piste vont dans `chaines` (position → chaîne). Faux si le fichier, un nœud ou la piste manque.
+	static bool ButesChemin(const char *cat, const std::vector<uint32> &chemin, uint32 type, CActionTrack &piste,
+	                        std::map<uint16, std::string> *chaines = nil);
 	// FUN_005f6f20 : au démarrage, les 68 arbres de la liste PTR_s_Act_Globals_act_00b0a4f0 (Globals, Missions,
 	// Player, HitTree, les armes…) chargés sous /Global par FUN_005f6c50. Rend le nombre de fichiers chargés.
 	int ChargerGlobaux(void);

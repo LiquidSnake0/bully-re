@@ -86,6 +86,44 @@ CActionBank::Butes(const char *nom, CActionTrack &piste, const char *cat)
 	return ChercherButes(f, f.racine, ActionHash(nom), piste);
 }
 
+bool
+CActionBank::ButesChemin(const char *cat, const std::vector<uint32> &chemin, uint32 type, CActionTrack &piste,
+                         std::map<uint16, std::string> *chaines)
+{
+	static std::map<std::string, std::shared_ptr<Source>> lus;
+	std::shared_ptr<Source> &src = lus[cat];
+	if(!src){
+		src = std::make_shared<Source>();
+		int32 image = ImageAct();
+		const CDirectoryEntry *d = image < 0 ? nil : CdStream::ms_images[image].Find(cat);
+		if(d == nil || !LireCat(d, src->donnees) || !src->fichier.Load(src->donnees.data(), (uint32)src->donnees.size()))
+			src->donnees.clear();
+	}
+	if(src->donnees.empty() || chemin.empty()) return false;
+	const CActionNode *n = &src->fichier.racine;
+	if((n->hachage & 0x7fffffff) != (chemin[0] & 0x7fffffff)) return false;
+	for(size_t i = 1; i < chemin.size() && n; i++){
+		const CActionNode *e = nil;
+		for(const CActionNode &c : n->enfants) if((c.hachage & 0x7fffffff) == (chemin[i] & 0x7fffffff)){ e = &c; break; }
+		n = e;
+	}
+	if(n == nil) return false;
+	for(int32 p : n->pistes){
+		CActionTrack t;
+		if(!src->fichier.Piste(p, t) || (t.type & 0x7fffffff) != (type & 0x7fffffff)) continue;
+		piste = t;
+		if(chaines){
+			chaines->clear();
+			for(const CActionAttribut &a : t.attributs){
+				std::string c = src->fichier.ChaineCitee(a.decalage);
+				if(!c.empty()) (*chaines)[a.position] = c;
+			}
+		}
+		return true;
+	}
+	return false;
+}
+
 float
 CActionBank::ButesReel(const CActionTrack &piste, uint16 position)
 {

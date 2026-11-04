@@ -37,6 +37,7 @@
 #include "../src/core/AreaManager.h"
 #include "../src/core/ActionBank.h"
 #include "../src/core/ActionController.h"
+#include "../src/peds/Armes.h"
 #include "../src/anim/Hxd.h"
 #include "../src/anim/AnimGroups.h"
 #include "../src/core/ConditionListe.h"
@@ -102,6 +103,18 @@ static CDatPools donnees;
 static CScriptPedPool pietons;
 // Les modèles par nom (src/core/ModelEnum.h) : MODELENUM._Taxicab → 286, ou -1.
 static CModelEnum modeles;
+// Les types des armes (WeaponGetType, FUN_0051b300 : le +0x18 du modelinfo, la fiche ObjectButes) et l'inventaire commun
+// (ms_pPool654), src/peds/Armes. ChargerArmes les remplit au démarrage, comme CWeapon::RegisterCB (FUN_004da2d0).
+struct CArmesOutil : CMondeArmes {
+	std::map<int32, CTypeArme> types;
+	CTypeArme defaut;              // DAT_020c88d8 : l'ObjectButes du nœud Globals de Globals.cat
+	const CTypeArme &Type(int32 arme) const override {
+		auto it = arme == -1 ? types.end() : types.find(arme);
+		return it == types.end() ? defaut : it->second;
+	}
+};
+static CArmesOutil armes;
+static CInventaireArmes inventaire;
 // Le gestionnaire de zones (src/core/AreaManager.h, docs/zones.md) : la zone visible (DAT_00bd1008, ce que
 // AreaGetVisible répond), les scripts de zone (AreaRegisterAreaScript) et le changement de zone du joueur,
 // demandé par PlayerSetPos… et joué image par image comme FUN_00416e30 : fondu au noir, scripts de zone
@@ -234,6 +247,7 @@ OublierControleurs(int h)
 	controleursIA.erase(h);
 	coups.erase(h);
 	OublierSuivi(h);
+	inventaire.Vider(h);   // supposé : l'inventaire (+0x1c4) part avec le CPed, ses entrées du pool avec lui
 }
 
 static float facteurCoupsJoueur = 1.0f;   // PlayerButes +0xac (172) pour l'état physique 0 (FUN_0047b810), lu au démarrage
@@ -2064,6 +2078,118 @@ CreerPed(lua_State *L, const char *quoi, int32 modele, const CVector &pos, float
 		}
 	}
 	lua_pushnumber(L, h);
+	return 1;
+}
+
+// --- Les armes : leurs types et l'inventaire (src/peds/Armes) ---
+
+// Une fiche ObjectButes lue en CTypeArme : +0x18 (24) le genre, +0x1c (28) l'arbre, +0x34 (52) le maximum, +0x54 (84) le nom
+// des munitions, +0x64 (100), les octets +0x68 (104) et +0x69 (105).
+static CTypeArme
+LireTypeArme(const CActionTrack &t, const std::map<uint16, std::string> &chaines)
+{
+	CTypeArme a;
+	a.lu = true;
+	a.genre = (int32)t.Mot(24);
+	a.maximum = (int32)t.Mot(52);
+	a.inventaire = (int32)t.Mot(100);
+	const CActionAttribut *b = t.Champ(104), *c = t.Champ(105);
+	a.tir68 = b && b->valeur[0]; a.tir69 = c && c->valeur[0];
+	auto it = chaines.find(28); if(it != chaines.end()) a.arbre = it->second;
+	it = chaines.find(84); if(it != chaines.end()) a.nomMunition = it->second;
+	return a;
+}
+
+// FUN_0051ad50 : l'indice de l'arme de ce nom parmi les modèles weap (ms_weaponModelStore, DAT_00c735e8), -1 pour « unarmed »
+// ou un nom inconnu.
+static int32
+ArmeParNom(const std::string &nom)
+{
+	if(strcasecmp(nom.c_str(), "unarmed") == 0) return -1;
+	uint32 h = ActionHash(nom.c_str());
+	for(const auto &a : modeles.armes) if(ActionHash(a.second.c_str()) == h) return a.first;
+	return -1;
+}
+
+// CWeapon::RegisterCB (FUN_004da330 → FUN_004da2d0) : pour chaque modèle weap puis item, FUN_0050eaa0 cherche l'ObjectButes de
+// Weapons/Info/<nom> (FUN_005fa760(3, …)), puis Items/<nom>, puis OtherPickups/<nom> (FUN_005fa760(2, …)) depuis l'arbre des
+// réglages (FUN_0072ad50) ; l'outil lit Weapons/Info dans Global_Weapons.cat et les deux autres sous GlobalsBank/Globals de
+// Globals.cat. Le modèle des munitions (+0x84) est résolu par FUN_00728150 à la première demande : ici au chargement, le
+// même. La fiche par défaut est l'ObjectButes de Globals (FUN_0072ae00, DAT_020c88d8). Les trois armes aux munitions sans fin
+// de FUN_0045cdf0 sont « marble », « supermarble » et « RubBand » (la table des noms 0xa136e8).
+static void
+ChargerArmes(void)
+{
+	CActionTrack t;
+	std::map<uint16, std::string> ch;
+	if(CActionBank::ButesChemin("Globals.cat", {ActionHash("GlobalsBank"), ActionHash("Globals")}, ActionHash("ObjectButes"), t, &ch))
+		armes.defaut = LireTypeArme(t, ch), armes.defaut.lu = false;
+	int lues = 0;
+	auto charger = [&](int32 id, const std::string &nom){
+		uint32 h = ActionHash(nom.c_str());
+		if(CActionBank::ButesChemin("Global_Weapons.cat", {ActionHash("Weapons"), ActionHash("Info"), h}, ActionHash("ObjectButes"), t, &ch) ||
+		   CActionBank::ButesChemin("Globals.cat", {ActionHash("GlobalsBank"), ActionHash("Globals"), ActionHash("Items"), h}, ActionHash("ObjectButes"), t, &ch) ||
+		   CActionBank::ButesChemin("Globals.cat", {ActionHash("GlobalsBank"), ActionHash("Globals"), ActionHash("OtherPickups"), h}, ActionHash("ObjectButes"), t, &ch)){
+			armes.types[id] = LireTypeArme(t, ch);
+			lues++;
+		}
+	};
+	for(const auto &a : modeles.armes) charger(a.first, a.second);
+	for(const auto &a : modeles.objets) charger(a.first, a.second);
+	for(auto &a : armes.types) a.second.munition = a.second.nomMunition.empty() ? -1 : ArmeParNom(a.second.nomMunition);
+	armes.sansFin[0] = modeles.Index("marble"); armes.sansFin[1] = modeles.Index("supermarble"); armes.sansFin[2] = modeles.Index("RubBand");
+	printf("%d fiches d'armes et d'objets (ObjectButes) pour %zu armes et %zu objets\n", lues, modeles.armes.size(), modeles.objets.size());
+}
+
+// GiveWeaponToPlayer(arme[, b]) (0x5be100, lu à l'assembleur de 0x5be100 à 0x5be151) : l'arme (FUN_005d8200), b vrai par défaut
+// (FUN_005d8f20 avec deux arguments ou plus), puis FUN_0045ccb0(arme, b, 0) sur l'inventaire du joueur (DAT_00c1aea8 + 0x1c4).
+static int
+GiveWeaponToPlayer(lua_State *L)
+{
+	Journal("GiveWeaponToPlayer", L, 1);
+	inventaire.Donner(armes, SCRIPT_PED_JOUEUR, (int32)luaL_optnumber(L, 1, -1), false);
+	return 0;
+}
+
+// GiveAmmoToPlayer(arme, n[, b]) (0x5be160, lu à l'assembleur de 0x5be160 à 0x5be1be) : FUN_0045cd80(arme, n, b, 0) sur
+// l'inventaire du joueur.
+static int
+GiveAmmoToPlayer(lua_State *L)
+{
+	Journal("GiveAmmoToPlayer", L, 1);
+	inventaire.AjouterMunitions(armes, SCRIPT_PED_JOUEUR, (int32)luaL_optnumber(L, 1, -1), (int32)luaL_optnumber(L, 2, 0));
+	return 0;
+}
+
+// PedGetAmmoCount(ped, arme) (0x5ceca0, lu à l'assembleur de 0x5ceca0 à 0x5cecf6) : FUN_0045cdf0(arme) sur l'inventaire du
+// piéton (+0x1c4), 0 sans piéton.
+static int
+PedGetAmmoCount(lua_State *L)
+{
+	Journal("PedGetAmmoCount", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	lua_pushnumber(L, pietons.Acceder(h) ? inventaire.Munitions(armes, h, (int32)luaL_optnumber(L, 2, -1)) : 0);
+	return 1;
+}
+
+// WeaponGetType(arme) (0x5c63d0, lu à l'assembleur de 0x5c63d0 à 0x5c644f) : les octets +0x69 et +0x68 du type : les deux, 1 ;
+// +0x69 seul, 2 ; +0x68 seul, 0 ; aucun, le mot de pile que la fonction a poussé en entrant (ecx), indéterminé : l'outil rend 3.
+static int
+WeaponGetType(lua_State *L)
+{
+	Journal("WeaponGetType", L, 1);
+	const CTypeArme &t = armes.Type((int32)luaL_optnumber(L, 1, -1));
+	lua_pushnumber(L, t.tir69 ? (t.tir68 ? 1 : 2) : t.tir68 ? 0 : 3);
+	return 1;
+}
+
+// IsItemAWeapon(id) (0x5be3b0) : l'identifiant dans la plage des armes (0xa136b0 … 0xa136b4).
+static int
+IsItemAWeapon(lua_State *L)
+{
+	Journal("IsItemAWeapon", L, 1);
+	int32 id = (int32)luaL_optnumber(L, 1, -1);
+	lua_pushboolean(L, modeles.armes.count(id) != 0);
 	return 1;
 }
 
@@ -4516,6 +4642,11 @@ main(int argc, char **argv)
 	lua_register(L, "PedFaceObject", PedFaceObject);
 	lua_register(L, "PedFaceObjectNow", PedFaceObjectNow);
 	lua_register(L, "PedFaceHeading", PedFaceHeading);
+	lua_register(L, "GiveWeaponToPlayer", GiveWeaponToPlayer);
+	lua_register(L, "GiveAmmoToPlayer", GiveAmmoToPlayer);
+	lua_register(L, "PedGetAmmoCount", PedGetAmmoCount);
+	lua_register(L, "WeaponGetType", WeaponGetType);
+	lua_register(L, "IsItemAWeapon", IsItemAWeapon);
 	lua_register(L, "PedGetOffsetInWorldCoords", PedGetOffsetInWorldCoords);
 	lua_register(L, "PedSetStationary", PedSetStationary);
 	lua_register(L, "RegisterPedEventHandler", RegisterPedEventHandler);
@@ -4592,6 +4723,7 @@ main(int argc, char **argv)
 	PoserEnumeration(L, "POI", IndexPoi);
 	if(modeles.Charger()) printf("%zu noms de modèles dans Objects/ide.img\n", modeles.Nombre());
 	else printf("Objects\\ide.img introuvable : MODELENUM répondra -1\n");
+	ChargerArmes();
 	ChargerPedStats();
 	ChargerMissions();
 	// Le joueur, créé avec le monde (CPlayerPed, modèle 0) : FUN_00484d10 lui pose aussi les arbres de son modèle,

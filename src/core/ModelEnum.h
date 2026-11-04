@@ -42,6 +42,9 @@ public:
 	// du composant d'actions du piéton (FUN_00484d10) les pose. Indice du modèle → les quatre chaînes.
 	struct Arbres { std::string actions, fichierActions, ia, fichierIA; };
 	std::map<int32, Arbres> arbresDuPieton;
+	// Les noms des entrées weap (0xa136b0 … 0xa136b4) et item (0xa136b8 … 0xa136bc) : CWeapon::RegisterCB (FUN_004da2d0)
+	// cherche la fiche de chacune par son nom (FUN_0050eaa0, le +4 du modelinfo). Indice du modèle → nom.
+	std::map<int32, std::string> armes, objets;
 	static const char *const typesDePietons[15];
 	int32 doublons = 0;                    // un même nom sous deux indices : le premier gagne
 };
