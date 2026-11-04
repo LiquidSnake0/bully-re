@@ -332,6 +332,10 @@ struct CScriptPed {
 	// +0x4e4 (l'octet du navigateur +0xdac que FUN_005e09c0 lit) : immobile, posé par PedSetStationary (0x5c7950, le booléen
 	// FUN_005d8f20) et la piste SetStationary (FUN_00626920) ; la navigation ne donne alors plus de vitesse (FUN_005e4a60).
 	bool immobile = false;
+	// L'arme : celle que le piéton veut (+0x18 du composant d'actions +0x2e0 : 0 rien de demandé, -1 les mains nues ; PedSetWeapon
+	// la pose, la piste PropGetDesired la prend), celle en main (+0x10e, le modèle de l'objet arme +0x1d0 : -1 sans arme ; la piste
+	// PropAttach la pose) et celle en passage de l'une à l'autre (+0x1574, -1 à la construction : 0x480835).
+	int32 armeVoulue = 0, armeTenue = -1, armePassage = -1;
 	uint32 instantMort = 0;      // +0x18b8 : l'horloge (ms) à la mort d'un autre que le joueur
 	// Le geste en cours.
 	// L'intention de mouvement du composant d'actions (+0x2e0) : sa direction (+0, +4, +8) et sa vitesse (+0x1c), que la

@@ -24,7 +24,7 @@
 // lance celle dont le joueur touche le corona, et celles qui se lancent seules (champ 51) : 1_02 après 1_01.
 // Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
 // de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s[,s2…]]... [--demander N@s]... [--sequence @s]... [--suivre PIETON[,d]@s]... [--viser PIETON@s]...
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s[,s2…]]... [--demander N@s]... [--sequence @s]... [--suivre PIETON[,d]@s]... [--viser PIETON@s]... [--arme ARME@s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -115,6 +115,22 @@ struct CArmesOutil : CMondeArmes {
 };
 static CArmesOutil armes;
 static CInventaireArmes inventaire;
+static int32 armeHud = -1;                 // HUDWeapons (le composant 20) +0xc0 : PoserArmeHud
+static bool hudArmesVerrouille = false;    // son octet +0x13c : PlayerWeaponHudLock
+static int32 ArmeParNom(const std::string &nom);   // FUN_0051ad50
+static int32 MunitionsDe(int ped, int32 arme);     // FUN_00486130
+static void PoserArmeHud(int32 a);                 // FUN_0055c6f0
+static void AppliquerArmes(int ped, CActionController &c);
+static void RendreArbreAvantArme(int ped);
+// Le nom d'un modèle d'arme ou d'objet (le +4 de son modelinfo est son HashString), nil sinon.
+static const std::string *
+NomDArme(int32 a)
+{
+	auto it = modeles.armes.find(a);
+	if(it != modeles.armes.end()) return &it->second;
+	it = modeles.objets.find(a);
+	return it == modeles.objets.end() ? nil : &it->second;
+}
 // Le gestionnaire de zones (src/core/AreaManager.h, docs/zones.md) : la zone visible (DAT_00bd1008, ce que
 // AreaGetVisible répond), les scripts de zone (AreaRegisterAreaScript) et le changement de zone du joueur,
 // demandé par PlayerSetPos… et joué image par image comme FUN_00416e30 : fondu au noir, scripts de zone
@@ -341,8 +357,21 @@ struct CJugeOutil : CJugeAction {
 		                    kGroupeHumiliation = ActionHash("HumiliationGroupIs"), kTempsPasse = ActionHash("ActionNodePlayTimePast"),
 		                    kGroupeAnim = ActionHash("AnimationGroupLoaded"), kParolePrete = ActionHash("IsSpeechPreloaded"),
 		                    kPositionCible = ActionHash("TargetRelativePosition");
-		if(type == kArme) return f.ChaineCitee((uint32)d + 8) == "unarmed";
 		const CScriptPed *moi = pietons.Acceder(ped);
+		// WeaponEquiped (ConditionWeaponEquiped 0x9365a4, FUN_0065bd80, lu à l'assembleur de 0x65bde9 à 0x65be1e) : sans piéton,
+		// faux ; l'arme en passage (+0x1574) avec l'octet +9, sinon l'arme en main (+0x10e). Sans arme : vrai si le nom +4 manque
+		// ou vaut « unarmed » (_stricmp). Avec une arme : un nom manquant rend la négation de l'octet +8 ; « any » (0x93c2e8) est
+		// vrai ; sinon le HashString du nom doit être le nom du modèle (+4 du modelinfo, FUN_0050e7f0).
+		if(type == kArme){
+			if(moi == nil) return 0;
+			std::string nom = f.ChaineCitee((uint32)d + 8);
+			int32 a = ((mots[1] >> 8) & 0xff) && moi->armePassage != -1 ? moi->armePassage : moi->armeTenue;
+			const std::string *m = a == -1 ? nil : NomDArme(a);
+			if(m == nil) return nom.empty() || strcasecmp(nom.c_str(), "unarmed") == 0;
+			if(nom.empty()) return (mots[1] & 0xff) == 0;
+			if(strcasecmp(nom.c_str(), "any") == 0) return 1;
+			return ActionHash(nom.c_str()) == ActionHash(m->c_str());
+		}
 		float seuil; memcpy(&seuil, &mots[0], 4);
 		// IsPlayer (FUN_005ffe40) : le type du piéton (+0x1310) vaut 13 (PLAYER1).
 		if(type == kJoueur) return moi && moi->type == SCRIPT_PED_TYPE_JOUEUR;
@@ -397,13 +426,18 @@ struct CJugeOutil : CJugeAction {
 		static const uint32 kSprint = ActionHash("Sprint"), kFatigue = ActionHash("IsPlayerTired");
 		if(type == kSprint) return moi ? ComparerCondition(moi->sprint, seuil, mots[1]) : -1;
 		if(type == kFatigue) return etatPhysiqueJoueur == 2;
-		// L'outil n'a pas d'armes (seul « unarmed » est vrai pour WeaponEquiped) : l'arme voulue du composant d'actions
-		// (+0x18 du composant +0x2e0) reste 0 et l'objet arme du piéton (+0x1d0) n'a pas de modèle (+0x10e à -1).
-		// WeaponDesired (ConditionWeaponDesired, FUN_0065b4b0) : sans arme voulue, vrai si l'octet +8 est nul.
-		// WeaponIsInventory (FUN_0065b7e0) : sans modèle d'arme, faux.
+		// WeaponDesired (ConditionWeaponDesired, FUN_0065b4b0) : sans arme voulue (+0x18 du composant +0x2e0 à 0), la négation de
+		// l'octet +8 ; avec un nom +4 qui n'est pas « any », son arme (FUN_0051ad50, gardée en +0xc) doit être la voulue, sinon la
+		// négation de +8 ; puis l'octet +8. WeaponIsInventory (FUN_0065b7e0 → FUN_0055ba80) : une arme en main dont le type a +0x64.
 		static const uint32 kArmeVoulue = ActionHash("WeaponDesired"), kArmeInventaire = ActionHash("WeaponIsInventory");
-		if(type == kArmeVoulue) return (mots[1] & 0xff) == 0;
-		if(type == kArmeInventaire) return 0;
+		if(type == kArmeVoulue){
+			bool o = (mots[1] & 0xff) != 0;
+			if(moi == nil || moi->armeVoulue == 0) return !o;
+			std::string nom = f.ChaineCitee((uint32)d + 8);
+			if(!nom.empty() && strcasecmp(nom.c_str(), "any") != 0 && moi->armeVoulue != ArmeParNom(nom)) return !o;
+			return o;
+		}
+		if(type == kArmeInventaire) return moi && moi->armeTenue != -1 && armes.Type(moi->armeTenue).inventaire != 0;
 		// WeaponNeedInit (ConditionWeaponNeedInit 0x9366a4, FUN_0065b7b0) : le +0x120 de l'objet arme (+0x1d0, un CWeapon) vaut
 		// -1 (_DAT_009009ac). Le constructeur de CWeapon (FUN_004da610, 0x4da696) et ses remises (FUN_004d92c0, FUN_004d9940,
 		// FUN_004d9fa0) le posent à -1, le lancement d'une piste SetWeaponInfo (FUN_00660f50) à son champ +0x2c (7 à mains
@@ -421,10 +455,16 @@ struct CJugeOutil : CJugeAction {
 		if(type == kArmeInit) return moi && moi->armeInit == -1.0f;
 		if(type == kConversation) return 0;
 		// WeaponDesiredIsEquiped (FUN_0065b5b0) : sans arme voulue, vrai ; sinon l'objet arme (+0x1d0) doit en avoir le
-		// modèle (+0x10e), et l'arme voulue « dernière » (-1) est alors effacée. IsWeaponFiredWhenDropped (FUN_0065bbe0) :
-		// l'octet +0x2b du type de l'arme tenue (WeaponGetType), faux sans arme.
+		// modèle (+0x10e), et une arme voulue -1 (les mains nues, déjà nues) est alors remise à 0. IsWeaponFiredWhenDropped
+		// (FUN_0065bbe0) : l'octet +0x2b du type de l'arme tenue (WeaponGetType), faux sans arme.
 		static const uint32 kArmeTenue = ActionHash("WeaponDesiredIsEquiped"), kArmeLachee = ActionHash("IsWeaponFiredWhenDropped");
-		if(type == kArmeTenue) return 1;
+		if(type == kArmeTenue){
+			CScriptPed *q = pietons.Acceder(ped);
+			if(q == nil || q->armeVoulue == 0) return 1;
+			if(q->armeVoulue != q->armeTenue) return 0;
+			if(q->armeVoulue == -1) q->armeVoulue = 0;
+			return 1;
+		}
 		// ParametricTime (ConditionParametricTime 0x937ad8, FUN_005fbed0 ; créateur 0x649580) : le flottant que pointe le
 		// +0x38 du contexte (+0x157c du piéton, que seul le vélo pose) comparé à +4 par +8 (FUN_005fb750).
 		// PropTargetInteractive (0x936838, FUN_00655110 ; créateur 0x645470) : sans piéton, faux ; pour le joueur à +4 nul
@@ -440,10 +480,33 @@ struct CJugeOutil : CJugeAction {
 		// composant 20, +0xc0) pour le joueur seulement, comparées à +4 par +8 (FUN_005fb750). Sans arme : 0.
 		static const uint32 kMunitions = ActionHash("WeaponAmmo");
 		if(type == kMunitions){
-			if((mots[2] & 0xff) && (moi == nil || moi->type != SCRIPT_PED_TYPE_JOUEUR)) return 0;
-			return ComparerCondition(0.0f, seuil, mots[1]);
+			if(moi == nil) return 0;
+			if((mots[2] & 0xff) && moi->type != SCRIPT_PED_TYPE_JOUEUR) return 0;
+			int32 a = (mots[2] & 0xff) ? armeHud : moi->armeTenue;
+			return ComparerCondition(a == -1 && !(mots[2] & 0xff) ? 0.0f : (float)MunitionsDe(ped, a), seuil, mots[1]);
 		}
-		if(type == kArmeLachee) return 0;
+		if(type == kArmeLachee) return moi && moi->armeTenue != -1 && armes.Type(moi->armeTenue).tireLachee;
+		// WeaponHudLocked (0x9366d4, FUN_0065aec0) : l'octet +0x13c du HUD des armes. WeaponModelRequest (0x93661c, FUN_0065b6f0) :
+		// l'arme du nom +4 (FUN_0051ad50), ou la voulue, demandée (WeaponRequestModel, la priorité 0xc avec l'octet +8) : l'outil n'a
+		// pas de diffusion, chargée. WeaponDesiredIsFocusWeapon (0x936590, FUN_0065b5f0) : faux hors du joueur ; vrai sans arme au
+		// HUD (+0xc0 à -1) ; sinon l'arme voulue est celle du HUD, et avec l'octet +4 une autre la remplace.
+		static const uint32 kHudVerrou = ActionHash("WeaponHudLocked"), kModeleDemande = ActionHash("WeaponModelRequest"),
+		                    kArmeHud = ActionHash("WeaponDesiredIsFocusWeapon");
+		if(type == kHudVerrou) return hudArmesVerrouille;
+		// WeaponFlags (0x937c84, FUN_0065bb20) : sans arme en main, faux ; le drapeau +8 de l'entrée d'inventaire de l'arme (FUN_0045cb70,
+		// FUN_0045cb40 : les mots +4 + 4n), sinon de l'objet arme (+0x26c + 4n). Les pistes SetWeaponFlags qui les posent ne sont pas
+		// jouées : 0, donc faux.
+		static const uint32 kDrapeauxArme = ActionHash("WeaponFlags");
+		if(type == kDrapeauxArme) return 0;
+		if(type == kModeleDemande) return 1;
+		if(type == kArmeHud){
+			CScriptPed *q = pietons.Acceder(ped);
+			if(q == nil || q->type != SCRIPT_PED_TYPE_JOUEUR) return 0;
+			if(armeHud == -1) return 1;
+			bool egal = q->armeVoulue == armeHud;
+			if(!egal && (mots[0] & 0xff)) q->armeVoulue = armeHud;
+			return egal;
+		}
 		// CollisionWeaponType (FUN_0065aa30) : sur le relevé du dernier coup reçu (le +0x10 du contexte, +0x408 du composant
 		// +0x2e0), l'arme du coup (+0x5e, un mot : +0x466 ; -1 à mains nues) et son genre (+0x60 : +0x468), que la méthode
 		// du coup pose (FUN_0047b810, ses 5e et 19e arguments). Avec l'octet +8, l'arme du nom +0xc (FUN_0051ad50 : -1 pour
@@ -553,7 +616,10 @@ struct CJugeOutil : CJugeAction {
 		// PedFlags (FUN_005fd700) : le drapeau +4 du piéton (+0x1314 + 4n) non nul. Dans la charge d'une prise, « Not PedFlags »
 		// (le drapeau 70, posé par la fin de la charge) mène à un nœud dont l'Execute vise GrappleMoves/ExecuteNodes, qui
 		// n'existe pas (ExecuteNodes est sous GrappleStrikes) : le nœud finit tout de suite et passe à ../Give.
-		if(type == kDrapeaux) return moi && mots[0] < SCRIPT_PED_DRAPEAUX ? moi->drapeaux[mots[0]] != 0 : -1;
+		// Le jugement lit sans borne : le « drapeau » 138 (0x8a, la sélection d'une arme du joueur, Weapons/SelectActions/WeaponSelect)
+		// est le mot +0x153c, au-delà des 0x89 drapeaux, que la remise FUN_00485820 met à 0 et FUN_00475b10 à 1 pour deux piétons
+		// (non suivi) : 0.
+		if(type == kDrapeaux) return moi && mots[0] < SCRIPT_PED_DRAPEAUX ? moi->drapeaux[mots[0]] != 0 : moi && mots[0] == 0x8a ? 0 : -1;
 		// ActionNodePlayTimePast (FUN_005fbfc0) : le temps du nœud joué a atteint le seuil +0x50 de l'objet +0x10 du contexte,
 		// -1 par défaut (0x9009ac, FUN_005f3ab0), que seule une piste Damage à +0x1c positif pose (FUN_00609400). L'outil
 		// ne lit pas les pistes Damage (aucune des arbres relevés n'a de seuil positif) : le seuil reste -1, c'est vrai.
@@ -900,8 +966,17 @@ struct CJugeOutil : CJugeAction {
 		                    kMinuterieAction = ActionHash("CheckActionTimer"), kParoleOccupee = ActionHash("IsSpeechBusy"),
 		                    kAnimSociale = ActionHash("SocialAnimIs"), kVeutSocialiser = ActionHash("IsWantingToSocialize");
 		if(type == kProjectile || type == kGrenade || type == kEau || type == kSuiveur || type == kChef || type == kTandem ||
-		   type == kStimulus || type == kPrioriteStimulus || type == kTypeArme || type == kDeclencheurPerso || type == kVeutSocialiser)
+		   type == kStimulus || type == kPrioriteStimulus || type == kDeclencheurPerso || type == kVeutSocialiser)
 			return 0;
+		// WeaponEquipedType (FUN_0065be50) : l'arme en passage avec l'octet +8 (sinon l'arme en main) ; sans elle, faux ; le genre +4 :
+		// 0 l'octet +0x68 du type, 1 +0x68 et +0x69, 2 +0x69 ; un autre, faux.
+		if(type == kTypeArme){
+			if(moi == nil) return 0;
+			int32 a = (mots[1] & 0xff) && moi->armePassage != -1 ? moi->armePassage : moi->armeTenue;
+			if(a == -1) return 0;
+			const CTypeArme &t = armes.Type(a);
+			return mots[0] == 0 ? t.tir68 : mots[0] == 1 ? t.tir68 && t.tir69 : mots[0] == 2 ? t.tir69 : 0;
+		}
 		if(type == kMinuterieAction) return moi ? !(moi->minuterieAction > (float)maintenant * 0.001f) : -1;
 		if(type == kParoleOccupee) return ParoleEnCours((mots[0] & 0xff) ? ped : -1);
 		if(type == kAnimSociale){
@@ -2095,6 +2170,7 @@ LireTypeArme(const CActionTrack &t, const std::map<uint16, std::string> &chaines
 	a.inventaire = (int32)t.Mot(100);
 	const CActionAttribut *b = t.Champ(104), *c = t.Champ(105);
 	a.tir68 = b && b->valeur[0]; a.tir69 = c && c->valeur[0];
+	const CActionAttribut *l = t.Champ(43); a.tireLachee = l && l->valeur[0];
 	auto it = chaines.find(28); if(it != chaines.end()) a.arbre = it->second;
 	it = chaines.find(84); if(it != chaines.end()) a.nomMunition = it->second;
 	return a;
@@ -2139,6 +2215,19 @@ ChargerArmes(void)
 	for(auto &a : armes.types) a.second.munition = a.second.nomMunition.empty() ? -1 : ArmeParNom(a.second.nomMunition);
 	armes.sansFin[0] = modeles.Index("marble"); armes.sansFin[1] = modeles.Index("supermarble"); armes.sansFin[2] = modeles.Index("RubBand");
 	printf("%d fiches d'armes et d'objets (ObjectButes) pour %zu armes et %zu objets\n", lues, modeles.armes.size(), modeles.objets.size());
+}
+
+// FUN_00486130 (ecx = le piéton) : 0 pour une arme sous 1 ; les munitions de ses munitions (+0x84 > 0) s'il en a ; sinon les siennes,
+// et 1 si elle n'en a pas mais qu'il la tient en main.
+static int32
+MunitionsDe(int ped, int32 arme)
+{
+	if(arme < 1) return 0;
+	const CTypeArme &t = armes.Type(arme);
+	if(t.munition > 0) return inventaire.Munitions(armes, ped, t.munition);
+	int32 n = inventaire.Munitions(armes, ped, arme);
+	const CScriptPed *p = pietons.Acceder(ped);
+	return n == 0 && p && p->armeTenue == arme ? 1 : n;
 }
 
 // GiveWeaponToPlayer(arme[, b]) (0x5be100, lu à l'assembleur de 0x5be100 à 0x5be151) : l'arme (FUN_005d8200), b vrai par défaut
@@ -2191,6 +2280,185 @@ IsItemAWeapon(lua_State *L)
 	int32 id = (int32)luaL_optnumber(L, 1, -1);
 	lua_pushboolean(L, modeles.armes.count(id) != 0);
 	return 1;
+}
+
+// PedSetWeapon(ped, arme, munitions[, b]) (0x5c9390) : le piéton (0 le joueur, DAT_00c1aea8 ; sinon FUN_005c7220), rien sans lui ; b
+// vrai par défaut (FUN_005d8f20 avec quatre arguments). -1 : l'arme voulue (+0x18 du composant +0x2e0) passe à -1, et pour le
+// joueur au HUD (FUN_0055c6f0). Sinon, avec un type (WeaponGetType) : ses munitions (+0x84, FUN_00728150) ; si elles sont une autre
+// arme, l'inventaire reçoit l'arme avec 1 s'il n'en a pas (FUN_0045cee0), puis c'est elles qui prennent le compte ; ce qu'il en
+// avait est retiré (FUN_0045cf70 de FUN_0045cdf0), puis le compte donné ajouté (FUN_0045cee0) ; l'arme voulue devient l'arme (et
+// pour le joueur, le HUD). L'arme passe en main par l'arbre (Weapons/SelectActions : PropGetDesired, PropAttach).
+static void
+PoserArmeVoulue(int h, int32 arme, int32 n)
+{
+	CScriptPed *p = pietons.Acceder(h);
+	if(p == nil) return;
+	if(arme == -1){
+		p->armeVoulue = -1;
+		if(p->type == SCRIPT_PED_TYPE_JOUEUR) PoserArmeHud(-1);
+		return;
+	}
+	int32 munition = armes.Type(arme).munition, compte = arme;
+	if(munition != -1){
+		compte = munition;
+		if(munition != arme && inventaire.Munitions(armes, h, arme) == 0) inventaire.Changer(armes, h, arme, 1);
+	}
+	inventaire.Retirer(armes, h, compte, inventaire.Munitions(armes, h, compte));
+	inventaire.Changer(armes, h, compte, (int16)n);
+	p->armeVoulue = arme;
+	if(p->type == SCRIPT_PED_TYPE_JOUEUR) PoserArmeHud(arme);
+}
+
+static int
+PedSetWeapon(lua_State *L)
+{
+	Journal("PedSetWeapon", L, 1);
+	PoserArmeVoulue(lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1, (int32)luaL_optnumber(L, 2, -1), (int32)luaL_optnumber(L, 3, 0));
+	return 0;
+}
+
+// PedSetWeaponNow(ped, arme, munitions[, b]) (0x5c9500) : le drapeau 29 du piéton (+0x1388) à 1, PedSetWeapon, puis le nœud
+// /Global/Weapons/SelectActions (FUN_005f59b0) joué tout de suite par son contrôleur d'actions (l'emplacement +0x4c, la descente,
+// sinon FUN_005f4fc0 ; FUN_005f4490 puis FUN_005f49a0) : la banque ForceDesiredWeapon (si PedFlags 29) range l'arme tenue et prend
+// la voulue (PropDetach, PropGetDesired, PropAttach, SetPedFlags 29 à 0).
+static int
+PedSetWeaponNow(lua_State *L)
+{
+	Journal("PedSetWeaponNow", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	CScriptPed *p = pietons.Acceder(h);
+	if(p == nil) return 0;
+	p->drapeaux[29] = 1;
+	PoserArmeVoulue(h, (int32)luaL_optnumber(L, 2, -1), (int32)luaL_optnumber(L, 3, 0));
+	const CActionNode *n = arbres.Trouver("/Global/Weapons/SelectActions");
+	if(n){
+		CActionController &c = controleurs[h];
+		float t = maintenant / 1000.0f;
+		if(!c.Entrer(arbres, n, CJugeOutil(h, t), t)) c.Jouer(arbres, n, t);
+		AppliquerArmes(h, c);
+	}
+	return 0;
+}
+
+// PlayerSetWeapon(arme, munitions[, b]) (0x5d18c0) : sans munitions de l'arme (FUN_0045cdf0), FUN_0045cee0 les ajoute ; sinon
+// FUN_0045d0f0 les pose (Poser, l'entrée libérée sous 1) ; l'arme voulue du joueur et le HUD prennent l'arme.
+static int
+PlayerSetWeapon(lua_State *L)
+{
+	Journal("PlayerSetWeapon", L, 1);
+	int32 a = (int32)luaL_optnumber(L, 1, -1), n = (int16)luaL_optnumber(L, 2, 0);
+	if(inventaire.Munitions(armes, SCRIPT_PED_JOUEUR, a) == 0) inventaire.Changer(armes, SCRIPT_PED_JOUEUR, a, n);
+	else{
+		int i = inventaire.Trouver(SCRIPT_PED_JOUEUR, a);
+		if(i != -1){ inventaire.Poser(armes, i, n); if(inventaire.entrees[i].munitions < 1) inventaire.Liberer(i); }
+	}
+	pietons.Acceder(SCRIPT_PED_JOUEUR)->armeVoulue = a;
+	PoserArmeHud(a);
+	return 0;
+}
+
+// PedClearWeapon(ped, arme) (0x5c95c0) : FUN_0045cf70(arme, 1000) ; si le piéton la tient, son arme voulue passe à -1.
+static int
+PedClearWeapon(lua_State *L)
+{
+	Journal("PedClearWeapon", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	CScriptPed *p = pietons.Acceder(h);
+	if(p == nil) return 0;
+	int32 a = (int32)luaL_optnumber(L, 2, -1);
+	inventaire.Retirer(armes, h, a, 1000, p->type == SCRIPT_PED_TYPE_JOUEUR, modeles.Index("RBandBall"));
+	if(p->armeTenue == a) p->armeVoulue = -1;
+	return 0;
+}
+
+// L'objet arme remis (FUN_004d92c0 : plus de modèle) et l'arbre du piéton rendu si l'arme l'avait changé (+0x33c ; FUN_005f3f40
+// puis FUN_005f36d0 sur +0x4b0).
+static void
+LacherArme(int h)
+{
+	CScriptPed *p = pietons.Acceder(h);
+	if(p == nil) return;
+	p->armeTenue = -1;
+	p->armeInit = -1.0f;
+	RendreArbreAvantArme(h);
+}
+
+// PedClearAllWeapons(ped) (0x5c9720) : 0 le joueur (FUN_005c7220(h, 3 − (h ≠ 0))) ; l'objet arme remis, l'arbre rendu, l'inventaire
+// vidé (FUN_0045d040), l'arme voulue et l'arme en passage à -1.
+static int
+PedClearAllWeapons(lua_State *L)
+{
+	Journal("PedClearAllWeapons", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	CScriptPed *p = pietons.Acceder(h);
+	if(p == nil) return 0;
+	LacherArme(h);
+	inventaire.Vider(h);
+	p->armeVoulue = -1; p->armePassage = -1;
+	return 0;
+}
+
+// PedDestroyWeapon(ped, arme) (0x5c9630) : FUN_0045cf70(arme, 1000) ; si le piéton la tient, l'objet arme remis, l'arbre rendu,
+// l'arme en passage et l'arme voulue à -1 ; pour le joueur dont le HUD la montre, le HUD à -1 (et PlayerUnequip, non suivi).
+static int
+PedDestroyWeapon(lua_State *L)
+{
+	Journal("PedDestroyWeapon", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	CScriptPed *p = pietons.Acceder(h);
+	if(p == nil) return 0;
+	int32 a = (int32)luaL_optnumber(L, 2, -1);
+	inventaire.Retirer(armes, h, a, 1000, p->type == SCRIPT_PED_TYPE_JOUEUR, modeles.Index("RBandBall"));
+	if(p->armeTenue == a){ LacherArme(h); p->armePassage = -1; p->armeVoulue = -1; }
+	if(p->type == SCRIPT_PED_TYPE_JOUEUR && armeHud == a) PoserArmeHud(-1);
+	return 0;
+}
+
+// PedGetWeapon(ped) (0x5ce070) : 0 le joueur ; l'arme en main (+0x10e de +0x1d0), -1 sans piéton.
+static int
+PedGetWeapon(lua_State *L)
+{
+	Journal("PedGetWeapon", L, 1);
+	const CScriptPed *p = PedArg(L, 1);
+	lua_pushnumber(L, p ? p->armeTenue : -1);
+	return 1;
+}
+
+// PedHasWeapon(ped, arme) (0x5cd160) : le piéton tient cette arme. PlayerHasWeapon(arme) (0x5d1d70) : le joueur la tient.
+// WeaponEquipped([arme]) (0x5be410) : avec un argument, le joueur la tient ; sans, il tient une arme (+0x10e ≠ -1).
+static int
+PedHasWeapon(lua_State *L)
+{
+	appels["PedHasWeapon"]++;
+	const CScriptPed *p = PedArg(L, 1);
+	lua_pushboolean(L, p && p->armeTenue == (int32)luaL_optnumber(L, 2, -2));
+	return 1;
+}
+
+static int
+PlayerHasWeapon(lua_State *L)
+{
+	appels["PlayerHasWeapon"]++;
+	lua_pushboolean(L, pietons.Acceder(SCRIPT_PED_JOUEUR)->armeTenue == (int32)luaL_optnumber(L, 1, -2));
+	return 1;
+}
+
+static int
+WeaponEquipped(lua_State *L)
+{
+	appels["WeaponEquipped"]++;
+	int32 a = pietons.Acceder(SCRIPT_PED_JOUEUR)->armeTenue;
+	lua_pushboolean(L, lua_gettop(L) == 1 ? a == (int32)luaL_optnumber(L, 1, -2) : a != -1);
+	return 1;
+}
+
+// PlayerWeaponHudLock(b) (0x5d1b80 → PlayerWeaponHudLock 0x55bb20) : l'octet +0x13c du HUD des armes, que lit WeaponHudLocked.
+static int
+PlayerWeaponHudLock(lua_State *L)
+{
+	Journal("PlayerWeaponHudLock", L, 1);
+	hudArmesVerrouille = lua_toboolean(L, 1) != 0;
+	return 0;
 }
 
 // PlayerGetPhysicalState() (0x5d1ee0) : DAT_00c1af4c.
@@ -3578,6 +3846,95 @@ AppliquerDegatsCible(int ped, CActionController &c)
 	c.coupsCible.clear();
 }
 
+// L'arbre du piéton (+0x4b0 du composant +0x2e0) que PropDetach, PedClearAllWeapons et PedDestroyWeapon rendent au contexte
+// quand l'arme l'avait changé (l'octet +0x33c) : l'outil garde l'arbre posé avant l'arme.
+static std::map<int, const CActionNode *> arbresAvantArme;
+static void
+RendreArbreAvantArme(int ped)
+{
+	auto it = arbresAvantArme.find(ped);
+	if(it == arbresAvantArme.end()) return;
+	CActionController &c = controleurs[ped];
+	const CActionNode *arme = c.arbre;
+	c.arbre = it->second;
+	c.Racine(arbres, it->second);
+	arbresAvantArme.erase(it);
+	float t = maintenant / 1000.0f;   // comme à la prise : revenu dans l'arbre de l'arme, il redescend depuis celui du piéton
+	if(arme && c.joue && c.arbre && arbres.Sous(arme, c.joue) && c.Poser(arbres, c.arbre, CJugeOutil(ped, t), t))
+		printf("%6.2f s  contrôleur de %d : %s\n", maintenant / 1000.0, ped, arbres.CheminDe(c.joue).c_str());
+}
+
+// FUN_0051adb0 : l'arme d'un nom haché parmi les armes (ms_weaponModelStore, le +4 de chacune) ; -1 pour 0, « unarmed » ou un
+// nom inconnu.
+static int32
+ArmeParHache(uint32 h)
+{
+	h &= 0x7fffffff;
+	if(h == 0 || h == ActionHash("unarmed")) return -1;
+	for(const auto &a : modeles.armes) if(ActionHash(a.second.c_str()) == h) return a.first;
+	return -1;
+}
+
+// Le HUD des armes (HUDWeapons, le composant 20, DAT_00c674f0) : son arme (+0xc0), posée par FUN_0055c6f0 : -1 si le joueur n'a pas
+// de munitions de cette arme (FUN_0045cdf0), sauf RBandBall (DAT_00bf432c). WeaponAmmo (avec l'octet +0xc) et
+// WeaponDesiredIsFocusWeapon la lisent ; l'octet +0x13c (PlayerWeaponHudLock) verrouille le choix.
+static void
+PoserArmeHud(int32 a)
+{
+	armeHud = a;
+	if(a != -1 && inventaire.Munitions(armes, SCRIPT_PED_JOUEUR, a) == 0 && a != modeles.Index("RBandBall")) armeHud = -1;
+}
+
+// Les pistes de l'arme en main lancées à cette image (CActionController::pistesArmeLancees).
+static void
+AppliquerArmes(int ped, CActionController &c)
+{
+	CScriptPed *p = pietons.Acceder(ped);
+	if(p == nil){ c.pistesArmeLancees.clear(); return; }
+	for(const CActionController::PisteArme &d : c.pistesArmeLancees){
+		if(d.genre == CActionController::ARME_VOULUE_POSER){   // FUN_00660770
+			p->armeVoulue = (d.nom & 0x7fffffff) != ActionHash("NoWeapon") ? ArmeParHache(d.nom) : -1;
+			if(d.octet) PoserArmeHud(p->armeVoulue);
+		}else if(d.genre == CActionController::ARME_VOULUE_PRENDRE){   // FUN_00660870
+			p->armePassage = p->armeVoulue;
+			p->armeVoulue = 0;
+		}else if(d.genre == CActionController::ARME_ATTACHER){   // FUN_0065fad0
+			if(p->armePassage == -1 || p->armePassage == 0) continue;
+			p->armeTenue = p->armePassage;   // FUN_004d92c0 puis FUN_004da6f0 : les modèles d'armes sont toujours là dans l'outil
+			p->armeInit = -1.0f;             // FUN_004d92c0 : +0x120 et +0x124 à -1
+			const CTypeArme &t = armes.Type(p->armeTenue);
+			printf("%6.2f s  le piéton %d prend en main l'arme %d (%s)\n", maintenant / 1000.0, ped, p->armeTenue,
+			       modeles.armes.count(p->armeTenue) ? modeles.armes[p->armeTenue].c_str() : "?");
+			if(d.octet && !t.arbre.empty()){
+				const CActionNode *n = arbres.Trouver(t.arbre.c_str());
+				if(n){
+					CActionController &k = controleurs[ped];
+					const CActionNode *avant = k.arbre;
+					if(!arbresAvantArme.count(ped)) arbresAvantArme[ped] = avant;
+					k.arbre = n;
+					k.Racine(arbres, n);
+					printf("%6.2f s  contexte des actions de %d : %s\n", maintenant / 1000.0, ped, t.arbre.c_str());
+					// L'outil lance les pistes d'un nœud à l'image qui suit son entrée : un nœud court (Weapons/SelectActions/
+					// WeaponSelect/select/default, 0,067 s) a déjà rendu la main à l'arbre d'avant, d'où le moteur le ferait
+					// redescendre depuis l'arbre de l'arme. Le contrôleur redescend donc depuis lui s'il est revenu dans l'ancien.
+					float tt = maintenant / 1000.0f;
+					if(avant && k.joue && arbres.Sous(avant, k.joue) && k.Poser(arbres, n, CJugeOutil(ped, tt), tt))
+						printf("%6.2f s  contrôleur de %d : %s\n", maintenant / 1000.0, ped, arbres.CheminDe(k.joue).c_str());
+				}
+			}
+		}else if(d.genre == CActionController::ARME_DETACHER){   // FUN_00660640
+			if(p->drapeaux[21] != 0){
+				p->armePassage = p->armeTenue;
+				if(p->armeTenue != -1) printf("%6.2f s  le piéton %d range l'arme %d\n", maintenant / 1000.0, ped, p->armeTenue);
+				p->armeTenue = -1;
+				p->armeInit = -1.0f;
+				if(d.octet) RendreArbreAvantArme(ped);
+			}else p->armePassage = -1;
+		}
+	}
+	c.pistesArmeLancees.clear();
+}
+
 // Les pistes TargetAttackRightsAcquire et TargetAttackRightsRelease lancées à cette image (FUN_0062a1a0, FUN_0062a1e0).
 static void
 AppliquerDroits(int ped, CActionController &c)
@@ -3648,6 +4005,7 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 		AppliquerMorts(ped, *k);
 		AppliquerDegatsCible(ped, *k);
 		AppliquerDroits(ped, *k);
+		AppliquerArmes(ped, *k);   // avant SetWeaponInfo : PropAttach remet +0x120, la banque NeedInit qui suit le pose
 		for(const CActionController::InfoArme &d : k->infosArmeLancees) p->armeInit = d.init;   // FUN_00660f50
 		AppliquerObjectifs(ped, *k);
 	}
@@ -4465,6 +4823,7 @@ main(int argc, char **argv)
 	std::vector<std::pair<uint32, uint32>> attentes;      // --demander N@s : une ActionRequest n° N du joueur à s secondes (tenue 0,25 s)
 	std::vector<std::pair<uint32, std::string>> gestes;    // --jouer CHEMIN@s : le joueur joue ce nœud d'action à s secondes (la manette : parer, frapper)
 	std::vector<std::pair<uint32, int>> visees;           // --viser PIETON@s : le joueur verrouille ce piéton à s secondes
+	std::vector<std::pair<uint32, int>> choixArmes;       // --arme ARME@s : le joueur choisit cette arme au HUD à s secondes
 	std::vector<const char*> pos;
 	for(int i = 1; i < argc; i++){
 		if(strcmp(argv[i], "--mission") == 0 && i + 1 < argc) aLancer = argv[++i];
@@ -4506,6 +4865,12 @@ main(int argc, char **argv)
 			// --viser PIETON@s : le bouton de verrouillage de la manette, le joueur prend le piéton pour cible (FUN_00497d20).
 			std::string e = argv[++i]; size_t at = e.find('@');
 			visees.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), atoi(e.c_str())});
+		}
+		else if(strcmp(argv[i], "--arme") == 0 && i + 1 < argc){
+			// --arme ARME@s : la croix de la manette, le joueur choisit une arme de son inventaire au HUD (FUN_0055c6f0 : +0xc0 du
+			// composant HUDWeapons) ; la condition WeaponDesiredIsFocusWeapon en fait l'arme voulue, Weapons/SelectActions la prend.
+			std::string e = argv[++i]; size_t at = e.find('@');
+			choixArmes.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), atoi(e.c_str())});
 		}
 		else if(strcmp(argv[i], "--suivre") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@'), v = e.find(',');
@@ -4647,6 +5012,17 @@ main(int argc, char **argv)
 	lua_register(L, "PedGetAmmoCount", PedGetAmmoCount);
 	lua_register(L, "WeaponGetType", WeaponGetType);
 	lua_register(L, "IsItemAWeapon", IsItemAWeapon);
+	lua_register(L, "PedSetWeapon", PedSetWeapon);
+	lua_register(L, "PedSetWeaponNow", PedSetWeaponNow);
+	lua_register(L, "PlayerSetWeapon", PlayerSetWeapon);
+	lua_register(L, "PedClearWeapon", PedClearWeapon);
+	lua_register(L, "PedClearAllWeapons", PedClearAllWeapons);
+	lua_register(L, "PedDestroyWeapon", PedDestroyWeapon);
+	lua_register(L, "PedGetWeapon", PedGetWeapon);
+	lua_register(L, "PedHasWeapon", PedHasWeapon);
+	lua_register(L, "PlayerHasWeapon", PlayerHasWeapon);
+	lua_register(L, "WeaponEquipped", WeaponEquipped);
+	lua_register(L, "PlayerWeaponHudLock", PlayerWeaponHudLock);
 	lua_register(L, "PedGetOffsetInWorldCoords", PedGetOffsetInWorldCoords);
 	lua_register(L, "PedSetStationary", PedSetStationary);
 	lua_register(L, "RegisterPedEventHandler", RegisterPedEventHandler);
@@ -4764,6 +5140,15 @@ main(int argc, char **argv)
 		for(auto &e : visees) if(e.second >= 0 && maintenant >= e.first && controleJoueur != 1){
 			printf("%6.2f s  la manette est coupée : le joueur ne vise pas le piéton %d\n", maintenant / 1000.0, e.second);
 			e.second = -1;
+		}
+		for(auto &e : choixArmes) if(e.second >= -1 && maintenant >= e.first){
+			if(controleJoueur != 1) printf("%6.2f s  la manette est coupée : le joueur ne choisit pas l'arme %d\n", maintenant / 1000.0, e.second);
+			else if(hudArmesVerrouille) printf("%6.2f s  le HUD des armes est verrouillé : le joueur ne choisit pas l'arme %d\n", maintenant / 1000.0, e.second);
+			else{
+				PoserArmeHud(e.second);
+				printf("%6.2f s  le joueur choisit l'arme %d au HUD : %d\n", maintenant / 1000.0, e.second, armeHud);
+			}
+			e.second = -2;
 		}
 		for(auto &e : visees) if(e.second >= 0 && maintenant >= e.first){
 			bool pris = pietons.Verrouiller(SCRIPT_PED_JOUEUR, e.second, 0);
@@ -4909,6 +5294,7 @@ main(int argc, char **argv)
 			AppliquerDegatsCible(c.first, c.second);
 			AppliquerDroits(c.first, c.second);
 			// SetWeaponInfo (FUN_00660f50) : le +0x120 de l'objet arme du piéton.
+			AppliquerArmes(c.first, c.second);   // avant SetWeaponInfo : PropAttach remet +0x120, la banque NeedInit qui suit le pose
 			if(CScriptPed *p = pietons.Acceder(c.first))
 				for(const CActionController::InfoArme &d : c.second.infosArmeLancees) p->armeInit = d.init;
 			// SpeechTrack (FUN_006195a0) : une ligne à tenir est retenue ; les autres ne sont pas jouées par l'outil (une
