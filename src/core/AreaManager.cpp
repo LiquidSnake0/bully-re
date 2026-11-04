@@ -223,3 +223,18 @@ CAreaManager::AvancerImage(int fondu, bool scriptsDecharges, bool scriptDeZoneCh
 	for(int i = 0; i < 16; i++)
 		if(Avancer(fondu, scriptsDecharges, scriptDeZoneCharge)) break;
 }
+
+void
+CEtatPortes::Poser(uint32 nom, int bit, bool valeur)
+{
+	for(Paire &p : paires)
+		if(p.nom == nom){ if(valeur) p.bits |= 1u << bit; else p.bits &= ~(1u << bit); return; }
+	if(paires.size() < MAX) paires.push_back({nom, valeur ? 1u << bit : 0u});
+}
+
+bool
+CEtatPortes::Lire(uint32 nom, int bit) const
+{
+	for(const Paire &p : paires) if(p.nom == nom) return (p.bits >> bit) & 1;
+	return false;
+}

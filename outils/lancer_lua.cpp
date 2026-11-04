@@ -2411,6 +2411,58 @@ PedSetPosPoint(lua_State *L)
 	return 0;
 }
 
+// Les portes nommées par les scripts (CEtatPortes, l'objet 0xc3b808). AreaSetDoorLocked (0x5b7760), AreaSetDoorLockedToPeds
+// (0x5b79a0), AreaSetDoorOpen (0x5b7be0), AreaIsDoorLockedToPeds (0x5b7880) et AreaIsDoorOpen (0x5b7ac0) prennent la porte de
+// trois façons : une chaîne (le type 4, FUN_005d81e0) est cherchée parmi les déclencheurs (FUN_006d78c0 : HashString du nom
+// contre +0x2c), sinon son HashString va droit à la table ; un pointeur léger (le type 2, FUN_005d8560 → FUN_006d7870), que
+// l'outil ne suit pas ; un nombre, la poignée d'un déclencheur. Pour un déclencheur, FUN_006d6420, FUN_006d6480, FUN_006d6500,
+// FUN_006d6450 et FUN_006d64d0 passent par son objet animé (+0x1c : +0x180 verrouillée aux piétons, +0x184 ouverte, l'ouverture
+// FUN_004eebc0 / FUN_004eed70, le chemin des piétons FUN_005eaf00) ; sans objet, par la table sous le nom haché du déclencheur
+// (+0x2c). L'outil ne crée pas les objets animés (PAnimCreate 0x5c4680 n'est pas lu) : un déclencheur passe toujours par la
+// table, ce que le jeu ne fait que pour un déclencheur sans objet. AreaSetDoorPathableToPeds (0x5b7d00) ne touche que l'objet
+// (FUN_004ea270, FUN_005eaf00) : rien dans l'outil.
+static CEtatPortes etatPortes;
+
+static bool
+NomDePorte(lua_State *L, uint32 &nom)
+{
+	if(lua_type(L, 1) == LUA_TSTRING){
+		// Le déclencheur trouvé par son nom a ce même nom haché en +0x2c : sans objet animé, les deux chemins mènent à la même paire.
+		nom = ActionHash(lua_tostring(L, 1)) & 0x7fffffff;
+		return true;
+	}
+	if(lua_type(L, 1) != LUA_TNUMBER) return false;
+	int t = (int)lua_tonumber(L, 1);
+	if(t < 0 || donnees.ZoneParHandle(t) == nil) return false;
+	nom = donnees.HachageZone(t);
+	return true;
+}
+
+static int
+PoserPorte(lua_State *L, const char *quoi, int bit)
+{
+	Journal(quoi, L, 1);
+	bool v = lua_toboolean(L, 2) != 0;   // FUN_005d8f20, lu avant la porte
+	uint32 nom;
+	if(NomDePorte(L, nom)) etatPortes.Poser(nom, bit, v);
+	return 0;
+}
+
+static int
+LirePorte(lua_State *L, const char *quoi, int bit)
+{
+	appels[quoi]++;
+	uint32 nom;
+	lua_pushboolean(L, NomDePorte(L, nom) && etatPortes.Lire(nom, bit));
+	return 1;
+}
+
+static int AreaSetDoorLocked(lua_State *L){ return PoserPorte(L, "AreaSetDoorLocked", CEtatPortes::VERROUILLEE); }
+static int AreaSetDoorLockedToPeds(lua_State *L){ return PoserPorte(L, "AreaSetDoorLockedToPeds", CEtatPortes::VERROUILLEE_PIETONS); }
+static int AreaSetDoorOpen(lua_State *L){ return PoserPorte(L, "AreaSetDoorOpen", CEtatPortes::OUVERTE); }
+static int AreaIsDoorLockedToPeds(lua_State *L){ return LirePorte(L, "AreaIsDoorLockedToPeds", CEtatPortes::VERROUILLEE_PIETONS); }
+static int AreaIsDoorOpen(lua_State *L){ return LirePorte(L, "AreaIsDoorOpen", CEtatPortes::OUVERTE); }
+
 // PedIgnoreStimuli(ped, b) (0x5ca370, lua_PedIgnoreStimuli) : le mot +0x1370 du piéton (le drapeau 23, +0x1314 + 4 × 23) prend
 // le booléen (FUN_005d8f20) ; rien s'il n'existe pas (FUN_005c7220). SetAmbientPedsIgnoreStimuli(b) (0x5bb2b0, hors de
 // l'index, lu à l'assembleur de 0x5bb2b0 à 0x5bb307) le pose à tous les piétons du pool (DAT_00c0f5f0, du dernier au premier)
@@ -4438,6 +4490,11 @@ main(int argc, char **argv)
 	lua_register(L, "PedSetAITree", PedSetAITree);
 	lua_register(L, "PedSetTetherToPoint", PedSetTetherToPoint);
 	lua_register(L, "PedIgnoreStimuli", PedIgnoreStimuli);
+	lua_register(L, "AreaSetDoorLocked", AreaSetDoorLocked);
+	lua_register(L, "AreaSetDoorLockedToPeds", AreaSetDoorLockedToPeds);
+	lua_register(L, "AreaSetDoorOpen", AreaSetDoorOpen);
+	lua_register(L, "AreaIsDoorLockedToPeds", AreaIsDoorLockedToPeds);
+	lua_register(L, "AreaIsDoorOpen", AreaIsDoorOpen);
 	lua_register(L, "SetAmbientPedsIgnoreStimuli", SetAmbientPedsIgnoreStimuli);
 	lua_register(L, "PedClearTether", PedClearTether);
 	lua_register(L, "EnterNIS", EnterNIS);

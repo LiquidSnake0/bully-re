@@ -112,6 +112,19 @@ main(void)
 	CVector corona(297.334f, -71.4814f, 4.91838f);
 	VERIF(PaveContient(CVector(298.5f, -72.0f, 6.0f), corona, 2, 2, 2, true) && !PaveContient(CVector(272.68f, -73.13f, 6.97f), corona, 2, 2, 2, true));
 	printf("  nouvelle partie, téléportation par un script, porte, même zone : la zone visible ne change qu'à l'état 9 ; le pavé fermé de FUN_005c2910\n");
+	{
+		// L'état des portes nommées (0xc3b808) : un nom absent s'ajoute avec son seul bit, se lit faux ; 400 paires au plus.
+		CEtatPortes e;
+		VERIF(!e.Lire(545, CEtatPortes::VERROUILLEE_PIETONS));
+		e.Poser(545, CEtatPortes::VERROUILLEE_PIETONS, true);
+		VERIF(e.paires.size() == 1 && e.paires[0].bits == 2 && e.Lire(545, CEtatPortes::VERROUILLEE_PIETONS) && !e.Lire(545, CEtatPortes::OUVERTE));
+		e.Poser(545, CEtatPortes::OUVERTE, true); e.Poser(545, CEtatPortes::VERROUILLEE_PIETONS, false);
+		VERIF(e.paires[0].bits == 4);
+		e.Poser(546, CEtatPortes::VERROUILLEE, false);
+		VERIF(e.paires.size() == 2 && e.paires[1].bits == 0);
+		for(uint32 i = 0; i < 500; i++) e.Poser(1000 + i, CEtatPortes::OUVERTE, true);
+		VERIF(e.paires.size() == CEtatPortes::MAX);
+	}
 	printf("test_zones : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;
 }
