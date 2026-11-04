@@ -1027,6 +1027,38 @@ SurMission(uint32 hachage)
 // de mission n'y sont pas dans _G), 0.0 si elle n'existe pas (le troisième argument faux). Le résultat est lu par
 // lua_tonumber (0x73b0d0 : un nombre, ou une chaîne convertible, sinon 0), tronqué en entier (0x85c6f0), et la condition
 // est vraie s'il est positif : F_CanBullyAttack et F_CanBlock rendent 1.0 ou 0.0, et un booléen vaut faux.
+// La piste Script (FUN_006851a0) : le même choix de l'espace de noms ; la fonction est appelée par NSCall avec, si la piste le
+// demande, la poignée du piéton et le nombre de la piste (FUN_005d8460, FUN_005d8480). La réponse n'est pas lue.
+static void
+AppelScript(const std::string &script, const std::string &fonction, int ped, float nombre)
+{
+	int s = -1;
+	if(script == "mission"){
+		if(mission.etat == AUCUNE || mission.script < 0) return;
+		s = mission.script;
+	}else{
+		std::string voulu = script;
+		for(char &c : voulu) if(c == '\\') c = '/';
+		for(size_t i = 0; i < scripts.size() && s < 0; i++){
+			std::string nom = scripts[i].fichier;
+			for(char &c : nom) if(c == '\\') c = '/';
+			if(strcasecmp(nom.c_str(), voulu.c_str()) == 0) s = (int)i;
+		}
+		if(s < 0) s = 0;
+	}
+	lua_State *L = etatLua;
+	int avant = scriptCourant;
+	scriptCourant = s;
+	lua_getglobal(L, "NSCall");
+	lua_pushstring(L, scripts[s].fichier.c_str());
+	lua_pushstring(L, fonction.c_str());
+	lua_pushboolean(L, 0);
+	int n = 3;
+	if(ped >= 0){ lua_pushnumber(L, ped); lua_pushnumber(L, nombre); n = 5; }
+	if(lua_pcall(L, n, 0, 0) != 0){ printf("        piste Script : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+	scriptCourant = avant;
+}
+
 static int
 AppelLuaCond(const std::string &script, const std::string &fonction)
 {
@@ -3274,6 +3306,14 @@ AppliquerDroits(int ped, CActionController &c)
 	if(CScriptPed *p = pietons.Acceder(ped))   // FUN_00474840 : DAT_00c1a9b4 × 0,001 (le flottant 0x900fa0) + la durée
 		for(float d : c.minuteriesLancees) p->minuterieAction = (float)maintenant * 0.001f + d;
 	c.minuteriesLancees.clear();
+	// Script (FUN_006851a0) : la fonction dans son espace de noms (AppelScript, comme FUN_005d80a0) ; sans mission en cours,
+	// « mission » ne mène à rien (FUN_006aa630 rend -1, le lancement s'arrête).
+	std::vector<CActionController::AppelScript> appels;
+	appels.swap(c.appelsLances);
+	for(const CActionController::AppelScript &a : appels){
+		printf("%6.2f s  le piéton %d appelle %s dans %s (piste Script)\n", maintenant / 1000.0, ped, a.fonction.c_str(), a.script.c_str());
+		AppelScript(a.script, a.fonction, a.avecPieton ? ped : -1, a.nombre);
+	}
 }
 
 // Une image du contrôleur de l'IA d'un piéton (FUN_00484490), puis ce que font ses pistes et celles des contrôleurs de

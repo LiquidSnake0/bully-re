@@ -185,6 +185,12 @@ public:
 	struct Minuterie { float entree, duree; bool fait; };
 	std::vector<Minuterie> minuteries;
 	std::vector<float> minuteriesLancees;
+	// Script (ScriptTrack 0x935ad4, lancement FUN_006851a0) : la fonction +0x28 de l'espace de noms +0x24 (« mission » : celui de la
+	// mission en cours) est appelée (FUN_005d80a0) ; sans l'octet +0x18, sans argument ; avec, l'octet +0x20 passe la poignée du
+	// piéton (FUN_005c60d0) et le nombre +0x1c. L'octet +0x2c (la réponse choisit un enfant du nœud, FUN_005f4490) et l'octet
+	// +0x21 (la poignée du déclencheur d'un objet animé) ne sont pas suivis. `appelsLances` : ceux de cette image.
+	struct AppelScript { float entree; std::string script, fonction; bool avecPieton; float nombre; bool fait; };
+	std::vector<AppelScript> appelsScript, appelsLances;
 	struct Droits { float entree; bool prendre, fait, retient; };   // retient : l'octet +8, jusqu'au lancement
 	std::vector<Droits> droits;
 	std::vector<bool> droitsLances;

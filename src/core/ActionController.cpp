@@ -82,7 +82,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kInfoArme = ActionHash("SetWeaponInfo"), kMort = ActionHash("Death"),
 	                    kDegatsCible = ActionHash("DamageTarget"), kPrendreDroits = ActionHash("TargetAttackRightsAcquire"),
 	                    kRendreDroits = ActionHash("TargetAttackRightsRelease"), kDe = ActionHash("RandomDiceRoll"),
-	                    kMinuterie = ActionHash("SetActionTimer");
+	                    kMinuterie = ActionHash("SetActionTimer"), kScript = ActionHash("Script");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -132,6 +132,11 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			poursuites.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(28), Reel(p, 40, 0.0f)});
 		}else if(p.type == kMinuterie){
 			minuteries.push_back({a, Reel(p, 24, 0.0f), false});
+		}else if(p.type == kScript){
+			const CActionAttribut *sc = p.Champ(36), *fn = p.Champ(40);
+			if(fn && !Octet(p, 44) && !(Octet(p, 24) && !Octet(p, 32)))
+				appelsScript.push_back({a, sc ? f->ChaineCitee(sc->decalage) : std::string(), f->ChaineCitee(fn->decalage),
+				                        Octet(p, 24), Reel(p, 28, 0.0f), false});
 		}else if(p.type == kDe){
 			desPistes.push_back({a, p.Mot(24), false, Octet(p, 8)});
 		}else if(p.type == kPrendreDroits || p.type == kRendreDroits){
@@ -249,6 +254,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 		if(!d.morte && d.lancee && d.mode == 2) laches.push_back(d.bouton);
 	demandesBouton.clear();
 	effacements.clear(); fuites.clear(); repos.clear(); infosArme.clear(); droits.clear(); desPistes.clear(); minuteries.clear();
+	appelsScript.clear();
 	lances.clear();                    // FUN_005f7390 : l'arrêt d'une piste spawn arrête son contrôleur
 	finExecutees = -1.0f;
 	retenu = false;
@@ -511,6 +517,8 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 	minuteriesLancees.clear();
 	for(Minuterie &d : minuteries)   // FUN_00628e50
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; minuteriesLancees.push_back(d.duree); }
+	for(AppelScript &d : appelsScript)   // FUN_006851a0
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; appelsLances.push_back(d); }
 	desLances.clear();
 	for(De &d : desPistes)        // FUN_00632810
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; desLances.push_back(d.indice); }

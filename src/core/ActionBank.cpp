@@ -236,11 +236,13 @@ CActionBank::Trouver(const char *chemin) const
 		p = *e ? e + 1 : e;
 		if(segment.empty()) continue;
 		if(segment == ".."){ if(pile.size() > 1) pile.pop_back(); continue; }
-		uint32 h = ActionHash(segment.c_str());
+		// « #3be30de2 » : un nom dont on n'a que le hachage, tel que les journaux l'écrivent (outil, pas le moteur).
+		bool hache = segment.size() == 9 && segment[0] == '#';
+		uint32 h = hache ? (uint32)strtoul(segment.c_str() + 1, nil, 16) : ActionHash(segment.c_str());
 		const CActionNode *courant = pile.back(), *suivant = nil;
 		for(const CActionNode &x : Enfants(*courant)) if(Nom(x) == h){ suivant = &x; break; }
 		if(suivant == nil) return nil;
-		if(suivant->nom.empty()) suivant->nom = segment;   // un nom haché, appris du chemin qui le désigne (journaux)
+		if(suivant->nom.empty() && !hache) suivant->nom = segment;   // un nom haché, appris du chemin qui le désigne (journaux)
 		pile.push_back(suivant);
 	}
 	return pile.back();
