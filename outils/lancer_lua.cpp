@@ -4401,6 +4401,9 @@ main(int argc, char **argv)
 	else printf("Objects\\ide.img introuvable : MODELENUM répondra -1\n");
 	ChargerPedStats();
 	ChargerMissions();
+	// Le joueur, créé avec le monde (CPlayerPed, modèle 0) : FUN_00484d10 lui pose aussi les arbres de son modèle,
+	// /Global/Player (Act/Player.act) et /Global/PlayerAI.
+	PoserArbresDuModele(SCRIPT_PED_JOUEUR, 0);
 	ChargerApi();
 	lua_newtable(L);
 	lua_pushstring(L, "__index");
