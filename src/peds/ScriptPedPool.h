@@ -329,6 +329,9 @@ struct CScriptPed {
 	float tempsNonVu = 0;        // +0x1db8 : depuis quand le piéton ne voit plus sa cible (s), FUN_00499340 ; 0 au verrouillage
 	uint32 instantVerrou = 0;    // +0x1dc4 : l'horloge du dernier verrouillage (FUN_00497d20 y ajoute un tirage, non suivi)
 	bool immortel = false;       // +0x13fc : PedSetImmortalFlag (0x5ce6e0) / PedGetImmortalFlag (0x5ce730)
+	// +0x4e4 (l'octet du navigateur +0xdac que FUN_005e09c0 lit) : immobile, posé par PedSetStationary (0x5c7950, le booléen
+	// FUN_005d8f20) et la piste SetStationary (FUN_00626920) ; la navigation ne donne alors plus de vitesse (FUN_005e4a60).
+	bool immobile = false;
 	uint32 instantMort = 0;      // +0x18b8 : l'horloge (ms) à la mort d'un autre que le joueur
 	// Le geste en cours.
 	// L'intention de mouvement du composant d'actions (+0x2e0) : sa direction (+0, +4, +8) et sa vitesse (+0x1c), que la

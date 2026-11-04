@@ -2376,6 +2376,36 @@ PedSetPosXYZ(lua_State *L)
 	return 0;
 }
 
+// PedGetOffsetInWorldCoords(ped, dx, dy, dz) (0x5ce500, lu à l'assembleur de 0x5ce500 à 0x5ce60e) : sans nombre en premier
+// argument (FUN_005d81c0) ou sans piéton (FUN_005c7220), (0, 0, 0) ; sinon le décalage (FUN_005d82a0 × 3) tourné par la matrice
+// du piéton (FUN_008b5f90 : son +0x14 ; FUN_00414560 : dx × la droite + dy × l'avant + dz × le haut, les colonnes +0, +0x10,
+// +0x20) plus sa position (+0x30 de la matrice, +4 sans elle). Trois nombres. Dans l'outil, le piéton n'a qu'un cap : l'avant
+// (cos cap, sin cap, 0), la droite (sin cap, −cos cap, 0), le haut (0, 0, 1).
+static int
+PedGetOffsetInWorldCoords(lua_State *L)
+{
+	Journal("PedGetOffsetInWorldCoords", L, 1);
+	const CScriptPed *p = PedArg(L, 1);
+	float x = 0, y = 0, z = 0;
+	if(p){
+		float dx = (float)luaL_optnumber(L, 2, 0), dy = (float)luaL_optnumber(L, 3, 0), dz = (float)luaL_optnumber(L, 4, 0);
+		float a = p->cap * 3.14159265f / 180.0f, c = cosf(a), s = sinf(a);
+		x = p->pos.x + dx * s + dy * c; y = p->pos.y - dx * c + dy * s; z = p->pos.z + dz;
+	}
+	lua_pushnumber(L, x); lua_pushnumber(L, y); lua_pushnumber(L, z);
+	return 3;
+}
+
+// PedSetStationary(ped, b) (0x5c7950) : l'octet +0x4e4 du piéton (FUN_005d8f20), rien sans piéton. L'outil le passe à la vitesse
+// de la navigation dans CombatLoco (ScriptPedVitesseDuTrajet) ; ses gestes (PedMoveToPoint…) ne le lisent pas.
+static int
+PedSetStationary(lua_State *L)
+{
+	Journal("PedSetStationary", L, 1);
+	if(CScriptPed *p = PedArg(L, 1)) p->immobile = lua_toboolean(L, 2) != 0;
+	return 0;
+}
+
 // CPed::SetHeading (FUN_004755e0) : le cap visé (+0x1700) et celui de l'entité (+0x10, et sa matrice), puis la direction de
 // l'intention de mouvement (+0, +0xc du composant +0x2e0) tournée vers l'avant (FUN_00415350). L'outil garde le cap en degrés
 // depuis +x : le moteur prend le lacet d'un point moins 90 degrés, en radians (0 vers +y), la même direction.
@@ -2542,6 +2572,19 @@ PedFaceObject(lua_State *L)
 	const CScriptPed *e = genre == 2 ? pietons.Acceder(id) : genre == 3 ? pietons.Acceder(SCRIPT_PED_JOUEUR) : nil;
 	if(e == nil || mode != 0) return 0;
 	TournerVers(p, e);
+	return 0;
+}
+
+// PedFaceHeading(ped, degrés, mode) (0x5c76b0) : le cap en radians (× π / 180, les doubles 0x900160 et 0x900158) à
+// FUN_005c72e0 : mode 0, CPed::SetHeading (FUN_004755e0) puis la matrice et le cadre de rendu (FUN_00443950, FUN_006c9990) ;
+// sinon un FaceHeadingObjective (FUN_004709d0 : le cap en +0x14, le genre 2) poussé dans la file (CPed::PushObjective), que
+// l'outil ne joue pas. Le cap du moteur part de +y : celui de l'outil (depuis +x) vaut 90 degrés de plus.
+static int
+PedFaceHeading(lua_State *L)
+{
+	Journal("PedFaceHeading", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p && (int)luaL_optnumber(L, 3, 0) == 0) PoserCap(p, (float)luaL_optnumber(L, 2, 0) + 90.0f);
 	return 0;
 }
 
@@ -3369,7 +3412,7 @@ CombatLoco(int ped, bool joueur, bool premiere)
 	float dx = e.point.x - p->pos.x, dy = e.point.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
 	float vitesse = ScriptPedVitesseDuPas(e.mode, d2Cible, d * d, ButeIA(44, 1.5f));
 	float ecart = remainderf(atan2f(dy, dx) - p->cap * 3.14159265f / 180.0f, 2.0f * 3.14159265f);
-	p->intentionVitesse = ScriptPedVitesseDuTrajet(vitesse, d * d, ecart, 0.2f);
+	p->intentionVitesse = ScriptPedVitesseDuTrajet(vitesse, d * d, ecart, 0.2f, p->immobile);
 	if(d > 0 && p->intentionVitesse > 0) p->intention = CVector(dx / d, dy / d, 0);
 	if(p->intentionVitesse > 0){
 		float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f * p->intentionVitesse / 1.5f;
@@ -4472,6 +4515,9 @@ main(int argc, char **argv)
 	lua_register(L, "PedSetPosPoint", PedSetPosPoint);
 	lua_register(L, "PedFaceObject", PedFaceObject);
 	lua_register(L, "PedFaceObjectNow", PedFaceObjectNow);
+	lua_register(L, "PedFaceHeading", PedFaceHeading);
+	lua_register(L, "PedGetOffsetInWorldCoords", PedGetOffsetInWorldCoords);
+	lua_register(L, "PedSetStationary", PedSetStationary);
 	lua_register(L, "RegisterPedEventHandler", RegisterPedEventHandler);
 	lua_register(L, "RegisterTriggerEventHandler", RegisterTriggerEventHandler);
 	lua_register(L, "SetNumberOfHandledTriggerEventObjects", SetNumberOfHandledTriggerEventObjects);
