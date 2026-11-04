@@ -409,6 +409,21 @@ selon sa colonne de parade : six ou sept jabs sur quinze. La commande allonge la
 Le bully tombe à 5 points à 89,13 s (`1_02_HumiliateHim`), `RCV/END` à 95,37 s, `KnockOuts/Rear/Rear` à 99,40 s, puis la rencontre
 avec Russell : **`1_02` se termine réussie à 124,97 s**.
 
+**Le vrai chemin (05.11.2026).** Jusque-là, la cinématique des bullies (la fonction 35 de `1_02.lur`, lancée à 22,27 s) venait d'un
+bouchon : `T_MonitorBullies` (la fonction 64, créée par `F_SetupBoysDormBullies` à 6,01 s) lance `F_FireBullyNIS` quand
+`PedGetWhoHitMeLast` d'un des trois bullies rend le joueur, et le bouchon rendait 0, la poignée du joueur. Réelle (0x5c8c60), elle ne
+rend rien tant que personne ne les a frappés. La fonction 8 lance aussi la cinématique quand le joueur est dans `_1_02_RUSSELTEASE` :
+la commande y entre à 22,3 s. La cinématique part à 22,31 s, une image plus tard, et le combat tire ses parades autrement ; la série de
+jabs va jusqu'à 96 s et l'humiliation part à 98 s :
+
+    build/outils/lancer_lua 160 --mission 1_02 --sans-cinematiques --porte DT_ischool_FrontDoorL@3 --entrer _GARYTRIGGER@6 \
+      --entrer _1_02_RUSSELTEASE@22.3 … (les options de la parade, de la prise et du coup au sol, comme plus haut) \
+      --jouer /Global/TrainingPlayer/Attacks/Strikes/LightAttacks@72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96 \
+      --jouer /Global/Player/Social_Actions/HarassMoves/Humiliations/Humiliate_Init:Act/Player.act@98
+
+Le bully tombe à 5 points à 93,16 s (`1_02_HumiliateHim`), `RCV/END` à 103,32 s, `KnockOuts/Rear/Rear` à 107,55 s : **`1_02` se termine
+réussie à 132,92 s**.
+
 ## `1_03` (27.10.2026, nuit)
 
 `1_03` (« The Setup ») s'enchaîne après `1_02C` et `1_02B`, entre 8 h et 19 h (« Les conditions »). Lancée seule
@@ -525,6 +540,61 @@ porte 2 à 97,02 s, les gardiens (3 et 2) à 118,64 et 121,77 s, deux jabs sur l
 arme Davis (`PedSetTetherToPoint`, `PedSetWeapon(6, 303, 6)`, `PedCoverSet`) à 117,78 s ; les coups de 124, 126 et 128 s le mènent à
 140, 80 puis 18 points, `CutsceneDavisBegs` part à 128,17 s (`PlayerSetControl(0)` : la manette de l'outil est coupée),
 `Victory` finit à 138,01 s (le joueur a maintenant son arbre `/Global/Player`) et `MissionSucceed(true, false, false)` à 148,86 s.
+
+**Les briques (05.11.2026) : Davis touché de loin.** `GetPointListSize` réelle, `CreateRespawnableBricks` (dans `ChaseOneSetup`) crée
+les trois briques de `_1_03_PICKUPBRICKS` (le modèle 311, `PickupCreateXYZ(311, …, "BrickBute")`) à côté des quatre couvercles (315).
+La riposte peut finir comme dans le jeu : après la dernière vague, au lieu des trois jabs sur Davis, le joueur va à chaque brique, la
+ramasse, vise Davis et la lance (`--ramasser`, `--tirer`) :
+
+    B="--aller 130.631,8.68252,6.16985@122 --ramasser @122.3 --viser 6@122.4 --tirer @122.6"
+    B="$B --aller 127.722,16.6468,6.16985@124 --ramasser @124.3 --viser 6@124.4 --tirer @124.6"
+    B="$B --aller 121.868,21.2301,6.09985@126 --ramasser @126.3 --viser 6@126.4 --tirer @126.6"
+    (la commande de la riposte jusqu'à --jouer …/LightAttacks@117,117.6,118.2,118.8, puis $B à la place de la dernière ligne de $R)
+
+Chaque brique (la fiche BRICK : 0,38 m par pas, 30 points) touche Davis sur ses tonneaux (123,72, 125,30 et 127,22 s : 140, 80 puis 18
+points, `cbDavisHit`) ; `T_BossBattleTutorial` affiche `1_03_T02` quand le joueur tient la deuxième ; `CutsceneDavisBegs`, puis
+`PlayerPickupSlingshot` met le lance-pierre en main (`PropSetInTransition`, `PropAttach`) : **`1_03` se termine réussie à 148,04 s**.
+
+## `1_04` (« The Slingshot ») (05.11.2026)
+
+`1_04` s'enchaîne après `1_03`. Lancée seule (`build/outils/lancer_lua 120 --mission 1_04 --sans-cinematiques`), `MissionSetup` finit à
+3,23 s (la cinématique `1-04` sautée, le dortoir puis `MainMap`) ; `main` crée Gary (le piéton 4, modèle 130, `STAT_GS_GARY`), donne
+au joueur le lance-pierre (`GiveWeaponToPlayer(303)`, `GiveAmmoToPlayer(303, 30)` : 1 dans l'inventaire, le maximum de sa fiche, et des
+billes sans fin) et lance Gary vers `_1_04_NEMESISPARKING` (objectif `1_04_OBJ01`). Lu dans `1_04.lur` (`main`, la fonction 4, appelle à
+chaque image l'étape en cours, son upvalue 7) :
+
+1. `F_StageOneGetToBus` : le joueur dans `_1_04_PARKING`. La cinématique de Gary (la fonction 13) pose Gary à côté du joueur
+   (`PedGetOffsetInWorldCoords`), qu'il ne faut pas laisser en bouchon (un seul 0 arrêtait `main`).
+2. `F_StageTwoShootTheBottles` (objectif `1_04_BOT`, `TutorialStart("Shooting")`) : casser au lance-pierre au moins trois des cinq
+   vitres du bus (les entrées spec `tschool_BusWindow`, `…01` à `…04` de `tschool.ipb`, le modèle BusWindow, 1 point de vie), que
+   `OnObjectBrokenCallback` reçoit par `RegisterHashEventHandler(haché, 3, …)` ; `PAnimDestroyedByPed` doit rendre le joueur ;
+   `ObjectNumProjectileImpacts(_1_04_BOTTLEZONE, 304)` compte les marques des billes.
+3. `F_StageThreeGetToField` (objectif `1_04_OBJ02`) : le joueur dans `_1_04_FIELDTRIG` ; Gary montre l'arbre (`1_04_TREE`).
+4. `F_LaunchFieldBullies` : le joueur dans `_1_04_TREE2_TRIG` et dans l'arbre (`PedIsPlaying(gPlayer, "/Global/TreeClimb/Actions/ON_BOT")`,
+   l'arbre `pxTree.cat` de Stream/World.img) ; six jocks (22 points de vie) et Burton.
+5. `F_TreeAssault` : les jocks font leurs tours puis leurs sauts sur place ; `F_CheckHit` (`RegisterGlobalEventHandler(7, …)`) compte
+   les coups de bille (`PedGetLastHitWeapon` rend 304) ; les six à 0 point, `F_CheckBullyAttacked` mène à `MissionSucceed`.
+
+Avec l'outil :
+
+    F=/Global/SlingShot/SlingShot/Actions/controller/Upperbody/#3da01ef7/Charge/Release/Release
+    V="--arme 303@15"
+    V="$V --viser-objet tschool_BusWindow01@16 --jouer $F@17 --viser-objet tschool_BusWindow02@18 --jouer $F@19"
+    V="$V --viser-objet tschool_BusWindow03@20 --jouer $F@21 --viser-objet -@22"
+    A="--entrer _1_04_FIELDTRIG@26 --entrer _1_04_TREE2_TRIG@33 --jouer /Global/TreeClimb/Actions/ON_BOT:Act/Props/pxTree.act@34"
+    T="--viser 13@73.28 --tirer @73.35 --viser 12@74.00 --tirer @74.07 --viser 13@74.14 --tirer @74.21 --viser 11@74.47 --tirer @74.54"
+    T="$T --viser 12@74.80 --tirer @74.87 --viser 13@74.94 --tirer @75.01 --viser 10@75.08 --tirer @75.15 --viser 11@75.27 --tirer @75.34"
+    T="$T --viser 9@75.41 --tirer @75.48 --viser 12@75.60 --tirer @75.67 --viser 10@75.74 --tirer @75.81 --viser 11@76.07 --tirer @76.14"
+    T="$T --viser 9@76.21 --tirer @76.28 --viser 8@76.35 --tirer @76.42 --viser 10@76.49 --tirer @76.56 --viser 9@76.96 --tirer @77.03"
+    T="$T --viser 8@77.10 --tirer @77.17 --tirer @77.83"
+    build/outils/lancer_lua 90 --mission 1_04 --sans-cinematiques --entrer _1_04_PARKING@10 $V $A $T
+
+(sous zsh, `${=V}`…) Le joueur prend le lance-pierre au HUD (`--arme`, 15,05 s : `Weapons/SelectActions`, `PropGetDesired`,
+`PropAttach`, son contexte `/Global/SlingShot`), casse les trois vitres (17,29, 19,27 et 21,29 s : la bille part 1 m au-dessus de ses
+pieds et touche la vitre visée 0,23 s plus tard), suit Gary au terrain, monte dans l'arbre et tire depuis lui, pendant leurs sauts
+(73,23 à 79,13 s : trois secondes chacun), trois billes de 9 points sur chacun des six jocks ; le sixième tombe à 0 à 78,14 s, Burton
+s'en prend au joueur (`F_BurtonPissed`), `MinigameSetCompletion("M_PASS")` et `MissionSucceed` à 81,02 s : **`1_04` se termine
+réussie à 81,05 s**. Les jocks qui font leurs tours ne sont pas touchés : la bille part vers la position du piéton au moment du tir.
 
 ## Suite
 

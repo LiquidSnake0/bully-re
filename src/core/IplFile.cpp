@@ -3,6 +3,7 @@
 #include <cstdlib>
 
 int32 (*CIplFile::ms_instHandler)(const CIplInst &e) = nil;
+int32 (*CIplFile::ms_specHandler)(const CIplSpec &e) = nil;
 int32 (*CIplFile::ms_railHandler)(const CIplRail &e) = nil;
 int32 (*CIplFile::ms_occlHandler)(const CIplOccl &e) = nil;
 int32 (*CIplFile::ms_propHandler)(const char *name) = nil;
@@ -47,7 +48,14 @@ CIplFile::Load(const uint8 *data, uint32 size)
 				if(ms_instHandler) ms_instHandler(e);
 			}
 			break;
-		case IPL_SPEC: p += count * 128; ms_numSpec += count; break;
+		case IPL_SPEC:
+			for(int32 i = 0; i < count; i++){
+				CIplSpec e; memcpy(&e.inst, p, 120); memcpy(&e.nom, p + 116, 4); memcpy(&e.fichier, p + 120, 4); memcpy(&e.genre, p + 124, 4);
+				p += 128;
+				ms_numSpec++;
+				if(ms_specHandler) ms_specHandler(e);
+			}
+			break;
 		case IPL_PROJ: p += count * 108; ms_numProj += count; break;
 		case IPL_OCCL:
 			for(int32 i = 0; i < count; i++){

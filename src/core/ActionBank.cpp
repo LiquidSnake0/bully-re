@@ -50,12 +50,21 @@ ImageAct(void)
 	return image;
 }
 
-// Le contenu d'un .cat de Act/Act.img.
+// Stream/World.img, où sont les 119 arbres des objets animés (pxTree.cat, pxBusStp.cat…) que le moteur diffuse avec leur modèle.
+static int32
+ImageMonde(void)
+{
+	static int32 image = -1;
+	if(image < 0) image = CdStream::AddImage("Stream\\World.img");
+	return image;
+}
+
+// Le contenu d'un .cat de Act/Act.img (ou de l'image donnée).
 static bool
-LireCat(const CDirectoryEntry *d, std::vector<uint8> &buf)
+LireCat(const CDirectoryEntry *d, std::vector<uint8> &buf, const char *img = "Act\\Act.img")
 {
 	buf.resize(d->size * CDSTREAM_SECTOR_SIZE);
-	int32 fd = CFileMgr::OpenFile("Act\\Act.img", "rb", 1);
+	int32 fd = CFileMgr::OpenFile(img, "rb", 1);
 	if(fd == 0) return false;
 	CFileMgr::Seek(fd, d->offset * CDSTREAM_SECTOR_SIZE, 0);
 	bool ok = CFileMgr::ReadExact(fd, buf.data(), (uint32)buf.size());
@@ -84,6 +93,44 @@ CActionBank::Butes(const char *nom, CActionTrack &piste, const char *cat)
 	CActionTreeFile f;
 	if(d == nil || !LireCat(d, buf) || !f.Load(buf.data(), (uint32)buf.size())) return false;
 	return ChercherButes(f, f.racine, ActionHash(nom), piste);
+}
+
+bool
+CActionBank::ButesChemin(const char *cat, const std::vector<uint32> &chemin, uint32 type, CActionTrack &piste,
+                         std::map<uint16, std::string> *chaines)
+{
+	static std::map<std::string, std::shared_ptr<Source>> lus;
+	std::shared_ptr<Source> &src = lus[cat];
+	if(!src){
+		src = std::make_shared<Source>();
+		int32 image = ImageAct();
+		const CDirectoryEntry *d = image < 0 ? nil : CdStream::ms_images[image].Find(cat);
+		if(d == nil || !LireCat(d, src->donnees) || !src->fichier.Load(src->donnees.data(), (uint32)src->donnees.size()))
+			src->donnees.clear();
+	}
+	if(src->donnees.empty() || chemin.empty()) return false;
+	const CActionNode *n = &src->fichier.racine;
+	if((n->hachage & 0x7fffffff) != (chemin[0] & 0x7fffffff)) return false;
+	for(size_t i = 1; i < chemin.size() && n; i++){
+		const CActionNode *e = nil;
+		for(const CActionNode &c : n->enfants) if((c.hachage & 0x7fffffff) == (chemin[i] & 0x7fffffff)){ e = &c; break; }
+		n = e;
+	}
+	if(n == nil) return false;
+	for(int32 p : n->pistes){
+		CActionTrack t;
+		if(!src->fichier.Piste(p, t) || (t.type & 0x7fffffff) != (type & 0x7fffffff)) continue;
+		piste = t;
+		if(chaines){
+			chaines->clear();
+			for(const CActionAttribut &a : t.attributs){
+				std::string c = src->fichier.ChaineCitee(a.decalage);
+				if(!c.empty()) (*chaines)[a.position] = c;
+			}
+		}
+		return true;
+	}
+	return false;
 }
 
 float
@@ -134,10 +181,18 @@ CActionBank::Charger(const char *act)
 	if(image < 0) return false;
 	std::string cat = NomCat(act);
 	const CDirectoryEntry *d = CdStream::ms_images[image].Find(cat.c_str());
+	// Absent de Act.img : l'arbre d'un objet animé (« Act/Props/pxTree.act », le PropButes +0x6c de PropGlbl.cat), que le moteur
+	// diffuse depuis Stream/World.img avec le modèle de l'objet (supposé : la diffusion des .cat n'est pas lue) ; l'outil l'y lit.
+	const char *img = "Act\\Act.img";
+	if(d == nil){
+		int32 monde = ImageMonde();
+		d = monde < 0 ? nil : CdStream::ms_images[monde].Find(cat.c_str());
+		img = "Stream\\World.img";
+	}
 	if(d == nil) return false;
 	std::shared_ptr<Source> src = std::make_shared<Source>();
 	CActionTreeFile &f = src->fichier;
-	if(!LireCat(d, src->donnees) || !f.Load(src->donnees.data(), (uint32)src->donnees.size())) return false;
+	if(!LireCat(d, src->donnees, img) || !f.Load(src->donnees.data(), (uint32)src->donnees.size())) return false;
 	int16 sourceTete = (int16)sources.size();
 	Marquer(f.racine, sourceTete);
 	sources.push_back(src);

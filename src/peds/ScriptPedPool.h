@@ -329,6 +329,13 @@ struct CScriptPed {
 	float tempsNonVu = 0;        // +0x1db8 : depuis quand le piéton ne voit plus sa cible (s), FUN_00499340 ; 0 au verrouillage
 	uint32 instantVerrou = 0;    // +0x1dc4 : l'horloge du dernier verrouillage (FUN_00497d20 y ajoute un tirage, non suivi)
 	bool immortel = false;       // +0x13fc : PedSetImmortalFlag (0x5ce6e0) / PedGetImmortalFlag (0x5ce730)
+	// +0x4e4 (l'octet du navigateur +0xdac que FUN_005e09c0 lit) : immobile, posé par PedSetStationary (0x5c7950, le booléen
+	// FUN_005d8f20) et la piste SetStationary (FUN_00626920) ; la navigation ne donne alors plus de vitesse (FUN_005e4a60).
+	bool immobile = false;
+	// L'arme : celle que le piéton veut (+0x18 du composant d'actions +0x2e0 : 0 rien de demandé, -1 les mains nues ; PedSetWeapon
+	// la pose, la piste PropGetDesired la prend), celle en main (+0x10e, le modèle de l'objet arme +0x1d0 : -1 sans arme ; la piste
+	// PropAttach la pose) et celle en passage de l'une à l'autre (+0x1574, -1 à la construction : 0x480835).
+	int32 armeVoulue = 0, armeTenue = -1, armePassage = -1;
 	uint32 instantMort = 0;      // +0x18b8 : l'horloge (ms) à la mort d'un autre que le joueur
 	// Le geste en cours.
 	// L'intention de mouvement du composant d'actions (+0x2e0) : sa direction (+0, +4, +8) et sa vitesse (+0x1c), que la
@@ -340,6 +347,8 @@ struct CScriptPed {
 	float intentionVitesse = 0;
 	float armeInit = -1.0f;      // +0x120 de l'objet arme (+0x1d0, CWeapon) : -1 depuis son constructeur (FUN_004da610),
 	                             // posé par une piste SetWeaponInfo (FUN_00660f50) ; WeaponNeedInit (FUN_0065b7b0) attend -1
+	float armePortee = -1.0f;    // +0x124 : le +0x40 (64) de SetWeaponInfo ; la portée d'un tir sans cible va de lui à +0x120
+	int32 armeMunition = -1;     // +0x12c : l'arme du nom +0x44 (68) de SetWeaponInfo (FUN_0051ad50), le projectile des tirs
 	bool endormi = false;        // +0x1358 : PedSetAsleep (0x5caa30) ; endormi, son arbre de l'IA n'avance plus (FUN_00484490)
 	bool enMarche = false;       // va vers `cible` à `vitesse`
 	CVector cible;

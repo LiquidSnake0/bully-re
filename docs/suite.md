@@ -60,20 +60,31 @@ chantier. Un point fini passe en bas, avec son commit.
    Le 04.11, **`1_03` se termine réussie à 148,90 s** (docs/missions.md, « La riposte ») : les événements des déclencheurs
    (`RegisterTriggerEventHandler`, `FUN_006d6f60`), la piste `Script` (`FUN_006851a0`), les arbres du joueur, `PlayerSetControl`,
    la laisse, `PedIgnoreStimuli`, l'état des portes, `IsSocializingWithPlayer` et `TargetedByPlayer`. `1_02` reste réussie à 124,97 s.
+   Le 05.11, **`1_04` se termine réussie à 81,05 s** (docs/missions.md, « 1_04 ») : `PedGetOffsetInWorldCoords`, les armes (les types
+   ObjectButes de `Global_Weapons.cat`, l'inventaire de `ms_pPool654`, l'arme en main par `Weapons/SelectActions`, le HUD des armes, onze
+   conditions), les projectiles (`WeaponFire`, la bille, la brique, les marques), les objets cassables (les entrées spec des `.ipb`,
+   `RegisterHashEventHandler`), les arbres des objets diffusés (`pxTree.cat`), les gestionnaires globaux, les ramassages ; `1_03` finit
+   aussi aux briques, Davis touché de loin (148,04 s), et `1_02` par son vrai chemin (`PedGetWhoHitMeLast`, `_1_02_RUSSELTEASE`, 132,92 s).
    Suite, dans l'ordre :
-   - `1_04` (« The Slingshot ») : la lancer seule après `1_03` et voir où elle s'arrête ;
-   - les armes et les projectiles : `PedSetWeapon`, `PedClearWeapon`, `PedGetWeapon`, `GiveWeaponToPlayer`, `PlayerHasWeapon`
-     (l'arme tenue +0x1d0 → +0x10e, l'inventaire `FUN_0045cdf0`, `FUN_0045cee0`, `FUN_0045cf70`, `WeaponGetType` et son +0x84),
-     puis les briques (armes 311 et 315) que `T_BossBattleTutorial` attend : que Davis soit touché de loin, comme dans le jeu, et
-     plus par un jab porté sans distance ;
-   - les objets animés (`PAnimCreate` 0x5c4680, hors de l'index ; `PAnimSetActionNode`, l'objet +0x1c d'un déclencheur et ses
-     +0x180, +0x184 ; la piste `PropSetPedAction`) : que l'arbre de la porte offre lui-même `PedPropActions` au joueur, que
+   - `1_05` (« Save Algie ») : la lancer seule après `1_04` et voir où elle s'arrête ;
+   - la suite des armes : la charge (`WeaponSetCharge`, `WeaponIncrementCharge` : l'objet arme +0x128, la portée et les dégâts du tir),
+     la visée du joueur (`WeaponPlayerFireAutoTarget`, `FUN_00662a40` en entier, la cible qui bouge : les jocks de `1_04` ne sont touchés
+     que pendant leurs sauts), le haut du corps en contrôleur à part (le spawn `UpperBody` du nœud de l'arme, pour ne plus passer par
+     `--tirer`), le départ du tir (la douille « Muzzle », l'os d'une arme lancée : `FUN_0065e880`), `WeaponFireOffset`, la physique des
+     `CProjectile` (`FUN_004d4c40`, le sol, les rebonds, `DetectProjectile`), `SetWeaponFlags` et `WeaponFlags`, `PedSetWeaponFlag`, le genre
+     d'un coup de projectile (+0x468), `MissionTimerStartFixed`, `MissionTimerPause` ;
+   - les objets : les CObject vraiment créés par le chargeur des `.ipb` (son emplacement +0x18), leur modèle de collision au lieu de la
+     sphère de 0,5 m, leurs effets et leur remplaçant (`FUN_004d0300`) ; les objets animés (`PAnimCreate` 0x5c4680, hors de l'index ;
+     `PAnimSetActionNode`, l'objet +0x1c d'un déclencheur et ses +0x180, +0x184 ; la piste `PropSetPedAction`) : que l'arbre de la porte
+     offre lui-même `PedPropActions` au joueur, que l'arbre de l'arbre (`pxTree`) le fasse grimper sans `--jouer`, que
      `AreaSetDoorLockedToPeds` passe par l'objet, et `AreaSetDoorPathableToPeds` (`FUN_005eaf00`) ;
-   - les classes de `AI.act` jugées derrière celles du 04.11 : `#51223f18` (aucun nom du RTTI), `FactionScan` (`FUN_00600bb0`),
-     `TargetFriendsAttacker` (`FUN_00601010`), `SpecialPoints` (`#66349158`, de `/Global/PlayerAI`), `AcquirePunishableTarget`
-     (`FUN_00601780`), `HasRangedWeapon` (`FUN_00605a80`), `InTriggerVolume` (`FUN_005ff8d0`), `TargetProp` (`FUN_0065c250`),
-     `HitByPed` (`FUN_005fdae0` : l'attaquant de l'objet +0x10 du contexte), `HasNodeCooldown` (`FUN_006064c0`), `PedSphereHit`
-     (`FUN_00605af0`), `HitFlagClear` (`FUN_005fbfa0`), `AcquirePOI` (`FUN_00448a40`), `#53408a0c` ;
+   - les ramassages : la fiche (`PickupData/<nom>`, BrickBute), la réapparition, `PickupCreatePoint`, la banque `Weapons/PickUpActions`
+     jouée pour de vrai (PropPickup) au lieu de `--ramasser` ;
+   - les classes de `AI.act` jugées derrière : `CheckWeather` (`#51223f18`, nommée par sa chaîne), `FactionScan` (`FUN_00600bb0`),
+     `TargetFriendsAttacker` (`FUN_00601010`), `SpecialPoints` (`#66349158`, de `/Global/PlayerAI`), `PedVelocity` (`#53408a0c`),
+     `AcquirePunishableTarget` (`FUN_00601780`), `HasRangedWeapon` (`FUN_00605a80`), `InTriggerVolume` (`FUN_005ff8d0`), `TargetProp`
+     (`FUN_0065c250`), `HitByPed` (`FUN_005fdae0`), `HasNodeCooldown` (`FUN_006064c0`), `PedSphereHit` (`FUN_00605af0`), `HitFlagClear`
+     (`FUN_005fbfa0`), `AcquirePOI` (`FUN_00448a40`), `IsPlayerFatigued`, `WeaponEquipedSocket`, `TargetProjectile` ;
    - le composant de visée du joueur (+0x1c8, `FUN_004d88f0` à chaque image : la cible +0xa0, lâchée quand elle meurt par
      `FUN_004d7c30` → `FUN_004d6710`) et le piéton à terre que l'outil frappe encore (son `KnockOuts` recommence à chaque coup) ;
    - `PedSetHitRecordDamage` (`FUN_005c97c0` : l'emplacement 16 de CPed, le contexte +0x300 du composant, son objet +0x10, +0x38) ;
@@ -113,6 +124,17 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- `1_04` se termine réussie à 81,05 s (05.11 ; 21d2552, 493e338, 04c5ba0, 40fba0d, 530271b, 082a5d4, 7430472, 61114d6, e0d8e5e) :
+  `PedGetOffsetInWorldCoords`, `PedFaceHeading`, `PedSetStationary` ; les types des armes (les fiches ObjectButes de Weapons/Info,
+  `FUN_0050eaa0`, `WeaponGetType`) et l'inventaire (`ms_pPool654`, `FUN_0045cb70` … `FUN_0045cf70`, `src/peds/Armes`) ; l'arme en main
+  (`PedSetWeapon`, `PedSetWeaponNow`, `PlayerSetWeapon`, `PedGetWeapon`, `WeaponEquipped`…, les pistes `PropSetDesired`, `PropGetDesired`,
+  `PropAttach`, `PropDetach`, `PropSetInTransition`, le HUD des armes, onze conditions) ; les projectiles (`WeaponFire`, `FUN_0065f050`,
+  les fiches ProjectileButes, les marques, `ObjectNumProjectileImpacts`) ; les objets cassables (les entrées spec des `.ipb`, object.dat,
+  `RegisterHashEventHandler`, `PAnimDestroyedByPed`) ; les arbres des objets diffusés depuis Stream/World.img (`pxTree.cat`) ; les
+  gestionnaires globaux (`RegisterGlobalEventHandler`, les événements 7 et 1) ; `PedGetLastHitWeapon`, `PedGetWhoHitMeLast`, les
+  ramassages (`PickupCreateXYZ`, `GetPointListSize`), `PedCanSeeObject`, la minuterie de mission ; `--arme`, `--viser-objet`, `--tirer`,
+  `--ramasser`. **`1_03` finit aussi aux briques** (148,04 s) et **`1_02` par son vrai chemin** (132,92 s) ; `1_01` à 10,46 s.
 
 - `1_03` se termine réussie à 148,90 s (04.11 ; 4bad48f, f6ffb2a, 8858b63, 83d005d, 2d90228, efb107a, 56e2e07, 7d48737, 85ab5d8) :
   les gestionnaires des événements des déclencheurs (`RegisterTriggerEventHandler` 0x5bbfa0, `SetNumberOfHandledTriggerEventObjects`,

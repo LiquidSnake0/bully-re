@@ -59,9 +59,14 @@ Ped(const CPedIdeEntry &e)
 }
 static int32 Obj(const CObjIdeEntry &e){ Noter(e.model, e.id); return 0; }
 static int32 Car(const CCarIdeEntry &e){ Noter(e.model, e.id); return 0; }
-static int32 Weap(const CWeapIdeEntry &e){ Noter(e.model, e.id); return 0; }
+static int32 Weap(const CWeapIdeEntry &e){ Noter(e.model, e.id); gEnCours->armes[e.id] = e.model; return 0; }
 static int32 Panm(const CPanmIdeEntry &e){ Noter(e.model, e.id); return 0; }
-static int32 Simple(const CSimpleIdeEntry &e){ Noter(e.model, e.id); return 0; }
+static int32 Simple(const CSimpleIdeEntry &e)
+{
+	Noter(e.model, e.id);
+	if(e.section == IDE_ITEM) gEnCours->objets[e.id] = e.model;
+	return 0;
+}
 
 // 0x52dc50 : le jeu note les plages d'identifiants ; ici rien à en faire.
 void RegisterModelRange(uint16 first, uint32 count){ (void)first; (void)count; }

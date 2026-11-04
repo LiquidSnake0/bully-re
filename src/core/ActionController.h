@@ -160,8 +160,35 @@ public:
 	std::vector<DegatsCible> degatsCibles;
 	std::vector<float> coupsCible;
 	float dernierAvancer = -1.0f;    // le temps de la dernière image (le pas des mises à jour)
-	struct InfoArme { float entree, init, champ40; bool fait; };
+	struct InfoArme { float entree, init, champ40; bool fait; std::string munition; };   // munition : le nom +0x44 (68)
 	std::vector<InfoArme> infosArme, infosArmeLancees;
+	// Les pistes de l'arme en main (lues le 04.11.2026, séance 2 ; créateurs dans le registre FUN_00650150) :
+	// - PropSetDesired (PropSetDesiredTrack 0x935e84, lancement FUN_00660770) : l'arme voulue (+0x18 du composant +0x2e0) prend
+	//   l'arme du nom haché +0x18 (24 ; FUN_0051adb0, -1 pour le haché DAT_01b65558) ; avec l'octet +0x1c, celle de la cible
+	//   visée (FUN_004d5980, FUN_004d7630, un piéton) si elle en tient une, avec +0x1e celle du partenaire de prise (+0x155c) ;
+	//   +0x1d la passe au HUD (FUN_0055c6f0). Les deux cas de la cible ne sont pas suivis.
+	// - PropGetDesired (PropGetDesiredTrack 0x935e6c, lancement FUN_00660870) : l'arme voulue passe en +0x1574 du piéton (l'arme
+	//   en passage) et l'arme voulue revient à 0.
+	// - PropAttach (PropAttachTrack 0x935dac, lancement FUN_0065fad0) : si l'arme en passage n'est ni -1 ni 0, l'objet arme (+0x1d0)
+	//   est remis (FUN_004d92c0) puis prend ce modèle (FUN_004da6f0 : WeaponRequestModel, le +0x10e par l'emplacement +0x20 de
+	//   l'entité ; le type en +0x264) ; ses attaches (les octets +0x20 : les douilles du type +0x90, +0x94 ; sinon +0x18, +0x1c), le
+	//   son (+0x21 et +0x78 du type) ne sont pas suivis ; avec l'octet +0x22 (34) et un arbre au type (+0x1c), le contexte des actions
+	//   du piéton prend cet arbre (FUN_005f59b0, FUN_005f36d0) et l'octet +0x33c du composant est posé.
+	// - PropDetach (PropDetachTrack 0x935ddc, lancement FUN_00660640) : +0x1578 à 0 ; avec le drapeau 21 du piéton (+0x1368), l'arme
+	//   tenue repasse en +0x1574 et l'objet arme est remis (FUN_004d92c0 → FUN_004da790 : plus de modèle) ; avec l'octet +0x1c (28)
+	//   et l'octet +0x33c, le contexte reprend l'arbre du piéton (+0x4b0) et +0x33c retombe ; sans le drapeau 21, +0x1574 = -1.
+	// `pistesArmeLancees` : celles lancées à cette image, que l'appelant applique.
+	// - WeaponFire (WeaponFireTrack 0x935b94, créateur 0x642d50 ; lancement FUN_00661f10, le tir par l'emplacement +0x14,
+	//   FUN_00664710) : il faut une arme en main ; la charge (+0x128 de l'objet arme, × +0x34 (52) s'il est positif) bornée à
+	//   [0, 1] ; puis le tir (le projectile des munitions de l'objet arme, +0x12c) et, sans le drapeau 24 du piéton (+0x1374), une
+	//   munition retirée (FUN_0045cf70) ; avec l'octet +0x32 (50), l'arme est lâchée quand il n'en reste plus. `tirsLances`.
+	struct Tir { float entree, facteur; bool lacher, fait; };
+	std::vector<Tir> tirs, tirsLances;
+	// - PropSetInTransition (PropSetInTransitionTrack 0x935378, lancement FUN_00660840) : l'arme du nom haché +0x18 (24, FUN_0051adb0)
+	//   passe en +0x1574, l'arme en passage, que la PropAttach suivante prend en main (1_03 : PlayerPickupSlingshot).
+	enum { ARME_VOULUE_POSER, ARME_VOULUE_PRENDRE, ARME_ATTACHER, ARME_DETACHER, ARME_PASSAGE };
+	struct PisteArme { float entree; int32 genre; uint32 nom; bool octet, fait; };
+	std::vector<PisteArme> pistesArme, pistesArmeLancees;
 	struct Repos { float entree; bool fait; };
 	std::vector<Repos> repos;
 	int reposLances = 0;
