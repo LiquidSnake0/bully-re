@@ -488,6 +488,7 @@ CScriptPedPool::CibleValable(int h, int cible, int32 style, bool aPortee, bool v
 	const CScriptPed *c = Acceder(cible);
 	if(p == nil || c == nil || cible == h) return false;
 	if(vivante && c->mort) return false;
+	if(c->type == SCRIPT_PED_TYPE_JOUEUR && !c->controlable && Autorite(*p)) return false;   // 0x4971c5 … 0x4971dc
 	if(style != 0 && style != 2) return true;              // FUN_00496960
 	if(aPortee){
 		float dx = c->pos.x - p->pos.x, dy = c->pos.y - p->pos.y, dz = c->pos.z - p->pos.z;
@@ -1133,4 +1134,96 @@ ScriptPedSuiviBut(const CVector &a, const CVector &b, const CVector &pos, float 
 	if(t > 1.0f) return b;
 	if(t < 0.0f) return a;
 	return CVector(a.x + sx * t, a.y + sy * t, a.z + sz * t);
+}
+
+void
+CGestionnairesDeclencheurs::Dimensionner(int table, int n, int script)
+{
+	if(table < 0 || table > 1) return;
+	Table &t = tables[table];
+	if(!t.entrees.empty()){
+		if(script == t.proprietaire){ t.entrees.clear(); t.enPlus = 0; }   // FUN_005b5a60
+		if(!t.entrees.empty()) return;
+	}
+	if(n > EN_PLACE && n - EN_PLACE > t.enPlus) t.enPlus = n - EN_PLACE;  // FUN_005b55b0 : le tas ne rapetisse pas
+	t.proprietaire = script;
+}
+
+bool
+CGestionnairesDeclencheurs::Ajouter(int table, int declencheur)
+{
+	if(table < 0 || table > 1) return false;
+	Table &t = tables[table];
+	for(const Entree &e : t.entrees) if(e.declencheur == declencheur) return true;
+	if((int)t.entrees.size() == t.enPlus + EN_PLACE) return false;
+	Entree e;
+	e.declencheur = declencheur;
+	t.entrees.push_back(e);
+	return true;
+}
+
+int *
+CGestionnairesDeclencheurs::Case(int table, int declencheur, int evenement)
+{
+	if(table < 0 || table > 1 || evenement < 0 || evenement >= EVENEMENTS) return nil;
+	for(Entree &e : tables[table].entrees) if(e.declencheur == declencheur) return &e.rappels[evenement];
+	return nil;
+}
+
+bool
+CGestionnairesDeclencheurs::Pret(int table, int declencheur, int evenement) const
+{
+	if(table < 0 || table > 1 || evenement < 0 || evenement >= EVENEMENTS) return false;
+	for(const Entree &e : tables[table].entrees) if(e.declencheur == declencheur) return e.rappels[evenement] != SANS_RAPPEL;
+	return false;
+}
+
+int
+CGestionnairesDeclencheurs::Retirer(int table, int declencheur, int evenement)
+{
+	if(enAppel || table < 0 || table > 1 || evenement < 0 || evenement >= EVENEMENTS) return SANS_RAPPEL;
+	std::vector<Entree> &v = tables[table].entrees;
+	for(size_t i = 0; i < v.size(); i++){
+		if(v[i].declencheur != declencheur) continue;
+		int r = v[i].rappels[evenement];
+		v[i].rappels[evenement] = SANS_RAPPEL;
+		v[i].scripts[evenement] = -1;
+		bool vide = true;
+		for(int k = 0; k < EVENEMENTS; k++) if(v[i].rappels[k] != SANS_RAPPEL) vide = false;
+		if(vide) v.erase(v.begin() + i);
+		return r;
+	}
+	return SANS_RAPPEL;
+}
+
+bool
+CGestionnairesDeclencheurs::Suivie(int table, int i) const
+{
+	if(table < 0 || table > 1 || i < 0 || i >= (int)tables[table].entrees.size()) return false;
+	const Entree &e = tables[table].entrees[i];
+	return e.rappels[ENTREE_PIETON] != SANS_RAPPEL || e.rappels[ENTREE_JOUEUR] != SANS_RAPPEL ||
+	       e.rappels[SORTIE_PIETON] != SANS_RAPPEL || e.rappels[SORTIE_JOUEUR] != SANS_RAPPEL || e.rappels[DEDANS] != SANS_RAPPEL;
+}
+
+std::vector<int>
+CGestionnairesDeclencheurs::OublierScript(int script)
+{
+	std::vector<int> laches;
+	for(Table &t : tables){
+		if(script == t.proprietaire){
+			for(const Entree &e : t.entrees) for(int r : e.rappels) if(r != SANS_RAPPEL) laches.push_back(r);
+			t.entrees.clear(); t.enPlus = 0; t.proprietaire = -1;
+			continue;
+		}
+		for(size_t i = 0; i < t.entrees.size(); ){
+			Entree &e = t.entrees[i];
+			bool vide = true;
+			for(int k = 0; k < EVENEMENTS; k++){
+				if(e.rappels[k] != SANS_RAPPEL && e.scripts[k] == script){ laches.push_back(e.rappels[k]); e.rappels[k] = SANS_RAPPEL; e.scripts[k] = -1; }
+				if(e.rappels[k] != SANS_RAPPEL) vide = false;
+			}
+			if(vide) t.entrees.erase(t.entrees.begin() + i); else i++;
+		}
+	}
+	return laches;
 }

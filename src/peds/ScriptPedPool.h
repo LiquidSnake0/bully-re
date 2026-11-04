@@ -299,6 +299,13 @@ struct CScriptPed {
 	int cibleObjectif = -1;      // +0x540 (+0x184 du composant de visée en +0x3bc) : la cible d'un objectif d'attaque, que la
 	                             // condition Objective pose quand elle passe (FUN_0048c330)
 	bool mort = false;           // +0x1c98 : posé par la piste Death (FUN_00479110), lu par PedIsDead (0x5c8f30)
+	// La laisse (le composant +0x358, FUN_00499910 PedSetTetherToXYZ, FUN_004998f0 la lâche) : son genre (+0x360 : 0 aucune,
+	// 1 un point, 2 et 3 un piéton ou un déclencheur, que l'outil ne suit pas), son rayon (+0x364) et son point (+0x368 … +0x370) ;
+	// IsTethered (FUN_00603040) lit le genre.
+	int32 laisse = 0;
+	float laisseRayon = 0;
+	CVector laissePoint;
+	bool controlable = true;     // +0x1e90 : le joueur rendu à la manette (PlayerSetControl, FUN_00445c50 : 0 quand le script le prend)
 	// Le composant de vue (+0xa64, son piéton en +0) : l'angle total du cône (+0xa68, la colonne D de pedstats.dat en
 	// degrés, × π / 180 par FUN_00478e30) et la portée (+0xa6c, la colonne E, en mètres) ; un cache de 16 piétons (+0xa74 :
 	// le piéton, l'octet vu, le nombre d'images à vivre) que FUN_0048ccf0 fait vieillir à chaque image (CPed, FUN_004812d0).
@@ -465,7 +472,8 @@ public:
 	// Les styles autres que 0 et 2 (FUN_00496960) s'arrêtent là : valable. Pour 0 et 2 : avec `aPortee`, à moins de +0x68 m
 	// (FUN_00487d00) ; l'attache du piéton (FUN_004996f0, +0x34) admet la cible à sa marge près, faute d'attache toujours ; puis
 	// valable pour les styles 2 et 3 (FUN_00496980), sans `aPortee`, ou si le piéton la voit (FUN_0048d320) ; sinon seulement
-	// la cible déjà prise, vue il y a au plus +0x64 s. Non suivis : la conversation (PedInConversation), les zones interdites
+	// la cible déjà prise, vue il y a au plus +0x64 s. Le joueur que le script tient (+0x1e90 nul) n'est pas une cible pour une autorité
+	// (FUN_0041a900 : types 0, 7, 8 ; lu en 0x497080, avant les styles). Non suivis : la conversation (PedInConversation), les zones interdites
 	// (FUN_0046ee60), le modèle DAT_00bf42dc, la liste +0x198 du composant de visée (FUN_0048bf30), le joueur en voiture.
 	bool CibleValable(int handle, int cible, int32 style, bool aPortee, bool vivante, const ButesCibles &b, int (*tirer)(void *), void *ctx);
 	// FUN_004992a0 : la cible de l'objectif si elle est valable (FUN_004988b0, l'octet +0x1de5 levé pendant le jugement), sinon
@@ -597,3 +605,99 @@ public:
 	std::vector<Paire> paires;
 	bool enAppel = false;        // DAT_00cfaf84
 };
+
+// Les gestionnaires des événements des déclencheurs (RegisterTriggerEventHandler 0x5bbfa0, lu à l'assembleur : Ghidra ne l'a
+// pas en fonction). Deux tables de même forme : la table 0 (DAT_00cfb068, son tas DAT_00cfb180, sa capacité en plus
+// DAT_00cfb184, son nombre DAT_00cfb188) pour un quatrième argument nul, la table 1 (DAT_00cfb18c, DAT_00cfb2a4, DAT_00cfb2a8,
+// DAT_00cfb2ac) sinon, et sans quatrième argument. Une entrée fait 0x1c octets : le déclencheur (+0), puis une case de rappel par
+// événement (+4 + 4 × événement, six). Dix entrées en place, puis le tas (FUN_005b4fc0) ; le propriétaire de la table (l'objet
+// script +0x44 de SetNumberOfHandledTriggerEventObjects) en DAT_00cfb2b4 / DAT_00cfb2b8. Les événements, lus dans
+// FUN_005b26b0, FUN_005b2140 et FUN_005b2770 : 0 un piéton entre, 1 le joueur entre, 2 un projectile (non suivi), 3 un piéton
+// sort, 4 le joueur sort, 5 un piéton (ou le joueur) est dedans.
+class CGestionnairesDeclencheurs
+{
+public:
+	enum { SANS_RAPPEL = -2, EVENEMENTS = 6, EN_PLACE = 10, PAIRES = 100 };
+	enum { ENTREE_PIETON = 0, ENTREE_JOUEUR = 1, PROJECTILE = 2, SORTIE_PIETON = 3, SORTIE_JOUEUR = 4, DEDANS = 5 };
+	struct Entree {
+		int declencheur = -1;
+		int rappels[EVENEMENTS] = {SANS_RAPPEL, SANS_RAPPEL, SANS_RAPPEL, SANS_RAPPEL, SANS_RAPPEL, SANS_RAPPEL};
+		int scripts[EVENEMENTS] = {-1, -1, -1, -1, -1, -1};   // le script du rappel (FUN_005d7f50), pour FUN_005b5ae0
+	};
+	struct Table {
+		std::vector<Entree> entrees;
+		int enPlus = 0;              // la capacité du tas, au-delà des dix entrées en place
+		int proprietaire = -1;       // DAT_00cfb2b4 / DAT_00cfb2b8
+	};
+	// SetNumberOfHandledTriggerEventObjects(n[, table]) (FUN_005bbeb0 → FUN_005b5e50) : une table qui a des entrées et le même
+	// propriétaire est vidée (FUN_005b5a60) ; si elle en a encore, rien ; sinon, au-delà de dix, le tas prend n - 10 entrées
+	// (FUN_005b55b0) et le script devient le propriétaire. Un seul argument : la table 1.
+	void Dimensionner(int table, int n, int script);
+	// FUN_005b5d10 : l'entrée du déclencheur, ajoutée au bout si elle n'y est pas et s'il reste de la place (dix + le tas) ;
+	// rend faux si la table est pleine.
+	bool Ajouter(int table, int declencheur);
+	// FUN_005b4ff0 : la case de l'événement de ce déclencheur, nil s'il n'a pas d'entrée (le moteur rend alors la case de la
+	// première entrée).
+	int *Case(int table, int declencheur, int evenement);
+	// FUN_005b5100 : un rappel est posé pour cet événement de ce déclencheur (l'événement sous 6).
+	bool Pret(int table, int declencheur, int evenement) const;
+	// FUN_005b56f0 : vide la case (FUN_005b4f20) ; l'entrée sans plus aucun rappel est retirée (FUN_005b54c0, les suivantes
+	// avancent d'un cran). Rien pendant l'appel des rappels (DAT_00cfb2b0). Rend l'ancien rappel, SANS_RAPPEL sinon.
+	int Retirer(int table, int declencheur, int evenement);
+	// FUN_005b5280 : l'entrée i a un rappel pour l'un des événements 0, 1, 3, 4 ou 5 (pas le projectile) : ses piétons sont
+	// suivis à chaque image.
+	bool Suivie(int table, int i) const;
+	// FUN_005b5ae0 (FUN_005b2680, la fin d'un objet script) : la table dont il est le propriétaire est vidée et perd son
+	// propriétaire ; dans l'autre, ses rappels sont vidés (FUN_005b4f70) et les entrées vides retirées. Rend les rappels lâchés.
+	std::vector<int> OublierScript(int script);
+	Table tables[2];
+	bool enAppel = false;        // DAT_00cfb2b0
+	// Les paires (déclencheur, piéton) dedans à l'image précédente (l'objet 0x20c7e98 : +4, 100 au plus, leur nombre +0x324).
+	struct Paire { int declencheur; int ped; };
+	std::vector<Paire> dedans;
+	// FUN_006d6f60 (ecx = 0x20c7e98), appelée par la mise à jour de CPed (FUN_004812d0, en 0x481c45) pour chaque piéton : pour
+	// chaque entrée suivie des deux tables (la table 0 d'abord), si le déclencheur ne suit que le joueur (le bit 2 de +0x3f,
+	// AreaSetTriggerMonitoringRules 0x5b7f60) et que le piéton n'est pas le joueur, rien ; sinon, `dans` dit s'il est dedans
+	// (FUN_006d6e50 sur sa position, FUN_00415310). Dehors et dans la liste : sa sortie (FUN_005b2770) et la paire retirée ;
+	// dedans et dans la liste : l'événement 5 (FUN_005b2140) ; dedans et pas dans la liste (qui n'est pas pleine) : son entrée
+	// (FUN_005b26b0), l'événement 5, et la paire ajoutée. Les événements à appeler sont rendus dans l'ordre (table, déclencheur,
+	// événement) ; FUN_005b1ec0 appelle chaque rappel posé dans les deux tables.
+	struct Appel { int table; int declencheur; int evenement; };
+	template<class Dans, class SuitJoueur>
+	std::vector<Appel> Suivre(int ped, bool joueur, Dans dans, SuitJoueur suitJoueurSeul);
+};
+
+
+template<class Dans, class SuitJoueur>
+std::vector<CGestionnairesDeclencheurs::Appel>
+CGestionnairesDeclencheurs::Suivre(int ped, bool joueur, Dans dans, SuitJoueur suitJoueurSeul)
+{
+	std::vector<Appel> appels;
+	// FUN_005b26b0 / FUN_005b2770 : l'entrée et la sortie du joueur sont les événements 1 et 4, celles d'un autre piéton 0 et
+	// 3, appelés dans la table 0 puis dans la table 1 (FUN_005b1ec0) ; avant elles, les gestionnaires globaux de stimuli
+	// (FUN_005b1e20 : 4 et 5 pour le joueur, 2 et 3 sinon), que l'outil ne suit pas.
+	auto evenement = [&](int t, int e){ for(int k = 0; k < 2; k++) if(Pret(k, t, e)) appels.push_back({k, t, e}); };
+	for(int table = 0; table < 2; table++){
+		for(int i = 0; i < (int)tables[table].entrees.size(); i++){
+			if(!Suivie(table, i)) continue;
+			int t = tables[table].entrees[i].declencheur;
+			if(suitJoueurSeul(t) && !joueur) continue;
+			size_t j = 0;
+			while(j < dedans.size() && !(dedans[j].declencheur == t && dedans[j].ped == ped)) j++;
+			if(!dans(t)){
+				if(j < dedans.size()){
+					evenement(t, joueur ? SORTIE_JOUEUR : SORTIE_PIETON);
+					dedans.erase(dedans.begin() + j);
+				}
+			}else if(j < dedans.size()){
+				evenement(t, DEDANS);
+			}else if(dedans.size() != PAIRES){
+				evenement(t, joueur ? ENTREE_JOUEUR : ENTREE_PIETON);
+				evenement(t, DEDANS);
+				dedans.push_back({t, ped});
+			}
+		}
+	}
+	return appels;
+}
+

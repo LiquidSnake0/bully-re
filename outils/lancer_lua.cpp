@@ -242,6 +242,10 @@ static std::map<int, std::pair<int, uint32>> partenaires;   // le piéton qui no
 // arbre de l'IA y pose (FUN_005f35e0), lu par la condition ActionNodeRequest de son arbre d'actions, effacé en fin d'image
 // avec l'état des boutons (FUN_005f3720).
 static std::map<int, uint32> intentionsPietons;
+// Les gestionnaires des événements des déclencheurs (RegisterTriggerEventHandler, src/peds/ScriptPedPool.h) et les
+// déclencheurs qui ne suivent que le joueur (le bit 2 de +0x3f, AreaSetTriggerMonitoringRules).
+static CGestionnairesDeclencheurs declencheursEv;
+static std::set<int> declencheursJoueurSeul;
 static std::set<int> choisis;   // les piétons dont FUN_00499340 a déjà rabattu l'octet +0x1de4
 static int TirerVue(void *);
 // AIButes (Globals.cat, DAT_020c889c, FUN_0072ae00) : +0x18 à +0x20 la capacité des trois zones de combat ; +0x28 à
@@ -890,6 +894,16 @@ struct CJugeOutil : CJugeAction {
 			if(moi && (moi->etatSocial == 1 || moi->etatSocial == 3)) return -1;   // +0xc24 non suivi
 			return mots[0] == 25;
 		}
+		// IsSocializingWithPlayer (ConditionIsSocializingWithPlayer 0x9376bc, FUN_00603a70) : le piéton a un état social (+0xbb0)
+		// et son partenaire (+0xbb4) est le joueur (DAT_00c1aea8). TargetedByPlayer (0x9370f4, FUN_00601be0) : faux sans joueur ;
+		// vrai si le piéton est la cible du joueur (PedGetTargetPed, un piéton : l'octet +0x108 & 7 vaut 3) ou celle de son
+		// composant de visée (+0xa0, FUN_004d5980), que l'outil ne distingue pas de sa cible (--viser, FUN_00497d20).
+		static const uint32 kSocialJoueur = ActionHash("IsSocializingWithPlayer"), kViseParJoueur = ActionHash("TargetedByPlayer");
+		if(type == kSocialJoueur) return moi && moi->etatSocial != 0 && moi->partenaireSocial == SCRIPT_PED_JOUEUR;
+		if(type == kViseParJoueur){
+			const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+			return j && j->verrou >= 0 && j->verrou == ped;
+		}
 		static const uint32 kJeton = ActionHash("FightToken");
 		if(type == kJeton) return pietons.TientJeton(ped);
 		static const uint32 kDroitsPris = ActionHash("IsTargetAttackRightsTaken");
@@ -911,14 +925,16 @@ struct CJugeOutil : CJugeAction {
 		// (0x937a9c, FUN_005ffe60) : l'octet +0x1570, qui dit qui a créé le piéton (FUN_004770a0), vaut 4. NeedsToDive (0x937550,
 		// FUN_005ffe80) : l'octet +0x16d4 positif et l'entité à éviter +0x16d8, puis FUN_004777e0 (devant lui ou non) comparé à
 		// l'octet +4 ; faux sinon. L'outil n'a ni POI, ni scénarios, ni places d'arrimage (AreaAddDockLocation est un bouchon),
-		// ni gardes, ni laisses, ni patrouilles, ni entités qui foncent sur un piéton : les dix sont fausses.
+		// ni gardes, ni patrouilles, ni entités qui foncent sur un piéton : neuf sont fausses ; IsTethered lit la laisse que pose
+		// PedSetTetherToPoint (le genre +0x360).
 		static const uint32 kTraine = ActionHash("IsHangingOut"), kAmbiantScripte = ActionHash("IsScriptedAmbient"),
 		                    kScenario = ActionHash("IsScenarioPed"), kArrimage = ActionHash("NearbyDockLocation"),
 		                    kGarde = ActionHash("IsGuarding"), kLaisse = ActionHash("IsTethered"),
 		                    kPatrouille = ActionHash("IsPatrolPed"), kPlonger = ActionHash("NeedsToDive"),
 		                    kAvoirPoi = ActionHash("HavePOI"), kPoiMobile = ActionHash("HaveDynamicPOI");
+		if(type == kLaisse){ const CScriptPed *p = pietons.Acceder(ped); return p && p->laisse != 0; }   // PedSetTetherToPoint
 		if(type == kAvoirPoi || type == kPoiMobile || type == kTraine || type == kAmbiantScripte || type == kScenario || type == kArrimage || type == kGarde ||
-		   type == kLaisse || type == kPatrouille || type == kPlonger) return 0;
+		   type == kPatrouille || type == kPlonger) return 0;
 		// VisibleArea (ConditionVisibleArea 0x936d14, FUN_005fc7c0) : la zone visible (DAT_00bd1008, AreaGetVisible) est +4.
 		// IsNISorCutsceneRunning (0x937e84, FUN_005fd2c0) : avec l'octet +4, un NIS en cours (FUN_005bb220 : l'octet
 		// DAT_00cfb340, qu'EnterNIS pose et ExitNIS efface) ; avec l'octet +5, une cinématique en cours (DAT_020c5be4,
@@ -1023,6 +1039,38 @@ SurMission(uint32 hachage)
 // de mission n'y sont pas dans _G), 0.0 si elle n'existe pas (le troisième argument faux). Le résultat est lu par
 // lua_tonumber (0x73b0d0 : un nombre, ou une chaîne convertible, sinon 0), tronqué en entier (0x85c6f0), et la condition
 // est vraie s'il est positif : F_CanBullyAttack et F_CanBlock rendent 1.0 ou 0.0, et un booléen vaut faux.
+// La piste Script (FUN_006851a0) : le même choix de l'espace de noms ; la fonction est appelée par NSCall avec, si la piste le
+// demande, la poignée du piéton et le nombre de la piste (FUN_005d8460, FUN_005d8480). La réponse n'est pas lue.
+static void
+AppelScript(const std::string &script, const std::string &fonction, int ped, float nombre)
+{
+	int s = -1;
+	if(script == "mission"){
+		if(mission.etat == AUCUNE || mission.script < 0) return;
+		s = mission.script;
+	}else{
+		std::string voulu = script;
+		for(char &c : voulu) if(c == '\\') c = '/';
+		for(size_t i = 0; i < scripts.size() && s < 0; i++){
+			std::string nom = scripts[i].fichier;
+			for(char &c : nom) if(c == '\\') c = '/';
+			if(strcasecmp(nom.c_str(), voulu.c_str()) == 0) s = (int)i;
+		}
+		if(s < 0) s = 0;
+	}
+	lua_State *L = etatLua;
+	int avant = scriptCourant;
+	scriptCourant = s;
+	lua_getglobal(L, "NSCall");
+	lua_pushstring(L, scripts[s].fichier.c_str());
+	lua_pushstring(L, fonction.c_str());
+	lua_pushboolean(L, 0);
+	int n = 3;
+	if(ped >= 0){ lua_pushnumber(L, ped); lua_pushnumber(L, nombre); n = 5; }
+	if(lua_pcall(L, n, 0, 0) != 0){ printf("        piste Script : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+	scriptCourant = avant;
+}
+
 static int
 AppelLuaCond(const std::string &script, const std::string &fonction)
 {
@@ -1469,6 +1517,9 @@ AvancerMission(lua_State *L)
 			}
 			for(Thread &t : scripts[mission.script].threads)
 				if(t.etat < TUE){ t.etat = TUE; luaL_unref(L, LUA_REGISTRYINDEX, t.ref); t.ref = LUA_NOREF; }
+			// FUN_005b2680 (depuis FUN_005d9d30, la fin du thread 0 de l'objet script) → FUN_005b5ae0 : les gestionnaires des
+			// déclencheurs de la mission sont lâchés. Supposé : la fin de l'objet script de la mission, après MissionCleanup.
+			for(int r : declencheursEv.OublierScript(mission.script)) luaL_unref(L, LUA_REGISTRYINDEX, r);
 			mission.etat = AUCUNE;
 			mission.script = -1;
 		}
@@ -2370,6 +2421,113 @@ PedSetPosPoint(lua_State *L)
 	return 0;
 }
 
+// Les portes nommées par les scripts (CEtatPortes, l'objet 0xc3b808). AreaSetDoorLocked (0x5b7760), AreaSetDoorLockedToPeds
+// (0x5b79a0), AreaSetDoorOpen (0x5b7be0), AreaIsDoorLockedToPeds (0x5b7880) et AreaIsDoorOpen (0x5b7ac0) prennent la porte de
+// trois façons : une chaîne (le type 4, FUN_005d81e0) est cherchée parmi les déclencheurs (FUN_006d78c0 : HashString du nom
+// contre +0x2c), sinon son HashString va droit à la table ; un pointeur léger (le type 2, FUN_005d8560 → FUN_006d7870), que
+// l'outil ne suit pas ; un nombre, la poignée d'un déclencheur. Pour un déclencheur, FUN_006d6420, FUN_006d6480, FUN_006d6500,
+// FUN_006d6450 et FUN_006d64d0 passent par son objet animé (+0x1c : +0x180 verrouillée aux piétons, +0x184 ouverte, l'ouverture
+// FUN_004eebc0 / FUN_004eed70, le chemin des piétons FUN_005eaf00) ; sans objet, par la table sous le nom haché du déclencheur
+// (+0x2c). L'outil ne crée pas les objets animés (PAnimCreate 0x5c4680 n'est pas lu) : un déclencheur passe toujours par la
+// table, ce que le jeu ne fait que pour un déclencheur sans objet. AreaSetDoorPathableToPeds (0x5b7d00) ne touche que l'objet
+// (FUN_004ea270, FUN_005eaf00) : rien dans l'outil.
+static CEtatPortes etatPortes;
+
+static bool
+NomDePorte(lua_State *L, uint32 &nom)
+{
+	if(lua_type(L, 1) == LUA_TSTRING){
+		// Le déclencheur trouvé par son nom a ce même nom haché en +0x2c : sans objet animé, les deux chemins mènent à la même paire.
+		nom = ActionHash(lua_tostring(L, 1)) & 0x7fffffff;
+		return true;
+	}
+	if(lua_type(L, 1) != LUA_TNUMBER) return false;
+	int t = (int)lua_tonumber(L, 1);
+	if(t < 0 || donnees.ZoneParHandle(t) == nil) return false;
+	nom = donnees.HachageZone(t);
+	return true;
+}
+
+static int
+PoserPorte(lua_State *L, const char *quoi, int bit)
+{
+	Journal(quoi, L, 1);
+	bool v = lua_toboolean(L, 2) != 0;   // FUN_005d8f20, lu avant la porte
+	uint32 nom;
+	if(NomDePorte(L, nom)) etatPortes.Poser(nom, bit, v);
+	return 0;
+}
+
+static int
+LirePorte(lua_State *L, const char *quoi, int bit)
+{
+	appels[quoi]++;
+	uint32 nom;
+	lua_pushboolean(L, NomDePorte(L, nom) && etatPortes.Lire(nom, bit));
+	return 1;
+}
+
+static int AreaSetDoorLocked(lua_State *L){ return PoserPorte(L, "AreaSetDoorLocked", CEtatPortes::VERROUILLEE); }
+static int AreaSetDoorLockedToPeds(lua_State *L){ return PoserPorte(L, "AreaSetDoorLockedToPeds", CEtatPortes::VERROUILLEE_PIETONS); }
+static int AreaSetDoorOpen(lua_State *L){ return PoserPorte(L, "AreaSetDoorOpen", CEtatPortes::OUVERTE); }
+static int AreaIsDoorLockedToPeds(lua_State *L){ return LirePorte(L, "AreaIsDoorLockedToPeds", CEtatPortes::VERROUILLEE_PIETONS); }
+static int AreaIsDoorOpen(lua_State *L){ return LirePorte(L, "AreaIsDoorOpen", CEtatPortes::OUVERTE); }
+
+// PedIgnoreStimuli(ped, b) (0x5ca370, lua_PedIgnoreStimuli) : le mot +0x1370 du piéton (le drapeau 23, +0x1314 + 4 × 23) prend
+// le booléen (FUN_005d8f20) ; rien s'il n'existe pas (FUN_005c7220). SetAmbientPedsIgnoreStimuli(b) (0x5bb2b0, hors de
+// l'index, lu à l'assembleur de 0x5bb2b0 à 0x5bb307) le pose à tous les piétons du pool (DAT_00c0f5f0, du dernier au premier)
+// que FUN_00476470 dit ambiants : pas en véhicule (+0x1554), pas le joueur, et l'octet de création +0x1570 ni 2 (un script)
+// ni 3 ; dans l'outil, les piétons qu'aucun script ne tient. PlayerSetControl(1) remet celui du joueur à 0. Le mot est lu par
+// FUN_004909a0 (le piéton ignore les stimuli : il vaut 1), que l'outil ne joue pas, et par PedFlags (le drapeau 23).
+static int
+PedIgnoreStimuli(lua_State *L)
+{
+	Journal("PedIgnoreStimuli", L, 1);
+	if(CScriptPed *p = PedArg(L, 1)) p->drapeaux[23] = lua_toboolean(L, 2) ? 1 : 0;
+	return 0;
+}
+
+static int
+SetAmbientPedsIgnoreStimuli(lua_State *L)
+{
+	Journal("SetAmbientPedsIgnoreStimuli", L, 1);
+	int v = lua_toboolean(L, 1) ? 1 : 0;
+	for(int i = SCRIPT_PED_POOL_SIZE - 1; i >= 0; i--)
+		if(CScriptPed *p = pietons.Acceder(i)) if(i != SCRIPT_PED_JOUEUR && p->script < 0) p->drapeaux[23] = v;
+	return 0;
+}
+
+// PedSetTetherToPoint(ped, liste[, n], rayon) (0x5cc370) : rien si le piéton n'existe pas (FUN_005c7220) ou si la liste
+// n'a pas de point (CPointPool__GetSlot) ; avec quatre arguments, le n-ième point, le dernier s'il en manque (FUN_006d58a0) ;
+// le rayon est le dernier argument (FUN_005d82a0). PedSetTetherToXYZ (FUN_00499910, ecx = le piéton + 0x358, lu à
+// l'assembleur en 0x5cc468) pose le genre 1 (+0x360), le rayon (+0x364), le point (+0x368 … +0x370), les octets +0x3b4 (1)
+// et +0x3b5 (0), puis deux fois FUN_00499840, qui ne refait le point que pour les genres 2 et 3. PedClearTether (0x5c9a30 →
+// FUN_004998f0) remet le genre à 0. Le piéton n'est pas encore tiré vers son point : l'outil n'a pas la locomotion de laisse
+// (TetherLoco dans AI.act), seulement la condition IsTethered.
+static int
+PedSetTetherToPoint(lua_State *L)
+{
+	Journal("PedSetTetherToPoint", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p == nil || !lua_isnumber(L, 2)) return 0;
+	int h = (int)lua_tonumber(L, 2), arguments = lua_gettop(L), n = arguments == 4 ? (int)luaL_optnumber(L, 3, 1) : 1;
+	const CTriggerPointPoint *pt = donnees.Point(h, 1);
+	if(pt == nil) return 0;
+	for(int k = 2; k <= n; k++){ const CTriggerPointPoint *q = donnees.Point(h, k); if(q == nil) break; pt = q; }
+	p->laisse = 1;
+	p->laisseRayon = (float)luaL_optnumber(L, arguments == 4 ? 4 : 3, 0);
+	p->laissePoint = pt->pos;
+	return 0;
+}
+
+static int
+PedClearTether(lua_State *L)
+{
+	Journal("PedClearTether", L, 1);
+	if(CScriptPed *p = PedArg(L, 1)) p->laisse = 0;
+	return 0;
+}
+
 // PedFaceObject(ped, id, genre, mode[, b]) (0x5c77b0) : l'entité de LuaGetEntity(id, genre) (2 un piéton, 3 le joueur ; les
 // objets et les véhicules ne sont pas suivis). Mode 0 : FUN_005c73c0 tourne le piéton tout de suite vers elle (la direction à
 // plat, normée, son angle moins π/2, ramené dans [0, 2π[ : FUN_004755e0). Sinon un FaceEntityObjective (type 4, FUN_00470ac0 :
@@ -2854,6 +3012,65 @@ RegisterPedEventHandler(lua_State *L)
 	return 0;
 }
 
+// SetNumberOfHandledTriggerEventObjects(n[, table]) (FUN_005bbeb0) : n (arrondi par FUN_005d8200) et le script qui appelle
+// (FUN_005db7e0, son +0x44) passent à FUN_005b5e50, pour la table 1 avec un seul argument, pour la table du second sinon ;
+// rien pour n nul ou négatif. LibTriggerNew (L_MonitorTriggers, L_RegisterNumberOfObjectEvents) l'appelle une fois par
+// mission, avant ses RegisterTriggerEventHandler.
+static int
+SetNumberOfHandledTriggerEventObjects(lua_State *L)
+{
+	Journal("SetNumberOfHandledTriggerEventObjects", L, 1);
+	int arguments = lua_gettop(L), n = (int)luaL_optnumber(L, 1, 0);
+	if(n <= 0) return 0;
+	if(arguments == 1) declencheursEv.Dimensionner(1, n, scriptCourant);
+	else if(arguments == 2) declencheursEv.Dimensionner((int)luaL_optnumber(L, 2, 0), n, scriptCourant);
+	return 0;
+}
+
+// RegisterTriggerEventHandler(déclencheur, événement, fonction[, table]) (0x5bbfa0, lu à l'assembleur de 0x5bbfa0 à
+// 0x5bc09e) : le nombre d'arguments (FUN_005d8170), le déclencheur et l'événement (FUN_005d8200) ; rien si le déclencheur
+// est négatif ou libre dans son pool (DAT_020c7c48, l'octet 0x80). Si le troisième est une fonction (FUN_005d84f0) : avec
+// trois arguments, l'entrée du déclencheur dans la table 1 (FUN_005b5d10(·, 1)) et le rappel dans sa case (FUN_005b4ff0,
+// FUN_005d9f00) ; avec quatre, dans la table du quatrième. Sinon, la case est vidée (FUN_005b56f0) : dans la table 1 avec
+// trois arguments, dans la table 0 avec quatre (le moteur pousse 0, quel que soit le quatrième). Le rappel sera appelé avec
+// (déclencheur, piéton).
+static int
+RegisterTriggerEventHandler(lua_State *L)
+{
+	Journal("RegisterTriggerEventHandler", L, 1);
+	int arguments = lua_gettop(L), t = (int)luaL_optnumber(L, 1, -1), e = (int)luaL_optnumber(L, 2, 0);
+	if(t < 0 || donnees.ZoneParHandle(t) == nil) return 0;
+	if(lua_isfunction(L, 3)){
+		int table = arguments == 3 ? 1 : arguments == 4 ? (int)luaL_optnumber(L, 4, 0) : -1;
+		if(table < 0) return 0;
+		declencheursEv.Ajouter(table, t);
+		int *c = declencheursEv.Case(table, t, e);
+		if(c == nil) return 0;
+		if(*c != CGestionnairesDeclencheurs::SANS_RAPPEL) luaL_unref(L, LUA_REGISTRYINDEX, *c);
+		lua_pushvalue(L, 3);
+		*c = luaL_ref(L, LUA_REGISTRYINDEX);
+		for(CGestionnairesDeclencheurs::Entree &n : declencheursEv.tables[table].entrees)
+			if(n.declencheur == t && e >= 0 && e < CGestionnairesDeclencheurs::EVENEMENTS) n.scripts[e] = scriptCourant;
+	}
+	else if(arguments == 3 || arguments == 4){
+		int r = declencheursEv.Retirer(arguments == 3 ? 1 : 0, t, e);
+		if(r != CGestionnairesDeclencheurs::SANS_RAPPEL) luaL_unref(L, LUA_REGISTRYINDEX, r);
+	}
+	return 0;
+}
+
+// AreaSetTriggerMonitoringRules(déclencheur, joueurSeul) (0x5b7f60, lu à l'assembleur de 0x5b7f74 à 0x5b7fa2) : le bit 2 de
+// l'octet +0x3f du déclencheur prend le booléen (FUN_005d8f20) ; FUN_006d6f60 ne suit alors que le joueur dans ce déclencheur.
+static int
+AreaSetTriggerMonitoringRules(lua_State *L)
+{
+	Journal("AreaSetTriggerMonitoringRules", L, 1);
+	int t = (int)luaL_optnumber(L, 1, -1);
+	if(t < 0 || donnees.ZoneParHandle(t) == nil) return 0;
+	if(lua_toboolean(L, 2)) declencheursJoueurSeul.insert(t); else declencheursJoueurSeul.erase(t);
+	return 0;
+}
+
 // FUN_005b2190, depuis la méthode du coup (FUN_0047b810) : le rappel de l'événement 0 du piéton frappé (FUN_005b40b0,
 // FUN_005b4030), appelé avec (frappé, attaquant). Les gestionnaires globaux de l'événement 7 (FUN_005b1ce0) ne sont pas suivis.
 static void
@@ -3208,6 +3425,14 @@ AppliquerDroits(int ped, CActionController &c)
 	if(CScriptPed *p = pietons.Acceder(ped))   // FUN_00474840 : DAT_00c1a9b4 × 0,001 (le flottant 0x900fa0) + la durée
 		for(float d : c.minuteriesLancees) p->minuterieAction = (float)maintenant * 0.001f + d;
 	c.minuteriesLancees.clear();
+	// Script (FUN_006851a0) : la fonction dans son espace de noms (AppelScript, comme FUN_005d80a0) ; sans mission en cours,
+	// « mission » ne mène à rien (FUN_006aa630 rend -1, le lancement s'arrête).
+	std::vector<CActionController::AppelScript> appels;
+	appels.swap(c.appelsLances);
+	for(const CActionController::AppelScript &a : appels){
+		printf("%6.2f s  le piéton %d appelle %s dans %s (piste Script)\n", maintenant / 1000.0, ped, a.fonction.c_str(), a.script.c_str());
+		AppelScript(a.script, a.fonction, a.avecPieton ? ped : -1, a.nombre);
+	}
 }
 
 // Une image du contrôleur de l'IA d'un piéton (FUN_00484490), puis ce que font ses pistes et celles des contrôleurs de
@@ -3256,6 +3481,53 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 		AppliquerDroits(ped, *k);
 		for(const CActionController::InfoArme &d : k->infosArmeLancees) p->armeInit = d.init;   // FUN_00660f50
 		AppliquerObjectifs(ped, *k);
+	}
+}
+
+// FUN_006d6f60 pour chaque piéton du pool (le joueur compris), puis les rappels des événements rendus : FUN_005b1ec0 pour
+// chaque table où l'événement a un rappel ; FUN_005b1db0 l'appelle dans un thread neuf de l'objet script du rappel
+// (FUN_005d9ac0, FUN_005d8140) avec la poignée du déclencheur (FUN_006d7910) et celle du piéton (l'emplacement 43 de CPed,
+// +0xac). L'outil l'appelle d'un bloc (lua_pcall), dans le script qui l'a posé : un rappel qui attendrait (Wait) n'est pas
+// suivi. Les paires d'un piéton supprimé sont oubliées (supposé : le destructeur de CPed n'est pas lu).
+static const char *const kEvenementsDeclencheur[] = {"un piéton entre", "le joueur entre", "un projectile", "un piéton sort",
+                                                     "le joueur sort", "dedans"};
+
+// Supposé aussi : le joueur de l'outil naît en (0, 0, 0), dans FootFieldTrig (le terrain de football, dont main.lua suit
+// l'entrée et la sortie du joueur dans la table 0), quand le jeu le crée au point de la sauvegarde ; il n'est suivi qu'une fois
+// posé par le gestionnaire de zones.
+static bool joueurPose = false;
+
+static void
+SuivreDeclencheurs(void)
+{
+	auto &d = declencheursEv.dedans;
+	for(size_t j = 0; j < d.size(); ) if(pietons.Acceder(d[j].ped) == nil) d.erase(d.begin() + j); else j++;
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE && etatLua; i++){
+		const CScriptPed *p = pietons.Acceder(i);
+		if(p == nil || (i == SCRIPT_PED_JOUEUR && !joueurPose)) continue;
+		CVector pos = p->pos;
+		std::vector<CGestionnairesDeclencheurs::Appel> appels = declencheursEv.Suivre(i, i == SCRIPT_PED_JOUEUR,
+			[&](int t){ return donnees.DansDeclencheur(t, pos); },
+			[&](int t){ return declencheursJoueurSeul.count(t) != 0; });
+		for(const CGestionnairesDeclencheurs::Appel &a : appels){
+			int *c = declencheursEv.Case(a.table, a.declencheur, a.evenement);
+			if(c == nil || *c == CGestionnairesDeclencheurs::SANS_RAPPEL) continue;
+			int script = -1;
+			for(const CGestionnairesDeclencheurs::Entree &n : declencheursEv.tables[a.table].entrees)
+				if(n.declencheur == a.declencheur) script = n.scripts[a.evenement];
+			if(a.evenement != CGestionnairesDeclencheurs::DEDANS){
+				const CTriggerZone *z = donnees.ZoneParHandle(a.declencheur);
+				printf("%6.2f s  déclencheur %d (%s) : %s (%d), le rappel de la table %d est appelé\n", maintenant / 1000.0,
+				       a.declencheur, z ? z->nom.c_str() : "?", kEvenementsDeclencheur[a.evenement], i, a.table);
+			}
+			lua_State *L = etatLua;
+			int avant = scriptCourant;
+			if(script >= 0) scriptCourant = script;
+			lua_rawgeti(L, LUA_REGISTRYINDEX, *c);
+			lua_pushnumber(L, a.declencheur); lua_pushnumber(L, i);
+			if(lua_pcall(L, 2, 0, 0) != 0){ printf("        rappel du déclencheur : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+			scriptCourant = avant;
+		}
 	}
 }
 
@@ -3308,6 +3580,8 @@ AvancerPietons(void)
 		if(p && p->verrou != avant[i])
 			printf("%6.2f s  piéton %d : cible %d → %d (style %d)\n", maintenant / 1000.0, i, avant[i], p->verrou, p->verrouMode);
 	}
+	// FUN_004812d0, 0x481c45 : les déclencheurs suivis (FUN_006d6f60), piéton par piéton, après le reste de son image.
+	SuivreDeclencheurs();
 	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
 		const CScriptPed *p = pietons.Acceder(i);
 		if(p == nil || journalRestant <= 0) continue;
@@ -3544,12 +3818,31 @@ PedSetGlobalAttitude_Rumble(lua_State *L)
 	return 0;
 }
 
+// PlayerSetControl(c) (0x5d12f0, lua_PlayerSetControl). 0 : FUN_00445c50(1) coupe la manette (FUN_0050de50(0), l'octet +0x1c
+// de la manette) et rabat l'octet +0x1e90 du joueur (FUN_00497080 : une autorité ne le prend plus pour cible) ; les entrées du
+// joueur sont vidées (FUN_005f38e0) et FUN_00474420 pose son intention de mouvement (+0x2e0 : +0 … +8) sur son avant, à plat
+// (FUN_00415350, FUN_00414cc0), recopiée en +0xc … +0x14. 1 : le drapeau 23 du joueur (+0x1370) à 0, FUN_00445c50(0) rend la
+// manette et +0x1e90, FUN_0050de80(1) (l'octet +0x1f). Les autres valeurs ne font rien. Manette coupée, ce que l'outil fait
+// faire à la manette (--jouer, --viser, --demander, --sequence, --suivre) est perdu : un bouton pressé pendant une cinématique
+// ne fait rien.
 static int
 PlayerSetControl(lua_State *L)
 {
 	Journal("PlayerSetControl", L, 1);
 	int c = (int)luaL_optnumber(L, 1, 1);
-	if(c == 0 || c == 1) controleJoueur = c;
+	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	if(c == 0){
+		controleJoueur = 0;
+		if(j){
+			j->controlable = false;
+			pietons.ViderEntrees(SCRIPT_PED_JOUEUR);
+			float a = j->cap * 3.14159265f / 180.0f;
+			j->intention = CVector(cosf(a), sinf(a), 0.0f);
+		}
+	}else if(c == 1){
+		controleJoueur = 1;
+		if(j){ j->drapeaux[23] = 0; j->controlable = true; }
+	}
 	return 0;
 }
 
@@ -3942,6 +4235,7 @@ AvancerZones(lua_State *L)
 	if(e.joueurPose){
 		CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
 		j->pos = zones.demande.pos; j->cap = zones.demande.cap;
+		joueurPose = true;
 		printf("%6.2f s  zones : le joueur est posé en (%.1f, %.1f, %.1f), cap %.0f, zone %d\n", maintenant / 1000.0, j->pos.x, j->pos.y, j->pos.z, j->cap, zones.zoneVisible);
 	}
 	if(e.fonduRetour) LancerFondu(fonduRetourMs, false);
@@ -4179,6 +4473,9 @@ main(int argc, char **argv)
 	lua_register(L, "PedFaceObject", PedFaceObject);
 	lua_register(L, "PedFaceObjectNow", PedFaceObjectNow);
 	lua_register(L, "RegisterPedEventHandler", RegisterPedEventHandler);
+	lua_register(L, "RegisterTriggerEventHandler", RegisterTriggerEventHandler);
+	lua_register(L, "SetNumberOfHandledTriggerEventObjects", SetNumberOfHandledTriggerEventObjects);
+	lua_register(L, "AreaSetTriggerMonitoringRules", AreaSetTriggerMonitoringRules);
 	lua_register(L, "PedAttackPlayer", PedAttackPlayer);
 	lua_register(L, "PedClearObjectives", PedClearObjectives);
 	lua_register(L, "PedMakeTargetable", PedMakeTargetable);
@@ -4201,6 +4498,15 @@ main(int argc, char **argv)
 	lua_register(L, "PedStop", PedStop);
 	lua_register(L, "PedAttack", PedAttack);
 	lua_register(L, "PedSetAITree", PedSetAITree);
+	lua_register(L, "PedSetTetherToPoint", PedSetTetherToPoint);
+	lua_register(L, "PedIgnoreStimuli", PedIgnoreStimuli);
+	lua_register(L, "AreaSetDoorLocked", AreaSetDoorLocked);
+	lua_register(L, "AreaSetDoorLockedToPeds", AreaSetDoorLockedToPeds);
+	lua_register(L, "AreaSetDoorOpen", AreaSetDoorOpen);
+	lua_register(L, "AreaIsDoorLockedToPeds", AreaIsDoorLockedToPeds);
+	lua_register(L, "AreaIsDoorOpen", AreaIsDoorOpen);
+	lua_register(L, "SetAmbientPedsIgnoreStimuli", SetAmbientPedsIgnoreStimuli);
+	lua_register(L, "PedClearTether", PedClearTether);
 	lua_register(L, "EnterNIS", EnterNIS);
 	lua_register(L, "ExitNIS", ExitNIS);
 	lua_register(L, "PedSetGlobalAttitude_Rumble", PedSetGlobalAttitude_Rumble);
@@ -4242,6 +4548,9 @@ main(int argc, char **argv)
 	else printf("Objects\\ide.img introuvable : MODELENUM répondra -1\n");
 	ChargerPedStats();
 	ChargerMissions();
+	// Le joueur, créé avec le monde (CPlayerPed, modèle 0) : FUN_00484d10 lui pose aussi les arbres de son modèle,
+	// /Global/Player (Act/Player.act) et /Global/PlayerAI.
+	PoserArbresDuModele(SCRIPT_PED_JOUEUR, 0);
 	ChargerApi();
 	lua_newtable(L);
 	lua_pushstring(L, "__index");
@@ -4274,6 +4583,10 @@ main(int argc, char **argv)
 		}
 		for(auto &e : entrees) if(!e.second.empty() && maintenant >= e.first){ EntrerDansDeclencheur(e.second.c_str()); e.second.clear(); }
 		for(auto &e : allers) if(!e.second.empty() && maintenant >= e.first){ AllerAuPoint(e.second.c_str()); e.second.clear(); }
+		for(auto &e : visees) if(e.second >= 0 && maintenant >= e.first && controleJoueur != 1){
+			printf("%6.2f s  la manette est coupée : le joueur ne vise pas le piéton %d\n", maintenant / 1000.0, e.second);
+			e.second = -1;
+		}
 		for(auto &e : visees) if(e.second >= 0 && maintenant >= e.first){
 			bool pris = pietons.Verrouiller(SCRIPT_PED_JOUEUR, e.second, 0);
 			printf("%6.2f s  le joueur vise le piéton %d%s\n", maintenant / 1000.0, e.second, pris ? "" : " : refusé");
@@ -4281,6 +4594,10 @@ main(int argc, char **argv)
 		}
 		// Une porte DT_ poussée : FUN_00415160 pose l'objet de porte en cours (+0x394) ; le moteur le fait depuis
 		// l'animation de la porte (FUN_00610ed0, non jouée), l'outil le fait au nom du déclencheur.
+		for(auto &e : gestes) if(!e.second.empty() && maintenant >= e.first && controleJoueur != 1){
+			printf("%6.2f s  la manette est coupée : le joueur ne joue pas %s\n", maintenant / 1000.0, e.second.c_str());
+			e.second.clear();
+		}
 		for(auto &e : gestes) if(!e.second.empty() && maintenant >= e.first){
 			// Ce que la manette ferait faire au contrôleur du joueur (une parade, un coup) : le nœud devient le
 			// nœud joué (+0x10), que PedIsPlaying compare.
@@ -4307,10 +4624,11 @@ main(int argc, char **argv)
 			}
 			e.second.clear();
 		}
-		for(uint32 &q : sequences) if(q != 0xffffffffu && maintenant >= q){ ReussirSequence(L); q = 0xffffffffu; }
+		for(uint32 &q : sequences) if(q != 0xffffffffu && maintenant >= q){ if(controleJoueur == 1) ReussirSequence(L); q = 0xffffffffu; }
 		// La manette : une ActionRequest en attente un quart de seconde, que le contrôleur du joueur juge.
 		bool demande = false;
 		for(auto &e : attentes) if(e.first != 0xffffffffu && maintenant >= e.first){
+			if(controleJoueur != 1){ e.first = 0xffffffffu; continue; }
 			demandes[e.second] = maintenant + 250;
 			printf("%6.2f s  le joueur demande l'action %u\n", maintenant / 1000.0, e.second);
 			e.first = 0xffffffffu; demande = true;

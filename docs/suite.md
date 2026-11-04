@@ -57,19 +57,27 @@ chantier. Un point fini passe en bas, avec son commit.
    Le 03.11, le bully 5 de `1_03` frappe par son arbre : les arbres du modèle posés à la création (`FUN_00484d10`), 26 classes de
    `AI.act`, `stat` et son tirage, les dés des contextes, les droits d'attaque, les jetons de combat et les piétons proches
    (`FUN_00486e40`, `FUN_0047d1d0`). `1_02` est réussie à 124,97 s (dix-huit jabs, docs/missions.md).
+   Le 04.11, **`1_03` se termine réussie à 148,90 s** (docs/missions.md, « La riposte ») : les événements des déclencheurs
+   (`RegisterTriggerEventHandler`, `FUN_006d6f60`), la piste `Script` (`FUN_006851a0`), les arbres du joueur, `PlayerSetControl`,
+   la laisse, `PedIgnoreStimuli`, l'état des portes, `IsSocializingWithPlayer` et `TargetedByPlayer`. `1_02` reste réussie à 124,97 s.
    Suite, dans l'ordre :
-   - les combats de `1_03` : faire riposter le joueur de l'outil (`--viser` et `--jouer …/LightAttacks` sur les bullies 1 et 5,
-     qui le tuent à 101,31 s), puis `WaveInit` (`_1_03_FIGHT3` derrière les tonneaux, `_1_03_FIGHT4` au garage, `_1_03_FIGHT5`,
-     `_1_03_LADDER_DROP`), `CutsceneDavisBegs` et `MissionSucceed` ;
-   - les classes de `AI.act` jugées derrière celles du 03.11 : `IsSocializingWithPlayer` (`FUN_00603a70`), `TargetedByPlayer`
-     (`FUN_00601be0`), `TargetFriendsAttacker` (`FUN_00601010`), `AcquirePunishableTarget` (`FUN_00601780`), `FactionScan`
-     (`FUN_00600bb0`), `HasRangedWeapon` (`FUN_00605a80`), `InTriggerVolume` (`FUN_005ff8d0`), `TargetProp` (`FUN_0065c250`),
-     `HitByPed` (`FUN_005fdae0`), `HasNodeCooldown` (`FUN_006064c0`), `PedSphereHit` (`FUN_00605af0`), `HitFlagClear`
-     (`FUN_005fbfa0`), `AcquirePOI` (`FUN_00448a40`, le pool des POI `DAT_020c7c58`), et `#53408a0c`, qu'aucun nom du RTTI ni des
-     arbres ne donne ;
-   - les arbres du joueur (`/Global/Player`, `/Global/PlayerAI`) : `FUN_00484d10` les lui pose aussi, l'outil pas encore ;
-   - les pistes `EnableFightTokens` / `DisableFightTokens` (`FUN_00486960`, `FUN_004869c0` : l'octet coupé des jetons, l'échéance
-     +0xc0) et l'octet +0x1e25 du composant de combat ;
+   - `1_04` (« The Slingshot ») : la lancer seule après `1_03` et voir où elle s'arrête ;
+   - les armes et les projectiles : `PedSetWeapon`, `PedClearWeapon`, `PedGetWeapon`, `GiveWeaponToPlayer`, `PlayerHasWeapon`
+     (l'arme tenue +0x1d0 → +0x10e, l'inventaire `FUN_0045cdf0`, `FUN_0045cee0`, `FUN_0045cf70`, `WeaponGetType` et son +0x84),
+     puis les briques (armes 311 et 315) que `T_BossBattleTutorial` attend : que Davis soit touché de loin, comme dans le jeu, et
+     plus par un jab porté sans distance ;
+   - les objets animés (`PAnimCreate` 0x5c4680, hors de l'index ; `PAnimSetActionNode`, l'objet +0x1c d'un déclencheur et ses
+     +0x180, +0x184 ; la piste `PropSetPedAction`) : que l'arbre de la porte offre lui-même `PedPropActions` au joueur, que
+     `AreaSetDoorLockedToPeds` passe par l'objet, et `AreaSetDoorPathableToPeds` (`FUN_005eaf00`) ;
+   - les classes de `AI.act` jugées derrière celles du 04.11 : `#51223f18` (aucun nom du RTTI), `FactionScan` (`FUN_00600bb0`),
+     `TargetFriendsAttacker` (`FUN_00601010`), `SpecialPoints` (`#66349158`, de `/Global/PlayerAI`), `AcquirePunishableTarget`
+     (`FUN_00601780`), `HasRangedWeapon` (`FUN_00605a80`), `InTriggerVolume` (`FUN_005ff8d0`), `TargetProp` (`FUN_0065c250`),
+     `HitByPed` (`FUN_005fdae0` : l'attaquant de l'objet +0x10 du contexte), `HasNodeCooldown` (`FUN_006064c0`), `PedSphereHit`
+     (`FUN_00605af0`), `HitFlagClear` (`FUN_005fbfa0`), `AcquirePOI` (`FUN_00448a40`), `#53408a0c` ;
+   - le composant de visée du joueur (+0x1c8, `FUN_004d88f0` à chaque image : la cible +0xa0, lâchée quand elle meurt par
+     `FUN_004d7c30` → `FUN_004d6710`) et le piéton à terre que l'outil frappe encore (son `KnockOuts` recommence à chaque coup) ;
+   - `PedSetHitRecordDamage` (`FUN_005c97c0` : l'emplacement 16 de CPed, le contexte +0x300 du composant, son objet +0x10, +0x38) ;
+   - les pistes `EnableFightTokens` / `DisableFightTokens` (`FUN_00486960`, `FUN_004869c0`) et l'octet +0x1e25 du composant de combat ;
    - ce qui reste du choix d'une cible : la riposte (`FUN_00496ee0`), la conversation, les zones interdites (`FUN_0046ee60`) ;
    - le sol du monde (les collisions des `.col` posées par les `.ipb`, déjà lues par `outils/visite`) : les déclencheurs comme
      `_1_03_DAVISREGISTERHIT` sont plus hauts que les nœuds des trajets ;
@@ -105,6 +113,15 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- `1_03` se termine réussie à 148,90 s (04.11 ; 4bad48f, f6ffb2a, 8858b63, 83d005d, 2d90228, efb107a, 56e2e07, 7d48737, 85ab5d8) :
+  les gestionnaires des événements des déclencheurs (`RegisterTriggerEventHandler` 0x5bbfa0, `SetNumberOfHandledTriggerEventObjects`,
+  `AreaSetTriggerMonitoringRules`) et leur suivi à chaque image (`FUN_006d6f60`), la piste `Script` (`FUN_006851a0` : la porte du
+  garage appelle `cbDoorOpened`), les arbres du joueur (`/Global/Player`, `/Global/PlayerAI`, `FUN_00484d10`), `PlayerSetControl`
+  (0x5d12f0 : la manette coupée, +0x1e90), la laisse (`PedSetTetherToPoint`, `IsTethered`), `PedIgnoreStimuli` et
+  `SetAmbientPedsIgnoreStimuli`, l'état des portes (l'objet 0xc3b808), `IsSocializingWithPlayer` et `TargetedByPlayer` : avec la
+  riposte de l'outil, les vagues de `WaveInit`, les deux portes, Davis sur ses tonneaux, `CutsceneDavisBegs` et `MissionSucceed` ;
+  **`1_02` reste réussie à 124,97 s**, `1_01` à 10,46 s.
 
 - Le bully 5 de `1_03` frappe par son arbre (03.11 ; cbf3095, 1d2506a, 0372668, 925d09f, 45b2db1, ad3d979, 888d4c3, e3d11ce,
   1148862) : les arbres du modèle posés à la création (`FUN_00484d10`, le modelinfo +0x64 … +0x70), 26 classes de conditions de

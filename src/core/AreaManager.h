@@ -9,6 +9,7 @@
 // PlayerSetPosXYZArea, et même PlayerSetPosXYZ (0x415fb0, zone = la zone visible). C'est la
 // différence entre l'AREACODE d'un point (où le joueur ira) et la zone visible (où il est).
 #pragma once
+#include <vector>
 #include "../common.h"
 #include "DatPools.h"
 
@@ -130,4 +131,19 @@ public:
 	CAreaDemande retour;             // +0x8a0 position, +0x8ac cap, +0x8b0 zone (FUN_00416750)
 private:
 	char scripts[AREA_MAX][AREA_SCRIPT_CASE];
+};
+
+// L'état des portes que les scripts nomment (l'objet 0xc3b808) : des paires (nom haché, bits) en +0x220, leur nombre en +0xea0,
+// 400 au plus. Le bit 0 « verrouillée » (FUN_004e98a0, AreaSetDoorLocked), le bit 1 « verrouillée aux piétons » (FUN_004e9970 la
+// pose, FUN_004e9920 la lit : AreaSetDoorLockedToPeds, AreaIsDoorLockedToPeds), le bit 2 « ouverte » (FUN_004e9a40, FUN_004e99f0 :
+// AreaSetDoorOpen, AreaIsDoorOpen). Poser un bit d'un nom absent l'ajoute au bout avec ce seul bit (s'il reste de la place) ;
+// lire un nom absent rend faux.
+class CEtatPortes
+{
+public:
+	enum { MAX = 400, VERROUILLEE = 0, VERROUILLEE_PIETONS = 1, OUVERTE = 2 };
+	struct Paire { uint32 nom; uint32 bits; };
+	void Poser(uint32 nom, int bit, bool valeur);
+	bool Lire(uint32 nom, int bit) const;
+	std::vector<Paire> paires;
 };

@@ -537,6 +537,53 @@ main(void)
 		c.DistribuerJetons(SCRIPT_PED_JOUEUR, 12033, b, zero, nil);
 		VERIF(c.Acceder(SCRIPT_PED_JOUEUR)->jetonCone.detenteur == a && c.TientJeton(a));
 	}
+	{
+		// Les gestionnaires des déclencheurs (RegisterTriggerEventHandler 0x5bbfa0) : dix entrées en place, le tas que
+		// SetNumberOfHandledTriggerEventObjects agrandit, une entrée retirée quand sa dernière case se vide, la table du
+		// propriétaire vidée à la fin de son script.
+		CGestionnairesDeclencheurs g;
+		for(int t = 0; t < 10; t++) VERIF(g.Ajouter(1, t));
+		VERIF(!g.Ajouter(1, 10) && g.Ajouter(1, 3));             // pleine ; une entrée déjà là est rendue
+		g.tables[1].entrees.clear();
+		g.Dimensionner(1, 12, 7);
+		VERIF(g.tables[1].enPlus == 2 && g.tables[1].proprietaire == 7);
+		for(int t = 0; t < 12; t++) VERIF(g.Ajouter(1, t));
+		VERIF(!g.Ajouter(1, 12));
+		g.Dimensionner(1, 3, 8);                                   // d'un autre script, la table pleine : rien
+		VERIF(g.tables[1].proprietaire == 7 && g.tables[1].entrees.size() == 12);
+		*g.Case(1, 5, CGestionnairesDeclencheurs::SORTIE_PIETON) = 41;
+		*g.Case(1, 5, CGestionnairesDeclencheurs::DEDANS) = 42;
+		VERIF(g.Pret(1, 5, 3) && !g.Pret(1, 5, 0) && !g.Pret(0, 5, 3) && g.Case(1, 99, 0) == nil);
+		VERIF(g.Suivie(1, 5) && !g.Suivie(1, 4));
+		*g.Case(1, 4, CGestionnairesDeclencheurs::PROJECTILE) = 43;
+		VERIF(!g.Suivie(1, 4));                                    // le projectile seul ne fait pas suivre les piétons
+		VERIF(g.Retirer(1, 5, 3) == 41 && g.Pret(1, 5, 5) && g.tables[1].entrees.size() == 12);
+		VERIF(g.Retirer(1, 5, 5) == 42 && g.Case(1, 5, 5) == nil && g.tables[1].entrees.size() == 11);
+		g.Ajouter(0, 2); *g.Case(0, 2, 1) = 50; g.tables[0].entrees[0].scripts[1] = 7;
+		std::vector<int> l = g.OublierScript(7);                   // propriétaire de la table 1, auteur d'un rappel de la table 0
+		VERIF(l.size() == 2 && g.tables[1].entrees.empty() && g.tables[1].proprietaire == -1 && g.tables[0].entrees.empty());
+
+		// FUN_006d6f60 : l'entrée (0 pour un piéton, 1 pour le joueur) et l'événement 5 à la première image dedans, 5 ensuite,
+		// la sortie (3 ou 4) à la première image dehors ; un déclencheur « joueur seul » ne suit pas les autres piétons.
+		typedef CGestionnairesDeclencheurs G;
+		g.Ajouter(1, 30); for(int e = 0; e < G::EVENEMENTS; e++) *g.Case(1, 30, e) = 60 + e;
+		bool dedans = true, joueurSeul = false;
+		auto dans = [&](int){ return dedans; };
+		auto seul = [&](int){ return joueurSeul; };
+		std::vector<G::Appel> v = g.Suivre(4, false, dans, seul);
+		VERIF(v.size() == 2 && v[0].evenement == G::ENTREE_PIETON && v[1].evenement == G::DEDANS && g.dedans.size() == 1);
+		v = g.Suivre(4, false, dans, seul);
+		VERIF(v.size() == 1 && v[0].evenement == G::DEDANS);
+		v = g.Suivre(SCRIPT_PED_JOUEUR, true, dans, seul);
+		VERIF(v.size() == 2 && v[0].evenement == G::ENTREE_JOUEUR && g.dedans.size() == 2);
+		dedans = false;
+		v = g.Suivre(4, false, dans, seul);
+		VERIF(v.size() == 1 && v[0].evenement == G::SORTIE_PIETON && g.dedans.size() == 1);
+		v = g.Suivre(4, false, dans, seul);
+		VERIF(v.empty());
+		dedans = true; joueurSeul = true;
+		VERIF(g.Suivre(4, false, dans, seul).empty() && g.Suivre(SCRIPT_PED_JOUEUR, true, dans, seul).size() == 1);
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }
