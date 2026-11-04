@@ -2815,6 +2815,19 @@ PedGetLastHitWeapon(lua_State *L)
 	return 1;
 }
 
+// PedGetWhoHitMeLast(ped) (0x5c8c60) : l'attaquant du relevé du composant d'actions (l'emplacement +0x40, son +0x10, +4) ; s'il en a un,
+// sa poignée (l'emplacement +0xac) ; sans piéton ou sans attaquant, rien n'est rendu (nil).
+static int
+PedGetWhoHitMeLast(lua_State *L)
+{
+	appels["PedGetWhoHitMeLast"]++;
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	auto r = coups.find(h);
+	if(pietons.Acceder(h) == nil || r == coups.end() || r->second.attaquant < 0) return 0;
+	lua_pushnumber(L, r->second.attaquant);
+	return 1;
+}
+
 // PlayerWeaponHudLock(b) (0x5d1b80 → PlayerWeaponHudLock 0x55bb20) : l'octet +0x13c du HUD des armes, que lit WeaponHudLocked.
 static int
 PlayerWeaponHudLock(lua_State *L)
@@ -5663,6 +5676,7 @@ main(int argc, char **argv)
 	lua_register(L, "ObjectNameToHashID", ObjectNameToHashID);
 	lua_register(L, "RegisterGlobalEventHandler", RegisterGlobalEventHandler);
 	lua_register(L, "PedGetLastHitWeapon", PedGetLastHitWeapon);
+	lua_register(L, "PedGetWhoHitMeLast", PedGetWhoHitMeLast);
 	lua_register(L, "GetPointListSize", GetPointListSize);
 	lua_register(L, "PickupCreateXYZ", PickupCreateXYZ);
 	lua_register(L, "PickupDelete", PickupDelete);
