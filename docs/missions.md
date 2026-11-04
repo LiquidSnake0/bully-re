@@ -491,6 +491,41 @@ prennent les droits d'attaque (62,20 et 66,83 s) et frappent par `/Global/B_Stri
 `HeavyAttacks`, 6 et 8 points). Le joueur de l'outil ne riposte pas : il tombe à 0 point vers 98 s (`HitTree/KnockOuts`) et meurt par
 la piste `Death` à 101,31 s. La suite est de le faire se battre (`--viser`, `--jouer`) pour entrer dans les vagues.
 
+**La riposte (04.11.2026) : `1_03` se termine réussie à 148,90 s.** Lu dans `1_03.lur` : les vagues de `WaveInit` ne demandent
+pas seulement d'entrer dans leurs déclencheurs. La vague des tonneaux (`barrelWave`, le bully 1, modèle 85, caché sur
+`_1_03_BULLY3`) part quand le joueur, derrière Davis, entre dans `_1_03_FIGHT3` (45,24 s) ; les deux autres partent des portes du
+garage. Chaque porte (`DoorsInit`) a un déclencheur, que `DoorsAssociateDavis` attache à Davis : quand Davis en sort
+(`L_MonitorTriggers`, l'événement 3), `DavisExitDoorTrigger` la ferme et allume son corona ; le dessin du corona
+(`PlayerIsInAreaXYZ(…, 0.75, 7)`) ne compte pas, c'est `cbDoorOpened`, qu'appelle la piste `Script` du nœud
+`…/ParametricDoor/POpenUp/PedPropActions/#3be30de2/LiftOpen/success` quand le joueur soulève la porte, qui lance
+`GarageFight` (porte 1 : le bully du garage, modèle 145, et Davis qui file sur `_1_03_FLEEGARAGE`) puis `FinalFight` (porte 2 :
+les deux gardiens, 146 et 147, et Davis qui monte sur les tonneaux). Les vagues mortes (`F_PedIsDead`), Davis (200 points,
+`cbDavisHit` sur l'événement 0) tombe au troisième coup du joueur : `CutsceneDavisBegs` (`FallOffBarrels/NewFall`, dont les
+pistes `Script` appellent `cbBobbleDone` et `cbFallDone`, puis `PlayerPickupSlingshot`) et `MissionSucceed`. Dans le jeu, Davis
+est frappé de loin (les briques, armes 311 et 315 que `T_BossBattleTutorial` attend) ; l'outil, sans projectiles, fait porter le
+coup sur la cible verrouillée sans regarder la distance : le jab tient lieu du jet.
+
+    R="--suivre 1,0.8@60 --viser 1@60 --jouer /Global/Player/Attacks/Strikes/LightAttacks@61,61.6,62.2,62.8,63.4,64,64.6,65.2,65.8,66.4,67,67.6"
+    R="$R --suivre 5,0.8@68.5 --viser 5@68.5 --jouer /Global/Player/Attacks/Strikes/LightAttacks@69,69.6,70.2,70.8,71.4,72,72.6,73.2,73.8,74.4,75"
+    P="/Global/1_03/ParametricDoor/POpenUp/PedPropActions/#3be30de2/LiftOpen/success:Act/Conv/1_03.act"
+    R="$R --aller _1_03_DOOR1CORONA@80 --jouer $P@81"
+    R="$R --suivre 4,0.8@82 --viser 4@82 --jouer /Global/Player/Attacks/Strikes/LightAttacks@83,83.6,84.2,84.8,85.4,86,86.6,87.2,87.8,88.4,89,89.6"
+    R="$R --aller _1_03_DOOR2CORONA@96 --jouer $P@97"
+    R="$R --suivre 2,0.8@100.5 --viser 2@100.5 --jouer /Global/Player/Attacks/Strikes/LightAttacks@101,101.6,102.2,102.8,103.4,104,104.6,105.2,105.8,106.4,107,107.6"
+    R="$R --suivre 3,0.8@108.5 --viser 3@108.5 --jouer /Global/Player/Attacks/Strikes/LightAttacks@109,109.6,110.2,110.8,111.4,112,112.6,113.2,113.8,114.4,115,115.6"
+    R="$R --suivre 2,0.8@116.5 --viser 2@116.5 --jouer /Global/Player/Attacks/Strikes/LightAttacks@117,117.6,118.2,118.8"
+    R="$R --suivre 6,0.8@122 --viser 6@122 --jouer /Global/Player/Attacks/Strikes/LightAttacks@124,126,128"
+    build/outils/lancer_lua 160 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@29 \
+      --suivre 5,0.8@35 --viser 5@35 --jouer /Global/Player/Attacks/Strikes/LightAttacks@38 --suivre 6,1@38.5 $R
+
+(sous zsh, `${=R}`.) Les bullies 1 et 5 meurent à 70,62 et 78,01 s (douze et onze jabs ; chacun tombe à 0 point, joue
+`HitTree/KnockOuts` puis la piste `Death` environ 2,9 s plus tard ; un piéton à terre que l'outil frappe encore recommence son
+`KnockOuts`, d'où l'arrêt des jabs à 0 point) ; la porte 1 s'ouvre à 81,02 s, le bully du garage (le piéton 4) meurt à 92,63 s ; la
+porte 2 à 97,02 s, les gardiens (3 et 2) à 118,64 et 121,77 s, deux jabs sur le 2 manquant « dans son dos » ; `Chase2_HandleBarrelFight`
+arme Davis (`PedSetTetherToPoint`, `PedSetWeapon(6, 303, 6)`, `PedCoverSet`) à 117,78 s ; les coups de 124, 126 et 128 s le mènent à
+140, 80 puis 18 points, `CutsceneDavisBegs` part à 128,17 s (`PlayerSetControl(0)` : la manette de l'outil est coupée),
+`Victory` finit à 138,01 s (le joueur a maintenant son arbre `/Global/Player`) et `MissionSucceed(true, false, false)` à 148,86 s.
+
 ## Suite
 
 1. Ce que `1_01` ne joue pas encore pour de vrai : les nœuds d'action (`PedSetActionNode` cherche le nœud dans

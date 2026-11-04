@@ -933,3 +933,43 @@ en échec plutôt que de les masquer.
   `/Global/PlayerAI`), que l'outil ne lui pose pas ; les pistes `Enable` / `DisableFightTokens` ; puis ce qui restait (la riposte de
   l'IA `FUN_00496ee0`, le sol du monde, le point valable, les sphères des os, les `SpeechTrack` sans tenue).
 - **Bilan** : 781 fonctions recréées (5,3 % du code), contre 750 (5,2 %) ; 1 642 comprises (9,7 %) ; 10 commits.
+
+## 04.11.2026
+
+- **Les événements des déclencheurs** : `RegisterTriggerEventHandler` (0x5bbfa0, lu à l'assembleur) et
+  `SetNumberOfHandledTriggerEventObjects` (`FUN_005bbeb0` → `FUN_005b5e50`) remplissent deux tables de 0x1c octets (le
+  déclencheur, six cases de rappel ; la table 0 en `DAT_00cfb068`, la table 1 en `DAT_00cfb18c`), vidées à la fin de leur script
+  (`FUN_005b5ae0`) ; `AreaSetTriggerMonitoringRules` (0x5b7f60) pose le bit « joueur seul » (+0x3f & 4). `FUN_006d6f60`, appelée par
+  la mise à jour de CPed pour chaque piéton (0x481c45), suit les paires (déclencheur, piéton) et appelle l'entrée (0 pour un piéton,
+  1 pour le joueur), la sortie (3, 4) et l'événement 5 (`FUN_005b26b0`, `FUN_005b2770`, `FUN_005b2140`, `FUN_005b1ec0`). Dans `1_03`,
+  Davis qui sort d'une porte du garage la fait fermer (`DavisExitDoorTrigger`, LibTriggerNew).
+- **La piste `Script`** (ScriptTrack 0x935ad4, lancement `FUN_006851a0`) : la fonction d'un espace de noms (« mission »), sans
+  argument ou avec la poignée du piéton et un nombre. Elle ouvre les portes du garage (`cbDoorOpened`, depuis
+  `ParametricDoor/POpenUp/PedPropActions/…/LiftOpen/success`) et fait tomber Davis de ses tonneaux (`cbBobbleDone`, `cbFallDone`).
+  `--jouer` prend aussi un segment haché (« #3be30de2 »).
+- **Les arbres du joueur** (`/Global/Player`, `/Global/PlayerAI`, posés au démarrage par `FUN_00484d10` comme pour les autres) :
+  un nœud que le joueur finit rend la main à son arbre (`Victory` de `PlayerPickupSlingshot`, dont `CutsceneDavisBegs` attendait la fin).
+- **`PlayerSetControl`** (0x5d12f0) : la manette coupée (les gestes de l'outil sont perdus), l'octet +0x1e90 (une autorité ne prend
+  pas pour cible le joueur que le script tient, 0x4971c5), les entrées vidées, le drapeau 23 remis à 0 au retour.
+- **La laisse** (`PedSetTetherToPoint` 0x5cc370, `PedSetTetherToXYZ` `FUN_00499910` sur +0x358, `PedClearTether`) et `IsTethered` ;
+  **les stimuli ignorés** (`PedIgnoreStimuli` 0x5ca370, `SetAmbientPedsIgnoreStimuli` 0x5bb2b0 : le mot +0x1370) ; **l'état des
+  portes** nommées (l'objet 0xc3b808, 400 paires : verrouillée, verrouillée aux piétons, ouverte ; `AreaSetDoorLocked`,
+  `AreaSetDoorLockedToPeds`, `AreaSetDoorOpen`, `AreaIsDoorLockedToPeds`, `AreaIsDoorOpen`).
+- **Deux classes de `AI.act`** : `IsSocializingWithPlayer` (`FUN_00603a70`) et `TargetedByPlayer` (`FUN_00601be0`), les deux plus
+  jugées du bilan ; entre `#51223f18`.
+- **`1_03` réussie** (docs/missions.md, « La riposte ») : l'outil fait riposter le joueur (`--suivre`, `--viser`, des
+  `LightAttacks`), ouvrir les deux portes du garage (`--aller` au corona et le nœud `success`), battre les trois vagues et frapper
+  trois fois Davis ; `CutsceneDavisBegs` puis `MissionSucceed` à 148,86 s. Réserve : Davis est touché par des jabs portés sans
+  distance, là où le jeu fait lancer des briques (l'outil n'a ni armes ni projectiles).
+- **REA amont** : 417 commits en attente (412 au 03.11), le dernier du 04.11. Touchent ce que bully-re utilise : les références
+  croisées vides de Ghidra marquées non résolues (#8831), la recherche d'octets des littéraux encodés (#8817), l'identité d'un
+  exécutable inconnu gardée par objdump (#8824, rupture) ; le mode « projet Ghidra existant » (#7922, #8222) toujours en attente.
+  Rien fusionné. La séance n'a pas ouvert REA : l'index `export/index.sqlite` et le désassemblage `objdump` de `bully.exe` (déjà
+  dans le dossier de travail de la session, pas regénéré) ont suffi.
+- **Chronos** : `1_01` à 10,46 s et `1_02` à 124,97 s à chaque commit (journaux identiques hors les événements du déclencheur
+  PSecretary, les arbres du joueur, les cibles lâchées par les autorités pendant que la mission tient le joueur, et le bilan).
+  `1_03` : avec la commande du 03.11, le joueur meurt toujours à 101,31 s ; avec la riposte, réussie à 148,90 s dès les arbres du
+  joueur (83d005d), inchangée ensuite.
+- **Ce qui bloque encore** : `1_04` n'est pas lancée ; les armes et les projectiles ; les objets animés (`PAnimCreate`) ; les classes
+  suivantes de `AI.act` (`#51223f18`, `FactionScan`, `TargetFriendsAttacker`, `SpecialPoints`…) ; le composant de visée du joueur.
+- **Bilan** : 817 fonctions recréées (5,4 % du code), contre 781 (5,3 %) ; 1 691 comprises (9,9 %) ; 10 commits.
