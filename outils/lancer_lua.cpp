@@ -122,6 +122,56 @@ static int32 MunitionsDe(int ped, int32 arme);     // FUN_00486130
 static void PoserArmeHud(int32 a);                 // FUN_0055c6f0
 static void AppliquerArmes(int ped, CActionController &c);
 static void RendreArbreAvantArme(int ped);
+static void LacherArme(int h);
+// --- Les projectiles ---
+// La fiche ProjectileButes d'une arme (son +0x80, que FUN_00728150 résout depuis 1 : Weapons/Projectiles/<+0x50>, sinon la fiche par
+// défaut DAT_020c88c8, la ProjectileButes de Globals) : +0x48 (72) la vie (ms, un entier), +0x4c (76) et +0x50 (80) les dégâts sans et
+// avec la charge, +0x54 (84) le nom de sa marque d'impact (« Decal_SlingShot »), +0x60 (96) et +0x64 (100) la vitesse sans et avec la
+// charge (m par pas de 0,02 s), +0x80 (128) le facteur de la gravité ; des réels.
+struct CTypeProjectile { bool lu = false; int32 vie = 0; float degatsMin = 0, degatsMax = 0, vitesseMin = 0.4f, vitesseMax = 0.4f, gravite = 1.0f;
+                         std::string marque; };
+static std::map<int32, CTypeProjectile> typesProjectiles;   // par modèle d'arme (le +0x80 de son type)
+static CTypeProjectile projectileDefaut;
+static const CTypeProjectile &
+TypeProjectile(int32 arme)
+{
+	auto it = typesProjectiles.find(arme);
+	return it == typesProjectiles.end() ? projectileDefaut : it->second;
+}
+static CTypeProjectile
+LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &chaines)
+{
+	CTypeProjectile a;
+	a.lu = true;
+	a.vie = (int32)t.Mot(72);
+	a.degatsMin = CActionBank::ButesReel(t, 76); a.degatsMax = CActionBank::ButesReel(t, 80);
+	a.vitesseMin = CActionBank::ButesReel(t, 96); a.vitesseMax = CActionBank::ButesReel(t, 100);
+	a.gravite = CActionBank::ButesReel(t, 128);
+	auto it = chaines.find(84); if(it != chaines.end()) a.marque = it->second;
+	return a;
+}
+
+// Un projectile en vol (le moteur crée un CProjectile, un CPhysical de 0x24c octets : FUN_004d4c40 → FUN_004d24f0, FUN_004d2160 ;
+// sa table, 0xc3a068, est celle que lit DetectProjectile). L'outil n'en joue pas la physique : un point qui suit sa vitesse et la
+// gravité à chaque pas (ms_fTimeStep, 0,02 s), jusqu'à la fin de sa vie (+0x48) ou un contact.
+struct CProjectileOutil { bool actif = false; int32 modele = -1; int tireur = -1; CVector pos, vitesse; float gravite = 0, degats = 0;
+                          uint32 naissance = 0, vie = 0; };
+static std::vector<CProjectileOutil> projectiles;
+// Les marques d'impact (les decals : FUN_00560f10 compte celles d'un genre dans un déclencheur, ObjectNumProjectileImpacts) :
+// le nom de la marque de la fiche du projectile et le point du contact.
+// La table des marques a 32 places de 16 octets (la position, le genre en mot +0xc) : l'outil la tient en anneau, la plus vieille
+// cédant sa place (supposé).
+struct CMarque { std::string nom; CVector pos; };
+static std::vector<CMarque> marques;
+static size_t marqueSuivante = 0;
+static void
+PoserMarque(const std::string &nom, const CVector &pos)
+{
+	if(nom.empty()) return;
+	if(marques.size() < 32) marques.push_back({nom, pos});
+	else{ marques[marqueSuivante] = {nom, pos}; marqueSuivante = (marqueSuivante + 1) % 32; }
+}
+
 // Le nom d'un modèle d'arme ou d'objet (le +4 de son modelinfo est son HashString), nil sinon.
 static const std::string *
 NomDArme(int32 a)
@@ -2173,6 +2223,7 @@ LireTypeArme(const CActionTrack &t, const std::map<uint16, std::string> &chaines
 	const CActionAttribut *l = t.Champ(43); a.tireLachee = l && l->valeur[0];
 	auto it = chaines.find(28); if(it != chaines.end()) a.arbre = it->second;
 	it = chaines.find(84); if(it != chaines.end()) a.nomMunition = it->second;
+	it = chaines.find(80); if(it != chaines.end()) a.nomProjectile = it->second;
 	return a;
 }
 
@@ -2213,8 +2264,17 @@ ChargerArmes(void)
 	for(const auto &a : modeles.armes) charger(a.first, a.second);
 	for(const auto &a : modeles.objets) charger(a.first, a.second);
 	for(auto &a : armes.types) a.second.munition = a.second.nomMunition.empty() ? -1 : ArmeParNom(a.second.nomMunition);
+	// FUN_00728150 : la fiche de projectile de chaque type qui nomme la sienne (+0x50), Weapons/Projectiles/<nom> ; DAT_020c88c8 sinon.
+	if(CActionBank::ButesChemin("Globals.cat", {ActionHash("GlobalsBank"), ActionHash("Globals")}, ActionHash("ProjectileButes"), t, &ch))
+		projectileDefaut = LireTypeProjectile(t, ch), projectileDefaut.lu = false;
+	for(const auto &a : armes.types)
+		if(!a.second.nomProjectile.empty() &&
+		   CActionBank::ButesChemin("Global_Weapons.cat", {ActionHash("Weapons"), ActionHash("Projectiles"), ActionHash(a.second.nomProjectile.c_str())},
+		                            ActionHash("ProjectileButes"), t, &ch))
+			typesProjectiles[a.first] = LireTypeProjectile(t, ch);
 	armes.sansFin[0] = modeles.Index("marble"); armes.sansFin[1] = modeles.Index("supermarble"); armes.sansFin[2] = modeles.Index("RubBand");
-	printf("%d fiches d'armes et d'objets (ObjectButes) pour %zu armes et %zu objets\n", lues, modeles.armes.size(), modeles.objets.size());
+	printf("%d fiches d'armes et d'objets (ObjectButes) pour %zu armes et %zu objets, %zu fiches de projectiles\n", lues, modeles.armes.size(),
+	       modeles.objets.size(), typesProjectiles.size());
 }
 
 // FUN_00486130 (ecx = le piéton) : 0 pour une arme sous 1 ; les munitions de ses munitions (+0x84 > 0) s'il en a ; sinon les siennes,
@@ -2450,6 +2510,34 @@ WeaponEquipped(lua_State *L)
 	int32 a = pietons.Acceder(SCRIPT_PED_JOUEUR)->armeTenue;
 	lua_pushboolean(L, lua_gettop(L) == 1 ? a == (int32)luaL_optnumber(L, 1, -2) : a != -1);
 	return 1;
+}
+
+// ObjectNumProjectileImpacts(déclencheur, arme) (0x5c2ed0) : le déclencheur du pool (DAT_020c7c48, nul s'il est négatif ou libre) ; la
+// fiche de projectile de l'arme (son type +0x80, FUN_00728150) et ses deux marques (+0x150 et +0x152, FUN_007282e0 : celles des noms
+// +0x54 et +0x58) ; pour chacune, FUN_00560f10 compte les places de la table des marques de ce genre dont la position est dans le
+// déclencheur (FUN_006d6e50, le test de PedIsInTrigger). Sans fiche, 0.
+static int
+ObjectNumProjectileImpacts(lua_State *L)
+{
+	appels["ObjectNumProjectileImpacts"]++;
+	int h = (int)luaL_optnumber(L, 1, -1);
+	int32 a = (int32)luaL_optnumber(L, 2, -1);
+	int n = 0;
+	auto it = typesProjectiles.find(a);
+	if(it != typesProjectiles.end() && h >= 0)
+		for(const CMarque &m : marques) if(m.nom == it->second.marque && donnees.DansDeclencheur(h, m.pos)) n++;
+	lua_pushnumber(L, n);
+	return 1;
+}
+
+// AreaClearAllProjectiles([genre]) (0x5b7100) : sans argument, les 32 projectiles détruits (FUN_004d4940 → FUN_004d3dc0) ; avec
+// un, FUN_004d48a0 (non lu) : l'outil les détruit tous aussi.
+static int
+AreaClearAllProjectiles(lua_State *L)
+{
+	Journal("AreaClearAllProjectiles", L, 1);
+	projectiles.clear();
+	return 0;
 }
 
 // PlayerWeaponHudLock(b) (0x5d1b80 → PlayerWeaponHudLock 0x55bb20) : l'octet +0x13c du HUD des armes, que lit WeaponHudLocked.
@@ -3846,6 +3934,140 @@ AppliquerDegatsCible(int ped, CActionController &c)
 	c.coupsCible.clear();
 }
 
+// SetWeaponInfo (FUN_00660f50) : sur l'objet arme, +0x120 = le champ +0x2c (44), +0x124 = +0x40 (64), +0x12c = l'arme du nom +0x44
+// (68, FUN_0051ad50) ou, sans nom, le modèle de l'arme.
+static void
+PoserInfoArme(CScriptPed &p, const CActionController::InfoArme &d)
+{
+	p.armeInit = d.init;
+	p.armePortee = d.champ40;
+	p.armeMunition = d.munition.empty() ? p.armeTenue : ArmeParNom(d.munition);
+}
+
+// FUN_00664710, réduit : le départ, la cible et la vitesse, puis le projectile (FUN_004d4c40).
+// - le départ (FUN_0065e880) : la douille « Muzzle » de l'objet arme (FUN_00467c30), ou pour une arme lancée l'os qu'elle tient
+//   (+0x138, FUN_006c1030) ; sans eux, (0, 0, 1) par la matrice du piéton (FUN_0046dbd0, FUN_0045d3b0) ; puis le décalage de la
+//   piste WeaponFireOffset (DAT_01b65c30). L'outil n'a ni douilles ni os : 1 m au-dessus des pieds du tireur ;
+// - la cible (FUN_00662a40) : la cible visée du composant de visée (FUN_004d5980, FUN_004d7630, FUN_0048bdb0) ; sans elle, devant
+//   le piéton à la portée +0x124 + charge × (+0x120 − +0x124), au moins 0,01 (_DAT_0090054c). L'outil prend sa cible verrouillée,
+//   à 1 m au-dessus de ses pieds ;
+// - la vitesse (FUN_0065f050, la première passe) : la vitesse de la fiche, +0x60 + charge × (+0x64 − +0x60) (0,4, _DAT_0090048c,
+//   sans fiche ; 0,01 au moins), la durée du vol T = la distance / elle (0,01 au moins), la gravité g = +0x80 × −0,008
+//   (_DAT_00912870), et v = (cible − départ − (0, 0, ½ g T²)) / T, en mètres par pas ; les bornes +0x68 … +0x74 (-1 pour la bille)
+//   ne sont pas suivies ;
+// - les dégâts : +0x4c + charge × (+0x50 − +0x4c), × la statistique 31 / _DAT_00900130 (non suivi).
+static void
+Tirer(int ped, float charge)
+{
+	CScriptPed *p = pietons.Acceder(ped);
+	if(p == nil) return;
+	int32 munition = p->armeMunition;
+	if(munition == -1) return;   // FUN_0065d160 : pas de munition, pas de tir
+	const CTypeProjectile &tp = TypeProjectile(munition);
+	CVector depart(p->pos.x, p->pos.y, p->pos.z + 1.0f), cible;
+	const CScriptPed *c = pietons.Acceder(p->verrou);
+	if(c && c != p) cible = CVector(c->pos.x, c->pos.y, c->pos.z + 1.0f);
+	else{
+		float portee = p->armePortee + charge * (p->armeInit - p->armePortee);
+		if(portee < 0.01f) portee = 0.01f;
+		float a = p->cap * 3.14159265f / 180.0f;
+		cible = CVector(depart.x + cosf(a) * portee, depart.y + sinf(a) * portee, depart.z);
+	}
+	float vitesse = tp.vitesseMin + charge * (tp.vitesseMax - tp.vitesseMin);
+	if(vitesse < 0.01f) vitesse = 0.01f;
+	float dx = cible.x - depart.x, dy = cible.y - depart.y, dz = cible.z - depart.z;
+	float T = sqrtf(dx * dx + dy * dy + dz * dz) / vitesse;
+	if(T <= 0.01f) T = 0.01f;
+	float g = tp.gravite * -0.008f;
+	CProjectileOutil q;
+	q.actif = true; q.modele = munition; q.tireur = ped; q.pos = depart; q.gravite = g;
+	q.vitesse = CVector(dx / T, dy / T, (dz - 0.5f * g * T * T) / T);
+	q.degats = tp.degatsMin + charge * (tp.degatsMax - tp.degatsMin);
+	q.naissance = maintenant; q.vie = tp.vie > 0 ? (uint32)tp.vie : 5000;
+	projectiles.push_back(q);
+	printf("%6.2f s  le piéton %d tire : projectile %d (%s) de (%.2f, %.2f, %.2f) vers (%.2f, %.2f, %.2f), %.2f m par pas, %.0f points\n",
+	       maintenant / 1000.0, ped, munition, NomDArme(munition) ? NomDArme(munition)->c_str() : "?", depart.x, depart.y, depart.z,
+	       cible.x, cible.y, cible.z, vitesse, q.degats);
+}
+
+// WeaponFire (FUN_00661f10) lancée à cette image.
+static void
+AppliquerTirs(int ped, CActionController &c)
+{
+	CScriptPed *p = pietons.Acceder(ped);
+	for(const CActionController::Tir &d : c.tirsLances){
+		if(p == nil || p->armeTenue == -1) continue;   // FUN_0065d160 sans arme en main
+		float charge = 0.0f;   // l'objet arme +0x128 (WeaponSetCharge, WeaponIncrementCharge, non jouées) vaut -100 (_DAT_00906520) : 0
+		(void)d;
+		Tirer(ped, charge);
+		if(p->drapeaux[24] == 0) inventaire.Retirer(armes, ped, p->armeMunition, 1, p->type == SCRIPT_PED_TYPE_JOUEUR, modeles.Index("RBandBall"));
+		if(d.lacher && p->armeTenue == p->armeMunition && inventaire.Munitions(armes, ped, p->armeMunition) == 0) LacherArme(ped);
+	}
+	c.tirsLances.clear();
+}
+
+// Le segment a → b passe-t-il dans la sphère (c, r) ? La fraction du segment au point le plus proche, dans `u`.
+static bool
+SegmentDansSphere(const CVector &a, const CVector &b, const CVector &c, float r, float *u)
+{
+	float dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z, l2 = dx * dx + dy * dy + dz * dz;
+	float t = l2 > 0.0f ? ((c.x - a.x) * dx + (c.y - a.y) * dy + (c.z - a.z) * dz) / l2 : 0.0f;
+	t = t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t;
+	float px = a.x + dx * t - c.x, py = a.y + dy * t - c.y, pz = a.z + dz * t - c.z;
+	*u = t;
+	return px * px + py * py + pz * pz <= r * r;
+}
+
+// Un projectile qui touche un piéton : la méthode du coup du piéton (l'emplacement 15 de CPed, FUN_0047b810), comme un coup porté,
+// avec l'arme du projectile (sans le facteur du joueur ni les arrondis, réservés aux coups sans arme) ; le relevé du coup reçu, la
+// descente dans l'arbre des coups, dont les pistes DamageHandle ôtent les dégâts, et l'événement 0 des scripts (FUN_005b2190).
+static void
+RecevoirProjectile(int cible, int tireur, float degats)
+{
+	CoupRecu &r = coups[cible];
+	float t = maintenant / 1000.0f;
+	r.precedent = r.instant >= 0.0f ? t - r.instant : -1.0f;
+	r.instant = t;
+	r.drapeau = 0; r.jusqua = t + 1.0f; r.degats = degats; r.attaquant = tireur;
+	CActionController &v = controleurs[cible];
+	const CActionNode *arbreCoups = arbres.Trouver("/Global/HitTree");
+	bool pris = arbreCoups && v.Entrer(arbres, arbreCoups, CJugeOutil(cible, t), t);
+	printf("%6.2f s  le projectile de %d touche %d (%.0f points)%s%s\n", maintenant / 1000.0, tireur, cible, degats,
+	       pris ? " : il joue " : "", pris ? CheminVu(v, v.joue).c_str() : "");
+	if(pietons.CoupRecevable(cible, tireur)) PrevenirCoupRecu(cible, tireur);
+}
+
+// Une image des projectiles (CProjectileInfo, à chaque pas) : le point avance de sa vitesse, la gravité s'y ajoute ; au bout de sa vie,
+// il disparaît. Les contacts : le corps des piétons, le modèle de collision que CTempColModels::Initialise (FUN_005712f0) leur bâtit,
+// trois sphères de 0,35 m à 0,35, 0,95 et 1,55 m au-dessus des pieds (le tireur exclu) ; le premier touché le long du pas.
+static void
+AvancerProjectiles(float pas)
+{
+	for(CProjectileOutil &q : projectiles){
+		if(!q.actif) continue;
+		if(maintenant - q.naissance > q.vie){ q.actif = false; continue; }
+		CVector avant = q.pos;
+		q.pos.x += q.vitesse.x * pas; q.pos.y += q.vitesse.y * pas; q.pos.z += q.vitesse.z * pas;
+		q.vitesse.z += q.gravite * pas;
+		int touche = -1; float mieux = 2.0f;
+		for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
+			const CScriptPed *p = pietons.Acceder(i);
+			if(p == nil || i == q.tireur || p->mort) continue;
+			for(float h : {0.35f, 0.95f, 1.55f}){
+				float u;
+				if(SegmentDansSphere(avant, q.pos, CVector(p->pos.x, p->pos.y, p->pos.z + h), 0.35f, &u) && u < mieux){ mieux = u; touche = i; }
+			}
+		}
+		if(touche >= 0){
+			q.actif = false;
+			RecevoirProjectile(touche, q.tireur, q.degats);
+		}
+	}
+	size_t n = 0;
+	for(const CProjectileOutil &q : projectiles) if(q.actif) projectiles[n++] = q;
+	projectiles.resize(n);
+}
+
 // L'arbre du piéton (+0x4b0 du composant +0x2e0) que PropDetach, PedClearAllWeapons et PedDestroyWeapon rendent au contexte
 // quand l'arme l'avait changé (l'octet +0x33c) : l'outil garde l'arbre posé avant l'arme.
 static std::map<int, const CActionNode *> arbresAvantArme;
@@ -4006,7 +4228,8 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 		AppliquerDegatsCible(ped, *k);
 		AppliquerDroits(ped, *k);
 		AppliquerArmes(ped, *k);   // avant SetWeaponInfo : PropAttach remet +0x120, la banque NeedInit qui suit le pose
-		for(const CActionController::InfoArme &d : k->infosArmeLancees) p->armeInit = d.init;   // FUN_00660f50
+		for(const CActionController::InfoArme &d : k->infosArmeLancees) PoserInfoArme(*p, d);   // FUN_00660f50
+		AppliquerTirs(ped, *k);
 		AppliquerObjectifs(ped, *k);
 	}
 }
@@ -4107,6 +4330,7 @@ AvancerPietons(void)
 		if(p && p->verrou != avant[i])
 			printf("%6.2f s  piéton %d : cible %d → %d (style %d)\n", maintenant / 1000.0, i, avant[i], p->verrou, p->verrouMode);
 	}
+	AvancerProjectiles(33.0f / 20.0f);   // le pas du moteur (ms_fTimeStep) compte des cinquantièmes de seconde
 	// FUN_004812d0, 0x481c45 : les déclencheurs suivis (FUN_006d6f60), piéton par piéton, après le reste de son image.
 	SuivreDeclencheurs();
 	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
@@ -5023,6 +5247,8 @@ main(int argc, char **argv)
 	lua_register(L, "PlayerHasWeapon", PlayerHasWeapon);
 	lua_register(L, "WeaponEquipped", WeaponEquipped);
 	lua_register(L, "PlayerWeaponHudLock", PlayerWeaponHudLock);
+	lua_register(L, "ObjectNumProjectileImpacts", ObjectNumProjectileImpacts);
+	lua_register(L, "AreaClearAllProjectiles", AreaClearAllProjectiles);
 	lua_register(L, "PedGetOffsetInWorldCoords", PedGetOffsetInWorldCoords);
 	lua_register(L, "PedSetStationary", PedSetStationary);
 	lua_register(L, "RegisterPedEventHandler", RegisterPedEventHandler);
@@ -5296,7 +5522,8 @@ main(int argc, char **argv)
 			// SetWeaponInfo (FUN_00660f50) : le +0x120 de l'objet arme du piéton.
 			AppliquerArmes(c.first, c.second);   // avant SetWeaponInfo : PropAttach remet +0x120, la banque NeedInit qui suit le pose
 			if(CScriptPed *p = pietons.Acceder(c.first))
-				for(const CActionController::InfoArme &d : c.second.infosArmeLancees) p->armeInit = d.init;
+				for(const CActionController::InfoArme &d : c.second.infosArmeLancees) PoserInfoArme(*p, d);
+			AppliquerTirs(c.first, c.second);
 			// SpeechTrack (FUN_006195a0) : une ligne à tenir est retenue ; les autres ne sont pas jouées par l'outil (une
 			// seule ligne à la fois, que les scripts attendent). SpeechStartTrack (FUN_00619950) lâche les lignes du piéton.
 			for(const CActionController::Parole &e : c.second.parolesLancees){

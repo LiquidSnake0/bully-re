@@ -84,7 +84,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kRendreDroits = ActionHash("TargetAttackRightsRelease"), kDe = ActionHash("RandomDiceRoll"),
 	                    kMinuterie = ActionHash("SetActionTimer"), kScript = ActionHash("Script"),
 	                    kVoulueP = ActionHash("PropSetDesired"), kVoulueG = ActionHash("PropGetDesired"),
-	                    kAttacher = ActionHash("PropAttach"), kDetacher = ActionHash("PropDetach");
+	                    kAttacher = ActionHash("PropAttach"), kDetacher = ActionHash("PropDetach"), kTir = ActionHash("WeaponFire");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -155,7 +155,10 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 		}else if(p.type == kRepos){
 			repos.push_back({a, false});
 		}else if(p.type == kInfoArme){
-			infosArme.push_back({a, Reel(p, 44, -1.0f), Reel(p, 64, 0.0f), false});
+			{ const CActionAttribut *m = p.Champ(68);
+			  infosArme.push_back({a, Reel(p, 44, -1.0f), Reel(p, 64, 0.0f), false, m ? f->ChaineCitee(m->decalage) : std::string()}); }
+		}else if(p.type == kTir){
+			tirs.push_back({a, Reel(p, 52, 0.0f), Octet(p, 50), false});
 		}else if(p.type == kVoulueP){
 			pistesArme.push_back({a, ARME_VOULUE_POSER, p.Mot(24), Octet(p, 29), false});
 		}else if(p.type == kVoulueG){
@@ -263,7 +266,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	for(const DemandeBouton &d : demandesBouton)   // FUN_00626160 : l'arrêt d'une piste au mode 2 lâche son bouton
 		if(!d.morte && d.lancee && d.mode == 2) laches.push_back(d.bouton);
 	demandesBouton.clear();
-	effacements.clear(); fuites.clear(); repos.clear(); infosArme.clear(); pistesArme.clear(); droits.clear(); desPistes.clear(); minuteries.clear();
+	effacements.clear(); fuites.clear(); repos.clear(); infosArme.clear(); pistesArme.clear(); tirs.clear(); droits.clear(); desPistes.clear(); minuteries.clear();
 	appelsScript.clear();
 	lances.clear();                    // FUN_005f7390 : l'arrêt d'une piste spawn arrête son contrôleur
 	finExecutees = -1.0f;
@@ -546,6 +549,9 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 	pistesArmeLancees.clear();
 	for(PisteArme &d : pistesArme)    // FUN_00660770, FUN_00660870, FUN_0065fad0, FUN_00660640
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; pistesArmeLancees.push_back(d); }
+	tirsLances.clear();
+	for(Tir &d : tirs)                // FUN_00661f10
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; tirsLances.push_back(d); }
 	reposLances = 0;
 	for(Repos &d : repos)         // FUN_0061d8e0
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; reposLances++; }

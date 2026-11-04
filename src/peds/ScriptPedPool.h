@@ -347,6 +347,8 @@ struct CScriptPed {
 	float intentionVitesse = 0;
 	float armeInit = -1.0f;      // +0x120 de l'objet arme (+0x1d0, CWeapon) : -1 depuis son constructeur (FUN_004da610),
 	                             // posé par une piste SetWeaponInfo (FUN_00660f50) ; WeaponNeedInit (FUN_0065b7b0) attend -1
+	float armePortee = -1.0f;    // +0x124 : le +0x40 (64) de SetWeaponInfo ; la portée d'un tir sans cible va de lui à +0x120
+	int32 armeMunition = -1;     // +0x12c : l'arme du nom +0x44 (68) de SetWeaponInfo (FUN_0051ad50), le projectile des tirs
 	bool endormi = false;        // +0x1358 : PedSetAsleep (0x5caa30) ; endormi, son arbre de l'IA n'avance plus (FUN_00484490)
 	bool enMarche = false;       // va vers `cible` à `vitesse`
 	CVector cible;

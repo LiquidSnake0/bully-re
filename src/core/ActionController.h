@@ -160,7 +160,7 @@ public:
 	std::vector<DegatsCible> degatsCibles;
 	std::vector<float> coupsCible;
 	float dernierAvancer = -1.0f;    // le temps de la dernière image (le pas des mises à jour)
-	struct InfoArme { float entree, init, champ40; bool fait; };
+	struct InfoArme { float entree, init, champ40; bool fait; std::string munition; };   // munition : le nom +0x44 (68)
 	std::vector<InfoArme> infosArme, infosArmeLancees;
 	// Les pistes de l'arme en main (lues le 04.11.2026, séance 2 ; créateurs dans le registre FUN_00650150) :
 	// - PropSetDesired (PropSetDesiredTrack 0x935e84, lancement FUN_00660770) : l'arme voulue (+0x18 du composant +0x2e0) prend
@@ -178,6 +178,12 @@ public:
 	//   tenue repasse en +0x1574 et l'objet arme est remis (FUN_004d92c0 → FUN_004da790 : plus de modèle) ; avec l'octet +0x1c (28)
 	//   et l'octet +0x33c, le contexte reprend l'arbre du piéton (+0x4b0) et +0x33c retombe ; sans le drapeau 21, +0x1574 = -1.
 	// `pistesArmeLancees` : celles lancées à cette image, que l'appelant applique.
+	// - WeaponFire (WeaponFireTrack 0x935b94, créateur 0x642d50 ; lancement FUN_00661f10, le tir par l'emplacement +0x14,
+	//   FUN_00664710) : il faut une arme en main ; la charge (+0x128 de l'objet arme, × +0x34 (52) s'il est positif) bornée à
+	//   [0, 1] ; puis le tir (le projectile des munitions de l'objet arme, +0x12c) et, sans le drapeau 24 du piéton (+0x1374), une
+	//   munition retirée (FUN_0045cf70) ; avec l'octet +0x32 (50), l'arme est lâchée quand il n'en reste plus. `tirsLances`.
+	struct Tir { float entree, facteur; bool lacher, fait; };
+	std::vector<Tir> tirs, tirsLances;
 	enum { ARME_VOULUE_POSER, ARME_VOULUE_PRENDRE, ARME_ATTACHER, ARME_DETACHER };
 	struct PisteArme { float entree; int32 genre; uint32 nom; bool octet, fait; };
 	std::vector<PisteArme> pistesArme, pistesArmeLancees;
