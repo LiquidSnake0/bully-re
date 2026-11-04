@@ -24,7 +24,7 @@
 // lance celle dont le joueur touche le corona, et celles qui se lancent seules (champ 51) : 1_02 après 1_01.
 // Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
 // de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s[,s2…]]... [--demander N@s]... [--sequence @s]... [--suivre PIETON[,d]@s]... [--viser PIETON@s]... [--arme ARME@s]... [--viser-objet NOM@s]...
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s[,s2…]]... [--demander N@s]... [--sequence @s]... [--suivre PIETON[,d]@s]... [--viser PIETON@s]... [--arme ARME@s]... [--viser-objet NOM@s]... [--tirer @s[,s2…]]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -323,7 +323,11 @@ VieillirBoutons(void)   // FUN_005f3720
 // +0x46c le drapeau haché (+0x2c de la piste Collision) ; +0x434 (+0x2c) le temps depuis le coup, remis à 0 par le
 // coup (FUN_00472b70, l'ancienne valeur passant en +0x438, +0x30), puis augmenté du pas à chaque image tant qu'il ne
 // vaut pas -1 (FUN_004850b0). L'outil tient le drapeau une seconde (ConditionFlag, HitLocation).
-struct CoupRecu { uint32 drapeau = 0; float jusqua = -1.0f; float degats = 0.0f; int attaquant = -1; float instant = -1.0f, precedent = -1.0f; };
+// L'arme du coup (+0x5e du relevé, +0x466 du composant : un mot, -1 à mains nues) et son genre (+0x60, +0x468), les 5e et 19e arguments
+// de la méthode du coup : un coup de piste Collision porte l'arme que l'attaquant tient (-1 sans arme), un projectile la sienne (le
+// genre d'un coup de projectile n'est pas lu : 0).
+struct CoupRecu { uint32 drapeau = 0; float jusqua = -1.0f; float degats = 0.0f; int attaquant = -1; float instant = -1.0f, precedent = -1.0f;
+                  int32 arme = -1, genre = 0; };
 static std::map<int, CoupRecu> coups;
 // Un piéton qui disparaît emporte ses contrôleurs (le composant +0x2e0, libéré avec le CPed) : une entrée du pool reprise
 // plus tard (PedCreatePoint) part de contrôleurs neufs.
@@ -579,19 +583,26 @@ struct CJugeOutil : CJugeAction {
 			if(!egal && (mots[0] & 0xff)) q->armeVoulue = armeHud;
 			return egal;
 		}
-		// CollisionWeaponType (FUN_0065aa30) : sur le relevé du dernier coup reçu (le +0x10 du contexte, +0x408 du composant
-		// +0x2e0), l'arme du coup (+0x5e, un mot : +0x466 ; -1 à mains nues) et son genre (+0x60 : +0x468), que la méthode
+		// CollisionWeaponType (FUN_0065aa30, lu dans l'index) : sur le relevé du dernier coup reçu (le +0x10 du contexte, +0x408 du
+		// composant +0x2e0), l'arme du coup (+0x5e, un mot : +0x466 ; -1 à mains nues) et son genre (+0x60 : +0x468), que la méthode
 		// du coup pose (FUN_0047b810, ses 5e et 19e arguments). Avec l'octet +8, l'arme du nom +0xc (FUN_0051ad50 : -1 pour
-		// « unarmed » ou un nom inconnu, gardée en +0x10) doit être celle du coup ; sans lui, une arme est requise, puis le
-		// genre +4 (0 à 3) juge son type (+0x68, +0x69) et le genre du coup. Les coups de l'outil sont à mains nues (-1) :
-		// seul un nom sans modèle d'arme passe (l'outil cherche le nom parmi tous les modèles des .idb, le moteur parmi les
-		// 146 armes de ms_weaponModelStore, DAT_00c735e8 ; les huit noms des arbres de 1_02, W_Itch, dodgeball, Banana…,
-		// sont des armes).
+		// « unarmed » ou un nom inconnu, gardée en +0x10) doit être celle du coup ; sans lui, une arme est requise, puis le genre +4
+		// juge son type et le genre du coup : 0, +0x68 et le genre 2 ou 3 ; 1, +0x68, +0x69 et le genre 2 ; 2, +0x69 et le genre 1 ;
+		// 3, le genre 4 ; un autre, faux.
 		static const uint32 kArmeDuCoup = ActionHash("CollisionWeaponType");
 		if(type == kArmeDuCoup){
-			if((mots[1] & 0xff) == 0) return 0;
-			std::string nom = f.ChaineCitee((uint32)d + 16);
-			return strcasecmp(nom.c_str(), "unarmed") == 0 || modeles.Index(nom.c_str()) < 0;
+			auto r = coups.find(ped);
+			int32 arme = r == coups.end() ? -1 : r->second.arme, genre = r == coups.end() ? 0 : r->second.genre;
+			if(mots[1] & 0xff) return ArmeParNom(f.ChaineCitee((uint32)d + 16)) == arme;
+			if(arme < 0) return 0;
+			const CTypeArme &t = armes.Type(arme);
+			switch(mots[0]){
+			case 0: return t.tir68 && (genre == 2 || genre == 3);
+			case 1: return t.tir68 && t.tir69 && genre == 2;
+			case 2: return t.tir69 && genre == 1;
+			case 3: return genre == 4;
+			default: return 0;
+			}
 		}
 		// CollisionStart (FUN_00602260) : l'octet +0x4e5 du piéton, que le lancement d'une piste Collision pose et que rien
 		// ne remet à 0. AttackPhase (FUN_00601fc0) : la phase +0x71c est +4, et, si +8 est positif, l'échéance +0x720
@@ -2705,6 +2716,18 @@ AreaClearAllProjectiles(lua_State *L)
 	return 0;
 }
 
+// PedGetLastHitWeapon(ped) (0x5cd500 → PedGetLastHitWeapon 0x474a90, le relevé +0x408 du composant +0x2e0) : l'arme du dernier coup
+// reçu (+0x5e) ; 0 est le joueur (FUN_005c7220(h, 3 − (h ≠ 0))). -1 sans coup (supposé : la remise du relevé n'est pas lue).
+static int
+PedGetLastHitWeapon(lua_State *L)
+{
+	appels["PedGetLastHitWeapon"]++;
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	auto r = coups.find(h);
+	lua_pushnumber(L, r == coups.end() ? -1 : r->second.arme);
+	return 1;
+}
+
 // PlayerWeaponHudLock(b) (0x5d1b80 → PlayerWeaponHudLock 0x55bb20) : l'octet +0x13c du HUD des armes, que lit WeaponHudLocked.
 static int
 PlayerWeaponHudLock(lua_State *L)
@@ -3761,11 +3784,56 @@ AreaSetTriggerMonitoringRules(lua_State *L)
 	return 0;
 }
 
-// FUN_005b2190, depuis la méthode du coup (FUN_0047b810) : le rappel de l'événement 0 du piéton frappé (FUN_005b40b0,
-// FUN_005b4030), appelé avec (frappé, attaquant). Les gestionnaires globaux de l'événement 7 (FUN_005b1ce0) ne sont pas suivis.
+// Les gestionnaires globaux des événements (RegisterGlobalEventHandler 0x5bbcf0, lu à l'assembleur de 0x5bbcf0 à 0x5bbd71) : deux
+// tables (FUN_005b1c70(&événement, table) rend la case), la table 0 avec deux arguments, sinon celle que choisit le troisième (0 ou
+// non) ; sans fonction (FUN_005d84f0), la case de la table 0 est vidée (FUN_005b1ca0). FUN_005b1ce0 dit si une case a un rappel.
+// Lancés par l'outil : l'événement 7 (un piéton frappé, FUN_005b2190) et l'événement 1 (un CObject détruit, FUN_005b3530).
+static int gestionnairesGlobaux[2][32];
+static bool gestionnairesGlobauxPrets = false;
+static int *
+CaseGlobale(int e, int table)
+{
+	if(!gestionnairesGlobauxPrets){ for(auto &t : gestionnairesGlobaux) for(int &c : t) c = LUA_NOREF; gestionnairesGlobauxPrets = true; }
+	return e >= 0 && e < 32 ? &gestionnairesGlobaux[table ? 1 : 0][e] : nil;
+}
+
+static int
+RegisterGlobalEventHandler(lua_State *L)
+{
+	Journal("RegisterGlobalEventHandler", L, 1);
+	int n = lua_gettop(L), e = (int)luaL_optnumber(L, 1, -1);
+	int table = n == 2 ? 0 : (int)luaL_optnumber(L, 3, 0) != 0;
+	if(!lua_isfunction(L, 2)) table = 0;
+	int *c = CaseGlobale(e, table);
+	if(c == nil) return 0;
+	if(*c != LUA_NOREF){ luaL_unref(L, LUA_REGISTRYINDEX, *c); *c = LUA_NOREF; }
+	if(lua_isfunction(L, 2)){ lua_pushvalue(L, 2); *c = luaL_ref(L, LUA_REGISTRYINDEX); }
+	return 0;
+}
+
+// Le rappel d'une case globale, avec deux arguments déjà poussés par `pousser` ; rien sans rappel.
+static void
+AppelerGlobal(int e, int table, const char *quoi, void (*pousser)(lua_State *, const void *), const void *donnees)
+{
+	int *c = CaseGlobale(e, table);
+	if(c == nil || *c == LUA_NOREF || etatLua == nil) return;
+	lua_State *L = etatLua;
+	printf("%6.2f s  le gestionnaire global de l'événement %d (table %d) est appelé : %s\n", maintenant / 1000.0, e, table, quoi);
+	lua_rawgeti(L, LUA_REGISTRYINDEX, *c);
+	pousser(L, donnees);
+	if(lua_pcall(L, 2, 0, 0) != 0){ printf("        gestionnaire global : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+}
+
+// FUN_005b2190, depuis la méthode du coup (FUN_0047b810) : les gestionnaires globaux de l'événement 7 (tables 0 puis 1, FUN_005b1ce0,
+// FUN_005b1c70), appelés avec les poignées du frappé et de l'attaquant (l'emplacement +0xac de chacun, -1 sans lui) ; puis le rappel de
+// l'événement 0 du piéton frappé (FUN_005b40b0, FUN_005b4030), avec (frappé, attaquant).
 static void
 PrevenirCoupRecu(int cible, int attaquant)
 {
+	struct P { int a, b; } paire{cible, attaquant};
+	auto pousser = [](lua_State *L, const void *d){ const P *p = (const P *)d; lua_pushnumber(L, p->a); lua_pushnumber(L, p->b); };
+	AppelerGlobal(7, 0, "un piéton frappé", pousser, &paire);
+	AppelerGlobal(7, 1, "un piéton frappé", pousser, &paire);
 	if(etatLua == nil || !gestionnaires.Pret(cible)) return;
 	lua_State *L = etatLua;
 	printf("%6.2f s  le rappel du coup reçu de %d est appelé (%d, %d)\n", maintenant / 1000.0, cible, cible, attaquant);
@@ -4189,13 +4257,13 @@ SegmentDansSphere(const CVector &a, const CVector &b, const CVector &c, float r,
 // avec l'arme du projectile (sans le facteur du joueur ni les arrondis, réservés aux coups sans arme) ; le relevé du coup reçu, la
 // descente dans l'arbre des coups, dont les pistes DamageHandle ôtent les dégâts, et l'événement 0 des scripts (FUN_005b2190).
 static void
-RecevoirProjectile(int cible, int tireur, float degats)
+RecevoirProjectile(int cible, int tireur, float degats, int32 arme)
 {
 	CoupRecu &r = coups[cible];
 	float t = maintenant / 1000.0f;
 	r.precedent = r.instant >= 0.0f ? t - r.instant : -1.0f;
 	r.instant = t;
-	r.drapeau = 0; r.jusqua = t + 1.0f; r.degats = degats; r.attaquant = tireur;
+	r.drapeau = 0; r.jusqua = t + 1.0f; r.degats = degats; r.attaquant = tireur; r.arme = arme; r.genre = 0;
 	CActionController &v = controleurs[cible];
 	const CActionNode *arbreCoups = arbres.Trouver("/Global/HitTree");
 	bool pris = arbreCoups && v.Entrer(arbres, arbreCoups, CJugeOutil(cible, t), t);
@@ -4204,14 +4272,18 @@ RecevoirProjectile(int cible, int tireur, float degats)
 	if(pietons.CoupRecevable(cible, tireur)) PrevenirCoupRecu(cible, tireur);
 }
 
-// FUN_005b3530 (depuis FUN_004d0300, la destruction d'un CObject) : les gestionnaires globaux de l'événement 1 (FUN_005b1ce0,
-// FUN_005b1c70 ; non suivis), puis le rappel de l'événement 3 du haché de l'objet (+0x228 ; FUN_005b38b0, FUN_005b3830), appelé dans
+// FUN_005b3530 (depuis FUN_004d0300, la destruction d'un CObject) : le gestionnaire global de l'événement 1 de la table 0 (FUN_005b1ce0,
+// FUN_005b1c70), puis le rappel de l'événement 3 du haché de l'objet (+0x228 ; FUN_005b38b0, FUN_005b3830), appelé dans
 // un thread neuf de son objet script (FUN_005d9ac0) avec le haché (un pointeur léger, thunk_FUN_0073b520) et la poignée de l'objet
 // (FUN_005d8460) ; l'outil l'appelle d'un bloc (lua_pcall) dans le script qui l'a posé.
+static void AppelerGlobal(int e, int table, const char *quoi, void (*pousser)(lua_State *, const void *), const void *donnees);
 static void
 PrevenirObjetDetruit(size_t i)
 {
 	const CObjetOutil &o = objets[i];
+	struct P { uint32 h; int p; } paire{o.nom, PoigneeObjet(i)};
+	AppelerGlobal(1, 0, "un objet détruit", [](lua_State *L, const void *d){ const P *p = (const P *)d;
+	              lua_pushlightuserdata(L, (void *)(uintptr_t)p->h); lua_pushnumber(L, p->p); }, &paire);
 	for(const CGestionnaireHache &g : gestionnairesHaches){
 		if(g.nom != o.nom || g.rappels[3] == LUA_NOREF || etatLua == nil) continue;
 		lua_State *L = etatLua;
@@ -4280,7 +4352,7 @@ AvancerProjectiles(float pas)
 			FrapperObjet((size_t)objet, q.tireur, q.degats);
 		}else if(touche >= 0){
 			q.actif = false;
-			RecevoirProjectile(touche, q.tireur, q.degats);
+			RecevoirProjectile(touche, q.tireur, q.degats, q.modele);
 		}
 	}
 	size_t n = 0;
@@ -5269,6 +5341,7 @@ main(int argc, char **argv)
 	std::vector<std::pair<uint32, int>> visees;           // --viser PIETON@s : le joueur verrouille ce piéton à s secondes
 	std::vector<std::pair<uint32, int>> choixArmes;       // --arme ARME@s : le joueur choisit cette arme au HUD à s secondes
 	std::vector<std::pair<uint32, std::string>> objetsVises;   // --viser-objet NOM@s : le joueur vise cet objet (le nom de l'instance)
+	std::vector<uint32> tirsManette;                       // --tirer @s1,s2… : le joueur tire avec l'arme en main
 	std::vector<const char*> pos;
 	for(int i = 1; i < argc; i++){
 		if(strcmp(argv[i], "--mission") == 0 && i + 1 < argc) aLancer = argv[++i];
@@ -5310,6 +5383,17 @@ main(int argc, char **argv)
 			// --viser PIETON@s : le bouton de verrouillage de la manette, le joueur prend le piéton pour cible (FUN_00497d20).
 			std::string e = argv[++i]; size_t at = e.find('@');
 			visees.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), atoi(e.c_str())});
+		}
+		else if(strcmp(argv[i], "--tirer") == 0 && i + 1 < argc){
+			// --tirer @s1,s2,… : la gâchette, le tir du haut du corps (les pistes spawn du nœud de l'arme : Release/Fire/SLINGSHOT et sa
+			// piste WeaponFire) sans changer le nœud joué ; l'outil n'a pas de contrôleur à part pour le haut du corps.
+			std::string e = argv[++i]; size_t at = e.find('@');
+			for(const char *q = e.c_str() + (at == std::string::npos ? 0 : at + 1); *q; ){
+				tirsManette.push_back((uint32)(atof(q) * 1000));
+				const char *v = strchr(q, ',');
+				if(v == nil) break;
+				q = v + 1;
+			}
 		}
 		else if(strcmp(argv[i], "--viser-objet") == 0 && i + 1 < argc){
 			// --viser-objet NOM@s : le verrouillage sur un objet (ManualLockTargetable, le bit 15 de sa ligne de object.dat), par le nom
@@ -5477,6 +5561,8 @@ main(int argc, char **argv)
 	lua_register(L, "ObjectNumProjectileImpacts", ObjectNumProjectileImpacts);
 	lua_register(L, "AreaClearAllProjectiles", AreaClearAllProjectiles);
 	lua_register(L, "ObjectNameToHashID", ObjectNameToHashID);
+	lua_register(L, "RegisterGlobalEventHandler", RegisterGlobalEventHandler);
+	lua_register(L, "PedGetLastHitWeapon", PedGetLastHitWeapon);
 	lua_register(L, "RegisterHashEventHandler", RegisterHashEventHandler);
 	lua_register(L, "SetNumberOfHandledHashEventObjects", SetNumberOfHandledHashEventObjects);
 	lua_register(L, "ObjectToggleVulnerability", ObjectToggleVulnerability);
@@ -5600,6 +5686,16 @@ main(int argc, char **argv)
 		for(auto &e : visees) if(e.second >= 0 && maintenant >= e.first && controleJoueur != 1){
 			printf("%6.2f s  la manette est coupée : le joueur ne vise pas le piéton %d\n", maintenant / 1000.0, e.second);
 			e.second = -1;
+		}
+		for(uint32 &e : tirsManette) if(e != 0xffffffffu && maintenant >= e){
+			CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+			if(controleJoueur != 1) printf("%6.2f s  la manette est coupée : le joueur ne tire pas\n", maintenant / 1000.0);
+			else if(j->armeTenue == -1) printf("%6.2f s  le joueur n'a pas d'arme en main : il ne tire pas\n", maintenant / 1000.0);
+			else{   // la piste WeaponFire de Fire/SLINGSHOT (FUN_00661f10) : le tir, puis une munition retirée sans le drapeau 24
+				Tirer(SCRIPT_PED_JOUEUR, 0.0f);
+				if(j->drapeaux[24] == 0) inventaire.Retirer(armes, SCRIPT_PED_JOUEUR, j->armeMunition, 1, true, modeles.Index("RBandBall"));
+			}
+			e = 0xffffffffu;
 		}
 		for(auto &e : objetsVises) if(!e.second.empty() && maintenant >= e.first){
 			objetVise = -1;
@@ -5726,6 +5822,7 @@ main(int argc, char **argv)
 				r.precedent = r.instant >= 0.0f ? t - r.instant : -1.0f;  // FUN_00472b70 : +0x434 passe en +0x438 (-1 sans coup)
 				r.instant = t;
 				r.drapeau = k.drapeau & 0x7fffffff; r.jusqua = t + 1.0f; r.degats = degats; r.attaquant = c.first;
+				r.arme = p->armeTenue; r.genre = 0;
 				if(k.agresseur) pietons.Agresse(cible, c.first);   // FUN_0047b810 → FUN_004973d0 (le 15e argument, +0x214)
 				CActionController &v = controleurs[cible];
 				// Un piéton à terre (son nœud joué s'appelle On_Ground, ou un parent) : dans le moteur, la réaction passe par
