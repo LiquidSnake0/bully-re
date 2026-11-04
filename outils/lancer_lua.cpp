@@ -2411,6 +2411,30 @@ PedSetPosPoint(lua_State *L)
 	return 0;
 }
 
+// PedIgnoreStimuli(ped, b) (0x5ca370, lua_PedIgnoreStimuli) : le mot +0x1370 du piéton (le drapeau 23, +0x1314 + 4 × 23) prend
+// le booléen (FUN_005d8f20) ; rien s'il n'existe pas (FUN_005c7220). SetAmbientPedsIgnoreStimuli(b) (0x5bb2b0, hors de
+// l'index, lu à l'assembleur de 0x5bb2b0 à 0x5bb307) le pose à tous les piétons du pool (DAT_00c0f5f0, du dernier au premier)
+// que FUN_00476470 dit ambiants : pas en véhicule (+0x1554), pas le joueur, et l'octet de création +0x1570 ni 2 (un script)
+// ni 3 ; dans l'outil, les piétons qu'aucun script ne tient. PlayerSetControl(1) remet celui du joueur à 0. Le mot est lu par
+// FUN_004909a0 (le piéton ignore les stimuli : il vaut 1), que l'outil ne joue pas, et par PedFlags (le drapeau 23).
+static int
+PedIgnoreStimuli(lua_State *L)
+{
+	Journal("PedIgnoreStimuli", L, 1);
+	if(CScriptPed *p = PedArg(L, 1)) p->drapeaux[23] = lua_toboolean(L, 2) ? 1 : 0;
+	return 0;
+}
+
+static int
+SetAmbientPedsIgnoreStimuli(lua_State *L)
+{
+	Journal("SetAmbientPedsIgnoreStimuli", L, 1);
+	int v = lua_toboolean(L, 1) ? 1 : 0;
+	for(int i = SCRIPT_PED_POOL_SIZE - 1; i >= 0; i--)
+		if(CScriptPed *p = pietons.Acceder(i)) if(i != SCRIPT_PED_JOUEUR && p->script < 0) p->drapeaux[23] = v;
+	return 0;
+}
+
 // PedSetTetherToPoint(ped, liste[, n], rayon) (0x5cc370) : rien si le piéton n'existe pas (FUN_005c7220) ou si la liste
 // n'a pas de point (CPointPool__GetSlot) ; avec quatre arguments, le n-ième point, le dernier s'il en manque (FUN_006d58a0) ;
 // le rayon est le dernier argument (FUN_005d82a0). PedSetTetherToXYZ (FUN_00499910, ecx = le piéton + 0x358, lu à
@@ -4413,6 +4437,8 @@ main(int argc, char **argv)
 	lua_register(L, "PedAttack", PedAttack);
 	lua_register(L, "PedSetAITree", PedSetAITree);
 	lua_register(L, "PedSetTetherToPoint", PedSetTetherToPoint);
+	lua_register(L, "PedIgnoreStimuli", PedIgnoreStimuli);
+	lua_register(L, "SetAmbientPedsIgnoreStimuli", SetAmbientPedsIgnoreStimuli);
 	lua_register(L, "PedClearTether", PedClearTether);
 	lua_register(L, "EnterNIS", EnterNIS);
 	lua_register(L, "ExitNIS", ExitNIS);
