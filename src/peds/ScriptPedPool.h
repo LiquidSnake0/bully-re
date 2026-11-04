@@ -299,6 +299,7 @@ struct CScriptPed {
 	int cibleObjectif = -1;      // +0x540 (+0x184 du composant de visée en +0x3bc) : la cible d'un objectif d'attaque, que la
 	                             // condition Objective pose quand elle passe (FUN_0048c330)
 	bool mort = false;           // +0x1c98 : posé par la piste Death (FUN_00479110), lu par PedIsDead (0x5c8f30)
+	bool controlable = true;     // +0x1e90 : le joueur rendu à la manette (PlayerSetControl, FUN_00445c50 : 0 quand le script le prend)
 	// Le composant de vue (+0xa64, son piéton en +0) : l'angle total du cône (+0xa68, la colonne D de pedstats.dat en
 	// degrés, × π / 180 par FUN_00478e30) et la portée (+0xa6c, la colonne E, en mètres) ; un cache de 16 piétons (+0xa74 :
 	// le piéton, l'octet vu, le nombre d'images à vivre) que FUN_0048ccf0 fait vieillir à chaque image (CPed, FUN_004812d0).
@@ -465,7 +466,8 @@ public:
 	// Les styles autres que 0 et 2 (FUN_00496960) s'arrêtent là : valable. Pour 0 et 2 : avec `aPortee`, à moins de +0x68 m
 	// (FUN_00487d00) ; l'attache du piéton (FUN_004996f0, +0x34) admet la cible à sa marge près, faute d'attache toujours ; puis
 	// valable pour les styles 2 et 3 (FUN_00496980), sans `aPortee`, ou si le piéton la voit (FUN_0048d320) ; sinon seulement
-	// la cible déjà prise, vue il y a au plus +0x64 s. Non suivis : la conversation (PedInConversation), les zones interdites
+	// la cible déjà prise, vue il y a au plus +0x64 s. Le joueur que le script tient (+0x1e90 nul) n'est pas une cible pour une autorité
+	// (FUN_0041a900 : types 0, 7, 8 ; lu en 0x497080, avant les styles). Non suivis : la conversation (PedInConversation), les zones interdites
 	// (FUN_0046ee60), le modèle DAT_00bf42dc, la liste +0x198 du composant de visée (FUN_0048bf30), le joueur en voiture.
 	bool CibleValable(int handle, int cible, int32 style, bool aPortee, bool vivante, const ButesCibles &b, int (*tirer)(void *), void *ctx);
 	// FUN_004992a0 : la cible de l'objectif si elle est valable (FUN_004988b0, l'octet +0x1de5 levé pendant le jugement), sinon

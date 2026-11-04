@@ -3699,12 +3699,31 @@ PedSetGlobalAttitude_Rumble(lua_State *L)
 	return 0;
 }
 
+// PlayerSetControl(c) (0x5d12f0, lua_PlayerSetControl). 0 : FUN_00445c50(1) coupe la manette (FUN_0050de50(0), l'octet +0x1c
+// de la manette) et rabat l'octet +0x1e90 du joueur (FUN_00497080 : une autorité ne le prend plus pour cible) ; les entrées du
+// joueur sont vidées (FUN_005f38e0) et FUN_00474420 pose son intention de mouvement (+0x2e0 : +0 … +8) sur son avant, à plat
+// (FUN_00415350, FUN_00414cc0), recopiée en +0xc … +0x14. 1 : le drapeau 23 du joueur (+0x1370) à 0, FUN_00445c50(0) rend la
+// manette et +0x1e90, FUN_0050de80(1) (l'octet +0x1f). Les autres valeurs ne font rien. Manette coupée, ce que l'outil fait
+// faire à la manette (--jouer, --viser, --demander, --sequence, --suivre) est perdu : un bouton pressé pendant une cinématique
+// ne fait rien.
 static int
 PlayerSetControl(lua_State *L)
 {
 	Journal("PlayerSetControl", L, 1);
 	int c = (int)luaL_optnumber(L, 1, 1);
-	if(c == 0 || c == 1) controleJoueur = c;
+	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	if(c == 0){
+		controleJoueur = 0;
+		if(j){
+			j->controlable = false;
+			pietons.ViderEntrees(SCRIPT_PED_JOUEUR);
+			float a = j->cap * 3.14159265f / 180.0f;
+			j->intention = CVector(cosf(a), sinf(a), 0.0f);
+		}
+	}else if(c == 1){
+		controleJoueur = 1;
+		if(j){ j->drapeaux[23] = 0; j->controlable = true; }
+	}
 	return 0;
 }
 
@@ -4436,6 +4455,10 @@ main(int argc, char **argv)
 		}
 		for(auto &e : entrees) if(!e.second.empty() && maintenant >= e.first){ EntrerDansDeclencheur(e.second.c_str()); e.second.clear(); }
 		for(auto &e : allers) if(!e.second.empty() && maintenant >= e.first){ AllerAuPoint(e.second.c_str()); e.second.clear(); }
+		for(auto &e : visees) if(e.second >= 0 && maintenant >= e.first && controleJoueur != 1){
+			printf("%6.2f s  la manette est coupée : le joueur ne vise pas le piéton %d\n", maintenant / 1000.0, e.second);
+			e.second = -1;
+		}
 		for(auto &e : visees) if(e.second >= 0 && maintenant >= e.first){
 			bool pris = pietons.Verrouiller(SCRIPT_PED_JOUEUR, e.second, 0);
 			printf("%6.2f s  le joueur vise le piéton %d%s\n", maintenant / 1000.0, e.second, pris ? "" : " : refusé");
@@ -4443,6 +4466,10 @@ main(int argc, char **argv)
 		}
 		// Une porte DT_ poussée : FUN_00415160 pose l'objet de porte en cours (+0x394) ; le moteur le fait depuis
 		// l'animation de la porte (FUN_00610ed0, non jouée), l'outil le fait au nom du déclencheur.
+		for(auto &e : gestes) if(!e.second.empty() && maintenant >= e.first && controleJoueur != 1){
+			printf("%6.2f s  la manette est coupée : le joueur ne joue pas %s\n", maintenant / 1000.0, e.second.c_str());
+			e.second.clear();
+		}
 		for(auto &e : gestes) if(!e.second.empty() && maintenant >= e.first){
 			// Ce que la manette ferait faire au contrôleur du joueur (une parade, un coup) : le nœud devient le
 			// nœud joué (+0x10), que PedIsPlaying compare.
@@ -4469,10 +4496,11 @@ main(int argc, char **argv)
 			}
 			e.second.clear();
 		}
-		for(uint32 &q : sequences) if(q != 0xffffffffu && maintenant >= q){ ReussirSequence(L); q = 0xffffffffu; }
+		for(uint32 &q : sequences) if(q != 0xffffffffu && maintenant >= q){ if(controleJoueur == 1) ReussirSequence(L); q = 0xffffffffu; }
 		// La manette : une ActionRequest en attente un quart de seconde, que le contrôleur du joueur juge.
 		bool demande = false;
 		for(auto &e : attentes) if(e.first != 0xffffffffu && maintenant >= e.first){
+			if(controleJoueur != 1){ e.first = 0xffffffffu; continue; }
 			demandes[e.second] = maintenant + 250;
 			printf("%6.2f s  le joueur demande l'action %u\n", maintenant / 1000.0, e.second);
 			e.first = 0xffffffffu; demande = true;

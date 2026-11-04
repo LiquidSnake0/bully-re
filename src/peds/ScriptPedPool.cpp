@@ -488,6 +488,7 @@ CScriptPedPool::CibleValable(int h, int cible, int32 style, bool aPortee, bool v
 	const CScriptPed *c = Acceder(cible);
 	if(p == nil || c == nil || cible == h) return false;
 	if(vivante && c->mort) return false;
+	if(c->type == SCRIPT_PED_TYPE_JOUEUR && !c->controlable && Autorite(*p)) return false;   // 0x4971c5 … 0x4971dc
 	if(style != 0 && style != 2) return true;              // FUN_00496960
 	if(aPortee){
 		float dx = c->pos.x - p->pos.x, dy = c->pos.y - p->pos.y, dz = c->pos.z - p->pos.z;
