@@ -915,14 +915,16 @@ struct CJugeOutil : CJugeAction {
 		// (0x937a9c, FUN_005ffe60) : l'octet +0x1570, qui dit qui a créé le piéton (FUN_004770a0), vaut 4. NeedsToDive (0x937550,
 		// FUN_005ffe80) : l'octet +0x16d4 positif et l'entité à éviter +0x16d8, puis FUN_004777e0 (devant lui ou non) comparé à
 		// l'octet +4 ; faux sinon. L'outil n'a ni POI, ni scénarios, ni places d'arrimage (AreaAddDockLocation est un bouchon),
-		// ni gardes, ni laisses, ni patrouilles, ni entités qui foncent sur un piéton : les dix sont fausses.
+		// ni gardes, ni patrouilles, ni entités qui foncent sur un piéton : neuf sont fausses ; IsTethered lit la laisse que pose
+		// PedSetTetherToPoint (le genre +0x360).
 		static const uint32 kTraine = ActionHash("IsHangingOut"), kAmbiantScripte = ActionHash("IsScriptedAmbient"),
 		                    kScenario = ActionHash("IsScenarioPed"), kArrimage = ActionHash("NearbyDockLocation"),
 		                    kGarde = ActionHash("IsGuarding"), kLaisse = ActionHash("IsTethered"),
 		                    kPatrouille = ActionHash("IsPatrolPed"), kPlonger = ActionHash("NeedsToDive"),
 		                    kAvoirPoi = ActionHash("HavePOI"), kPoiMobile = ActionHash("HaveDynamicPOI");
+		if(type == kLaisse){ const CScriptPed *p = pietons.Acceder(ped); return p && p->laisse != 0; }   // PedSetTetherToPoint
 		if(type == kAvoirPoi || type == kPoiMobile || type == kTraine || type == kAmbiantScripte || type == kScenario || type == kArrimage || type == kGarde ||
-		   type == kLaisse || type == kPatrouille || type == kPlonger) return 0;
+		   type == kPatrouille || type == kPlonger) return 0;
 		// VisibleArea (ConditionVisibleArea 0x936d14, FUN_005fc7c0) : la zone visible (DAT_00bd1008, AreaGetVisible) est +4.
 		// IsNISorCutsceneRunning (0x937e84, FUN_005fd2c0) : avec l'octet +4, un NIS en cours (FUN_005bb220 : l'octet
 		// DAT_00cfb340, qu'EnterNIS pose et ExitNIS efface) ; avec l'octet +5, une cinématique en cours (DAT_020c5be4,
@@ -2406,6 +2408,37 @@ PedSetPosPoint(lua_State *L)
 	if(p == pietons.Acceder(SCRIPT_PED_JOUEUR)) DemanderZone("PedSetPosPoint", pt->pos, pt->lacetTangageRoulis[0], -1);
 	else p->pos = pt->pos;
 	PoserCap(p, pt->lacetTangageRoulis[0]);
+	return 0;
+}
+
+// PedSetTetherToPoint(ped, liste[, n], rayon) (0x5cc370) : rien si le piéton n'existe pas (FUN_005c7220) ou si la liste
+// n'a pas de point (CPointPool__GetSlot) ; avec quatre arguments, le n-ième point, le dernier s'il en manque (FUN_006d58a0) ;
+// le rayon est le dernier argument (FUN_005d82a0). PedSetTetherToXYZ (FUN_00499910, ecx = le piéton + 0x358, lu à
+// l'assembleur en 0x5cc468) pose le genre 1 (+0x360), le rayon (+0x364), le point (+0x368 … +0x370), les octets +0x3b4 (1)
+// et +0x3b5 (0), puis deux fois FUN_00499840, qui ne refait le point que pour les genres 2 et 3. PedClearTether (0x5c9a30 →
+// FUN_004998f0) remet le genre à 0. Le piéton n'est pas encore tiré vers son point : l'outil n'a pas la locomotion de laisse
+// (TetherLoco dans AI.act), seulement la condition IsTethered.
+static int
+PedSetTetherToPoint(lua_State *L)
+{
+	Journal("PedSetTetherToPoint", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p == nil || !lua_isnumber(L, 2)) return 0;
+	int h = (int)lua_tonumber(L, 2), arguments = lua_gettop(L), n = arguments == 4 ? (int)luaL_optnumber(L, 3, 1) : 1;
+	const CTriggerPointPoint *pt = donnees.Point(h, 1);
+	if(pt == nil) return 0;
+	for(int k = 2; k <= n; k++){ const CTriggerPointPoint *q = donnees.Point(h, k); if(q == nil) break; pt = q; }
+	p->laisse = 1;
+	p->laisseRayon = (float)luaL_optnumber(L, arguments == 4 ? 4 : 3, 0);
+	p->laissePoint = pt->pos;
+	return 0;
+}
+
+static int
+PedClearTether(lua_State *L)
+{
+	Journal("PedClearTether", L, 1);
+	if(CScriptPed *p = PedArg(L, 1)) p->laisse = 0;
 	return 0;
 }
 
@@ -4379,6 +4412,8 @@ main(int argc, char **argv)
 	lua_register(L, "PedStop", PedStop);
 	lua_register(L, "PedAttack", PedAttack);
 	lua_register(L, "PedSetAITree", PedSetAITree);
+	lua_register(L, "PedSetTetherToPoint", PedSetTetherToPoint);
+	lua_register(L, "PedClearTether", PedClearTether);
 	lua_register(L, "EnterNIS", EnterNIS);
 	lua_register(L, "ExitNIS", ExitNIS);
 	lua_register(L, "PedSetGlobalAttitude_Rumble", PedSetGlobalAttitude_Rumble);

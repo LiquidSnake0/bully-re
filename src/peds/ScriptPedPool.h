@@ -299,6 +299,12 @@ struct CScriptPed {
 	int cibleObjectif = -1;      // +0x540 (+0x184 du composant de visée en +0x3bc) : la cible d'un objectif d'attaque, que la
 	                             // condition Objective pose quand elle passe (FUN_0048c330)
 	bool mort = false;           // +0x1c98 : posé par la piste Death (FUN_00479110), lu par PedIsDead (0x5c8f30)
+	// La laisse (le composant +0x358, FUN_00499910 PedSetTetherToXYZ, FUN_004998f0 la lâche) : son genre (+0x360 : 0 aucune,
+	// 1 un point, 2 et 3 un piéton ou un déclencheur, que l'outil ne suit pas), son rayon (+0x364) et son point (+0x368 … +0x370) ;
+	// IsTethered (FUN_00603040) lit le genre.
+	int32 laisse = 0;
+	float laisseRayon = 0;
+	CVector laissePoint;
 	bool controlable = true;     // +0x1e90 : le joueur rendu à la manette (PlayerSetControl, FUN_00445c50 : 0 quand le script le prend)
 	// Le composant de vue (+0xa64, son piéton en +0) : l'angle total du cône (+0xa68, la colonne D de pedstats.dat en
 	// degrés, × π / 180 par FUN_00478e30) et la portée (+0xa6c, la colonne E, en mètres) ; un cache de 16 piétons (+0xa74 :
