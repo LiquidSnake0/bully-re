@@ -973,3 +973,48 @@ en échec plutôt que de les masquer.
 - **Ce qui bloque encore** : `1_04` n'est pas lancée ; les armes et les projectiles ; les objets animés (`PAnimCreate`) ; les classes
   suivantes de `AI.act` (`#51223f18`, `FactionScan`, `TargetFriendsAttacker`, `SpecialPoints`…) ; le composant de visée du joueur.
 - **Bilan** : 817 fonctions recréées (5,4 % du code), contre 781 (5,3 %) ; 1 691 comprises (9,9 %) ; 10 commits.
+
+## 05.11.2026
+
+- **`1_04` lancée seule** : elle s'arrêtait dans la cinématique du parking, où `PedGetOffsetInWorldCoords` (0x5ce500), un bouchon,
+  rendait un seul 0 ; réelle, avec `PedFaceHeading` (0x5c76b0) et `PedSetStationary` (0x5c7950), `1_04` attend les vitres du bus.
+- **Les armes** : le type d'une arme est une fiche ObjectButes (Weapons/Info/<nom> de `Global_Weapons.cat`, que Globals.cat monte ;
+  `FUN_0050eaa0`, `FUN_0072ad50`, `WeaponGetType` 0x51b300 ; le modèle des munitions +0x84 tiré de +0x54 par `FUN_00728150`) ;
+  l'inventaire est un pool commun de 57 entrées (`ms_pPool654`, `src/peds/Armes`, `tests/test_armes`) ; marble, supermarble et RubBand ont
+  des munitions sans fin. L'arme en main passe par l'arbre : `PedSetWeapon` pose l'arme voulue, `Weapons/SelectActions` la prend
+  (`PropGetDesired`, `PropAttach`, qui fait de l'arbre de l'arme, `/Global/SlingShot`, le contexte du piéton) ; onze conditions d'armes
+  jugées, le HUD des armes (`--arme`).
+- **Les projectiles** : `WeaponFire` (`FUN_00661f10`, `FUN_00664710`) tire la munition de l'objet arme (+0x12c de `SetWeaponInfo`) ;
+  la vitesse balistique de `FUN_0065f050` (la fiche ProjectileButes : la bille 0,65 m par pas, 9 points ; la brique 0,38, 30 points) ;
+  un point qui vole (l'outil ne joue pas la physique des `CProjectile`), qui touche les trois sphères des piétons (la méthode du coup,
+  `/Global/HitTree`, l'événement 0) et les objets ; les marques et `ObjectNumProjectileImpacts`.
+- **Les vitres du bus** : les entrées spec des `.ipb` (128 octets, le nom haché de l'instance en +116), des CObject quand leur modèle a
+  une ligne de object.dat (supposé) ; `ObjectNameToHashID` rend un pointeur léger, `RegisterHashEventHandler` (0x5bbd80) ; détruit,
+  l'objet prévient son haché (l'événement 3, `FUN_005b3530`) ; `PAnimDestroyedByPed`, `ObjectToggleVulnerability` ; `--viser-objet`.
+- **L'arbre et les jocks** : les 119 arbres des objets animés sont dans Stream/World.img (`pxTree.cat` : `/Global/TreeClimb`) ;
+  `RegisterGlobalEventHandler` (0x5bbcf0, deux tables ; l'événement 7 à chaque coup reçu, l'événement 1 à chaque objet détruit) ;
+  `PedGetLastHitWeapon` ; `--tirer` (le haut du corps). Depuis l'arbre, dix-huit billes sur les six jocks pendant leurs sauts :
+  **`1_04` se termine réussie à 81,05 s**.
+- **Les briques de `1_03`** : `GetPointListSize` (0x5bc740), qui rendait 0, et les ramassages (`PickupCreateXYZ` 0x5d0b90, 300 entrées,
+  `--ramasser`) ; `PropSetInTransition` met le lance-pierre en main dans `PlayerPickupSlingshot`. Trois briques lancées : Davis touché de
+  loin, **`1_03` réussie à 148,04 s** (avec les jabs, toujours 148,90 s).
+- **`1_02` par son vrai chemin** : `PedGetWhoHitMeLast` (0x5c8c60) réelle ; le bouchon rendait le joueur, et `T_MonitorBullies` lançait
+  la cinématique des bullies sur un coup qui n'avait pas eu lieu. La commande entre dans `_1_02_RUSSELTEASE` (22,3 s), le combat tire
+  ses parades autrement, vingt-cinq jabs et l'humiliation à 98 s : **`1_02` réussie à 132,92 s**.
+- **`PedCanSeeObject`** (0x5cafe0, le cache de la vue) et **la minuterie de mission** (`MissionTimerStart`, `Stop`, `HasFinished`,
+  `GetTimeRemaining`).
+- **Le bilan nomme trois classes** par leur chaîne (le HashString de chaque chaîne de bully.exe) : `#51223f18` est `CheckWeather`,
+  `#53408a0c` `PedVelocity`, `#74b4308b` `WeaponFlags` ; `IsPlayerFatigued`, `WeaponEquipedSocket` et `TargetProjectile` entrent au
+  bilan avec l'arbre du lance-pierre.
+- **REA amont** : 508 commits en attente (417 au 04.11), le dernier du 05.11. Touchent ce que bully-re utilise : la recherche de Ghidra
+  dans les blocs de mémoire voisins (#8840, rupture), le snapshot qui garde les pseudo-codes d'une requête (#8089), les projets Ghidra
+  existants (#8222, #8273, #8605) ; rien fusionné. La séance n'a pas ouvert REA : l'index `export/index.sqlite` et le désassemblage
+  `objdump` de `bully.exe` (déjà dans le dossier de travail de la session, pas regénéré) ont suffi.
+- **Chronos** : `1_01` à 10,46 s à chaque commit (journal identique hors les lignes de chargement) ; `1_02` à 124,97 s jusqu'au
+  septième commit, puis 132,92 s par son vrai chemin ; `1_03` avec la riposte à 148,90 s à chaque commit (journaux identiques hors les
+  briques et la prise du lance-pierre), aux briques à 148,04 s ; `1_04` réussie à 81,05 s dès le sixième commit.
+- **Ce qui bloque encore** : `1_05` n'est pas lancée ; la charge et la visée des tirs (les jocks qui courent ne sont pas touchés), le
+  haut du corps en contrôleur à part, la physique des projectiles ; les CObject et les objets animés pour de vrai ; les ramassages par
+  la banque `Weapons/PickUpActions`.
+- **Bilan** : 854 fonctions recréées (5,6 % du code), contre 817 (5,4 %) ; 1 785 comprises (10,4 %) ; 10 commits.
+
