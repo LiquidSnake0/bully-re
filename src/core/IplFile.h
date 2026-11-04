@@ -42,6 +42,16 @@ struct CIplInst {
 	uint32 unk116;
 };
 
+// Une entrée « spec » (le lecteur 0x433470 : 128 octets passés au chargeur, son emplacement +0x18) : la forme d'une « inst » puis le
+// nom haché de l'instance (HashString, ObjectNameToHashID) et deux mots. Dans tschool.ipb, les cinq vitres du bus
+// (BusWindow, 9685, de pAnimsE.ide) : « tschool_BusWindow » et « tschool_BusWindow01 » à « 04 », en (172,53 … 175,76, 9,98, 7,60).
+struct CIplSpec {
+	CIplInst inst;                  // +0 … +0x77 (la position en +72, l'échelle +84, le quaternion +96)
+	uint32 nom;                     // +116 (0x74) : le nom haché de l'instance (le +116 d'une inst)
+	uint32 fichier;                 // +120 : un haché commun aux entrées d'un fichier (supposé : celui de son nom)
+	int32 genre;                    // +124 : 2 pour les vitres
+};
+
 struct CIplRail {
 	char name[64];
 	int32 unk;
@@ -109,6 +119,7 @@ class CIplFile
 {
 public:
 	static int32 (*ms_instHandler)(const CIplInst &e);
+	static int32 (*ms_specHandler)(const CIplSpec &e);
 	static int32 (*ms_railHandler)(const CIplRail &e);
 	static int32 (*ms_occlHandler)(const CIplOccl &e);
 	static int32 (*ms_propHandler)(const char *name);

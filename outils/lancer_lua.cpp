@@ -24,7 +24,7 @@
 // lance celle dont le joueur touche le corona, et celles qui se lancent seules (champ 51) : 1_02 après 1_01.
 // Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
 // de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s[,s2…]]... [--demander N@s]... [--sequence @s]... [--suivre PIETON[,d]@s]... [--viser PIETON@s]... [--arme ARME@s]...
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s[,s2…]]... [--demander N@s]... [--sequence @s]... [--suivre PIETON[,d]@s]... [--viser PIETON@s]... [--arme ARME@s]... [--viser-objet NOM@s]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -38,6 +38,8 @@
 #include "../src/core/ActionBank.h"
 #include "../src/core/ActionController.h"
 #include "../src/peds/Armes.h"
+#include "../src/objects/ObjectData.h"
+#include "../src/core/IplFile.h"
 #include "../src/anim/Hxd.h"
 #include "../src/anim/AnimGroups.h"
 #include "../src/core/ConditionListe.h"
@@ -171,6 +173,26 @@ PoserMarque(const std::string &nom, const CVector &pos)
 	if(marques.size() < 32) marques.push_back({nom, pos});
 	else{ marques[marqueSuivante] = {nom, pos}; marqueSuivante = (marqueSuivante + 1) % 32; }
 }
+
+// --- Les objets cassables (CObject : ms_pObjectPool, 275 × 0x22c ; docs/pools.md) ---
+// Supposé : les entrées spec des .ipb dont le modèle a une ligne de object.dat sont des CObject (le lecteur 0x433470 passe l'entrée
+// au chargeur, son emplacement +0x18, non lu). D'un CObject, l'outil garde le modèle (+0x10e), le nom haché de l'instance (+0x228),
+// la position, ses points de vie (HitPoints, les 15 bits bas du +0 de sa ligne de object.dat), le bit 6 de l'octet +0x209 (posé par
+// ObjectToggleVulnerability : il écarte la destruction, FUN_004d0300) et celui qui l'a détruit (+0x224, PAnimDestroyedByPed).
+// Sa poignée (ce que le moteur passe aux scripts : l'octet du pool + l'indice × 0x100, FUN_005b3530) : l'indice × 0x100 + 1 (supposé).
+struct CObjetOutil { int32 modele = -1; uint32 nom = 0; CVector pos; int32 sante = 0; bool invulnerable = false, detruit = false;
+                     bool parArmeSeule = false, verrouillable = false; int destructeur = -1; };
+static std::vector<CObjetOutil> objets;
+static int PoigneeObjet(size_t i){ return (int)(i << 8) | 1; }
+static CObjetOutil *ObjetParPoignee(int h){ size_t i = (size_t)h >> 8; return h >= 0 && (h & 0xff) == 1 && i < objets.size() ? &objets[i] : nil; }
+
+// Les gestionnaires des événements par haché (RegisterHashEventHandler 0x5bbd80) : une table d'entrées de 0x24 octets (le haché,
+// huit cases de rappel), dix en place (DAT_00cfada8), puis le tas (DAT_00cfaf10) que SetNumberOfHandledHashEventObjects agrandit ;
+// leur nombre DAT_00cfaf18. FUN_005b3ee0 ajoute une entrée (s'il reste de la place), FUN_005b3830 rend sa case, FUN_005b3b80 la vide.
+struct CGestionnaireHache { uint32 nom; int rappels[8]; };
+static std::vector<CGestionnaireHache> gestionnairesHaches;
+static size_t capaciteHaches = 10;
+static int objetVise = -1;   // l'objet que le joueur vise (--viser-objet), sa poignée ; -1 aucun
 
 // Le nom d'un modèle d'arme ou d'objet (le +4 de son modelinfo est son HashString), nil sinon.
 static const std::string *
@@ -2290,6 +2312,149 @@ MunitionsDe(int ped, int32 arme)
 	return n == 0 && p && p->armeTenue == arme ? 1 : n;
 }
 
+// L'hôte de CObjectData::Initialise (src/objects) : le modèle par son nom (FUN_0051c040), le reste par des hachés (les effets, les sons
+// et les butes de ramassage ne servent pas à l'outil).
+int32 FindModelIndexByName(const char *name){ return modeles.Index(name); }
+uint16 GetEffectIdByName(const char *name){ return (uint16)(ActionHash(name) & 0x7fff); }
+uint16 GetSoundBankIdByName(const char *name){ return (uint16)(ActionHash(name) & 0x7fff); }
+uint32 GetSoundIdByName(const char *name){ return ActionHash(name); }
+uint32 GetStreamIdByName(const char *name, int32){ return ActionHash(name); }
+uint32 GetPickupButesByName(const char *name){ return ActionHash(name); }
+void ObjectDataPostInit(void) {}
+
+// La ligne de object.dat d'un modèle (CObjectData : la table 0xc35200, puis les alias 0xc34f58), nil sinon.
+static const CObjectInfo *
+InfoObjet(int32 modele)
+{
+	for(int i = 0; i < CObjectData::ms_numObjectInfos; i++) if(CObjectData::ms_aObjectInfo[i].modelIndex == modele) return &CObjectData::ms_aObjectInfo[i];
+	for(int i = 0; i < CObjectData::ms_numAliases; i++)
+		if(CObjectData::ms_aAliases[i].modelIndex == modele && CObjectData::ms_aAliases[i].target >= 0)
+			return &CObjectData::ms_aObjectInfo[CObjectData::ms_aAliases[i].target];
+	return nil;
+}
+
+// Les objets cassables : object.dat (CObjectData::Initialise, 0x4d0c90), puis les entrées spec des .ipb de Stream/World.img dont le
+// modèle a une ligne.
+static int32
+NoterObjet(const CIplSpec &e)
+{
+	const CObjectInfo *inf = InfoObjet(e.inst.modelId);
+	if(inf == nil) return 0;
+	CObjetOutil o;
+	o.modele = e.inst.modelId; o.nom = e.nom & 0x7fffffff; o.pos = e.inst.pos;
+	o.sante = inf->hitPointsAndLock & 0x7fff;
+	o.verrouillable = (inf->hitPointsAndLock & 0x8000) != 0;
+	o.parArmeSeule = (inf->destroyByWeaponOnly & 1) != 0;
+	objets.push_back(o);
+	return 0;
+}
+
+static void
+ChargerObjets(void)
+{
+	CObjectData::Initialise("Config\\Dat\\OBJECT.DAT");
+	int32 monde = CdStream::AddImage("Stream\\World.img");
+	if(monde < 0) return;
+	const CdImage &img = CdStream::ms_images[monde];
+	CIplFile::ms_specHandler = NoterObjet;
+	int fichiers = 0;
+	for(int32 i = 0; i < img.m_numEntries; i++){
+		const CDirectoryEntry &d = img.m_entries[i];
+		size_t n = strlen(d.name);
+		if(n < 4 || strcasecmp(d.name + n - 4, ".ipb") != 0) continue;
+		std::vector<uint8> buf(d.size * CDSTREAM_SECTOR_SIZE);
+		int32 fd = CFileMgr::OpenFile("Stream\\World.img", "rb", 1);
+		CFileMgr::Seek(fd, d.offset * CDSTREAM_SECTOR_SIZE, 0);
+		bool ok = CFileMgr::ReadExact(fd, buf.data(), (uint32)buf.size());
+		CFileMgr::CloseFile(fd);
+		if(ok){ CIplFile::Load(buf.data(), (uint32)buf.size()); fichiers++; }
+	}
+	CIplFile::ms_specHandler = nil;
+	printf("%d lignes de object.dat ; %zu objets cassables dans les entrées spec de %d .ipb\n", CObjectData::ms_numObjectInfos, objets.size(), fichiers);
+}
+
+// ObjectNameToHashID(nom) (0x5c2390) : le HashString du nom, rendu en pointeur léger (thunk_FUN_0073b520 : le type 2).
+static int
+ObjectNameToHashID(lua_State *L)
+{
+	Journal("ObjectNameToHashID", L, 1);
+	lua_pushlightuserdata(L, (void *)(uintptr_t)(lua_isstring(L, 1) ? ActionHash(lua_tostring(L, 1)) : 0));
+	return 1;
+}
+
+// RegisterHashEventHandler(haché, événement, fonction) (0x5bbd80, lu à l'assembleur de 0x5bbd80 à 0x5bbde2) : le haché (FUN_005d8580,
+// le pointeur léger), l'événement (FUN_005d8200) ; une fonction (FUN_005d84f0) : l'entrée (FUN_005b3ee0) et la case (FUN_005b3830,
+// FUN_005d9f00) ; sinon la case vidée (FUN_005b3b80).
+static int
+RegisterHashEventHandler(lua_State *L)
+{
+	Journal("RegisterHashEventHandler", L, 1);
+	uint32 h = (uint32)(uintptr_t)lua_touserdata(L, 1) & 0x7fffffff;
+	int e = (int)luaL_optnumber(L, 2, 0);
+	if(e < 0 || e > 7) return 0;
+	CGestionnaireHache *g = nil;
+	for(CGestionnaireHache &x : gestionnairesHaches) if(x.nom == h) g = &x;
+	if(lua_isfunction(L, 3)){
+		if(g == nil){
+			if(gestionnairesHaches.size() >= capaciteHaches) return 0;
+			gestionnairesHaches.push_back({h, {LUA_NOREF, LUA_NOREF, LUA_NOREF, LUA_NOREF, LUA_NOREF, LUA_NOREF, LUA_NOREF, LUA_NOREF}});
+			g = &gestionnairesHaches.back();
+		}
+		if(g->rappels[e] != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, g->rappels[e]);
+		lua_pushvalue(L, 3);
+		g->rappels[e] = luaL_ref(L, LUA_REGISTRYINDEX);
+	}else if(g && g->rappels[e] != LUA_NOREF){
+		luaL_unref(L, LUA_REGISTRYINDEX, g->rappels[e]);
+		g->rappels[e] = LUA_NOREF;
+	}
+	return 0;
+}
+
+// SetNumberOfHandledHashEventObjects(n) (0x5bbe70 → FUN_005b3f90, le script appelant en propriétaire) : au-delà des dix entrées en
+// place, le tas en prend n − 10 (FUN_005b3a40).
+static int
+SetNumberOfHandledHashEventObjects(lua_State *L)
+{
+	Journal("SetNumberOfHandledHashEventObjects", L, 1);
+	int n = (int)luaL_optnumber(L, 1, 0);
+	if(n > 10) capaciteHaches = (size_t)n;
+	return 0;
+}
+
+// ObjectToggleVulnerability(modèle, b) (0x5c2e20) : pour chaque CObject de ce modèle (+0x10e), le bit 6 de l'octet +0x209 reçoit b.
+static int
+ObjectToggleVulnerability(lua_State *L)
+{
+	Journal("ObjectToggleVulnerability", L, 1);
+	int32 m = (int32)luaL_optnumber(L, 1, -1);
+	bool b = lua_toboolean(L, 2) != 0;
+	for(CObjetOutil &o : objets) if(o.modele == m) o.invulnerable = b;
+	return 0;
+}
+
+// ObjectGetModelIndex(nom) (0x5c22e0) : FUN_0051c1e0, le modèle de ce nom.
+static int
+ObjectGetModelIndex(lua_State *L)
+{
+	Journal("ObjectGetModelIndex", L, 1);
+	lua_pushnumber(L, lua_isstring(L, 1) ? modeles.Index(lua_tostring(L, 1)) : -1);
+	return 1;
+}
+
+// PAnimDestroyedByPed(id[, genre]) (0x5c3950, lu à l'assembleur de 0x5c3950 à 0x5c3a01) : un argument, l'objet animé du déclencheur
+// (FUN_006d79c0, son +0x238) ; le genre 0, le CObject de la poignée (FUN_0044a460) et son +0x224 ; le genre 5, l'objet animé du pool
+// (FUN_0044a490, +0x238). Sinon 0. L'outil n'a que les CObject.
+static int
+PAnimDestroyedByPed(lua_State *L)
+{
+	Journal("PAnimDestroyedByPed", L, 1);
+	int r = 0;
+	if(lua_gettop(L) >= 2 && (int)luaL_optnumber(L, 2, -1) == 0)
+		if(const CObjetOutil *o = ObjetParPoignee((int)luaL_optnumber(L, 1, -1))) r = o->destructeur;
+	lua_pushnumber(L, r);
+	return 1;
+}
+
 // GiveWeaponToPlayer(arme[, b]) (0x5be100, lu à l'assembleur de 0x5be100 à 0x5be151) : l'arme (FUN_005d8200), b vrai par défaut
 // (FUN_005d8f20 avec deux arguments ou plus), puis FUN_0045ccb0(arme, b, 0) sur l'inventaire du joueur (DAT_00c1aea8 + 0x1c4).
 static int
@@ -3966,7 +4131,9 @@ Tirer(int ped, float charge)
 	const CTypeProjectile &tp = TypeProjectile(munition);
 	CVector depart(p->pos.x, p->pos.y, p->pos.z + 1.0f), cible;
 	const CScriptPed *c = pietons.Acceder(p->verrou);
-	if(c && c != p) cible = CVector(c->pos.x, c->pos.y, c->pos.z + 1.0f);
+	const CObjetOutil *o = ped == SCRIPT_PED_JOUEUR ? ObjetParPoignee(objetVise) : nil;
+	if(o && !o->detruit) cible = o->pos;
+	else if(c && c != p) cible = CVector(c->pos.x, c->pos.y, c->pos.z + 1.0f);
 	else{
 		float portee = p->armePortee + charge * (p->armeInit - p->armePortee);
 		if(portee < 0.01f) portee = 0.01f;
@@ -4037,6 +4204,48 @@ RecevoirProjectile(int cible, int tireur, float degats)
 	if(pietons.CoupRecevable(cible, tireur)) PrevenirCoupRecu(cible, tireur);
 }
 
+// FUN_005b3530 (depuis FUN_004d0300, la destruction d'un CObject) : les gestionnaires globaux de l'événement 1 (FUN_005b1ce0,
+// FUN_005b1c70 ; non suivis), puis le rappel de l'événement 3 du haché de l'objet (+0x228 ; FUN_005b38b0, FUN_005b3830), appelé dans
+// un thread neuf de son objet script (FUN_005d9ac0) avec le haché (un pointeur léger, thunk_FUN_0073b520) et la poignée de l'objet
+// (FUN_005d8460) ; l'outil l'appelle d'un bloc (lua_pcall) dans le script qui l'a posé.
+static void
+PrevenirObjetDetruit(size_t i)
+{
+	const CObjetOutil &o = objets[i];
+	for(const CGestionnaireHache &g : gestionnairesHaches){
+		if(g.nom != o.nom || g.rappels[3] == LUA_NOREF || etatLua == nil) continue;
+		lua_State *L = etatLua;
+		printf("%6.2f s  le rappel de l'événement 3 du haché %08x est appelé (objet %d)\n", maintenant / 1000.0, o.nom, PoigneeObjet(i));
+		lua_rawgeti(L, LUA_REGISTRYINDEX, g.rappels[3]);
+		lua_pushlightuserdata(L, (void *)(uintptr_t)o.nom);
+		lua_pushnumber(L, PoigneeObjet(i));
+		if(lua_pcall(L, 2, 0, 0) != 0){ printf("        rappel de l'objet : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+		break;
+	}
+}
+
+// Un coup sur un CObject : ses points de vie baissent des dégâts, l'auteur gardé en +0x224 ; à 0, FUN_004d0300 le détruit (rien si
+// le bit 6 de +0x209 est posé : ObjectToggleVulnerability ; ses effets, ses sons et son remplaçant ne sont pas suivis), puis
+// FUN_005b3530 prévient les scripts. DestroyByWeaponOnly (+2 de la ligne) : un projectile est une arme.
+static void
+FrapperObjet(size_t i, int auteur, float degats)
+{
+	CObjetOutil &o = objets[i];
+	if(o.detruit) return;
+	if(o.invulnerable){
+		printf("%6.2f s  le projectile de %d touche l'objet %d (modèle %d, %08x) : invulnérable\n", maintenant / 1000.0, auteur, PoigneeObjet(i), o.modele, o.nom);
+		return;
+	}
+	o.sante -= (int32)ceilf(degats);
+	o.destructeur = auteur;
+	printf("%6.2f s  le projectile de %d touche l'objet %d (modèle %d, %08x) : %d points de vie\n", maintenant / 1000.0, auteur, PoigneeObjet(i),
+	       o.modele, o.nom, o.sante > 0 ? o.sante : 0);
+	if(o.sante > 0) return;
+	o.detruit = true;
+	printf("%6.2f s  l'objet %d (modèle %d, %08x) est détruit par %d\n", maintenant / 1000.0, PoigneeObjet(i), o.modele, o.nom, auteur);
+	PrevenirObjetDetruit(i);
+}
+
 // Une image des projectiles (CProjectileInfo, à chaque pas) : le point avance de sa vitesse, la gravité s'y ajoute ; au bout de sa vie,
 // il disparaît. Les contacts : le corps des piétons, le modèle de collision que CTempColModels::Initialise (FUN_005712f0) leur bâtit,
 // trois sphères de 0,35 m à 0,35, 0,95 et 1,55 m au-dessus des pieds (le tireur exclu) ; le premier touché le long du pas.
@@ -4058,7 +4267,18 @@ AvancerProjectiles(float pas)
 				if(SegmentDansSphere(avant, q.pos, CVector(p->pos.x, p->pos.y, p->pos.z + h), 0.35f, &u) && u < mieux){ mieux = u; touche = i; }
 			}
 		}
-		if(touche >= 0){
+		// Les objets cassables : une sphère de 0,5 m autour de leur position (supposé : l'outil ne lit pas leur modèle de collision).
+		int objet = -1;
+		for(size_t i = 0; i < objets.size(); i++){
+			float u;
+			if(!objets[i].detruit && SegmentDansSphere(avant, q.pos, objets[i].pos, 0.5f, &u) && u < mieux){ mieux = u; objet = (int)i; touche = -1; }
+		}
+		if(objet >= 0){
+			q.actif = false;
+			CVector a(avant.x + (q.pos.x - avant.x) * mieux, avant.y + (q.pos.y - avant.y) * mieux, avant.z + (q.pos.z - avant.z) * mieux);
+			PoserMarque(TypeProjectile(q.modele).marque, a);   // la marque de l'impact (FUN_00560f10 la comptera)
+			FrapperObjet((size_t)objet, q.tireur, q.degats);
+		}else if(touche >= 0){
 			q.actif = false;
 			RecevoirProjectile(touche, q.tireur, q.degats);
 		}
@@ -5048,6 +5268,7 @@ main(int argc, char **argv)
 	std::vector<std::pair<uint32, std::string>> gestes;    // --jouer CHEMIN@s : le joueur joue ce nœud d'action à s secondes (la manette : parer, frapper)
 	std::vector<std::pair<uint32, int>> visees;           // --viser PIETON@s : le joueur verrouille ce piéton à s secondes
 	std::vector<std::pair<uint32, int>> choixArmes;       // --arme ARME@s : le joueur choisit cette arme au HUD à s secondes
+	std::vector<std::pair<uint32, std::string>> objetsVises;   // --viser-objet NOM@s : le joueur vise cet objet (le nom de l'instance)
 	std::vector<const char*> pos;
 	for(int i = 1; i < argc; i++){
 		if(strcmp(argv[i], "--mission") == 0 && i + 1 < argc) aLancer = argv[++i];
@@ -5089,6 +5310,12 @@ main(int argc, char **argv)
 			// --viser PIETON@s : le bouton de verrouillage de la manette, le joueur prend le piéton pour cible (FUN_00497d20).
 			std::string e = argv[++i]; size_t at = e.find('@');
 			visees.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), atoi(e.c_str())});
+		}
+		else if(strcmp(argv[i], "--viser-objet") == 0 && i + 1 < argc){
+			// --viser-objet NOM@s : le verrouillage sur un objet (ManualLockTargetable, le bit 15 de sa ligne de object.dat), par le nom
+			// de son instance (« tschool_BusWindow01 ») ; « - » le lâche. Les tirs du joueur partent vers lui.
+			std::string e = argv[++i]; size_t at = e.find('@');
+			objetsVises.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
 		}
 		else if(strcmp(argv[i], "--arme") == 0 && i + 1 < argc){
 			// --arme ARME@s : la croix de la manette, le joueur choisit une arme de son inventaire au HUD (FUN_0055c6f0 : +0xc0 du
@@ -5249,6 +5476,12 @@ main(int argc, char **argv)
 	lua_register(L, "PlayerWeaponHudLock", PlayerWeaponHudLock);
 	lua_register(L, "ObjectNumProjectileImpacts", ObjectNumProjectileImpacts);
 	lua_register(L, "AreaClearAllProjectiles", AreaClearAllProjectiles);
+	lua_register(L, "ObjectNameToHashID", ObjectNameToHashID);
+	lua_register(L, "RegisterHashEventHandler", RegisterHashEventHandler);
+	lua_register(L, "SetNumberOfHandledHashEventObjects", SetNumberOfHandledHashEventObjects);
+	lua_register(L, "ObjectToggleVulnerability", ObjectToggleVulnerability);
+	lua_register(L, "ObjectGetModelIndex", ObjectGetModelIndex);
+	lua_register(L, "PAnimDestroyedByPed", PAnimDestroyedByPed);
 	lua_register(L, "PedGetOffsetInWorldCoords", PedGetOffsetInWorldCoords);
 	lua_register(L, "PedSetStationary", PedSetStationary);
 	lua_register(L, "RegisterPedEventHandler", RegisterPedEventHandler);
@@ -5326,6 +5559,7 @@ main(int argc, char **argv)
 	if(modeles.Charger()) printf("%zu noms de modèles dans Objects/ide.img\n", modeles.Nombre());
 	else printf("Objects\\ide.img introuvable : MODELENUM répondra -1\n");
 	ChargerArmes();
+	ChargerObjets();
 	ChargerPedStats();
 	ChargerMissions();
 	// Le joueur, créé avec le monde (CPlayerPed, modèle 0) : FUN_00484d10 lui pose aussi les arbres de son modèle,
@@ -5366,6 +5600,15 @@ main(int argc, char **argv)
 		for(auto &e : visees) if(e.second >= 0 && maintenant >= e.first && controleJoueur != 1){
 			printf("%6.2f s  la manette est coupée : le joueur ne vise pas le piéton %d\n", maintenant / 1000.0, e.second);
 			e.second = -1;
+		}
+		for(auto &e : objetsVises) if(!e.second.empty() && maintenant >= e.first){
+			objetVise = -1;
+			uint32 h = ActionHash(e.second.c_str());
+			for(size_t k = 0; k < objets.size(); k++) if(objets[k].nom == h && objets[k].verrouillable && !objets[k].detruit) objetVise = PoigneeObjet(k);
+			if(e.second == "-") printf("%6.2f s  le joueur ne vise plus d'objet\n", maintenant / 1000.0);
+			else if(objetVise < 0) printf("%6.2f s  le joueur ne trouve pas d'objet à viser nommé %s\n", maintenant / 1000.0, e.second.c_str());
+			else printf("%6.2f s  le joueur vise l'objet %d (%s, modèle %d)\n", maintenant / 1000.0, objetVise, e.second.c_str(), ObjetParPoignee(objetVise)->modele);
+			e.second.clear();
 		}
 		for(auto &e : choixArmes) if(e.second >= -1 && maintenant >= e.first){
 			if(controleJoueur != 1) printf("%6.2f s  la manette est coupée : le joueur ne choisit pas l'arme %d\n", maintenant / 1000.0, e.second);
