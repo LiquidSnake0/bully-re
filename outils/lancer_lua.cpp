@@ -894,6 +894,16 @@ struct CJugeOutil : CJugeAction {
 			if(moi && (moi->etatSocial == 1 || moi->etatSocial == 3)) return -1;   // +0xc24 non suivi
 			return mots[0] == 25;
 		}
+		// IsSocializingWithPlayer (ConditionIsSocializingWithPlayer 0x9376bc, FUN_00603a70) : le piéton a un état social (+0xbb0)
+		// et son partenaire (+0xbb4) est le joueur (DAT_00c1aea8). TargetedByPlayer (0x9370f4, FUN_00601be0) : faux sans joueur ;
+		// vrai si le piéton est la cible du joueur (PedGetTargetPed, un piéton : l'octet +0x108 & 7 vaut 3) ou celle de son
+		// composant de visée (+0xa0, FUN_004d5980), que l'outil ne distingue pas de sa cible (--viser, FUN_00497d20).
+		static const uint32 kSocialJoueur = ActionHash("IsSocializingWithPlayer"), kViseParJoueur = ActionHash("TargetedByPlayer");
+		if(type == kSocialJoueur) return moi && moi->etatSocial != 0 && moi->partenaireSocial == SCRIPT_PED_JOUEUR;
+		if(type == kViseParJoueur){
+			const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+			return j && j->verrou >= 0 && j->verrou == ped;
+		}
 		static const uint32 kJeton = ActionHash("FightToken");
 		if(type == kJeton) return pietons.TientJeton(ped);
 		static const uint32 kDroitsPris = ActionHash("IsTargetAttackRightsTaken");
