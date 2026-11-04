@@ -24,7 +24,7 @@
 // lance celle dont le joueur touche le corona, et celles qui se lancent seules (champ 51) : 1_02 après 1_01.
 // Les cinématiques (docs/cinematiques.md) : LoadCutscene lit les fichiers de Cuts.img, StartCutscene les joue le temps
 // de la piste caméra, sous-titres au journal ; --sans-cinematiques les saute (IsCutsceneLoaded faux).
-//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s[,s2…]]... [--demander N@s]... [--sequence @s]... [--suivre PIETON[,d]@s]... [--viser PIETON@s]... [--arme ARME@s]... [--viser-objet NOM@s]... [--tirer @s[,s2…]]...
+//   BULLY_DATA=<racine du jeu> [LANCER_JOURNAL=lignes] [LANCER_CONTROLEURS=1] build/outils/lancer_lua [secondes] [script.lua [fonction]] [--mission NOM | --nouvelle-partie] [--sans-cinematiques] [--entrer DECLENCHEUR@s]... [--aller LISTE[,n]@s | --aller x,y,z@s]... [--zone N@s]... [--porte DT_NOM@s]... [--jouer /Global/CHEMIN[:Act/FICHIER.act]@s[,s2…]]... [--demander N@s]... [--sequence @s]... [--suivre PIETON[,d]@s]... [--viser PIETON@s]... [--arme ARME@s]... [--viser-objet NOM@s]... [--tirer @s[,s2…]]... [--ramasser @s[,s2…]]...
 // Par défaut : 10 s de jeu, main.lua, gamemain.
 #include "../src/core/FileMgr.h"
 #include "../src/core/CdStream.h"
@@ -193,6 +193,14 @@ struct CGestionnaireHache { uint32 nom; int rappels[8]; };
 static std::vector<CGestionnaireHache> gestionnairesHaches;
 static size_t capaciteHaches = 10;
 static int objetVise = -1;   // l'objet que le joueur vise (--viser-objet), sa poignée ; -1 aucun
+
+// --- Les ramassages (CPickups : 300 entrées de 0x48 octets dès 0xc0a0f8 ; l'octet +0x46, son bit 3 « prise » ; le mot +0x40, sa
+// génération) ---
+// FUN_00443af0 prend la première entrée libre (300 au plus, -1 sinon) ; la poignée est l'indice | la génération << 16
+// (FUN_00443e90 la vérifie). L'outil garde le modèle, la position, le nom de sa fiche de ramassage et l'objet script qui l'a créé
+// (FUN_005db7e0, FUN_005d9760 : il est retiré avec la mission) ; la génération commence à 1 et monte à chaque création (supposé).
+struct CRamassage { bool pris = false; int32 modele = -1; CVector pos; std::string fiche; uint16 generation = 0; int32 script = -1; };
+static CRamassage ramassages[300];
 
 // Le nom d'un modèle d'arme ou d'objet (le +4 de son modelinfo est son HashString), nil sinon.
 static const std::string *
@@ -1683,6 +1691,7 @@ AvancerMission(lua_State *L)
 			{
 				std::vector<int> partis;
 				for(int i = 1; i < SCRIPT_PED_POOL_SIZE; i++) if(const CScriptPed *p = pietons.Acceder(i)) if(p->script == mission.script) partis.push_back(i);
+				for(CRamassage &r : ramassages) if(r.pris && r.script == mission.script) r.pris = false;   // FUN_005d9760
 				int n = pietons.SupprimerDuScript(mission.script);
 				for(int h : partis) OublierControleurs(h);
 				if(n) printf("        %d piéton(s) laissé(s) par la mission, libéré(s)\n", n);
@@ -2464,6 +2473,84 @@ PAnimDestroyedByPed(lua_State *L)
 		if(const CObjetOutil *o = ObjetParPoignee((int)luaL_optnumber(L, 1, -1))) r = o->destructeur;
 	lua_pushnumber(L, r);
 	return 1;
+}
+
+// GetPointListSize(liste) (0x5bc740) : la liste du pool (CPointPool__GetSlot), 0 sans elle ; sinon FUN_006d5800 compte les points de
+// sa chaîne (le mot +4, puis les suivants jusqu'à 0xfffe ; 0 sans premier point).
+static int
+GetPointListSize(lua_State *L)
+{
+	Journal("GetPointListSize", L, 1);
+	const CTriggerPointList *l = lua_isnumber(L, 1) ? donnees.Liste((int)lua_tonumber(L, 1)) : nil;
+	lua_pushnumber(L, l ? (int)l->points.size() : 0);
+	return 1;
+}
+
+// PickupCreateXYZ(modèle, x, y, z[, fiche]) (0x5d0b90) : avec cinq arguments, la fiche de ramassage du nom (FUN_005fa7b0, FUN_005d0b20 :
+// PickupData/<nom> dans l'arbre des réglages) ; FUN_00443e90(x, y, z, modèle, 1, fiche, 0, 0) → FUN_00443af0 (sans fiche, celle du type
+// de l'arme, +0x88, ou la fiche par défaut DAT_00c0f560) ; la poignée notée à l'objet script courant (FUN_005db7e0, FUN_005d9760) et
+// rendue. L'outil garde le nom de la fiche, sans la lire.
+static int
+PickupCreateXYZ(lua_State *L)
+{
+	Journal("PickupCreateXYZ", L, 1);
+	int i = 0;
+	while(i < 300 && ramassages[i].pris) i++;
+	if(i >= 300){ lua_pushnumber(L, -1); return 1; }
+	CRamassage &r = ramassages[i];
+	r.pris = true; r.modele = (int32)luaL_optnumber(L, 1, -1);
+	r.pos = CVector((float)luaL_optnumber(L, 2, 0), (float)luaL_optnumber(L, 3, 0), (float)luaL_optnumber(L, 4, 0));
+	r.fiche = lua_gettop(L) == 5 && lua_isstring(L, 5) ? lua_tostring(L, 5) : "";
+	r.generation++;
+	r.script = scriptCourant;
+	lua_pushnumber(L, (double)(i | (uint32)r.generation << 16));
+	return 1;
+}
+
+static CRamassage *
+RamassageParPoignee(int64_t h)
+{
+	if(h < 0) return nil;
+	uint32 i = (uint32)h & 0xffff, g = (uint32)h >> 16;
+	return i < 300 && ramassages[i].pris && ramassages[i].generation == g ? &ramassages[i] : nil;
+}
+
+// PickupDelete(poignée) (0x5d0d60, hors de l'index, non lu) : l'outil libère l'entrée.
+static int
+PickupDelete(lua_State *L)
+{
+	Journal("PickupDelete", L, 1);
+	if(CRamassage *r = RamassageParPoignee(lua_isnumber(L, 1) ? (int64_t)lua_tonumber(L, 1) : -1)) r->pris = false;
+	return 0;
+}
+
+// Le joueur ramasse le ramassage le plus proche, à moins de 2 m (supposé) : dans le moteur, la banque Weapons/PickUpActions (une
+// ActionRequest, TargetProp) joue l'animation de prise puis PropPickup (l'objet visé, son arme en passage, +0x1574) et PropAttach (l'arme
+// en main ; avec l'octet +0x22, l'arbre de l'arme : /Global/Thrown pour la brique) ; l'entrée du ramassage est retirée. L'outil fait
+// ces trois pas d'un coup ; la banque NeedInit de l'arbre de l'arme pose ensuite les réglages (SetWeaponInfo).
+static void
+Ramasser(void)
+{
+	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	int mieux = -1; float d2 = 4.0f;
+	for(int i = 0; i < 300; i++){
+		if(!ramassages[i].pris) continue;
+		float dx = ramassages[i].pos.x - j->pos.x, dy = ramassages[i].pos.y - j->pos.y, dz = ramassages[i].pos.z - j->pos.z;
+		float e = dx * dx + dy * dy + dz * dz;
+		if(e < d2){ d2 = e; mieux = i; }
+	}
+	if(mieux < 0){ printf("%6.2f s  le joueur ne trouve rien à ramasser à moins de 2 m\n", maintenant / 1000.0); return; }
+	CRamassage &r = ramassages[mieux];
+	r.pris = false;
+	printf("%6.2f s  le joueur ramasse %d (modèle %d, %s) en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, mieux | (int)r.generation << 16, r.modele,
+	       NomDArme(r.modele) ? NomDArme(r.modele)->c_str() : "?", r.pos.x, r.pos.y, r.pos.z);
+	if(armes.Type(r.modele).inventaire != 0) inventaire.Donner(armes, SCRIPT_PED_JOUEUR, r.modele);   // une arme qui se range
+	if(j->armeTenue != -1){ j->armePassage = j->armeTenue; LacherArme(SCRIPT_PED_JOUEUR); }   // PropDetach de l'arme d'avant
+	j->armePassage = r.modele;                                                                  // PropPickup
+	CActionController::PisteArme d{0.0f, CActionController::ARME_ATTACHER, 0, true, true};      // PropAttach, l'octet +0x22
+	CActionController &c = controleurs[SCRIPT_PED_JOUEUR];
+	c.pistesArmeLancees.push_back(d);
+	AppliquerArmes(SCRIPT_PED_JOUEUR, c);
 }
 
 // GiveWeaponToPlayer(arme[, b]) (0x5be100, lu à l'assembleur de 0x5be100 à 0x5be151) : l'arme (FUN_005d8200), b vrai par défaut
@@ -4409,6 +4496,8 @@ AppliquerArmes(int ped, CActionController &c)
 		if(d.genre == CActionController::ARME_VOULUE_POSER){   // FUN_00660770
 			p->armeVoulue = (d.nom & 0x7fffffff) != ActionHash("NoWeapon") ? ArmeParHache(d.nom) : -1;
 			if(d.octet) PoserArmeHud(p->armeVoulue);
+		}else if(d.genre == CActionController::ARME_PASSAGE){   // FUN_00660840
+			p->armePassage = ArmeParHache(d.nom);
 		}else if(d.genre == CActionController::ARME_VOULUE_PRENDRE){   // FUN_00660870
 			p->armePassage = p->armeVoulue;
 			p->armeVoulue = 0;
@@ -5342,6 +5431,7 @@ main(int argc, char **argv)
 	std::vector<std::pair<uint32, int>> choixArmes;       // --arme ARME@s : le joueur choisit cette arme au HUD à s secondes
 	std::vector<std::pair<uint32, std::string>> objetsVises;   // --viser-objet NOM@s : le joueur vise cet objet (le nom de l'instance)
 	std::vector<uint32> tirsManette;                       // --tirer @s1,s2… : le joueur tire avec l'arme en main
+	std::vector<uint32> prises;                            // --ramasser @s1,s2… : le joueur ramasse ce qui est à ses pieds
 	std::vector<const char*> pos;
 	for(int i = 1; i < argc; i++){
 		if(strcmp(argv[i], "--mission") == 0 && i + 1 < argc) aLancer = argv[++i];
@@ -5390,6 +5480,16 @@ main(int argc, char **argv)
 			std::string e = argv[++i]; size_t at = e.find('@');
 			for(const char *q = e.c_str() + (at == std::string::npos ? 0 : at + 1); *q; ){
 				tirsManette.push_back((uint32)(atof(q) * 1000));
+				const char *v = strchr(q, ',');
+				if(v == nil) break;
+				q = v + 1;
+			}
+		}
+		else if(strcmp(argv[i], "--ramasser") == 0 && i + 1 < argc){
+			// --ramasser @s1,s2,… : le bouton d'action près d'un ramassage (une brique, un couvercle) : le joueur le prend en main.
+			std::string e = argv[++i]; size_t at = e.find('@');
+			for(const char *q = e.c_str() + (at == std::string::npos ? 0 : at + 1); *q; ){
+				prises.push_back((uint32)(atof(q) * 1000));
 				const char *v = strchr(q, ',');
 				if(v == nil) break;
 				q = v + 1;
@@ -5563,6 +5663,9 @@ main(int argc, char **argv)
 	lua_register(L, "ObjectNameToHashID", ObjectNameToHashID);
 	lua_register(L, "RegisterGlobalEventHandler", RegisterGlobalEventHandler);
 	lua_register(L, "PedGetLastHitWeapon", PedGetLastHitWeapon);
+	lua_register(L, "GetPointListSize", GetPointListSize);
+	lua_register(L, "PickupCreateXYZ", PickupCreateXYZ);
+	lua_register(L, "PickupDelete", PickupDelete);
 	lua_register(L, "RegisterHashEventHandler", RegisterHashEventHandler);
 	lua_register(L, "SetNumberOfHandledHashEventObjects", SetNumberOfHandledHashEventObjects);
 	lua_register(L, "ObjectToggleVulnerability", ObjectToggleVulnerability);
@@ -5687,6 +5790,11 @@ main(int argc, char **argv)
 			printf("%6.2f s  la manette est coupée : le joueur ne vise pas le piéton %d\n", maintenant / 1000.0, e.second);
 			e.second = -1;
 		}
+		for(uint32 &e : prises) if(e != 0xffffffffu && maintenant >= e){
+			if(controleJoueur != 1) printf("%6.2f s  la manette est coupée : le joueur ne ramasse rien\n", maintenant / 1000.0);
+			else Ramasser();
+			e = 0xffffffffu;
+		}
 		for(uint32 &e : tirsManette) if(e != 0xffffffffu && maintenant >= e){
 			CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
 			if(controleJoueur != 1) printf("%6.2f s  la manette est coupée : le joueur ne tire pas\n", maintenant / 1000.0);
@@ -5694,6 +5802,8 @@ main(int argc, char **argv)
 			else{   // la piste WeaponFire de Fire/SLINGSHOT (FUN_00661f10) : le tir, puis une munition retirée sans le drapeau 24
 				Tirer(SCRIPT_PED_JOUEUR, 0.0f);
 				if(j->drapeaux[24] == 0) inventaire.Retirer(armes, SCRIPT_PED_JOUEUR, j->armeMunition, 1, true, modeles.Index("RBandBall"));
+				// l'octet +0x32 des pistes WeaponFire du lance-pierre et des armes lancées : l'arme lâchée quand il n'en reste plus
+				if(j->armeTenue == j->armeMunition && inventaire.Munitions(armes, SCRIPT_PED_JOUEUR, j->armeMunition) == 0) LacherArme(SCRIPT_PED_JOUEUR);
 			}
 			e = 0xffffffffu;
 		}

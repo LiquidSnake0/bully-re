@@ -184,7 +184,9 @@ public:
 	//   munition retirée (FUN_0045cf70) ; avec l'octet +0x32 (50), l'arme est lâchée quand il n'en reste plus. `tirsLances`.
 	struct Tir { float entree, facteur; bool lacher, fait; };
 	std::vector<Tir> tirs, tirsLances;
-	enum { ARME_VOULUE_POSER, ARME_VOULUE_PRENDRE, ARME_ATTACHER, ARME_DETACHER };
+	// - PropSetInTransition (PropSetInTransitionTrack 0x935378, lancement FUN_00660840) : l'arme du nom haché +0x18 (24, FUN_0051adb0)
+	//   passe en +0x1574, l'arme en passage, que la PropAttach suivante prend en main (1_03 : PlayerPickupSlingshot).
+	enum { ARME_VOULUE_POSER, ARME_VOULUE_PRENDRE, ARME_ATTACHER, ARME_DETACHER, ARME_PASSAGE };
 	struct PisteArme { float entree; int32 genre; uint32 nom; bool octet, fait; };
 	std::vector<PisteArme> pistesArme, pistesArmeLancees;
 	struct Repos { float entree; bool fait; };

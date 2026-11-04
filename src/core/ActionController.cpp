@@ -84,7 +84,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kRendreDroits = ActionHash("TargetAttackRightsRelease"), kDe = ActionHash("RandomDiceRoll"),
 	                    kMinuterie = ActionHash("SetActionTimer"), kScript = ActionHash("Script"),
 	                    kVoulueP = ActionHash("PropSetDesired"), kVoulueG = ActionHash("PropGetDesired"),
-	                    kAttacher = ActionHash("PropAttach"), kDetacher = ActionHash("PropDetach"), kTir = ActionHash("WeaponFire");
+	                    kAttacher = ActionHash("PropAttach"), kDetacher = ActionHash("PropDetach"), kTir = ActionHash("WeaponFire"),
+	                    kPassage = ActionHash("PropSetInTransition");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -161,6 +162,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			tirs.push_back({a, Reel(p, 52, 0.0f), Octet(p, 50), false});
 		}else if(p.type == kVoulueP){
 			pistesArme.push_back({a, ARME_VOULUE_POSER, p.Mot(24), Octet(p, 29), false});
+		}else if(p.type == kPassage){
+			pistesArme.push_back({a, ARME_PASSAGE, p.Mot(24), false, false});
 		}else if(p.type == kVoulueG){
 			pistesArme.push_back({a, ARME_VOULUE_PRENDRE, 0, false, false});
 		}else if(p.type == kAttacher){
