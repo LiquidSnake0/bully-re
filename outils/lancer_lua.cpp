@@ -3050,6 +3050,27 @@ AppelerCritiques(lua_State *L)
 	}
 }
 
+// PedFindInAreaXYZ(x, y, z, r) (0x5d0960, lu à l'assembleur de 0x5d0960 à 0x5d0a2b) : FUN_005cf850(liste, x, y, z, r, r, r) parcourt
+// le pool des piétons dans l'ordre de ses cases ; un piéton sans l'octet +0x78 ni +0x1338 (non suivis : supposés nuls) dont la
+// position est dans le carré [x − r, x + r] × [y − r, y + r] (FUN_0046d880, supposé sur la position) est gardé ; le test de la
+// hauteur est écrit « z − r <= pz ou pz <= z + r », toujours vrai. Rend le booléen « au moins un », puis la poignée de chacun
+// (l'emplacement 43, +0xac) ; la liste est libérée (FUN_005ee940). T_BathroomAntics (la fonction 63 de 1_05.lur) en tire
+// bBathroomClear : personne d'autre que le joueur, Algie ou un mort.
+static int
+PedFindInAreaXYZ(lua_State *L)
+{
+	Journal("PedFindInAreaXYZ", L, 1);
+	float x = (float)luaL_optnumber(L, 1, 0), y = (float)luaL_optnumber(L, 2, 0), r = (float)luaL_optnumber(L, 4, 0);
+	std::vector<int> trouves;
+	for(int h = 0; h < SCRIPT_PED_POOL_SIZE; h++){
+		const CScriptPed *p = pietons.Acceder(h);
+		if(p && fabsf(p->pos.x - x) <= r && fabsf(p->pos.y - y) <= r) trouves.push_back(h);
+	}
+	lua_pushboolean(L, !trouves.empty());
+	for(int h : trouves) lua_pushnumber(L, h);
+	return (int)trouves.size() + 1;
+}
+
 // PlayerWeaponHudLock(b) (0x5d1b80 → PlayerWeaponHudLock 0x55bb20) : l'octet +0x13c du HUD des armes, que lit WeaponHudLocked.
 static int
 PlayerWeaponHudLock(lua_State *L)
@@ -4635,17 +4656,20 @@ TetherLoco(int ped, CActionController::Laisse &l, bool premiere)
 	float v = ScriptPedVitesseDuTrajet(vit, d * d, ecart, l.arrivee, p->immobile);   // FUN_004a4eb0 → FUN_005e4a60
 	bool avant = l.enMarche;
 	l.enMarche = v > 0 && vit >= 0.1f;
-	if(l.enMarche != avant && journalIA > 0){
-		journalIA--;
-		printf("%6.2f s  TetherLoco de %d : %s (%.2f, %.2f), à %.2f m, vitesse %.2f\n", maintenant / 1000.0, ped,
-		       l.enMarche ? "en marche vers" : "arrêté près de", vise.x, vise.y, d, v);
+	static int journalLaisses = 400;   // les départs et arrêts journalisés (les premiers)
+	if(l.enMarche != avant && journalLaisses > 0){
+		journalLaisses--;
+		printf("%6.2f s  TetherLoco de %d : %s (%.2f, %.2f, %.2f), à %.2f m, vitesse %.2f\n", maintenant / 1000.0, ped,
+		       l.enMarche ? "en marche vers" : "arrêté près de", vise.x, vise.y, vise.z, d, v);
 	}
 	p->intentionVitesse = l.enMarche ? v : 0;
 	if(l.enMarche){
 		p->intention = CVector(dx / d, dy / d, 0);
 		float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f * v / 1.5f;
 		float k = d - l.arrivee < pas ? (d - l.arrivee) / d : pas / d;
-		p->pos.x += dx * k; p->pos.y += dy * k;
+		// L'outil n'a ni sol ni escaliers : la hauteur suit celle du point visé au même pas (supposé ; dans le moteur, la
+		// navigation et la physique le portent sur le sol, ce qui fait monter Algie à l'étage derrière le joueur).
+		p->pos.x += dx * k; p->pos.y += dy * k; p->pos.z += (vise.z - p->pos.z) * k;
 		p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
 	}else if(l.b2c && tenu && p->laissePieton == pietons.PremierMeneur(ped)){
 		float fx = tenu->pos.x - p->pos.x, fy = tenu->pos.y - p->pos.y;
@@ -5994,6 +6018,7 @@ main(int argc, char **argv)
 		else pos.push_back(argv[i]);
 	}
 	if(getenv("LANCER_JOURNAL")) journalRestant = atoi(getenv("LANCER_JOURNAL"));   // lignes de journal (400)
+	if(getenv("LANCER_JOURNAL_IA")) journalIA = atoi(getenv("LANCER_JOURNAL_IA"));   // passages de l'IA journalisés (80)
 	// LANCER_CONTROLEURS=1 : journalise aussi les passages des contrôleurs des piétons de script (le bully, Russell).
 	tousLesControleurs = getenv("LANCER_CONTROLEURS") != nil;
 	double secondes = pos.size() > 0 ? atof(pos[0]) : 10.0;
@@ -6142,6 +6167,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedGetLastHitWeapon", PedGetLastHitWeapon);
 	lua_register(L, "PedGetWhoHitMeLast", PedGetWhoHitMeLast);
 	lua_register(L, "PedIsHit", PedIsHit);
+	lua_register(L, "PedFindInAreaXYZ", PedFindInAreaXYZ);
 	lua_register(L, "PedSetMissionCritical", PedSetMissionCritical);
 	lua_register(L, "PedRecruitAlly", PedRecruitAlly);
 	lua_register(L, "PedDismissAlly", PedDismissAlly);
