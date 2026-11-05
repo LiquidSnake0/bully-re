@@ -988,6 +988,29 @@ struct CJugeOutil : CJugeAction {
 			if(moi == nil || pietons.Acceder(a) == nil || !f.GroupeDe(d, groupe)) return 0;
 			return arbres.JugerListe(f, groupe, CJugeOutil(a, t)) == 1;
 		}
+		// Le groupe des alliés (src/peds/ScriptPedPool : le meneur +0x2f4, le suiveur +0x2f8). IsAllyFollower (ConditionIsAllyFollower
+		// 0x93762c, FUN_006037b0 → FUN_004851d0) : un meneur ; IsAllyLeader (0x93761c, FUN_00603790 → FUN_004851e0) : un suiveur ;
+		// IsTargetAlly (0x93763c, FUN_006037d0) : la cible (PedGetTargetPed, un piéton : les 3 bits bas de +0x108 à 3) est dans la
+		// chaîne de ses suiveurs (FUN_004853b0). HasAllyState (ConditionAllyState 0x937d4c, FUN_00606450) et HasAllyMorale
+		// (ConditionAllyMorale 0x937d60, FUN_00606470) : +0x318 et +0x31c égaux au mot +4. AllyLeaderConditionGroup (0x93791c,
+		// FUN_00604610) : le groupe +4 jugé pour le premier meneur de la chaîne (FUN_00485410), dans son propre contexte
+		// (l'emplacement 16 de sa table) ; AllyFollowerConditionGroup (0x93793c, FUN_00604660) : pour le suiveur (+0x2f8). Faux
+		// sans eux.
+		static const uint32 kEstSuiveur = ActionHash("IsAllyFollower"), kEstMeneur = ActionHash("IsAllyLeader"),
+		                    kCibleAlliee = ActionHash("IsTargetAlly"), kEtatAllie = ActionHash("HasAllyState"),
+		                    kMoralAllie = ActionHash("HasAllyMorale"), kGroupeMeneur = ActionHash("AllyLeaderConditionGroup"),
+		                    kGroupeSuiveur = ActionHash("AllyFollowerConditionGroup");
+		if(type == kEstSuiveur) return moi && moi->meneur >= 0;
+		if(type == kEstMeneur) return moi && moi->suiveur >= 0;
+		if(type == kCibleAlliee) return moi && pietons.DansSesSuiveurs(ped, CibleDe(ped));
+		if(type == kEtatAllie) return moi && moi->etatAllie == (int32)mots[0];
+		if(type == kMoralAllie) return moi && moi->moralAllie == (int32)mots[0];
+		if(type == kGroupeMeneur || type == kGroupeSuiveur){
+			int a = moi == nil ? -1 : type == kGroupeMeneur ? pietons.PremierMeneur(ped) : moi->suiveur;
+			std::vector<int32> groupe;
+			if(pietons.Acceder(a) == nil || !f.GroupeDe(d, groupe)) return 0;
+			return arbres.JugerListe(f, groupe, CJugeOutil(a, t)) == 1;
+		}
 		// InAttackCone (FUN_00602200 → FUN_004865a0) : la cible à moins d'AIButes +0x54 (1,5 m) et devant le piéton (le
 		// cosinus de l'angle au moins +0x58, 0,76). Le dernier test (FUN_0048d320, l'un voit l'autre) est supposé vrai.
 		if(type == kCone){
@@ -1031,10 +1054,8 @@ struct CJugeOutil : CJugeAction {
 		//   n'a pas de projectiles : fausses.
 		// - LiquidLevel (0x92e5e0, FUN_005ff7f0) : l'octet +0x16cc (dans l'eau), puis la hauteur de la surface (+0x16d0) sous
 		//   le piéton comparée à +4 par +8 ; hors de l'eau, faux. L'outil n'a pas d'eau.
-		// - IsAllyFollower (0x93762c, FUN_006037b0) et IsAllyLeader (0x93761c, FUN_00603790), lues à l'assembleur : ecx = le
-		//   piéton + 0x2f0, puis FUN_004851d0 (+4 non nul : un chef, +0x2f4) et FUN_004851e0 (+8 : un suiveur, +0x2f8) ;
-		//   IsTandemHelper (0x936b0c, FUN_00606f00) : le complice +0x9b4 (vidé s'il ne le désigne plus, +0x9b8) ; PedRecruitAlly
-		//   et les tandems ne sont appelés par aucun script de 1_01 à 1_03 : fausses.
+		// - IsTandemHelper (0x936b0c, FUN_00606f00) : le complice +0x9b4 (vidé s'il ne le désigne plus, +0x9b8) ; les tandems ne
+		//   sont appelés par aucun script de 1_01 à 1_05 : fausse. (IsAllyFollower et IsAllyLeader : plus haut, le groupe des alliés.)
 		// - Stimulus (0x9370c0, FUN_00600340) et IsStimulusPriority (0x93782c, FUN_00603fe0) : le stimulus courant du piéton
 		//   (+0x1d30), son genre +0 comparé à +4, sa priorité (FUN_004a5ba0) comparée à +4 par +8 ; sans stimulus, fausses.
 		//   L'outil n'a pas de stimuli (les pistes CreateStimulus de AI.act ne sont pas jouées).
@@ -1052,13 +1073,12 @@ struct CJugeOutil : CJugeAction {
 		//   +4 vaut 25. IsWantingToSocialize (0x9376cc, FUN_00603ab0) : le bit 4 de l'octet +0xd68 et le partenaire voulu
 		//   (+0xbb8). L'outil ne joue pas le système social (l'état reste 0, aucun partenaire voulu).
 		static const uint32 kProjectile = ActionHash("DetectProjectile"), kGrenade = ActionHash("DetectGrenade"),
-		                    kEau = ActionHash("LiquidLevel"), kSuiveur = ActionHash("IsAllyFollower"),
-		                    kChef = ActionHash("IsAllyLeader"), kTandem = ActionHash("IsTandemHelper"),
+		                    kEau = ActionHash("LiquidLevel"), kTandem = ActionHash("IsTandemHelper"),
 		                    kStimulus = ActionHash("Stimulus"), kPrioriteStimulus = ActionHash("IsStimulusPriority"),
 		                    kTypeArme = ActionHash("WeaponEquipedType"), kDeclencheurPerso = ActionHash("PedIsTrigger"),
 		                    kMinuterieAction = ActionHash("CheckActionTimer"), kParoleOccupee = ActionHash("IsSpeechBusy"),
 		                    kAnimSociale = ActionHash("SocialAnimIs"), kVeutSocialiser = ActionHash("IsWantingToSocialize");
-		if(type == kProjectile || type == kGrenade || type == kEau || type == kSuiveur || type == kChef || type == kTandem ||
+		if(type == kProjectile || type == kGrenade || type == kEau || type == kTandem ||
 		   type == kStimulus || type == kPrioriteStimulus || type == kDeclencheurPerso || type == kVeutSocialiser)
 			return 0;
 		// WeaponEquipedType (FUN_0065be50) : l'arme en passage avec l'octet +8 (sinon l'arme en main) ; sans elle, faux ; le genre +4 :
@@ -2204,8 +2224,12 @@ EntrerDansDeclencheur(const char *nom)
 	if(z == nil){ printf("%6.2f s  --entrer : le déclencheur %s n'est pas chargé\n", maintenant / 1000.0, nom); return; }
 	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
 	j->pos = CVector(z->pos.x, z->pos.y, z->pos.z + 0.5f);
+	// La position d'un déclencheur n'est pas toujours dans sa zone (_1_05_TRIGGERJOCKSNEARLIBRARY) : le centre de son périmètre.
+	CVector centre;
+	bool recentre = !donnees.DansDeclencheur(h, j->pos) && donnees.CentreDeclencheur(h, centre) && donnees.DansDeclencheur(h, centre);
+	if(recentre) j->pos = centre;
 	printf("%6.2f s  le joueur entre dans %s (%d) en (%.1f, %.1f, %.1f) : %s\n", maintenant / 1000.0, nom, h, j->pos.x, j->pos.y, j->pos.z,
-	       donnees.DansDeclencheur(h, j->pos) ? "dedans" : "la position du déclencheur est hors de sa propre zone");
+	       recentre ? "dedans, au centre de son périmètre" : donnees.DansDeclencheur(h, j->pos) ? "dedans" : "la position du déclencheur est hors de sa propre zone");
 }
 
 // --- Les piétons : le pool des scripts, PedCreatePoint & co. ---
@@ -2907,6 +2931,57 @@ PedGetWhoHitMeLast(lua_State *L)
 	if(pietons.Acceder(h) == nil || r == coups.end() || r->second.attaquant < 0) return 0;
 	lua_pushnumber(L, r->second.attaquant);
 	return 1;
+}
+
+// PedIsHit(ped, genre, ms) (0x5c8a40, lu à l'assembleur de 0x5c8a40 à 0x5c8ae4) : rien de vrai sans piéton (FUN_005c7220) ;
+// le deuxième argument est lu (FUN_005d8200) et jeté ; le troisième, un mot (movzx), divisé par 1000 (le double 0x900138) ;
+// l'emplacement 16 de CPed (FUN_00474a80 : le composant d'actions +0x2e0, +0x300), son relevé +0x10 et le temps depuis le
+// dernier coup (+0x2c, -1 sans coup : le flottant 0x9009ac) : vrai s'il ne vaut pas -1 et ne dépasse pas les secondes données.
+// Rend toujours un booléen (FUN_005d8450). 1_05 le juge à chaque image sur ses bullies (F_HitByPlayer, la fonction 51 de
+// 1_05.lur, puis PedGetWhoHitMeLast).
+static int
+PedIsHit(lua_State *L)
+{
+	Journal("PedIsHit", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	float limite = (float)((uint16)(int)luaL_optnumber(L, 3, 0)) / 1000.0f;
+	auto r = coups.find(h);
+	bool touche = false;
+	if(pietons.Acceder(h) && r != coups.end() && r->second.instant >= 0.0f){
+		float depuis = maintenant / 1000.0f - r->second.instant;
+		touche = depuis <= limite;
+	}
+	lua_pushboolean(L, touche);
+	return 1;
+}
+
+// PedRecruitAlly(meneur, allié[, b]) (0x5cd550, lu à l'assembleur de 0x5cd550 à 0x5cd5cb) : les deux piétons (FUN_005c7220 ;
+// le meneur peut manquer), FUN_00485fa0(meneur + 0x2f0, allié, 1) (CScriptPedPool::RecruterAllie) ; avec un troisième argument
+// nombre (lua_type 3, FUN_0073ad50), son booléen (FUN_005d8f20) dans +0x14ec des deux. Ne rend rien.
+static int
+PedRecruitAlly(lua_State *L)
+{
+	Journal("PedRecruitAlly", L, 1);
+	CScriptPed *m = PedArg(L, 1), *a = PedArg(L, 2);
+	if(m == nil) return 0;
+	pietons.RecruterAllie((int)lua_tonumber(L, 1), a ? (int)lua_tonumber(L, 2) : -1, true);
+	if(lua_type(L, 3) == LUA_TNUMBER && a){ int32 b = (int)lua_tonumber(L, 3) != 0; m->groupe14ec = b; a->groupe14ec = b; }   // FUN_005d8f20
+	return 0;
+}
+
+// PedDismissAlly(meneur, allié[, b]) (0x5cd5d0, lu à l'assembleur de 0x5cd5d0 à 0x5cd670) : les deux piétons, et s'ils sont là
+// FUN_00485880(meneur + 0x2f0, allié) (CScriptPedPool::RenvoyerAllie) ; puis +0x14ec de chacun des deux qui existe : le booléen
+// du troisième argument s'il est un nombre (FUN_005d8f20), 0 sinon.
+static int
+PedDismissAlly(lua_State *L)
+{
+	Journal("PedDismissAlly", L, 1);
+	CScriptPed *m = PedArg(L, 1), *a = PedArg(L, 2);
+	if(m && a) pietons.RenvoyerAllie((int)lua_tonumber(L, 1), (int)lua_tonumber(L, 2));
+	int32 b = lua_type(L, 3) == LUA_TNUMBER && (int)lua_tonumber(L, 3) != 0;   // FUN_005d8f20 : un nombre tronqué non nul
+	if(m) m->groupe14ec = b;
+	if(a) a->groupe14ec = b;
+	return 0;
 }
 
 // PlayerWeaponHudLock(b) (0x5d1b80 → PlayerWeaponHudLock 0x55bb20) : l'octet +0x13c du HUD des armes, que lit WeaponHudLocked.
@@ -5837,6 +5912,9 @@ main(int argc, char **argv)
 	lua_register(L, "RegisterGlobalEventHandler", RegisterGlobalEventHandler);
 	lua_register(L, "PedGetLastHitWeapon", PedGetLastHitWeapon);
 	lua_register(L, "PedGetWhoHitMeLast", PedGetWhoHitMeLast);
+	lua_register(L, "PedIsHit", PedIsHit);
+	lua_register(L, "PedRecruitAlly", PedRecruitAlly);
+	lua_register(L, "PedDismissAlly", PedDismissAlly);
 	lua_register(L, "PedCanSeeObject", PedCanSeeObject);
 	lua_register(L, "MissionTimerStart", MissionTimerStart);
 	lua_register(L, "MissionTimerStop", MissionTimerStop);

@@ -59,12 +59,25 @@ QuitterZones(CScriptPed *peds, int h)
 			for(size_t k = 0; k < z.size(); ) if(z[k] == h) z.erase(z.begin() + k); else k++;
 }
 
+// Un piéton qui disparaît : les références que les autres tiennent sur lui (FUN_00465680 les inscrit, le destructeur de
+// l'entité les remet à nul) : le meneur +0x2f4, le suiveur +0x2f8 et le piéton de la laisse +0x35c.
+static void
+OublierReferences(CScriptPed *peds, int h)
+{
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
+		if(peds[i].meneur == h) peds[i].meneur = -1;
+		if(peds[i].suiveur == h) peds[i].suiveur = -1;
+		if(peds[i].laissePieton == h) peds[i].laissePieton = -1;
+	}
+}
+
 bool
 CScriptPedPool::Supprimer(int h)
 {
 	if(h == SCRIPT_PED_JOUEUR || !Valide(h)) return false;
 	peds[h] = CScriptPed();
 	QuitterZones(peds, h);
+	OublierReferences(peds, h);
 	return true;
 }
 
@@ -91,7 +104,7 @@ CScriptPedPool::SupprimerDuScript(int32 script)
 {
 	int n = 0;
 	for(int i = 1; i < SCRIPT_PED_POOL_SIZE; i++)
-		if(peds[i].vivant && peds[i].script == script){ peds[i] = CScriptPed(); QuitterZones(peds, i); n++; }
+		if(peds[i].vivant && peds[i].script == script){ peds[i] = CScriptPed(); QuitterZones(peds, i); OublierReferences(peds, i); n++; }
 	return n;
 }
 
@@ -532,6 +545,88 @@ CScriptPedPool::SuivreCibles(float dt, uint32 maintenantMs, const ButesCibles &b
 		}
 		ChoisirCible(i, maintenantMs, b, tirer, ctx);
 	}
+}
+
+int
+CScriptPedPool::PremierMeneur(int h) const
+{
+	const CScriptPed *p = Acceder(h);
+	int m = p ? p->meneur : -1;
+	for(int garde = 0; m >= 0 && garde < SCRIPT_PED_POOL_SIZE; garde++){
+		const CScriptPed *q = Acceder(m);
+		if(q == nil || q->meneur < 0) return m;
+		m = q->meneur;
+	}
+	return m;
+}
+
+bool
+CScriptPedPool::DansSesSuiveurs(int meneur, int autre) const
+{
+	const CScriptPed *p = Acceder(meneur);
+	if(p == nil || autre < 0) return false;
+	int s = p->suiveur;
+	for(int garde = 0; s >= 0 && garde < SCRIPT_PED_POOL_SIZE; garde++){
+		if(s == autre) return true;
+		const CScriptPed *q = Acceder(s);
+		s = q ? q->suiveur : -1;
+	}
+	return false;
+}
+
+bool
+CScriptPedPool::DansSonGroupe(int h, int autre) const
+{
+	const CScriptPed *p = Acceder(h);
+	if(p == nil || autre < 0) return false;
+	if(autre == h) return true;
+	int m = p->meneur;
+	for(int garde = 0; m >= 0 && garde < SCRIPT_PED_POOL_SIZE; garde++){
+		if(m == autre) return true;
+		const CScriptPed *q = Acceder(m);
+		m = q ? q->meneur : -1;
+	}
+	return DansSesSuiveurs(h, autre);
+}
+
+bool
+CScriptPedPool::RenvoyerAllie(int meneur, int allie)
+{
+	CScriptPed *m = Acceder(meneur), *a = Acceder(allie);
+	if(m == nil || a == nil) return false;
+	if(a->suiveur >= 0 && a->suiveur != allie) RenvoyerAllie(allie, a->suiveur);   // ecx = l'allié + 0x2f0
+	if(m->suiveur != allie) return false;
+	a->meneur = -1;
+	// FUN_00485820 : FUN_004852e0 (le marqueur et la barre de santé, non suivis), FUN_004851f0 (le rappel Lua +0x141c, non
+	// suivi), +0x318, +0x13c8, +0x14d0 à 1, +0x14ec et +0x153c à 0, la laisse lâchée (FUN_004998f0) ; puis +0x2f8 du meneur.
+	a->etatAllie = 1; a->recrute13c8 = true; a->groupe14ec = 0;
+	if(a->laisse != 0){ a->laisse = 0; a->laissePieton = -1; }
+	m->suiveur = -1;
+	return true;
+}
+
+bool
+CScriptPedPool::RecruterAllie(int meneur, int allie, bool forcer)
+{
+	CScriptPed *m = Acceder(meneur), *a = Acceder(allie);
+	if(m == nil || a == nil) return false;
+	if(!forcer && (a->type == 0 || a->type == 7 || a->type == 8 || Attitude(allie, m->type) != 4)) return false;
+	if(DansSesSuiveurs(meneur, allie)) return true;
+	if(m->suiveur >= 0) RenvoyerAllie(meneur, m->suiveur);
+	m->suiveur = allie;
+	a->groupeTenu = false; a->groupe300 = 0; a->groupe304 = true; a->groupe305 = true;
+	a->etatAllie = 1; a->moralAllie = 0; a->groupe308 = 0; a->groupe30c = 0;
+	a->meneur = meneur;
+	int racine = PremierMeneur(allie);
+	if(const CScriptPed *r = Acceder(racine)){   // FUN_00499960
+		a->laisse = 2; a->laissePieton = racine; a->laisseRayon = 4.0f; a->laissePoint = r->pos;
+		a->laisseDecalage = CVector(0, 0, 0);
+	}
+	a->laisse3b4 = true; a->laisse3b5 = true;   // FUN_00499960 pose 1 et 0, FUN_00485fa0 les deux à 1
+	a->attitudes.Ecrire(m->type, 4);   // FUN_00473080
+	a->recrute13c8 = true;
+	m->groupeTenu = forcer;
+	return true;
 }
 
 int32

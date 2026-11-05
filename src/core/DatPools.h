@@ -60,6 +60,9 @@ public:
 	const CTriggerPointPoint *Point(int handle, int n) const;
 	// PlayerIsInTrigger / PedIsInTrigger (FUN_006d6e50) : la position est dans la zone du déclencheur.
 	bool DansDeclencheur(int handle, const CVector &pos) const;
+	// Un point dans la zone d'un déclencheur (pour l'outil, qui y pose le joueur) : la moyenne des sommets de son périmètre, dans
+	// le repère du monde (le lacet, puis la position), à mi-hauteur sans dépasser 0,5 m. Faux sans déclencheur ni périmètre.
+	bool CentreDeclencheur(int handle, CVector &centre) const;
 
 	int fichiersCharges = 0;
 private:

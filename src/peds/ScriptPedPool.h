@@ -305,6 +305,29 @@ struct CScriptPed {
 	int32 laisse = 0;
 	float laisseRayon = 0;
 	CVector laissePoint;
+	// La laisse vers un piéton (PedSetTetherToPed, FUN_00499960, ecx = le piéton + 0x358 : le genre 2, la référence +0x35c, le
+	// rayon +0x364, la position du piéton au moment de la pose en +0x368 … +0x370, le décalage +0x378 … +0x380, les octets
+	// +0x3b4 à 1 et +0x3b5 à 0) : le piéton tenu, -1 sinon.
+	int laissePieton = -1;
+	CVector laisseDecalage;
+	bool laisse3b4 = false, laisse3b5 = false;
+	// Le groupe des alliés (+0x2f0 de CPed : le piéton lui-même, puis son meneur en +0x2f4 et son suiveur en +0x2f8, deux
+	// références de FUN_005d7db0 ; un suiveur peut mener à son tour, et FUN_00485410 remonte les +0x2f4 jusqu'au premier
+	// meneur). PedRecruitAlly (0x5cd550 → FUN_00485fa0), PedDismissAlly (0x5cd5d0 → FUN_00485880 → FUN_00485820) ; les
+	// conditions IsAllyFollower (FUN_006037b0 → FUN_004851d0 : +0x2f4 non nul), IsAllyLeader (FUN_00603790 → FUN_004851e0 :
+	// +0x2f8 non nul), HasAllyState (ConditionAllyState, FUN_00606450 : +0x318 égal au mot +4) et HasAllyMorale
+	// (ConditionAllyMorale, FUN_00606470 : +0x31c).
+	int meneur = -1;             // +0x2f4
+	int suiveur = -1;            // +0x2f8
+	bool groupeTenu = false;     // +0x2fc (l'octet +0xc du groupe) : chez le meneur, le troisième argument de FUN_00485fa0
+	int32 groupe300 = 0;         // +0x300
+	bool groupe304 = false;      // +0x304 : AllyIsInCombat (FUN_00606360) ne regarde que les suiveurs qui l'ont
+	bool groupe305 = false;      // +0x305
+	int32 groupe308 = 0, groupe30c = 0;   // +0x308, +0x30c
+	int32 etatAllie = 1;         // +0x318 : 1 au recrutement et au renvoi ; SetAllyState (FUN_0062a2c0) l'écrit chez un suiveur
+	int32 moralAllie = 0;        // +0x31c : 0 au recrutement ; SetAllyMorale (FUN_0062a2f0)
+	bool recrute13c8 = false;    // +0x13c8 : 1 au recrutement comme au renvoi (FUN_00485820)
+	int32 groupe14ec = 0;        // +0x14ec : le troisième argument de PedRecruitAlly (FUN_005d8f20), chez les deux ; 0 au renvoi
 	bool controlable = true;     // +0x1e90 : le joueur rendu à la manette (PlayerSetControl, FUN_00445c50 : 0 quand le script le prend)
 	// Le composant de vue (+0xa64, son piéton en +0) : l'angle total du cône (+0xa68, la colonne D de pedstats.dat en
 	// degrés, × π / 180 par FUN_00478e30) et la portée (+0xa6c, la colonne E, en mètres) ; un cache de 16 piétons (+0xa74 :
@@ -500,6 +523,28 @@ public:
 	CAttitudes attitudesTypes;     // le gestionnaire des attitudes entre types (FUN_0046f1f0)
 	int32 respect[16] = {};        // +0x1b0 + 4 × faction des données du joueur (0xc1aea8) : SetFactionRespect, GetFactionRespect
 	bool CoupRecevable(int cible, int attaquant) const;
+	// FUN_00485fa0 (ecx = le meneur + 0x2f0, lu à l'assembleur de 0x485fa0 à 0x4860fc) : rien sans allié ; sans `forcer`, il
+	// faut que l'allié ait été créé par la population (l'octet +0x1570 à 1 : non suivi, supposé), qu'il ne soit ni PREFECT (0),
+	// ni COP (7), ni TEACHER (8), et que son attitude envers le meneur vaille 4 (FUN_004752b0). Déjà dans la chaîne des suiveurs
+	// du meneur : vrai, rien ne change. Sinon l'ancien suiveur est renvoyé (FUN_00485880), l'allié devient le suiveur (+0x2f8),
+	// reçoit +0x2fc 0, +0x300 0, +0x304 1, +0x305 1, +0x318 1, +0x31c 0, +0x308 0, +0x30c 0 et son meneur (+0x2f4) ; une
+	// laisse de 4 m (le flottant 0x90d2cc) au premier meneur de la chaîne (FUN_00485410 ; FUN_00499960, le décalage nul de
+	// 0xbcc564), +0x3b4 et +0x3b5 à 1 ; l'émotion 7 envers le meneur (FUN_0048f080 sur +0xb44, non suivie) ; son attitude
+	// envers le type du meneur à 4 (FUN_00473080) ; +0x13c8 à 1 ; l'octet +0xc du groupe du meneur à `forcer` ; le marqueur et
+	// la barre de santé de l'allié d'un joueur (FUN_00485e40, non suivis). Vrai si l'allié est dans le groupe.
+	bool RecruterAllie(int meneur, int allie, bool forcer);
+	// FUN_00485880 (ecx = le meneur + 0x2f0, lu à l'assembleur de 0x485880 à 0x4858e0) : le suiveur de l'allié d'abord, renvoyé
+	// par l'allié lui-même (ecx = l'allié + 0x2f0, récursif) ; puis, si l'allié est le suiveur direct du meneur, son meneur
+	// (+0x2f4) vidé, FUN_00485820 sur lui (lu de 0x485820 à 0x485879 : FUN_004852e0, le marqueur et la barre de santé ;
+	// FUN_004851f0, le rappel Lua +0x141c ; +0x318, +0x13c8 et +0x14d0 à 1, +0x14ec et +0x153c à 0, la laisse lâchée s'il en a
+	// une, FUN_004998f0) et le suiveur du meneur (+0x2f8) vidé. Vrai s'il était le suiveur direct.
+	bool RenvoyerAllie(int meneur, int allie);
+	// FUN_00485410 : le premier meneur de la chaîne (en remontant les +0x2f4), -1 sans meneur.
+	int PremierMeneur(int handle) const;
+	// FUN_004853b0 (ecx = le meneur + 0x2f0) : `autre` est dans la chaîne des suiveurs du meneur.
+	bool DansSesSuiveurs(int meneur, int autre) const;
+	// FUN_00485440 (ecx = le piéton + 0x2f0) : `autre` est le piéton, un de ses meneurs ou un de ses suiveurs.
+	bool DansSonGroupe(int handle, int autre) const;
 	// lua_PedClearObjectives (0x5ca8e0) : la file des objectifs vidée (FUN_00470200, du premier au dernier : le rappel Lua
 	// d'un objectif qui en a un est appelé avec son type, non suivi), le dernier agresseur oublié (FUN_004973d0(0) : +0x1dbc
 	// à nul, +0x1dc0 à 0) ; lancer_lua arrête le contrôleur de l'IA (FUN_005f3f40). Le geste d'attaque de l'outil, que mène
