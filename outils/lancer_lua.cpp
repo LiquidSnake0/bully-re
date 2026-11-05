@@ -1005,6 +1005,25 @@ struct CJugeOutil : CJugeAction {
 		if(type == kCibleAlliee) return moi && pietons.DansSesSuiveurs(ped, CibleDe(ped));
 		if(type == kEtatAllie) return moi && moi->etatAllie == (int32)mots[0];
 		if(type == kMoralAllie) return moi && moi->moralAllie == (int32)mots[0];
+		// AllyIsInCombat (ConditionAllyIsInCombat 0x937d38, FUN_00606360) : un tirage de période 4 (FUN_00465910), un meneur et
+		// l'octet +0x304 ; parmi ses piétons proches (+0x3c0, la liste +0x3c4) vivants, le premier dont la cible (PedGetTargetPed,
+		// un piéton) est dans son groupe (FUN_00485440 : lui, ses meneurs, ses suiveurs) et dont l'objectif courant (FUN_004701f0)
+		// attaque (7 ou 16) devient la cible de son objectif (FUN_0048c330) et sa cible (FUN_004989c0 → FUN_00497d20(q, 0)) ; la
+		// cible de son arme (FUN_004d7890) n'est pas suivie. Vrai alors.
+		static const uint32 kAllieEnCombat = ActionHash("AllyIsInCombat");
+		if(type == kAllieEnCombat){
+			if(moi == nil || !TirageOpportunite(4, (uint16)ped, imageCourante) || moi->meneur < 0 || !moi->groupe304) return 0;
+			for(int q : moi->proches){
+				const CScriptPed *a = pietons.Acceder(q);
+				if(a == nil || a->mort || !pietons.DansSonGroupe(ped, CibleDe(q))) continue;
+				const CObjectifPieton *o = pietons.ObjectifCourant(q);
+				if(o == nil || (o->type != OBJECTIF_ATTAQUER_PIETON && o->type != OBJECTIF_ATTAQUER_16)) continue;
+				moi->cibleObjectif = q;
+				pietons.Verrouiller(ped, q, 0);
+				return 1;
+			}
+			return 0;
+		}
 		if(type == kGroupeMeneur || type == kGroupeSuiveur){
 			int a = moi == nil ? -1 : type == kGroupeMeneur ? pietons.PremierMeneur(ped) : moi->suiveur;
 			std::vector<int32> groupe;
@@ -2175,7 +2194,9 @@ AllerAuPoint(const char *cible)
 // est à plus de d mètres (2 par défaut) ; la dernière poursuite commencée l'emporte, elle cesse quand le piéton n'existe plus.
 // Comme le stick dans le jeu, elle ne fait rien quand le script a repris le contrôle (PlayerSetControl(0)) ni quand le joueur
 // suit lui-même un trajet (l'objectif FollowPath de sa file passe devant).
-struct Poursuite { uint32 debut; int ped; float distance; bool annoncee; std::vector<CVector> trace; CVector dernier; };
+// --courir x,y,z@s : la même manette, vers un point fixe (le joueur s'arrête à 0,3 m) ; un allié qui le suit (TetherLoco) le voit
+// bouger, ce que --aller, qui le pose, ne fait pas.
+struct Poursuite { uint32 debut; int ped; float distance; bool annoncee; std::vector<CVector> trace; CVector dernier; bool fixe = false; CVector point; };
 static std::vector<Poursuite> poursuites;
 
 static void
@@ -2185,23 +2206,25 @@ PoursuivrePieton(void)
 	for(Poursuite &q : poursuites) if(maintenant >= q.debut) active = &q;
 	if(active == nil) return;
 	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
-	const CScriptPed *c = pietons.Acceder(active->ped);
-	if(c == nil || c->mort) return;
+	const CScriptPed *c = active->fixe ? nil : pietons.Acceder(active->ped);
+	if(!active->fixe && (c == nil || c->mort)) return;
+	const CVector cible = active->fixe ? active->point : c->pos;
 	// La trace du piéton poursuivi : ses positions, une tous les 0,5 m ; le joueur court dessus, il passe où il est passé.
 	auto ecart = [](const CVector &a, const CVector &b){ return sqrtf((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z)); };
-	if(active->trace.empty() || ecart(active->trace.back(), c->pos) > 0.5f) active->trace.push_back(c->pos);
+	if(active->trace.empty() || ecart(active->trace.back(), cible) > 0.5f) active->trace.push_back(cible);
 	if(controleJoueur != 1) return;
 	const CObjectifPieton *o = pietons.ObjectifCourant(SCRIPT_PED_JOUEUR);
 	if(o && o->type == OBJECTIF_SUIVRE_TRAJET) return;
 	if(!active->annoncee){
 		active->annoncee = true;
-		active->trace.clear(); active->trace.push_back(c->pos);
-		printf("%6.2f s  le joueur poursuit le piéton %d (à %.1f m)\n", maintenant / 1000.0, active->ped, active->distance);
+		active->trace.clear(); active->trace.push_back(cible);
+		if(active->fixe) printf("%6.2f s  le joueur court vers (%.1f, %.1f, %.1f)\n", maintenant / 1000.0, cible.x, cible.y, cible.z);
+		else printf("%6.2f s  le joueur poursuit le piéton %d (à %.1f m)\n", maintenant / 1000.0, active->ped, active->distance);
 	}
-	else if(ecart(j->pos, active->dernier) > 0.01f){ active->trace.clear(); active->trace.push_back(c->pos); }   // posé ailleurs (--entrer, un script)
+	else if(ecart(j->pos, active->dernier) > 0.01f){ active->trace.clear(); active->trace.push_back(cible); }   // posé ailleurs (--entrer, un script)
 	float reste = ScriptPedVitesse(ALLURE_SPRINT) * 0.033f;
 	j->intentionVitesse = 0;
-	while(reste > 0 && sqrtf((c->pos.x - j->pos.x) * (c->pos.x - j->pos.x) + (c->pos.y - j->pos.y) * (c->pos.y - j->pos.y)) > active->distance && !active->trace.empty()){
+	while(reste > 0 && sqrtf((cible.x - j->pos.x) * (cible.x - j->pos.x) + (cible.y - j->pos.y) * (cible.y - j->pos.y)) > active->distance && !active->trace.empty()){
 		CVector v(active->trace.front().x - j->pos.x, active->trace.front().y - j->pos.y, active->trace.front().z - j->pos.z);
 		float d = ecart(active->trace.front(), j->pos);
 		if(d <= reste){ j->pos = active->trace.front(); reste -= d; active->trace.erase(active->trace.begin()); continue; }
@@ -4467,6 +4490,127 @@ CombatLoco(int ped, bool joueur, bool premiere)
 	else if(d2Cible > 0) p->cap = atan2f(q->pos.y - p->pos.y, q->pos.x - p->pos.x) * 180.0f / 3.14159265f;
 }
 
+// La laisse vers un piéton (le genre 2) : FUN_00499840 refait son point depuis le piéton tenu (+0x374) et le décalage +0x378
+// (FUN_004994e0 : dans le repère du piéton tenu, la droite (sin cap, −cos cap) puis l'avant (cos cap, sin cap), supposé) ; sans
+// piéton, la laisse tombe (genre 0). Le moteur l'appelle à chaque image depuis la mise à jour du piéton (l'appelant n'est pas
+// lu) ; l'outil, depuis TetherLoco.
+static void
+RefaireLaisse(CScriptPed &p)
+{
+	if(p.laisse != 2) return;
+	const CScriptPed *q = pietons.Acceder(p.laissePieton);
+	if(q == nil){ p.laisse = 0; return; }
+	float c = cosf(q->cap * 3.14159265f / 180.0f), s = sinf(q->cap * 3.14159265f / 180.0f);
+	p.laissePoint = CVector(q->pos.x + p.laisseDecalage.x * s + p.laisseDecalage.y * c,
+	                        q->pos.y - p.laisseDecalage.x * c + p.laisseDecalage.y * s, q->pos.z + p.laisseDecalage.z);
+}
+
+// FUN_00485490 (ecx = l'allié + 0x2f0, lu à l'assembleur de 0x485490 à 0x4857a0) : la place de l'allié à côté du premier meneur
+// de sa chaîne ; rien avec +0x14ec. Le côté : le produit scalaire de la droite du premier meneur (FUN_004735a0, la première
+// colonne de sa matrice, à plat, normée) et de la direction de son meneur direct vers lui (FUN_00414a20, normée), changé de
+// signe : négatif, à droite de 1 + 0,35 m (le rayon des piétons, DAT_00cf311c, que 0x571500 pose depuis 0x90d0a8), sinon à
+// gauche ; un allié tenu en laisse qui en est sorti (FUN_004997a0 : la distance au point de la laisse au-delà de son rayon)
+// ajoute 1 m devant (DAT_00c2b1d8 … : (0, 1, 0)). Le point, dans le repère du premier meneur (FUN_0046dbd0), doit être sur
+// le maillage de navigation (FUN_00485190, FUN_005e9df0), sinon la position du premier meneur : l'outil n'a pas le
+// maillage, la place est gardée (supposé).
+static bool
+PlaceAupresDuMeneur(int ped, CVector &place)
+{
+	const CScriptPed *p = pietons.Acceder(ped);
+	int r = pietons.PremierMeneur(ped);
+	const CScriptPed *racine = pietons.Acceder(r), *direct = p ? pietons.Acceder(p->meneur) : nil;
+	if(p == nil || racine == nil || direct == nil || p->groupe14ec != 0) return false;
+	float c = cosf(racine->cap * 3.14159265f / 180.0f), s = sinf(racine->cap * 3.14159265f / 180.0f);
+	float dx = racine->pos.x - direct->pos.x, dy = racine->pos.y - direct->pos.y, n = sqrtf(dx * dx + dy * dy);
+	float produit = n > 0 ? -(s * dx / n - c * dy / n) : -0.0f;
+	float cote = produit < 0.0f ? 1.35f : -1.35f, avant = 0;
+	if(p->laisse != 0){
+		float ex = p->pos.x - p->laissePoint.x, ey = p->pos.y - p->laissePoint.y, ez = p->pos.z - p->laissePoint.z;
+		if(ex * ex + ey * ey + ez * ez > p->laisseRayon * p->laisseRayon) avant = 1.0f;
+	}
+	place = CVector(racine->pos.x + cote * s + avant * c, racine->pos.y - cote * c + avant * s, racine->pos.z);
+	return true;
+}
+
+// La mise à jour d'une piste TetherLoco (FUN_00627fc0, lue à l'assembleur ; le lancement FUN_00627f10, lu de 0x627f10 à
+// 0x627fb2) : sans laisse, rien (la piste rend faux). Le point visé : la cible si l'octet +0x18 et l'octet +0x3b4 du piéton,
+// sinon le point de la laisse (FUN_00499460) ou, si le piéton tenu est le premier meneur de sa chaîne, la place à côté de lui
+// (FUN_00485490). La vitesse : la distance au-delà de l'arrivée (+0x28) sur le rayon de la laisse (+0x364), plus, avec l'octet
+// +0x2f et au-delà du seuil +0x34, si le piéton va vers le point (le produit scalaire de son avant et de l'écart au-dessus de
+// 0,45, le double 0x900e48), le gain +0x30 fois le chemin du point depuis l'image d'avant sur 0,02 × le pas de l'image
+// (0xb0c0b0, DAT_00c1a9a4 : supposé 1) ; bornée à 1,5 (0x90fb9c) ; moyennée sur les trente dernières images positives (+0x44 …
+// +0xb8) sauf avec l'octet +0x2e, tant que le piéton tenu bouge (FUN_00424560, sa vitesse : l'intention de l'outil) ; la
+// moyenne est vidée sinon. La navigation (FUN_004a4eb0, l'arrivée +0x28 ; les drapeaux 0x20014, 0x1c avec +0x14ec) le mène
+// (+0x40) ; sous 0,1 (0x900128) il s'arrête. Arrêté, avec l'octet +0x2c, il se tourne vers le premier meneur (FUN_004a4750).
+// L'arrêt de la piste sur un meneur occupé (FUN_00487990(meneur, 5, 1), ou +0x548 du meneur dans la laisse) n'est pas lu :
+// supposé faux. Le maillage de navigation, la recherche de chemin et l'octet +0x38 ne sont pas suivis.
+static bool
+TetherLoco(int ped, CActionController::Laisse &l, bool premiere)
+{
+	CScriptPed *p = pietons.Acceder(ped);
+	if(p == nil || p->mort) return false;
+	if(premiere){
+		l.enMarche = false;
+		if(p->laisse != 0){
+			p->laisseDecalage = CVector(l.dx, l.dy, 0);
+			if(l.rayon > 0){ l.rayonAvant = p->laisseRayon; p->laisseRayon = l.rayon; }
+			RefaireLaisse(*p);
+			l.px = p->laissePoint.x; l.py = p->laissePoint.y; l.pz = p->laissePoint.z;
+		}
+	}
+	RefaireLaisse(*p);
+	if(p->laisse == 0) return false;
+	const CScriptPed *tenu = p->laisse == 2 ? pietons.Acceder(p->laissePieton) : nil;
+	CVector vise = p->laissePoint;
+	const CScriptPed *cible = l.versCible && p->laisse3b4 ? pietons.Acceder(CibleDe(ped)) : nil;
+	if(cible) vise = cible->pos;
+	else if(tenu && p->laissePieton == pietons.PremierMeneur(ped)) PlaceAupresDuMeneur(ped, vise);
+	float dx = vise.x - p->pos.x, dy = vise.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
+	float exces = d - l.arrivee > 0 ? d - l.arrivee : 0;
+	float vit = p->laisseRayon > 0 ? exces / p->laisseRayon : 0;
+	if(l.suitVitesse && d > l.seuil){
+		float c = cosf(p->cap * 3.14159265f / 180.0f), s = sinf(p->cap * 3.14159265f / 180.0f);
+		if(c * dx + s * dy > 0.45f){
+			float mx = vise.x - l.px, my = vise.y - l.py, mz = vise.z - l.pz;
+			vit += l.gain * sqrtf(mx * mx + my * my + mz * mz) / (0.02f * 1.0f);
+		}
+	}
+	if(vit > 1.5f) vit = 1.5f;
+	bool bouge = tenu == nil || tenu->intentionVitesse > 0;
+	if(vit > 0 && bouge && !l.sansMoyenne){
+		l.moyenne[l.indice] = vit;
+		if(++l.indice > 29) l.indice = 0;
+		int n = 0; float somme = 0;
+		for(float m : l.moyenne) if(m > 0){ n++; somme += m; }
+		if(n > 0) vit = somme / n;
+	}else if(!(vit > 0 && bouge)){
+		for(float &m : l.moyenne) m = 0;
+		l.indice = 0;
+	}
+	float ecart = remainderf(atan2f(dy, dx) - p->cap * 3.14159265f / 180.0f, 2.0f * 3.14159265f);
+	float v = ScriptPedVitesseDuTrajet(vit, d * d, ecart, l.arrivee, p->immobile);   // FUN_004a4eb0 → FUN_005e4a60
+	bool avant = l.enMarche;
+	l.enMarche = v > 0 && vit >= 0.1f;
+	if(l.enMarche != avant && journalIA > 0){
+		journalIA--;
+		printf("%6.2f s  TetherLoco de %d : %s (%.2f, %.2f), à %.2f m, vitesse %.2f\n", maintenant / 1000.0, ped,
+		       l.enMarche ? "en marche vers" : "arrêté près de", vise.x, vise.y, d, v);
+	}
+	p->intentionVitesse = l.enMarche ? v : 0;
+	if(l.enMarche){
+		p->intention = CVector(dx / d, dy / d, 0);
+		float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f * v / 1.5f;
+		float k = d - l.arrivee < pas ? (d - l.arrivee) / d : pas / d;
+		p->pos.x += dx * k; p->pos.y += dy * k;
+		p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
+	}else if(l.b2c && tenu && p->laissePieton == pietons.PremierMeneur(ped)){
+		float fx = tenu->pos.x - p->pos.x, fy = tenu->pos.y - p->pos.y;
+		if(fx * fx + fy * fy > 0) p->cap = atan2f(fy, fx) * 180.0f / 3.14159265f;
+	}
+	l.px = vise.x; l.py = vise.y; l.pz = vise.z;
+	return true;
+}
+
 // Les pistes Death qui se lancent (FUN_0060fdc0 → l'emplacement 42 de CPed, FUN_00479110) : le piéton meurt
 // (CScriptPedPool::Mourir), sauf déjà mort ou immortel.
 static void
@@ -4841,6 +4985,11 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 		for(uint32 n : k->intentions) intentionsPietons[ped] = n;
 		for(const CActionController::Gestion &g : k->gestionsActives) GererCibles(ped, g.joueur);
 		for(const CActionController::Gestion &g : k->combatsActifs) CombatLoco(ped, g.joueur, k->Temps(t) <= g.entree + 0.034f);
+		for(CActionController::Laisse &l : k->laisses){   // FUN_00627fc0 à chaque image
+			if(k->Temps(t) < l.entree || l.vie == -2.0f) continue;
+			if(!TetherLoco(ped, l, !l.lancee)) l.vie = -2.0f;
+			l.lancee = true;
+		}
 		for(const CActionController::Regard &r : k->regardsActifs){   // FUN_00620dc0
 			const CScriptPed *q = pietons.Acceder(r.genre == 0 ? CibleDe(ped) : r.genre == 1 ? p->cibleDePrise : -1);
 			if(q && q != p) p->cap = atan2f(q->pos.y - p->pos.y, q->pos.x - p->pos.x) * 180.0f / 3.14159265f + r.decalage;
@@ -5757,6 +5906,13 @@ main(int argc, char **argv)
 			q.distance = v != std::string::npos && (at == std::string::npos || v < at) ? (float)atof(e.c_str() + v + 1) : 2.0f;
 			q.annoncee = false;
 			poursuites.push_back(q);
+		}
+		else if(strcmp(argv[i], "--courir") == 0 && i + 1 < argc){
+			std::string e = argv[++i]; size_t at = e.find('@');
+			Poursuite q;
+			q.debut = (uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000);
+			q.ped = -1; q.distance = 0.3f; q.annoncee = false; q.fixe = true;
+			if(sscanf(e.c_str(), "%f,%f,%f", &q.point.x, &q.point.y, &q.point.z) == 3) poursuites.push_back(q);
 		}
 		else if(strcmp(argv[i], "--aller") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
