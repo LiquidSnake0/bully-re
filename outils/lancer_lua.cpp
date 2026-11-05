@@ -103,6 +103,9 @@ static CMissionBank banque;
 // déclencheurs, retrouvés par nom à travers POINTLIST, PATH et TRIGGER.
 static CDatPools donnees;
 static CPatrouilles patrouilles;        // DAT_00c2b034 : les rondes des trajets dont PATROLTYPE n'est pas -1
+static void AmenerLesAllies(int zone, const CVector &arrivee);   // FUN_0048b970, plus bas
+static bool BooleenArg(lua_State *L, int i);   // FUN_005d8f20, plus bas
+static void Oublier(lua_State *L, int &ref);
 // Les piétons des scripts (src/peds/ScriptPedPool.h) : le joueur en 0, PedCreatePoint & co.
 static CScriptPedPool pietons;
 // Les modèles par nom (src/core/ModelEnum.h) : MODELENUM._Taxicab → 286, ou -1.
@@ -3007,6 +3010,46 @@ PedDismissAlly(lua_State *L)
 	return 0;
 }
 
+// PedSetMissionCritical(ped, b[, rappel[, b2]]) (0x5cca10, lu à l'assembleur de 0x5cca10 à 0x5cca85) : rien sans piéton
+// (FUN_005c7220) ; l'octet +0x141c reçoit le booléen du deuxième argument (FUN_005d8f20), le rappel du troisième est rangé en
+// +0x18e8 (FUN_005d9f00, une fonction ou rien), +0x1420 le quatrième (FUN_005d8fa0, faux par défaut) ; non critique, le rappel est
+// lâché (FUN_005d9af0). Ne rend rien.
+static std::map<int, int> rappelsCritiques;   // le +0x18e8 de chaque piéton : une référence du registre Lua
+static int
+PedSetMissionCritical(lua_State *L)
+{
+	Journal("PedSetMissionCritical", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p == nil) return 0;
+	int h = (int)lua_tonumber(L, 1);
+	p->critique = BooleenArg(L, 2);
+	int &ref = rappelsCritiques.emplace(h, LUA_NOREF).first->second;
+	Oublier(L, ref);
+	if(lua_isfunction(L, 3)){ lua_pushvalue(L, 3); ref = luaL_ref(L, LUA_REGISTRYINDEX); }
+	p->rappelCritique = ref != LUA_NOREF;
+	p->critique1420 = lua_isnone(L, 4) || lua_isnil(L, 4) ? false : BooleenArg(L, 4);
+	if(!p->critique){ Oublier(L, ref); p->rappelCritique = false; }
+	return 0;
+}
+
+// Les rappels des piétons critiques tombés à 0 (CScriptPedPool::critiquesAZero, FUN_004782a0) : appelés avec la poignée du
+// piéton, d'un bloc (lua_pcall) dans le script qui les a posés, puis lâchés.
+static void
+AppelerCritiques(lua_State *L)
+{
+	std::vector<int> v;
+	v.swap(pietons.critiquesAZero);
+	for(int h : v){
+		auto it = rappelsCritiques.find(h);
+		if(it == rappelsCritiques.end() || it->second == LUA_NOREF) continue;
+		printf("%6.2f s  le piéton critique %d tombe à 0 point : son rappel est appelé\n", maintenant / 1000.0, h);
+		lua_rawgeti(L, LUA_REGISTRYINDEX, it->second);
+		lua_pushnumber(L, h);
+		if(lua_pcall(L, 1, 0, 0) != 0){ printf("        rappel du piéton critique : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+		Oublier(L, it->second);
+	}
+}
+
 // PlayerWeaponHudLock(b) (0x5d1b80 → PlayerWeaponHudLock 0x55bb20) : l'octet +0x13c du HUD des armes, que lit WeaponHudLocked.
 static int
 PlayerWeaponHudLock(lua_State *L)
@@ -4538,7 +4581,8 @@ PlaceAupresDuMeneur(int ped, CVector &place)
 // (FUN_00485490). La vitesse : la distance au-delà de l'arrivée (+0x28) sur le rayon de la laisse (+0x364), plus, avec l'octet
 // +0x2f et au-delà du seuil +0x34, si le piéton va vers le point (le produit scalaire de son avant et de l'écart au-dessus de
 // 0,45, le double 0x900e48), le gain +0x30 fois le chemin du point depuis l'image d'avant sur 0,02 × le pas de l'image
-// (0xb0c0b0, DAT_00c1a9a4 : supposé 1) ; bornée à 1,5 (0x90fb9c) ; moyennée sur les trente dernières images positives (+0x44 …
+// (0xb0c0b0 fois CTimer::ms_fTimeStep, DAT_00c1a9a4, en cinquantièmes de seconde : 33 / 20 à 30 images par seconde, soit le pas en
+// secondes) ; bornée à 1,5 (0x90fb9c) ; moyennée sur les trente dernières images positives (+0x44 …
 // +0xb8) sauf avec l'octet +0x2e, tant que le piéton tenu bouge (FUN_00424560, sa vitesse : l'intention de l'outil) ; la
 // moyenne est vidée sinon. La navigation (FUN_004a4eb0, l'arrivée +0x28 ; les drapeaux 0x20014, 0x1c avec +0x14ec) le mène
 // (+0x40) ; sous 0,1 (0x900128) il s'arrête. Arrêté, avec l'octet +0x2c, il se tourne vers le premier meneur (FUN_004a4750).
@@ -4572,7 +4616,7 @@ TetherLoco(int ped, CActionController::Laisse &l, bool premiere)
 		float c = cosf(p->cap * 3.14159265f / 180.0f), s = sinf(p->cap * 3.14159265f / 180.0f);
 		if(c * dx + s * dy > 0.45f){
 			float mx = vise.x - l.px, my = vise.y - l.py, mz = vise.z - l.pz;
-			vit += l.gain * sqrtf(mx * mx + my * my + mz * mz) / (0.02f * 1.0f);
+			vit += l.gain * sqrtf(mx * mx + my * my + mz * mz) / (0.02f * (33.0f / 20.0f));
 		}
 	}
 	if(vit > 1.5f) vit = 1.5f;
@@ -5103,6 +5147,7 @@ AvancerPietons(void)
 			printf("%6.2f s  piéton %d : cible %d → %d (style %d)\n", maintenant / 1000.0, i, avant[i], p->verrou, p->verrouMode);
 	}
 	AvancerProjectiles(33.0f / 20.0f);   // le pas du moteur (ms_fTimeStep) compte des cinquantièmes de seconde
+	if(etatLua) AppelerCritiques(etatLua);
 	// FUN_004812d0, 0x481c45 : les déclencheurs suivis (FUN_006d6f60), piéton par piéton, après le reste de son image.
 	SuivreDeclencheurs();
 	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
@@ -5760,8 +5805,36 @@ AvancerZones(lua_State *L)
 		j->pos = zones.demande.pos; j->cap = zones.demande.cap;
 		joueurPose = true;
 		printf("%6.2f s  zones : le joueur est posé en (%.1f, %.1f, %.1f), cap %.0f, zone %d\n", maintenant / 1000.0, j->pos.x, j->pos.y, j->pos.z, j->cap, zones.zoneVisible);
+		AmenerLesAllies(zones.zoneVisible, j->pos);
 	}
 	if(e.fonduRetour) LancerFondu(fonduRetourMs, false);
+}
+
+// FUN_004162f0 (le joueur posé au bout d'un changement de zone) → FUN_0048b970 (lu à l'assembleur), pour chaque piéton du pool
+// du dernier au premier : hors d'une mission de classe (MissionInClass), un allié du joueur (FUN_004853e0 : lui-même n'est pas
+// le joueur, et un de ses meneurs l'est) passe avec lui si la zone d'arrivée (DAT_00bd1008) est 0, 2, 9 ou 13, s'il a un rappel
+// (+0x141c), ou si FUN_0044e2b0 et l'octet +0x50 du sexe sont faux : FUN_0048af70 le pose, son partenaire de prise lâché
+// (FUN_00477320), FUN_00473d10, sa file d'objectifs vidée (FUN_00470200) et son état d'allié à 1 (+0x318). FUN_0048af70 (lu de
+// 0x48af70 à 0x48b2b8) : avec +0x153c et le joueur pour premier meneur, 1,5 m à la droite du joueur (0x8ffa08), sinon jusqu'à
+// deux cents tirages autour du point d'arrivée (+0x8c4 de 0x9e4f4c), x et y décalés de rand() / 32767 × 6 − 3 (0x900978,
+// 0x900988), gardés s'ils sont au sol (FUN_00463560), à vue (FUN_0049e170), hors des zones interdites (FUN_0046ee60) et sur le
+// maillage (FUN_005eb670) ; l'outil n'a ni sol ni maillage : le premier tirage est gardé, à la hauteur du joueur (supposé).
+// Les autres piétons (les poursuivants, ceux qu'on efface) ne sont pas suivis.
+static void
+AmenerLesAllies(int zone, const CVector &arrivee)
+{
+	bool zoneSure = zone == 0 || zone == 2 || zone == 9 || zone == 13;
+	for(int h = SCRIPT_PED_POOL_SIZE - 1; h > SCRIPT_PED_JOUEUR; h--){
+		CScriptPed *p = pietons.Acceder(h);
+		if(p == nil || p->type == SCRIPT_PED_TYPE_JOUEUR || pietons.PremierMeneur(h) != SCRIPT_PED_JOUEUR) continue;
+		if(!zoneSure) continue;
+		float dx = (float)RandCrt(graineIA) / 32767.0f * 6.0f - 3.0f, dy = (float)RandCrt(graineIA) / 32767.0f * 6.0f - 3.0f;
+		p->pos = CVector(arrivee.x + dx, arrivee.y + dy, arrivee.z);
+		p->cibleDePrise = -1;
+		p->nombreObjectifs = 0;
+		p->etatAllie = 1;
+		printf("%6.2f s  zones : l'allié %d passe avec le joueur, posé en (%.1f, %.1f, %.1f)\n", maintenant / 1000.0, h, p->pos.x, p->pos.y, p->pos.z);
+	}
 }
 
 // FUN_006ad130, réduit : à chaque image, ce que le gestionnaire fait des missions de la banque.
@@ -6069,6 +6142,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedGetLastHitWeapon", PedGetLastHitWeapon);
 	lua_register(L, "PedGetWhoHitMeLast", PedGetWhoHitMeLast);
 	lua_register(L, "PedIsHit", PedIsHit);
+	lua_register(L, "PedSetMissionCritical", PedSetMissionCritical);
 	lua_register(L, "PedRecruitAlly", PedRecruitAlly);
 	lua_register(L, "PedDismissAlly", PedDismissAlly);
 	lua_register(L, "PedCanSeeObject", PedCanSeeObject);

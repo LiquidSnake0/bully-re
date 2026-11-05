@@ -449,6 +449,7 @@ CScriptPedPool::Blesser(int cible, float degats, int attaquant)
 	if(s < 0) s = 0;
 	if(s < c->santeMin) s = c->santeMin;
 	Sante(cible, s);
+	if(c->sante <= 0 && !c->mort && c->critique && c->rappelCritique){ c->rappelCritique = false; critiquesAZero.push_back(cible); }
 	return true;
 }
 

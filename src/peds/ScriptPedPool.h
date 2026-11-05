@@ -328,6 +328,11 @@ struct CScriptPed {
 	int32 moralAllie = 0;        // +0x31c : 0 au recrutement ; SetAllyMorale (FUN_0062a2f0)
 	bool recrute13c8 = false;    // +0x13c8 : 1 au recrutement comme au renvoi (FUN_00485820)
 	int32 groupe14ec = 0;        // +0x14ec : le troisième argument de PedRecruitAlly (FUN_005d8f20), chez les deux ; 0 au renvoi
+	// Le piéton critique pour la mission (PedSetMissionCritical, 0x5cca10) : l'octet +0x141c, le rappel Lua +0x18e8 (une
+	// fonction gardée par lancer_lua) et +0x1420 ; FUN_004782a0 appelle le rappel quand la santé tombe à 0.
+	bool critique = false;       // +0x141c
+	bool rappelCritique = false; // +0x18e8 tient une fonction
+	bool critique1420 = false;   // +0x1420
 	bool controlable = true;     // +0x1e90 : le joueur rendu à la manette (PlayerSetControl, FUN_00445c50 : 0 quand le script le prend)
 	// Le composant de vue (+0xa64, son piéton en +0) : l'angle total du cône (+0xa68, la colonne D de pedstats.dat en
 	// degrés, × π / 180 par FUN_00478e30) et la portée (+0xa6c, la colonne E, en mètres) ; un cache de 16 piétons (+0xa74 :
@@ -480,8 +485,12 @@ public:
 	// cible a le drapeau 12 (+0x1344) ou est invulnérable (30, +0x138c), ou si l'attaquant est le joueur (type 13) et
 	// la cible invulnérable au joueur (20, +0x1364) ; sinon la santé baisse, jamais sous 0 ni sous la santé minimale
 	// (+0x1ca8).
-	// Renvoie vrai si le coup a porté.
+	// Renvoie vrai si le coup a porté. FUN_004782a0 (lu en entier) : la santé tombée à 0 d'un piéton vivant, critique (+0x141c)
+	// et qui a son rappel (+0x18e8, FUN_005d7f80) appelle ce rappel dans un thread neuf de son objet script (FUN_005db790,
+	// FUN_005d9ac0) avec la poignée du piéton (l'emplacement 43 de CPed, +0xac), puis le lâche (FUN_005d9af0) : une fois.
+	// Le pool range le piéton dans `critiquesAZero` et oublie le rappel ; lancer_lua l'appelle.
 	bool Blesser(int cible, float degats, int attaquant);
+	std::vector<int> critiquesAZero;
 	// Les sorties anticipées de la méthode du coup (slot 15 de CPed, FUN_0047b810) avant qu'elle ne prévienne les scripts
 	// (FUN_005b2190) : rien si la cible a le drapeau 12 (+0x1344, param_1[0x4d1]), si elle est invulnérable (30, +0x138c) sans
 	// être le joueur, si l'attaquant est le joueur et la cible invulnérable au joueur (20, +0x1364). Ne sont pas suivis :
