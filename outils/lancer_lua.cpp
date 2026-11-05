@@ -38,6 +38,7 @@
 #include "../src/core/ActionBank.h"
 #include "../src/core/ActionController.h"
 #include "../src/peds/Armes.h"
+#include "../src/peds/Patrouilles.h"
 #include "../src/objects/ObjectData.h"
 #include "../src/core/IplFile.h"
 #include "../src/anim/Hxd.h"
@@ -101,6 +102,7 @@ static CMissionBank banque;
 // Les données de mission chargées par DATLoad (src/core/DatPools.h) : listes de points, trajets,
 // déclencheurs, retrouvés par nom à travers POINTLIST, PATH et TRIGGER.
 static CDatPools donnees;
+static CPatrouilles patrouilles;        // DAT_00c2b034 : les rondes des trajets dont PATROLTYPE n'est pas -1
 // Les piétons des scripts (src/peds/ScriptPedPool.h) : le joueur en 0, PedCreatePoint & co.
 static CScriptPedPool pietons;
 // Les modèles par nom (src/core/ModelEnum.h) : MODELENUM._Taxicab → 286, ou -1.
@@ -1740,15 +1742,94 @@ DATLoad(lua_State *L)
 	const char *fichier = luaL_checkstring(L, 1);
 	int emplacement = (int)luaL_optnumber(L, 2, 1);
 	Journal("DATLoad", L, 1);
+	int avant = donnees.NombreTrajets();
 	if(!donnees.Charger(fichier, emplacement)) printf("        DATLoad : %s introuvable dans DAT\\Trigger.img\n", fichier);
+	// FUN_006d3b20 → FUN_005ecf00 : chaque trajet lu passe à FUN_004720e0 avec l'objet script qui charge (FUN_005db800) ;
+	// ceux dont PATROLTYPE n'est pas -1 deviennent des rondes, arrêtées (src/peds/Patrouilles). Les cases neuves sont en fin
+	// de pool, ou des cases libérées plus tôt : toutes sont revues, Ajouter écarte un haché déjà tenu.
+	for(int h = 1; h < donnees.NombreTrajets(); h++){
+		if(h < avant && donnees.EmplacementTrajet(h) != emplacement) continue;
+		const CTriggerPath *t = donnees.TrajetParHandle(h);
+		if(t && patrouilles.Ajouter(h, donnees.HachageTrajet(h), t->patrouille, scriptCourant))
+			printf("%6.2f s  rondes : %s (PATROLTYPE %d) devient une ronde, arrêtée\n", maintenant / 1000.0, t->nom.c_str(), t->patrouille);
+	}
 	return 0;
 }
 
+// DATUnload(emplacement) : FUN_005ed010 retire d'abord la ronde de chaque trajet de l'emplacement (FUN_00472750), puis le
+// trajet est libéré.
 static int
 DATUnload(lua_State *L)
 {
 	Journal("DATUnload", L, 1);
-	donnees.Decharger((int)luaL_checknumber(L, 1));
+	int emplacement = (int)luaL_checknumber(L, 1);
+	for(int h = 1; h < donnees.NombreTrajets(); h++)
+		if(donnees.EmplacementTrajet(h) == emplacement) patrouilles.Retirer(donnees.HachageTrajet(h));
+	donnees.Decharger(emplacement);
+	return 0;
+}
+
+// AreaDisablePatrolPath(trajet) (0x5b6050) : le trajet du pool (FUN_005ed240) ; s'il existe, sa ronde s'arrête (FUN_00472250
+// sur DAT_00c2b034). Rend vrai si le trajet existe, qu'il ait une ronde ou non : 1_05 boucle dessus (F_SetupWorld,
+// « while not AreaDisablePatrolPath(PATH._SGD_PREFECT2) do Wait(0) end ») et le bouchon, qui ne rendait rien, l'y gardait.
+static int
+AreaDisablePatrolPath(lua_State *L)
+{
+	Journal("AreaDisablePatrolPath", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	const CTriggerPath *t = h != -1 ? donnees.TrajetParHandle(h) : nil;
+	if(t) patrouilles.Arreter(donnees.HachageTrajet(h));
+	lua_pushboolean(L, t != nil);
+	return 1;
+}
+
+// AreaEnablePatrolPath(trajet) (0x5b60a0) : FUN_00471f80, la ronde repart ; rien n'est rendu.
+static int
+AreaEnablePatrolPath(lua_State *L)
+{
+	Journal("AreaEnablePatrolPath", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	if(donnees.TrajetParHandle(h)) patrouilles.Reprendre(donnees.HachageTrajet(h));
+	return 0;
+}
+
+// AreaInitPatrolPath(trajet, a, b, c[, discret = vrai]) (0x5b6150 → FUN_00471fd0) : la ronde reçoit ses réglages et repart.
+static int
+AreaInitPatrolPath(lua_State *L)
+{
+	Journal("AreaInitPatrolPath", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	if(donnees.TrajetParHandle(h) == nil) return 0;
+	patrouilles.Initialiser(donnees.HachageTrajet(h), (int32)luaL_optnumber(L, 2, 0), (int32)luaL_optnumber(L, 3, 0),
+	                        (int32)luaL_optnumber(L, 4, 0), lua_isnone(L, 5) ? true : lua_toboolean(L, 5) != 0);
+	return 0;
+}
+
+// AreaEnableAllPatrolPaths() (0x5b61e0 → FUN_004721a0), AreaDisableAllPatrolPaths() (0x5b61d0 → FUN_00472710).
+static int
+AreaEnableAllPatrolPaths(lua_State *L)
+{
+	Journal("AreaEnableAllPatrolPaths", L, 1);
+	patrouilles.ReprendreToutes();
+	return 0;
+}
+
+static int
+AreaDisableAllPatrolPaths(lua_State *L)
+{
+	Journal("AreaDisableAllPatrolPaths", L, 1);
+	patrouilles.ArreterToutes();
+	return 0;
+}
+
+// AreaClearPatrolPaths() (0x5b60d0) : l'objet script en cours (FUN_005db7e0 sur 0xd02850) retire ses rondes (FUN_00472880) ;
+// hors d'un script, toutes (FUN_004729a0).
+static int
+AreaClearPatrolPaths(lua_State *L)
+{
+	Journal("AreaClearPatrolPaths", L, 1);
+	if(scriptCourant >= 0) patrouilles.RetirerDe(scriptCourant);
+	else patrouilles.Vider();
 	return 0;
 }
 
@@ -5695,6 +5776,12 @@ main(int argc, char **argv)
 	lua_register(L, "AreaGetVisible", AreaGetVisible);
 	lua_register(L, "PlayerGetPosXYZ", PlayerGetPosXYZ);
 	lua_register(L, "PedCreatePoint", PedCreatePoint);
+	lua_register(L, "AreaDisablePatrolPath", AreaDisablePatrolPath);
+	lua_register(L, "AreaEnablePatrolPath", AreaEnablePatrolPath);
+	lua_register(L, "AreaInitPatrolPath", AreaInitPatrolPath);
+	lua_register(L, "AreaEnableAllPatrolPaths", AreaEnableAllPatrolPaths);
+	lua_register(L, "AreaDisableAllPatrolPaths", AreaDisableAllPatrolPaths);
+	lua_register(L, "AreaClearPatrolPaths", AreaClearPatrolPaths);
 	lua_register(L, "PedSetInvulnerable", PedSetInvulnerable);
 	lua_register(L, "PedSetInvulnerableToPlayer", PedSetInvulnerableToPlayer);
 	lua_register(L, "PlayerSetInvulnerable", PlayerSetInvulnerable);
