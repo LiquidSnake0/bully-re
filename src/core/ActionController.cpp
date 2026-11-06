@@ -617,7 +617,8 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 	for(SurCible &c : surCible)   // FUN_006615f0
 		if(!c.fait && Temps(t) >= c.entree){
 			c.fait = true;
-			if(const CActionNode *n = b.Relatif(joue, c.chemin.c_str())) pourCible.push_back(n);
+			c.noeud = b.Relatif(joue, c.chemin.c_str());
+			if(c.noeud) pourCible.push_back(c.noeud);
 		}
 	if(fige) return false;   // un objet animé de l'outil : le nœud reste
 	if(joue){

@@ -28,7 +28,12 @@ public:
 	std::vector<const CActionNode *> suitesExecutees;   // les nœuds visés par les Sequence des nœuds exécutés, après
 	// Ses pistes PlayOnTarget (ExecuteOnTargetTrack, mise à jour FUN_006615f0) : à leur instant d'entrée, le nœud
 	// visé (chemin relatif) est joué par la cible du piéton (FUN_004d5980, un piéton : FUN_005f4500), une seule fois.
-	struct SurCible { float entree; std::string chemin; bool fait; };
+	// FUN_006615f0 (lue à l'assembleur de 0x6615f0 à 0x66164f) est la mise à jour : sans cible (le +0xa0 du composant de visée
+	// +0x1c8 du piéton du contexte, FUN_004d5980) ou si ce n'est pas un piéton, elle rend vrai et la piste réessaie à l'image
+	// suivante ; sinon la cible joue le nœud (FUN_005f4500, son contrôleur +0x2e0 + 0x258) et la piste meurt. `noeud` : le nœud
+	// résolu au lancement ; SansCible le remet en attente.
+	struct SurCible { float entree; std::string chemin; bool fait; const CActionNode *noeud = nil; };
+	void SansCible(const CActionNode *n) { for(SurCible &c : surCible) if(c.fait && c.noeud == n) c.fait = false; }
 	std::vector<SurCible> surCible;
 	std::vector<const CActionNode *> pourCible;   // les nœuds à faire jouer à la cible, rendus par Avancer (vidés à chaque image)
 	// Ses pistes Collision (CollisionTrack, table 0x92decc ; mise à jour FUN_005f9e70), y compris celles du nœud qu'une

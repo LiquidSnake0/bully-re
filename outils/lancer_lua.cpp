@@ -7038,14 +7038,21 @@ main(int argc, char **argv)
 				       a ? "il joue" : "rien pour lui", a ? CheminVu(c.second, c.second.joue).c_str() : "",
 				       b ? "la cible joue" : "rien pour la cible", b ? CheminVu(controleurs[cible], controleurs[cible].joue).c_str() : (e.cible ? arbres.CheminDe(e.cible).c_str() : ""));
 			}
-			// PlayOnTarget : la cible du piéton (FUN_004d5980 ; dans l'outil, celle de PedLockTarget) joue le nœud.
-			for(const CActionNode *n : c.second.pourCible){
+			// PlayOnTarget : la cible du piéton (FUN_004d5980 ; dans l'outil, celle de PedLockTarget) joue le nœud. Sans elle, la piste
+			// attend (FUN_006615f0 rend vrai) ; l'outil n'a pas le composant de visée des piétons de l'IA (le +0xa0 que posent leurs
+			// pistes SetTarget, TargetLock, GiveTargetToFocus et leurs conditions par FUN_004d7890) : à défaut de verrou, il prend le
+			// partenaire de prise (+0x155c), supposé.
+			std::vector<const CActionNode *> pourCible;
+			pourCible.swap(c.second.pourCible);
+			for(const CActionNode *n : pourCible){
 				const CScriptPed *p = pietons.Acceder(c.first);
-				if(p == nil || p->verrou < 0) continue;
-				CActionController &cible = controleurs[p->verrou];
-				if(!cible.Entrer(arbres, n, CJugeOutil(p->verrou, maintenant / 1000.0f), maintenant / 1000.0f)) cible.Jouer(arbres, n, maintenant / 1000.0f);
-				partenaires[p->verrou] = {c.first, maintenant + 2000};
-				printf("%6.2f s  la cible de %d (%d) joue %s\n", maintenant / 1000.0, c.first, p->verrou, CheminVu(cible, cible.joue).c_str());
+				int qui = p == nil ? -1 : p->verrou >= 0 ? p->verrou : p->cibleDePrise;
+				if(pietons.Acceder(qui) == nil){ c.second.SansCible(n); continue; }
+				CActionController &cible = controleurs[qui];
+				if(!cible.Entrer(arbres, n, CJugeOutil(qui, maintenant / 1000.0f), maintenant / 1000.0f)) cible.Jouer(arbres, n, maintenant / 1000.0f);
+				partenaires[qui] = {c.first, maintenant + 2000};
+				printf("%6.2f s  la cible de %d (%d%s) joue %s\n", maintenant / 1000.0, c.first, qui, p->verrou >= 0 ? "" : ", son partenaire de prise",
+				       CheminVu(cible, cible.joue).c_str());
 			}
 		}
 		intentionsPietons.clear();   // FUN_005f3720 : l'intention ne vaut que pour l'image
