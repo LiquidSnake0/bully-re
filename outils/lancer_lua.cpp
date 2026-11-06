@@ -3198,6 +3198,23 @@ AvancerRamassages(void)
 	}
 }
 
+// ObjectRemovePickupsInTrigger(déclencheur[, modèle]) (0x5c31b0, hors de l'index ; lue à l'assembleur de 0x5c31b0 à 0x5c3338) : le
+// déclencheur (FUN_005d8200, la case du pool 0x20c7c48, nulle pour un indice négatif ou une case libre), le modèle au second argument
+// s'il y en a deux (-1 sinon) ; les ramassages de ce modèle dans le déclencheur sont retirés (CRamassages::RetirerSi) ; puis les
+// CObject du pool DAT_00c0f618 de ce modèle (+0x10e) dans le déclencheur, au plus 256, sont retirés du monde (FUN_0045dc20,
+// FUN_0045e540) et détruits : l'outil n'a que les objets cassables des entrées spec, non suivis ici.
+static int
+ObjectRemovePickupsInTrigger(lua_State *L)
+{
+	Journal("ObjectRemovePickupsInTrigger", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	int32 m = lua_gettop(L) > 1 ? (int32)luaL_optnumber(L, 2, -1) : -1;
+	if(h < 0) return 0;
+	int n = ramassages.RetirerSi(m, [&](const CVector &p){ return donnees.DansDeclencheur(h, p); });
+	if(n) printf("%6.2f s  %d ramassage(s) retiré(s) du déclencheur %d\n", maintenant / 1000.0, n, h);
+	return 0;
+}
+
 // CollectiblesSetTypeAvailable(type[, b]) (0x5bafa0, lu à l'assembleur de 0x5bafa0 à 0x5bafe7) : b vrai par défaut, le second
 // argument s'il y en a deux (FUN_005d8f20) ; le type (FUN_005d8200) ; FUN_00426340(type, b) : l'octet « disponible » (+5 + 2i) de
 // chaque entrée du type.
@@ -6904,6 +6921,7 @@ main(int argc, char **argv)
 	lua_register(L, "GetPointListSize", GetPointListSize);
 	lua_register(L, "PickupCreateXYZ", PickupCreateXYZ);
 	lua_register(L, "PickupDelete", PickupDelete);
+	lua_register(L, "ObjectRemovePickupsInTrigger", ObjectRemovePickupsInTrigger);
 	lua_register(L, "ItemGetCurrentNum", ItemGetCurrentNum);
 	lua_register(L, "ItemSetCurrentNum", ItemSetCurrentNum);
 	lua_register(L, "CollectiblesSetTypeAvailable", CollectiblesSetTypeAvailable);

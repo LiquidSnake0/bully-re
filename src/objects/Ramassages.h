@@ -19,6 +19,7 @@
 //               (le sixième argument), bit 5 le neuvième
 #pragma once
 #include "../common.h"
+#include <functional>
 #include <string>
 
 class CCollectibles;
@@ -79,6 +80,11 @@ public:
 	// (FUN_004447a0(1, 1)). Rend 1 pris, 0 plein ou d'un autre genre (les armes, les munitions, la santé : non suivis ici).
 	int PrendreObjet(int i, int genre, const CMondeArmes &m, CObjetsJoueur &objets, CCollectibles &c, CRappelCollectible *rappel,
 	                 bool *aRappel);
+	// ObjectRemovePickupsInTrigger, la boucle des ramassages (0x5c31b0, lue à l'assembleur de 0x5c31b0 à 0x5c325d) : chaque entrée
+	// prise (le bit 3 de +0x46, de 0xc0a100 à 0xc0f560), de ce modèle (+0x30 ; tous pour -1), dont la position (+8) est dans le
+	// déclencheur (FUN_006d6e50) passe à FUN_004448c0(1) : FUN_004447a0(1, 0) rend l'objet visible et l'entrée perd son bit 3 (la
+	// réapparition FUN_004437f0 d'une entrée « neuve » inactive n'est pas suivie). Rend le nombre d'entrées retirées.
+	int RetirerSi(int32 modele, const std::function<bool(const CVector &)> &dedans);
 	// La poignée vérifiée comme FUN_00443e90 et ses voisines : l'indice sous 300, l'entrée prise (bit 3) et la même génération.
 	CRamassage *Entree(int32 h);
 	int Indice(int32 h) const;

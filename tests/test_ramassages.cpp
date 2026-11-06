@@ -80,6 +80,15 @@ main(void)
 	VERIF(q.PrendreObjet(q.Indice(t2), 4, m, o, col, &r1, &a) == 0 && !a && q.Entree(t2) != nil && !col.Pris(0));
 	VERIF(q.PrendreObjet(q.Indice(t2), 0, m, o, col, &r1, &a) == 0);
 
+	// ObjectRemovePickupsInTrigger : les entrées prises de ce modèle (ou toutes pour -1) dans le déclencheur.
+	static CRamassages z;
+	z.Creer(CVector(1, 1, 0), 500, "", false, true, 0, 0, false);
+	z.Creer(CVector(2, 2, 0), 474, "", false, true, 0, 0, false);
+	z.Creer(CVector(50, 50, 0), 500, "", false, true, 0, 0, false);
+	auto dedans = [](const CVector &p){ return p.x < 10.0f && p.y < 10.0f; };
+	VERIF(z.RetirerSi(474, dedans) == 1 && !z.entrees[1].Pris() && z.entrees[0].Pris());
+	VERIF(z.RetirerSi(-1, dedans) == 1 && !z.entrees[0].Pris() && z.entrees[2].Pris());
+
 	printf(echecs ? "test_ramassages : %d échec(s)\n" : "test_ramassages : tout passe\n", echecs);
 	return echecs != 0;
 }

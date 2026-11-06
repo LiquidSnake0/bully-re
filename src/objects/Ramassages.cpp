@@ -82,3 +82,16 @@ CRamassages::PrendreObjet(int i, int genre, const CMondeArmes &m, CObjetsJoueur 
 	Retirer(i);
 	return 1;
 }
+
+int
+CRamassages::RetirerSi(int32 modele, const std::function<bool(const CVector &)> &dedans)
+{
+	int n = 0;
+	for(int i = 0; i < kTaille; i++){
+		const CRamassage &r = entrees[i];
+		if(!r.Pris() || (modele != -1 && r.modele != modele) || !dedans(r.pos)) continue;
+		Retirer(i);
+		n++;
+	}
+	return n;
+}
