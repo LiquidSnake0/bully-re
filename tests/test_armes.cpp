@@ -4,6 +4,7 @@
 // les fiches ObjectButes de Global_Weapons.cat (SLINGSHOT, marble, MarbBag, BRICK). Aucun fichier du jeu.
 //   build/tests/test_armes
 #include "../src/peds/Armes.h"
+#include <cmath>
 #include <cstdio>
 #include <map>
 
@@ -100,6 +101,28 @@ main(void)
 	VERIF(CChargeArme::Augmenter(0.0f, 0.5f, true) == 0.25f && CChargeArme::Augmenter(0.0f, 0.5f, false) == 0.5f);
 	VERIF(CChargeArme::AuTir(CChargeArme::kVide, 1.0f) == 0.0f && CChargeArme::AuTir(0.4f, 2.0f) == 0.8f && CChargeArme::AuTir(0.7f, 2.0f) == 1.0f);
 	VERIF(CChargeArme::AuTir(0.3f, 0.0f) == 0.3f && CChargeArme::AuTir(1.5f, -1.0f) == 1.0f);
+
+	// Les réglages du tir (FUN_0065d3f0, FUN_0065d430, FUN_0065d350, FUN_0065d160) : le lance-pierre pose 0,2 puis 0 en hauteur, le
+	// dernier l'emporte ; le décalage vise plus haut, devant et de côté dans le repère du tireur, le départ tourne avec lui.
+	{
+		CReglagesTir r;
+		VERIF(r.munition == -1 && r.decalage[2] == 0.0f);
+		r.PoserDecalage(0.0f, 0.0f, 0.2f);
+		r.PoserDecalage(0.0f, 0.0f, 0.0f);
+		CVector v = r.Viser(CVector(1.0f, 2.0f, 3.0f), 1.8f, CVector(1.0f, 0.0f, 0.0f));
+		VERIF(v.x == 1.0f && v.y == 2.0f && v.z == 3.0f);
+		r.PoserDecalage(0.5f, 2.0f, 0.5f);      // tireur tourné vers +y : sa droite est +x
+		v = r.Viser(CVector(0.0f, 0.0f, 1.0f), 1.8f, CVector(0.0f, 1.0f, 0.0f));
+		VERIF(fabsf(v.x - 0.5f) < 1e-6f && fabsf(v.y - 2.0f) < 1e-6f && fabsf(v.z - 1.9f) < 1e-6f);
+		r.PoserDepart(1.0f, 2.0f, 0.5f);
+		v = r.Partir(CVector(10.0f, 0.0f, 1.0f), CVector(1.0f, 0.0f, 0.0f), CVector(0.0f, 1.0f, 0.0f), CVector(0.0f, 0.0f, 1.0f));
+		VERIF(v.x == 11.0f && v.y == 2.0f && v.z == 1.5f);
+		r.PoserRotation(180.0f, 90.0f, 0.0f);
+		VERIF(fabsf(r.rotation[0] - 3.1415927f) < 1e-6f && fabsf(r.rotation[1] - 1.5707964f) < 1e-6f && r.rotation[2] == 0.0f);
+		r.munition = 304;
+		r.Remettre();
+		VERIF(r.munition == -1 && r.decalage[0] == 0.0f && r.depart[1] == 0.0f && r.rotation[0] == 0.0f);
+	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;
 }

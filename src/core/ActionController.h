@@ -196,6 +196,11 @@ public:
 	//   `croissancesActives`.
 	struct Charge { float entree, valeur; bool fait; };
 	std::vector<Charge> charges, chargesPosees;
+	// - WeaponFireOffset, WeaponFireStartOffset et WeaponFireRotation (tables 0x935cbc, 0x935cd4 et 0x935ca4 ; lancements FUN_0065d3f0,
+	//   FUN_0065d430 et FUN_0065d350) : les réglages du prochain tir (CReglagesTir, src/peds/Armes.h) reçoivent les flottants +0x18,
+	//   +0x1c et +0x20 (24, 28, 32). `reglagesTirLances`, dans l'ordre des pistes, que l'appelant applique avant les tirs de l'image.
+	struct ReglageTir { float entree; int genre; float v[3]; bool fait; };   // genre 0 décalage, 1 départ, 2 rotation
+	std::vector<ReglageTir> reglagesTir, reglagesTirLances;
 	struct Croissance { float entree, vie; };
 	std::vector<Croissance> croissances, croissancesActives;
 	// - SetWeaponFlags (SetWeaponFlagsTrack ; lancement FUN_00661d40, lu dans l'index) : avec une arme en main (le modèle +0x10e de

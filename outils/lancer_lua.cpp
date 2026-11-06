@@ -5872,19 +5872,27 @@ PoserInfoArme(CScriptPed &p, const CActionController::InfoArme &d)
 //   (_DAT_00912870), et v = (cible − départ − (0, 0, ½ g T²)) / T, en mètres par pas ; les bornes +0x68 … +0x74 (-1 pour la bille)
 //   ne sont pas suivies ;
 // - les dégâts : +0x4c + charge × (+0x50 − +0x4c), × la statistique 31 / _DAT_00900130 (non suivi).
+// Les réglages du prochain tir (src/peds/Armes.h : WeaponFireOffset, WeaponFireStartOffset, WeaponFireRotation), des globales du
+// moteur que FUN_0065d160 remet à zéro après chaque tir.
+static CReglagesTir reglagesTir;
 static void
 Tirer(int ped, float charge)
 {
 	CScriptPed *p = pietons.Acceder(ped);
 	if(p == nil) return;
-	int32 munition = p->armeMunition;
-	if(munition == -1) return;   // FUN_0065d160 : pas de munition, pas de tir
+	int32 munition = reglagesTir.munition != -1 ? reglagesTir.munition : p->armeMunition;   // DAT_00b31c9c, sinon +0x12c
+	if(munition == -1){ reglagesTir.Remettre(); return; }   // FUN_00664710 : pas de munition, pas de tir (FUN_0065d160)
 	const CTypeProjectile &tp = TypeProjectile(munition);
-	CVector depart(p->pos.x, p->pos.y, p->pos.z + 1.0f), cible;
+	// Le repère du tireur (sa matrice ; dans l'outil, le cap compté depuis +x) : le décalage de départ y est tourné (FUN_0065e880).
+	float ac = p->cap * 3.14159265f / 180.0f;
+	CVector avant(cosf(ac), sinf(ac), 0.0f), droite(sinf(ac), -cosf(ac), 0.0f), haut(0.0f, 0.0f, 1.0f);
+	CVector depart = reglagesTir.Partir(CVector(p->pos.x, p->pos.y, p->pos.z + 1.0f), droite, avant, haut), cible;
 	const CScriptPed *c = pietons.Acceder(p->verrou);
 	const CObjetOutil *o = ped == SCRIPT_PED_JOUEUR ? ObjetParPoignee(objetVise) : nil;
 	if(o && !o->detruit) cible = o->pos;
-	else if(c && c != p) cible = CVector(c->pos.x, c->pos.y, c->pos.z + 1.0f);
+	// Une cible piéton : le point visé de FUN_00662580 → FUN_00662380, décalé par WeaponFireOffset ; l'outil prend 1 m au-dessus
+	// de ses pieds et, pour sa hauteur (les sphères de FUN_00474750), 1,8 m (supposé, comme TargetRelativeHeight).
+	else if(c && c != p) cible = reglagesTir.Viser(CVector(c->pos.x, c->pos.y, c->pos.z + 1.0f), 1.8f, avant);
 	else{
 		float portee = p->armePortee + charge * (p->armeInit - p->armePortee);
 		if(portee < 0.01f) portee = 0.01f;
@@ -5906,6 +5914,7 @@ Tirer(int ped, float charge)
 	printf("%6.2f s  le piéton %d tire : projectile %d (%s) de (%.2f, %.2f, %.2f) vers (%.2f, %.2f, %.2f), %.2f m par pas, %.0f points\n",
 	       maintenant / 1000.0, ped, munition, NomDArme(munition) ? NomDArme(munition)->c_str() : "?", depart.x, depart.y, depart.z,
 	       cible.x, cible.y, cible.z, vitesse, q.degats);
+	reglagesTir.Remettre();   // FUN_00664710 finit par FUN_0065d160
 }
 
 // WeaponFire (FUN_00661f10) lancée à cette image.
@@ -5922,6 +5931,14 @@ AppliquerTirs(int ped, CActionController &c)
 			                                       p->armeTenue != -1 && p->armeTenue == modeles.Index("slingshot"));
 	}
 	c.chargesPosees.clear();
+	// WeaponFireOffset, WeaponFireStartOffset et WeaponFireRotation (FUN_0065d3f0, FUN_0065d430, FUN_0065d350), dans l'ordre des pistes :
+	// le lance-pierre pose 0,2 puis 0 en hauteur à la même date que son WeaponFire, qui tire donc sans décalage.
+	for(const CActionController::ReglageTir &d : c.reglagesTirLances){
+		if(d.genre == 0) reglagesTir.PoserDecalage(d.v[0], d.v[1], d.v[2]);
+		else if(d.genre == 1) reglagesTir.PoserDepart(d.v[0], d.v[1], d.v[2]);
+		else reglagesTir.PoserRotation(d.v[0], d.v[1], d.v[2]);
+	}
+	c.reglagesTirLances.clear();
 	// SetWeaponFlags (FUN_00661d40) : l'entrée d'inventaire de l'arme en main et l'objet arme.
 	for(const CActionController::DrapeauArme &d : c.drapeauxArmeLances){
 		if(p == nil || p->armeTenue == -1 || d.numero < 0 || d.numero >= 8) continue;
@@ -5930,7 +5947,7 @@ AppliquerTirs(int ped, CActionController &c)
 	}
 	c.drapeauxArmeLances.clear();
 	for(const CActionController::Tir &d : c.tirsLances){
-		if(p == nil || p->armeTenue == -1) continue;   // FUN_0065d160 sans arme en main
+		if(p == nil || p->armeTenue == -1){ reglagesTir.Remettre(); continue; }   // FUN_00661f10 sans arme en main : FUN_0065d160
 		float charge = CChargeArme::AuTir(p->armeCharge, d.facteur);   // FUN_00661f10
 		Tirer(ped, charge);
 		p->armeCharge = CChargeArme::kVide;   // FUN_00664710, après le tir
