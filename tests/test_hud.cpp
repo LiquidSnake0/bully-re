@@ -8,6 +8,7 @@
 #include "../src/hud/ButtonHistory.h"
 #include "../src/hud/Marqueurs.h"
 #include "../src/hud/BarreSante.h"
+#include "../src/hud/MinuterieMission.h"
 #include <cstdio>
 
 static int echecs = 0;
@@ -131,6 +132,23 @@ main(void)
 		VERIF(b.aTexte2 && strlen(b.texte2) == 64);
 		b.mots148[2] = 3; b.Poser(-1, 0, 0, -1, 0, 0);
 		VERIF(b.pieton == -1 && b.part == 0.5f && b.mots148[2] == 0.0f);
+	}
+	// La minuterie de mission (FUN_0043f600, FUN_0043f540, FUN_0043f560, FUN_0043f5a0) et MissionTimerStartFixed (0x5c1ff0).
+	{
+		CMinuterieMission m;
+		m.Marche(1000, true); m.Poser(1000, 180);
+		VERIF(m.Reste(31000) == 150.0f);
+		m.Pause(31000, true);                     // en pause : 30 s gardées
+		VERIF(m.enPause && m.ecoule == 30000 && m.Reste(91000) == 150.0f);
+		m.Pause(91000, true);                     // déjà en pause : rien
+		m.Pause(91000, false);                    // la reprise recule le départ
+		VERIF(!m.enPause && m.depart == 61000 && m.Reste(101000) == 140.0f);
+		m.Marche(101000, false);
+		VERIF(!m.enMarche && m.ecoule == 40000 && m.Reste(500000) == 140.0f);
+		m.Pause(500000, true);                    // arrêtée : la pause ne change rien
+		VERIF(!m.enPause);
+		VERIF(CMinuterieMission::DureeFixe(9, 0, 0, 8, 30, 0) == 1800);
+		VERIF(CMinuterieMission::DureeFixe(7, 0, 0, 8, 0, 0) == (uint16)(2 * 25200 + 0x5180 - 28800));
 	}
 	printf("test_hud : %s\n", echecs ? "ÉCHEC" : "OK");
 	return echecs ? 1 : 0;

@@ -58,6 +58,7 @@
 #include "../src/hud/ButtonHistory.h"
 #include "../src/hud/Marqueurs.h"
 #include "../src/hud/BarreSante.h"
+#include "../src/hud/MinuterieMission.h"
 #include "../src/render/CameraMgr.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
@@ -5568,35 +5569,40 @@ PedCanSeeObject(lua_State *L)
 	return 1;
 }
 
-// La minuterie de mission (le composant du HUD qui l'affiche : +0xc la durée en ms, +0x10 son départ, +0x14 le temps écoulé à l'arrêt,
-// l'octet +0x19 en marche, +0x1a en pause ; l'horloge DAT_00c1a9b4) :
-// - MissionTimerStart(s) (0x5c1fb0) : FUN_0043f600(1) (en marche, plus en pause) puis FUN_0043f540 (la durée s × 1000, le départ
-//   maintenant) ;
-// - MissionTimerStop() (0x5c20c0) : FUN_0043f600(0) : en marche et pas en pause, le temps écoulé gardé ; arrêtée ;
-// - le reste (FUN_0043f5a0) : en marche, la durée moins le temps écoulé (0 au-delà) ; sinon la durée moins le temps gardé ; en secondes
-//   (× 0,001, _DAT_00900fa0) ; MissionTimerHasFinished (0x5c20d0) : le reste n'est pas positif ; MissionTimerGetTimeRemaining
-//   (0x5c2120) : le reste arrondi. MissionTimerStartFixed (une heure de l'horloge du jeu) et MissionTimerPause ne sont pas suivies.
-struct CMinuterieMission { uint32 duree = 0, depart = 0, ecoule = 0; bool enMarche = false, enPause = false; };
+// La minuterie de mission (src/hud/MinuterieMission.h) ; MissionTimerStart(s) (0x5c1fb0) : FUN_0043f600(1) puis FUN_0043f540(s, un
+// entier de 16 bits) ; MissionTimerStop() (0x5c20c0) : FUN_0043f600(0) ; MissionTimerHasFinished (0x5c20d0) : le reste n'est pas
+// positif ; MissionTimerGetTimeRemaining (0x5c2120) : le reste arrondi.
 static CMinuterieMission minuterieMission;
-static float
-ResteMinuterie(void)
-{
-	const CMinuterieMission &m = minuterieMission;
-	int64_t r;
-	if(!m.enPause && m.enMarche){
-		uint32 e = maintenant - m.depart;
-		if(m.duree < e) return 0.0f;
-		r = (int64_t)m.duree - e;
-	}else r = (int64_t)m.duree - m.ecoule;
-	return (float)r * 0.001f;
-}
 
 static int
 MissionTimerStart(lua_State *L)
 {
 	Journal("MissionTimerStart", L, 1);
-	minuterieMission.enPause = false; minuterieMission.enMarche = true;
-	minuterieMission.duree = (uint32)((int16)luaL_optnumber(L, 1, 0) * 1000); minuterieMission.depart = maintenant;
+	minuterieMission.Marche(maintenant, true);
+	minuterieMission.Poser(maintenant, (int16)luaL_optnumber(L, 1, 0));
+	return 0;
+}
+
+// MissionTimerStartFixed(h, m, s) (0x5c1ff0) : la minuterie jusqu'à une heure de l'horloge du jeu (CMinuterieMission::DureeFixe ; les
+// secondes de l'horloge, DAT_00bceb48, sont la part de minute de l'outil).
+static int
+MissionTimerStartFixed(lua_State *L)
+{
+	Journal("MissionTimerStartFixed", L, 1);
+	int32 seconde = (int32)((horloge.minutes - (float)(int32)horloge.minutes) * 60.0f);
+	uint16 d = CMinuterieMission::DureeFixe((int32)luaL_optnumber(L, 1, 0), (int32)luaL_optnumber(L, 2, 0), (int32)luaL_optnumber(L, 3, 0),
+	                                        horloge.Heure(), horloge.Minute(), seconde);
+	minuterieMission.Marche(maintenant, true);
+	minuterieMission.Poser(maintenant, d);
+	return 0;
+}
+
+// MissionTimerPause(b) (0x5c2090, lue à l'assembleur de 0x5c2090 à 0x5c20b6) : le booléen (FUN_005d8f20) à FUN_0043f560. Ne rend rien.
+static int
+MissionTimerPause(lua_State *L)
+{
+	Journal("MissionTimerPause", L, 1);
+	minuterieMission.Pause(maintenant, lua_toboolean(L, 1) != 0);
 	return 0;
 }
 
@@ -5604,9 +5610,7 @@ static int
 MissionTimerStop(lua_State *L)
 {
 	Journal("MissionTimerStop", L, 1);
-	CMinuterieMission &m = minuterieMission;
-	if(!m.enPause && m.enMarche) m.ecoule = maintenant - m.depart;
-	m.enPause = false; m.enMarche = false;
+	minuterieMission.Marche(maintenant, false);
 	return 0;
 }
 
@@ -5614,7 +5618,7 @@ static int
 MissionTimerHasFinished(lua_State *L)
 {
 	appels["MissionTimerHasFinished"]++;
-	lua_pushboolean(L, ResteMinuterie() <= 0.0f);
+	lua_pushboolean(L, minuterieMission.Reste(maintenant) <= 0.0f);
 	return 1;
 }
 
@@ -5622,7 +5626,7 @@ static int
 MissionTimerGetTimeRemaining(lua_State *L)
 {
 	appels["MissionTimerGetTimeRemaining"]++;
-	lua_pushnumber(L, (int)lrintf(ResteMinuterie()));
+	lua_pushnumber(L, (int)lrintf(minuterieMission.Reste(maintenant)));
 	return 1;
 }
 
@@ -7451,6 +7455,8 @@ main(int argc, char **argv)
 	lua_register(L, "PlayerHasWeapon", PlayerHasWeapon);
 	lua_register(L, "WeaponEquipped", WeaponEquipped);
 	lua_register(L, "PlayerUnequip", PlayerUnequip);
+	lua_register(L, "MissionTimerStartFixed", MissionTimerStartFixed);
+	lua_register(L, "MissionTimerPause", MissionTimerPause);
 	lua_register(L, "PedSetWeaponFlag", PedSetWeaponFlag);
 	lua_register(L, "PedShowHealthBar", PedShowHealthBar);
 	lua_register(L, "PedHideHealthBar", PedHideHealthBar);
