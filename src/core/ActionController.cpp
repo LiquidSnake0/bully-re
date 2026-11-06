@@ -1,4 +1,5 @@
 #include "ActionController.h"
+static uint32 EcheanceMs(float t, float s);
 #include "ConditionListe.h"
 #include <cmath>
 #include <cstring>
@@ -84,6 +85,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kDegatsCible = ActionHash("DamageTarget"), kPrendreDroits = ActionHash("TargetAttackRightsAcquire"),
 	                    kRendreDroits = ActionHash("TargetAttackRightsRelease"), kDe = ActionHash("RandomDiceRoll"),
 	                    kMinuterie = ActionHash("SetActionTimer"), kScript = ActionHash("Script"),
+	                    kRemiseAttaque = ActionHash("AttackTimerReset"),
 	                    kVoulueP = ActionHash("PropSetDesired"), kVoulueG = ActionHash("PropGetDesired"),
 	                    kAttacher = ActionHash("PropAttach"), kDetacher = ActionHash("PropDetach"), kTir = ActionHash("WeaponFire"),
 	                    kChargePoser = ActionHash("WeaponSetCharge"), kChargeAugmenter = ActionHash("WeaponIncrementCharge"),
@@ -155,6 +157,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			poursuites.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(28), Reel(p, 40, 0.0f)});
 		}else if(p.type == kMinuterie){
 			minuteries.push_back({a, Reel(p, 24, 0.0f), false});
+		}else if(p.type == kRemiseAttaque){
+			remisesAttaque.push_back({Reel(p, 12, 0.0f) < 0.0f ? -1.0f : a, Reel(p, 24, 0.0f), false});
 		}else if(p.type == kScript){
 			const CActionAttribut *sc = p.Champ(36), *fn = p.Champ(40);
 			// FUN_006851a0 : avec l'octet +0x18, le nombre +0x1c en dernier argument ; l'octet +0x20 le fait précéder de la poignée
@@ -288,6 +292,9 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	for(Mort &d : morts)          // FUN_0060fdc0, à l'arrêt du nœud
 		if(!d.fait && d.entree < 0.0f){ d.fait = true; mortsLancees.push_back(d); }
 	morts.clear();
+	for(RemiseAttaque &d : remisesAttaque)   // FUN_006121d0, une entrée négative à l'arrêt du nœud
+		if(!d.fait && d.entree < 0.0f){ d.fait = true; minuterieAttaque = MinuterieAttaqueRemise(EcheanceMs(t, 0.0f), d.duree); }
+	remisesAttaque.clear();
 	for(DrapeauObjet &d : drapeauxObjet)   // FUN_00655b50, une entrée négative à l'arrêt du nœud (FUN_005f3fb0)
 		if(!d.fait && d.entree < 0.0f){ d.fait = true; drapeauxObjetPoses.push_back(d); }
 	drapeauxObjet.clear();
@@ -629,6 +636,8 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 	croissancesActives.clear();
 	for(const Croissance &r : croissances)   // FUN_0065e810, tant que la piste vit
 		if(Temps(t) >= r.entree && (r.vie < 0.0f || Temps(t) <= r.entree + r.vie)) croissancesActives.push_back(r);
+	for(RemiseAttaque &d : remisesAttaque)   // FUN_006121d0 → FUN_0048c040
+		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; minuterieAttaque = MinuterieAttaqueRemise(EcheanceMs(t, 0.0f), d.duree); }
 	reposLances = 0;
 	for(Repos &d : repos)         // FUN_0061d8e0
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; reposLances++; }
@@ -768,6 +777,13 @@ ConditionAttackPhase(const CActionController &c, int32 phase, float delai, uint3
 	if(delai <= 0.0f) return true;
 	if(c.echeanceAttaque == 0) return false;
 	return (uint32)lrintf((float)maintenantMs + delai * 1000.0f) < c.echeanceAttaque;
+}
+
+uint32
+MinuterieAttaqueRemise(uint32 maintenantMs, float duree)
+{
+	uint32 ms = (uint32)lrintf(duree * 1000.0f);   // (longlong)ROUND(+0x18 × (float)1000)
+	return ms < maintenantMs ? maintenantMs - ms : 0;   // FUN_0048c040 (comparaison non signée)
 }
 
 bool

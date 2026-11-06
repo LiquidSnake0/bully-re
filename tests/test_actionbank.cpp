@@ -802,6 +802,12 @@ main(void)
 		VERIF(ConditionAttackTimer(c, 0.5f, true, 3, 11000) && c.minuterieAttaque == 11000);   // l'octet +8 la relance
 		CActionController neuf;
 		VERIF(!ConditionAttackTimer(neuf, 0.0f, false, 5, 1500) && ConditionAttackTimer(neuf, 1.0f, false, 5, 2500));
+		// AttackTimerReset (FUN_006121d0 → FUN_0048c040) : maintenant moins la durée, 0 si elle dépasse l'horloge ; 2,17 s fait passer
+		// l'AttackTimer de 2 s de GlobalLoco tout de suite.
+		VERIF(MinuterieAttaqueRemise(11000, 2.17f) == 8830 && MinuterieAttaqueRemise(11000, 0.0f) == 11000);
+		VERIF(MinuterieAttaqueRemise(2000, 3.33f) == 0 && MinuterieAttaqueRemise(3330, 3.33f) == 0);
+		c.minuterieAttaque = MinuterieAttaqueRemise(11000, 2.17f);
+		VERIF(ConditionAttackTimer(c, 2.0f, false, 3, 11000));
 	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;

@@ -65,6 +65,13 @@ public:
 	// Collision pose (FUN_005f8240 → FUN_0048c040(0) : maintenant moins 0), comme PlayerRecordAttackTime (0x5d2910) ;
 	// 0 au départ. La condition AttackTimer le lit et peut le reposer.
 	uint32 minuterieAttaque = 0;
+	// Ses pistes AttackTimerReset (AttackTimerResetTrack, table 0x931628, créateur 0x644980 ; lancement FUN_006121d0, lu dans l'index)
+	// : avec un piéton au contexte (+8), FUN_0048c040(la durée +0x18 (24) × 1000 (le double 0x900138), arrondie) sur son composant de
+	// visée : la minuterie (+0x550 du piéton) reçoit maintenant moins cette durée, 0 si elle n'est pas sous l'horloge. Le lancement
+	// rend vrai, la mise à jour (FUN_006094f0) faux. Une entrée négative (-1) se lance à l'arrêt du nœud (FUN_005f3fb0) : l'arrêt du
+	// contrôleur du lance-pierre et l'accueil (Player.act, Social_Actions/…/GREET) la remettent à maintenant.
+	struct RemiseAttaque { float entree, duree; bool fait; };
+	std::vector<RemiseAttaque> remisesAttaque;
 	uint32 maintenantMs = 0;         // l'horloge du jeu (DAT_00c1a9b4) à la dernière image des pistes
 	std::vector<Contact> touches;                 // les coups qui portent à cette image, rendus par Avancer
 	// Ses pistes DamageHandle (HandleDamageTrack, table 0x9313e4 ; lancement FUN_0060fc70), y compris celles des nœuds
@@ -390,3 +397,6 @@ bool ConditionAttackPhase(const CActionController &c, int32 phase, float delai, 
 // frappé (+0x550 nul) et que l'horloge n'a pas passé 2 000 ms ; sinon maintenant comparé à +0x550 + 1000 × (+4) par le
 // comparateur +0xc (FUN_005fb750) ; vrai et l'octet +8 posé, la minuterie repart (FUN_0048c040(0)).
 bool ConditionAttackTimer(CActionController &c, float delai, bool relancer, uint32 comparateur, uint32 maintenantMs);
+// La minuterie d'attaque que pose une piste AttackTimerReset (FUN_006121d0 → FUN_0048c040) : maintenant moins la durée (s) en ms
+// arrondie, 0 si ce n'est pas sous l'horloge.
+uint32 MinuterieAttaqueRemise(uint32 maintenantMs, float duree);
