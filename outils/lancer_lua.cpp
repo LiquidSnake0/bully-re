@@ -7763,23 +7763,33 @@ main(int argc, char **argv)
 					it = parolesTenues.erase(it);
 				}
 			// FaceTarget (FUN_00620dc0) et SeekEntityPosition (FUN_0062a940) : le piéton se tourne vers sa cible, ou y va (à
-			// la course de l'outil) jusqu'à la distance d'arrivée. L'outil n'a ni chemins ni virages progressifs.
+			// la course de l'outil) jusqu'à la distance d'arrivée. L'outil n'a ni chemins ni virages progressifs. La cible vient de
+			// FUN_00477ab0 (CScriptPedPool::CibleDeGenre) : un piéton, ou un objet animé, dont le point est sa position (le seul
+			// point de synchronisation que l'outil connaît, FeetSync, y est posé).
 			if(CScriptPed *p = pietons.Acceder(c.first)){
-				auto cibleDe = [&](int genre){ return genre == 0 ? p->verrou : genre == 1 ? p->cibleDePrise : -1; };
+				auto cibleDe = [&](int genre, CVector &pos, const char *&quoi, int &qui){
+					CScriptPedPool::Cible e = pietons.CibleDeGenre(c.first, genre);
+					if(const CScriptPed *q = pietons.Acceder(e.pieton)){
+						if(q == p) return false;
+						pos = q->pos; quoi = "du piéton"; qui = e.pieton; return true;
+					}
+					if(const CObjetAnime *o = objetsAnimes.Objet(e.objet)){ pos = o->pos; quoi = "de l'objet animé du déclencheur"; qui = o->declencheur; return true; }
+					return false;
+				};
 				for(const CActionController::Poursuite &r : c.second.poursuitesActives){
-					const CScriptPed *q = pietons.Acceder(cibleDe(r.genre));
-					if(q == nil || q == p) continue;
-					float dx = q->pos.x - p->pos.x, dy = q->pos.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
+					CVector q; const char *quoi = ""; int qui = -1;
+					if(!cibleDe(r.genre, q, quoi, qui)) continue;
+					float dx = q.x - p->pos.x, dy = q.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
 					if(d <= r.arrivee + 1e-3f) continue;   // arrivé (au millimètre près)
 					float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f, k = d - r.arrivee < pas ? (d - r.arrivee) / d : pas / d;
 					p->pos.x += dx * k; p->pos.y += dy * k;
 					p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
-					if(d - r.arrivee < pas) printf("%6.2f s  le piéton %d arrive à %.2f m du piéton %d (SeekEntityPosition)\n", maintenant / 1000.0, c.first, r.arrivee, cibleDe(r.genre));
+					if(d - r.arrivee < pas) printf("%6.2f s  le piéton %d arrive à %.2f m %s %d (SeekEntityPosition)\n", maintenant / 1000.0, c.first, r.arrivee, quoi, qui);
 				}
 				for(const CActionController::Regard &r : c.second.regardsActifs){
-					const CScriptPed *q = pietons.Acceder(cibleDe(r.genre));
-					if(q == nil || q == p) continue;
-					p->cap = atan2f(q->pos.y - p->pos.y, q->pos.x - p->pos.x) * 180.0f / 3.14159265f + r.decalage;
+					CVector q; const char *quoi = ""; int qui = -1;
+					if(!cibleDe(r.genre, q, quoi, qui)) continue;
+					p->cap = atan2f(q.y - p->pos.y, q.x - p->pos.x) * 180.0f / 3.14159265f + r.decalage;
 				}
 			}
 			AppliquerObjectifs(c.first, c.second);

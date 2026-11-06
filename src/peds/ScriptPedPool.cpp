@@ -575,6 +575,22 @@ CScriptPedPool::EstDuModele(int h, int32 modele) const
 	return p != nil && (float)(int16)p->modele == (float)modele;
 }
 
+CScriptPedPool::Cible
+CScriptPedPool::CibleDeGenre(int h, int genre) const
+{
+	Cible c;
+	const CScriptPed *p = Acceder(h);
+	if(p == nil) return c;
+	switch(genre){
+	case 0: c.pieton = p->verrou; break;
+	case 1: c.pieton = p->cibleDePrise; break;
+	case 4: c.objet = p->objetVise; c.point = p->syncVise; break;
+	case 0x10: c.pieton = p->suiveur >= 0 ? p->suiveur : p->meneur; break;
+	default: break;
+	}
+	return c;
+}
+
 bool
 CScriptPedPool::DansSesSuiveurs(int meneur, int autre) const
 {

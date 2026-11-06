@@ -569,6 +569,15 @@ public:
 	bool RenvoyerAllie(int meneur, int allie);
 	// FUN_00485410 : le premier meneur de la chaîne (en remontant les +0x2f4), -1 sans meneur.
 	int PremierMeneur(int handle) const;
+	// FUN_00477ab0(genre, &point) (CPed, lu dans l'index) : l'entité qu'un piéton vise selon un genre, celle des pistes FaceTarget
+	// (FUN_00620dc0, le genre +0x20) et SeekEntityPosition (FUN_0062a720, le genre +0x1c), de FUN_005feed0, FUN_005ff1d0… : 0 sa cible
+	// (PedGetTargetPed : dans l'outil, la cible verrouillée), 1 son partenaire de prise (+0x155c), 4 son objet visé (+0x438, et son
+	// point +0x43c rendu dans `point`), 0x10 son allié (FUN_004851e0 : un meneur vise son suiveur +0x2f8 ; sinon FUN_004851d0 : un
+	// suiveur vise son meneur +0x2f4) ; les autres genres ne sont pas suivis (2 FUN_0048bf20, 3 +0x430, 6 le ramassage de son objectif
+	// de type 0x17, 7 +0x544, 8 FUN_004d7630, 9 +0x4f0 + 4 × (+0x504), 10 FUN_004d6170, 0xc +0xd70, 0xd FUN_00496b60, 0xf +0x11ec) et
+	// un genre inconnu ne vise rien. Rend un piéton (`pieton`) ou un objet animé (`objet`), -1 sinon.
+	struct Cible { int pieton = -1; int objet = -1; uint32 point = 0; };
+	Cible CibleDeGenre(int handle, int genre) const;
 	// PedHasAlly(ped) (0x5cd730, lue à l'assembleur de 0x5cd730 à 0x5cd78c) : le piéton du genre 2 de l'objet script (FUN_005c7220) ;
 	// vrai s'il a un meneur (+0x2f4) ou un suiveur (+0x2f8), faux sans piéton (FUN_005d8450 rend toujours un booléen).
 	bool AUnAllie(int handle) const;

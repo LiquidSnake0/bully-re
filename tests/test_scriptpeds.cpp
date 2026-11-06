@@ -599,6 +599,12 @@ main(void)
 		VERIF(a->attitudes.Lire(SCRIPT_PED_TYPE_JOUEUR) == 4 && j->groupeTenu && a->laisse3b4 && a->laisse3b5);
 		VERIF(g.PremierMeneur(algie) == SCRIPT_PED_JOUEUR && g.PremierMeneur(SCRIPT_PED_JOUEUR) == -1);
 		VERIF(g.DansSesSuiveurs(SCRIPT_PED_JOUEUR, algie) && g.DansSonGroupe(algie, SCRIPT_PED_JOUEUR) && !g.DansSonGroupe(autre, algie));
+		// FUN_00477ab0 : le genre 0x10 vise le suiveur d'un meneur, le meneur d'un suiveur ; 4 l'objet visé ; 1 le partenaire de prise.
+		VERIF(g.CibleDeGenre(SCRIPT_PED_JOUEUR, 0x10).pieton == algie && g.CibleDeGenre(algie, 0x10).pieton == SCRIPT_PED_JOUEUR);
+		a->objetVise = 7; a->syncVise = 3; a->cibleDePrise = autre;
+		VERIF(g.CibleDeGenre(algie, 4).objet == 7 && g.CibleDeGenre(algie, 4).point == 3 && g.CibleDeGenre(algie, 4).pieton == -1);
+		VERIF(g.CibleDeGenre(algie, 1).pieton == autre && g.CibleDeGenre(algie, 9).pieton == -1 && g.CibleDeGenre(algie, 9).objet == -1);
+		a->objetVise = -1; a->syncVise = 0; a->cibleDePrise = -1;
 		// PedHasAlly : le meneur et le suiveur en ont un, pas l'autre ; PedIsModel : le modèle de création.
 		VERIF(g.AUnAllie(SCRIPT_PED_JOUEUR) && g.AUnAllie(algie) && !g.AUnAllie(autre) && !g.AUnAllie(-1));
 		VERIF(g.EstDuModele(algie, 4) && !g.EstDuModele(algie, 5) && !g.EstDuModele(-1, 4));
