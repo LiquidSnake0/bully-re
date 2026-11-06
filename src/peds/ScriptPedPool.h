@@ -569,6 +569,13 @@ public:
 	bool RenvoyerAllie(int meneur, int allie);
 	// FUN_00485410 : le premier meneur de la chaîne (en remontant les +0x2f4), -1 sans meneur.
 	int PremierMeneur(int handle) const;
+	// PedHasAlly(ped) (0x5cd730, lue à l'assembleur de 0x5cd730 à 0x5cd78c) : le piéton du genre 2 de l'objet script (FUN_005c7220) ;
+	// vrai s'il a un meneur (+0x2f4) ou un suiveur (+0x2f8), faux sans piéton (FUN_005d8450 rend toujours un booléen).
+	bool AUnAllie(int handle) const;
+	// PedIsModel(ped, modèle) (0x5c92a0, lue à l'assembleur de 0x5c92a0 à 0x5c933d) : sans piéton, faux ; sinon le modèle du
+	// piéton (le mot signé +0x10e) et l'entier du second argument (FUN_005d8200), tous deux passés en flottants et comparés
+	// (fucompp : égaux, vrai).
+	bool EstDuModele(int handle, int32 modele) const;
 	// FUN_004853b0 (ecx = le meneur + 0x2f0) : `autre` est dans la chaîne des suiveurs du meneur.
 	bool DansSesSuiveurs(int meneur, int autre) const;
 	// FUN_00485440 (ecx = le piéton + 0x2f0) : `autre` est le piéton, un de ses meneurs ou un de ses suiveurs.

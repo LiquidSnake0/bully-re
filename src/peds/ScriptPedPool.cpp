@@ -562,6 +562,20 @@ CScriptPedPool::PremierMeneur(int h) const
 }
 
 bool
+CScriptPedPool::AUnAllie(int h) const
+{
+	const CScriptPed *p = Acceder(h);
+	return p != nil && (p->meneur >= 0 || p->suiveur >= 0);
+}
+
+bool
+CScriptPedPool::EstDuModele(int h, int32 modele) const
+{
+	const CScriptPed *p = Acceder(h);
+	return p != nil && (float)(int16)p->modele == (float)modele;
+}
+
+bool
 CScriptPedPool::DansSesSuiveurs(int meneur, int autre) const
 {
 	const CScriptPed *p = Acceder(meneur);

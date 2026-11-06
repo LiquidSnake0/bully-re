@@ -3829,6 +3829,24 @@ PedIsHit(lua_State *L)
 // PedRecruitAlly(meneur, allié[, b]) (0x5cd550, lu à l'assembleur de 0x5cd550 à 0x5cd5cb) : les deux piétons (FUN_005c7220 ;
 // le meneur peut manquer), FUN_00485fa0(meneur + 0x2f0, allié, 1) (CScriptPedPool::RecruterAllie) ; avec un troisième argument
 // nombre (lua_type 3, FUN_0073ad50), son booléen (FUN_005d8f20) dans +0x14ec des deux. Ne rend rien.
+// PedHasAlly(ped) (0x5cd730) et PedIsModel(ped, modèle) (0x5c92a0) : CScriptPedPool::AUnAllie et EstDuModele ; un booléen, faux sans
+// piéton.
+static int
+PedHasAlly(lua_State *L)
+{
+	Journal("PedHasAlly", L, 1);
+	lua_pushboolean(L, lua_isnumber(L, 1) && pietons.AUnAllie((int)lua_tonumber(L, 1)));
+	return 1;
+}
+
+static int
+PedIsModel(lua_State *L)
+{
+	Journal("PedIsModel", L, 1);
+	lua_pushboolean(L, lua_isnumber(L, 1) && pietons.EstDuModele((int)lua_tonumber(L, 1), (int32)luaL_optnumber(L, 2, 0)));
+	return 1;
+}
+
 static int
 PedRecruitAlly(lua_State *L)
 {
@@ -7295,6 +7313,8 @@ main(int argc, char **argv)
 	lua_register(L, "PedFindInAreaObject", PedFindInAreaObject);
 	lua_register(L, "PedSetMissionCritical", PedSetMissionCritical);
 	lua_register(L, "PedRecruitAlly", PedRecruitAlly);
+	lua_register(L, "PedHasAlly", PedHasAlly);
+	lua_register(L, "PedIsModel", PedIsModel);
 	lua_register(L, "PedDismissAlly", PedDismissAlly);
 	lua_register(L, "PedCanSeeObject", PedCanSeeObject);
 	lua_register(L, "MissionTimerStart", MissionTimerStart);

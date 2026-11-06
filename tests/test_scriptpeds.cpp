@@ -599,6 +599,9 @@ main(void)
 		VERIF(a->attitudes.Lire(SCRIPT_PED_TYPE_JOUEUR) == 4 && j->groupeTenu && a->laisse3b4 && a->laisse3b5);
 		VERIF(g.PremierMeneur(algie) == SCRIPT_PED_JOUEUR && g.PremierMeneur(SCRIPT_PED_JOUEUR) == -1);
 		VERIF(g.DansSesSuiveurs(SCRIPT_PED_JOUEUR, algie) && g.DansSonGroupe(algie, SCRIPT_PED_JOUEUR) && !g.DansSonGroupe(autre, algie));
+		// PedHasAlly : le meneur et le suiveur en ont un, pas l'autre ; PedIsModel : le modèle de création.
+		VERIF(g.AUnAllie(SCRIPT_PED_JOUEUR) && g.AUnAllie(algie) && !g.AUnAllie(autre) && !g.AUnAllie(-1));
+		VERIF(g.EstDuModele(algie, 4) && !g.EstDuModele(algie, 5) && !g.EstDuModele(-1, 4));
 		// Déjà suiveur : rien ne change. Un suiveur qui mène à son tour : la laisse va au premier meneur.
 		a->etatAllie = 3;
 		VERIF(g.RecruterAllie(SCRIPT_PED_JOUEUR, algie, true) && a->etatAllie == 3);
