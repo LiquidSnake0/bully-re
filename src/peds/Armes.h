@@ -25,6 +25,8 @@ struct CTypeArme {
 	int32 inventaire = 0;         // +0x64 (100) : non nul, l'arme se range dans l'inventaire (FUN_0045cbc0)
 	bool tir68 = false, tir69 = false;   // les octets +0x68 (104) et +0x69 (105) : WeaponGetType (0x5c63d0) en fait 0, 1 ou 2
 	bool tireLachee = false;      // l'octet +0x2b (43) : IsWeaponFiredWhenDropped (FUN_0065bbe0)
+	bool auContact = false;       // l'octet +0x25 (37) : le ramassage se prend au contact (FUN_00445710)
+	float decalageRamassage = 0.0f;   // +0x44 (68) : ajouté au z d'un ramassage de ce modèle (FUN_00443af0)
 	// +0x84 : le modèle des munitions, -2 tant qu'il n'est pas résolu ; FUN_00728150 le tire du nom +0x54 (FUN_0051ad50 :
 	// -1 pour « unarmed » ou un nom inconnu), -1 sans nom. L'appelant le pose au chargement.
 	int32 munition = -1;
@@ -83,6 +85,34 @@ public:
 	// − n (Poser), et l'entrée libérée sous 1 (pour le joueur, « RBandBall », DAT_00bf432c, passe par FUN_0049abb0 à la
 	// place : non suivi, l'entrée reste).
 	void Retirer(const CMondeArmes &m, int ped, int32 arme, int32 n, bool joueur = false, int32 rbandball = -1);
+	// FUN_0045d0f0 (ItemSetCurrentNum sur une arme) : présente, ses munitions posées à n (FUN_0045c890), l'entrée libérée sous 1 ;
+	// rend l'entrée, -1 si l'arme manque (rien n'est ajouté).
+	int PoserMunitions(const CMondeArmes &m, int ped, int32 arme, int32 n);
 	// Les entrées d'un piéton, libérées (le piéton supprimé, ou PedClearAllWeapons).
 	void Vider(int ped);
+};
+
+// Les objets du joueur (les modèles item de 0xa136b8 à 0xa136bc : les transistors, les cartes, les boîtes de chocolats…) : un
+// tableau de 80 compteurs en DAT_00cf0060, hors de l'inventaire des armes. L'indice d'un modèle (lu à l'assembleur de 0x541ae0 à
+// 0x541ce1) : le modèle lui-même s'il vaut au plus 0x4f, sinon le modèle moins le premier item (DAT_00a136b8) s'il tombe sous 0x50,
+// sinon la case 0 (comparaisons non signées : un modèle négatif lit et écrit la case 0).
+class CObjetsJoueur
+{
+public:
+	static const int kTaille = 0x50;
+	int32 nombres[kTaille] = {};
+	int32 premier = 0;            // DAT_00a136b8 (CModelInfo::ms_firstItemId)
+	// Les quatre modèles que FUN_00541ae0 traite à part (la table des noms 0xa136e8) : « ChocBox » (DAT_00bf427c, la statistique
+	// 0x25), « FlowerGift » (DAT_00bf4278, 0x27), « ticket » (DAT_00bf42a4, 0xe6) et « BigGulp » (DAT_00bf429c : jamais compté).
+	int32 chocolats = -1, fleurs = -1, ticket = -1, bigGulp = -1;
+	int Case(int32 modele) const;
+	// FUN_00541cb0 (ItemGetCurrentNum) : le compteur du modèle.
+	int32 Nombre(int32 modele) const { return nombres[Case(modele)]; }
+	// FUN_00541c10 (ItemSetCurrentNum) : n borné à [0, le maximum du type] (+0x34 de WeaponGetType, l'arrondi 0x85c6f0) ; le HUD
+	// annonce l'ancien et le nouveau compte (FUN_00540fc0, non suivi). Rend l'ancien compte.
+	int32 Poser(const CMondeArmes &m, int32 modele, int32 n);
+	// FUN_00541ae0(modèle, n, annonce, x) : le BigGulp n'est pas compté (FUN_00447280(1, 0, 1) sur le joueur avec DAT_00c1af4c, puis
+	// le HUD) ; les trois autres modèles à part vont d'abord à leur statistique (FUN_00458330, non suivie) ; puis l'ancien compte + n
+	// borné à [0, le maximum] ; avec l'annonce, le HUD (non suivi). Rend vrai si le compteur a été écrit.
+	bool Ajouter(const CMondeArmes &m, int32 modele, int32 n);
 };

@@ -1105,3 +1105,41 @@ en échec plutôt que de les masquer.
   jusqu'au quatrième commit, 82,53 s depuis l'écran de fin ; journaux identiques hors les lignes des objets animés, la ligne de l'écran
   de fin et les indices des objectifs. `1_05` jusqu'à `F_Stage3` (154,18 s), puis le casier (166,12 s), puis réussie à 185,20 s.
 - **Bilan** : 1 002 fonctions recréées (6,4 % du code), contre 917 (5,8 %) ; 1 945 comprises (11,2 %) ; 10 commits.
+
+## 06.11.2026, séance 3 (de 4 h 24 à 6 h 29)
+
+- **Les collectibles** (`src/objects/Collectibles`, `tests/test_collectibles`) : CCollectiblesMgr est l'objet 0xbceb50, initialisé par
+  CGame::Initialise (`FUN_00428bf0`) depuis config\dat\colctbls.dat (`FUN_004287a0` : sept types, 192 entrées, le HashString de
+  chaque nom) ; les octets « pris » et « disponible », le rappel des scripts à six nombres (`CB_CollectibleCollected` de main.lur) ; les
+  cinq fonctions Lua `Collectibles*` réelles.
+- **Les objets du joueur** : 80 compteurs en DAT_00cf0060 hors de l'inventaire des armes (`FUN_00541cb0`, `FUN_00541c10`,
+  `FUN_00541ae0`, le BigGulp jamais compté) ; `ItemGetCurrentNum` et `ItemSetCurrentNum` réelles.
+- **Les ramassages dans src** (`src/objects/Ramassages`) : le pool est à 0xc0a100 (et non 0xc0a0f8) ; `FUN_00443af0` et les bits de
+  +0x46 (le bit 2 « à la main » des ramassages de `PickupCreateXYZ`, le bit 4 des collectibles) ; le décalage +0x44 des fiches (les
+  briques de `1_03` 3,5 cm plus haut).
+- **Les collectibles des placements** : la seconde section inst des `.ipb` porte les élastiques, les cartes et les transistors ; leur
+  +0x74 est le haché de l'instance, leur +0x44 la zone. `FUN_00438790` en fait des objets fictifs, la population (`FUN_004a0130`, 80 m)
+  des ramassages (`FUN_0049f2f0`, `FUN_00445640`) ; l'outil juge les 146 entrées à chaque image (sans diffusion des placements, supposé).
+- **La prise au contact** (`FUN_00445970`, `FUN_00445710` : 1 m au plan, 2 m en hauteur ; `FUN_00444ac0` pour les objets) : le
+  transistor est pris à 26,86 s, `F_AchieveReceiver` passe ; le don au clochard (`GiveHobo_1_06`), puis `ObjectRemovePickupsInTrigger`
+  réelle (`FUN_004448c0`).
+- **L'historique des boutons** (`src/hud/ButtonHistory`) : HUDButtonHistory (DAT_00c674f4), ses douze fonctions Lua, la mise à jour
+  `FUN_0053c250` et `FUN_0053b370` dans le mode de l'arbre ; la piste `ActionRegisterButtonHistory` (`FUN_0061bab0` → `FUN_0053b340`)
+  rapporte les boutons des nœuds du joueur. Trois coups chargés : **`1_06_01` se termine réussie à 61,81 s**. Dans `1_02`, les nœuds
+  joués rapportent aussi les leurs ; deux séquences de plus réussissent par eux, sans rien changer : 132,92 s.
+- **Un collectible changé en ramassage n'est plus reposé** (l'objet fictif est détruit par `FUN_0049f2f0`).
+- **`1_07` lancée seule** : elle bouclait sur `PAnimRequest` (0x5c4590, réelle : vrai, faute de diffusion) ; puis `PAnimCreate` et
+  `CreatePersistentEntity` (des bouchons), et Bucky perd 25 points toutes les cinq secondes faute de défense : échec à 64,55 s.
+- **La machine partagée** : l'autre agent a tenu le verrou par lots (batch12 à batch16, vingt à trente minutes chacun) ; la séance a
+  vérifié deux commits par passage du verrou dans des instantanés (`build/c1` à `build/c9`) découpés d'un même état courant
+  (`decouper.py`). Une vérification a été arrêtée en cours (un instantané fautif : `Ramasser` ne compilait pas, puis un test aux bornes
+  trop serrées) et relancée ; arrêter un `deux2.sh` ne suffit pas, ses enfants gardent le verrou : il faut les arrêter aussi.
+- **REA amont** : 581 commits en attente (571 à la séance 2) ; le plus proche de bully-re est #9046 (la découverte des outils M2 024 en
+  deux temps, à activer) ; rien qui touche l'index ou Ghidra ; rien fusionné. La séance n'a pas ouvert REA : l'index
+  `export/index.sqlite` et le désassemblage `objdump` de `bully.exe` (déjà dans le dossier de la session) ont suffi.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 148,04 s), `1_04` à 82,53 s et `1_05` à 185,20 s à
+  chaque commit ; journaux identiques hors les lignes de chargement, la hauteur des briques ramassées (6,20 au lieu de 6,17), les
+  collectibles posés (de six à dix-sept lignes par mission), les poignées des ramassages créés après eux, et dans `1_02` les boutons
+  rapportés à l'historique. `1_06_01` : le transistor à 26,86 s, la leçon à 44,85 s, réussie à 61,81 s.
+- **Bilan** : 1 061 fonctions recréées (6,9 % du code), contre 1 002 (6,4 %) ; 2 028 comprises (11,6 %) ; 10 commits.
+

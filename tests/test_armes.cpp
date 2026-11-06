@@ -68,6 +68,24 @@ main(void)
 	plein.Vider(5);
 	VERIF(plein.Ajouter(m, 70, PETARD, 1) && plein.Trouver(70, PETARD) == 5);
 
+	// ItemSetCurrentNum sur une arme (FUN_0045d0f0) : posée si présente, libérée sous 1, rien si elle manque.
+	VERIF(plein.PoserMunitions(m, 70, PETARD, 3) == 5 && plein.Munitions(m, 70, PETARD) == 3);
+	VERIF(plein.PoserMunitions(m, 70, PETARD, 0) == 5 && plein.Trouver(70, PETARD) == -1);
+	VERIF(plein.PoserMunitions(m, 70, PETARD, 2) == -1 && plein.Trouver(70, PETARD) == -1);
+
+	// Les objets du joueur (DAT_00cf0060) : le transistor (Radio, 476, un item de maximum 10), le BigGulp jamais compté.
+	enum { PREMIER_ITEM = 460, RADIO = 476, BIG_GULP = 470 };
+	t = CTypeArme(); t.lu = true; t.maximum = 10; t.genre = 4; m.types[RADIO] = t;
+	CObjetsJoueur o;
+	o.premier = PREMIER_ITEM; o.bigGulp = BIG_GULP;
+	VERIF(o.Case(RADIO) == 16 && o.Case(PREMIER_ITEM) == 0 && o.Case(PREMIER_ITEM + 0x50) == 0 && o.Case(12) == 12 && o.Case(-1) == 0);
+	VERIF(o.Nombre(RADIO) == 0);
+	VERIF(o.Ajouter(m, RADIO, 1) && o.Nombre(RADIO) == 1);   // FUN_00541ae0(476, 1, 1, 0) : le transistor ramassé
+	o.Ajouter(m, RADIO, 30);
+	VERIF(o.Nombre(RADIO) == 10);                             // borné au maximum de la fiche
+	VERIF(o.Poser(m, RADIO, -4) == 10 && o.Nombre(RADIO) == 0);   // FUN_00541c10 : borné à 0
+	VERIF(!o.Ajouter(m, BIG_GULP, 1) && o.Nombre(BIG_GULP) == 0);
+
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;
 }

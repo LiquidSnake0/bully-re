@@ -88,6 +88,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kAttacher = ActionHash("PropAttach"), kDetacher = ActionHash("PropDetach"), kTir = ActionHash("WeaponFire"),
 	                    kPassage = ActionHash("PropSetInTransition"), kDrapeauObjet = ActionHash("PropFlags"),
 	                    kActionObjet = ActionHash("PropSetPedAction"), kSynchro = ActionHash("Sync"),
+                    kBoutonHistorique = ActionHash("ActionRegisterButtonHistory"),
 	                    kInteraction = ActionHash("PropInteract");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
@@ -128,6 +129,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 		}else if(p.type == kDrapeauObjet){
 			const CActionAttribut *v = p.Champ(24);
 			drapeauxObjet.push_back({Reel(p, 12, 0.0f) < 0.0f ? -1.0f : a, (int32)p.Mot(28), v && v->taille >= 1 && v->valeur[0] != 0, false});
+		}else if(p.type == kBoutonHistorique){
+			boutonsHistorique.push_back({a, (int32)p.Mot(32), (int32)p.Mot(36), false});
 		}else if(p.type == kActionObjet){
 			const CActionAttribut *at = p.Champ(32);
 			const CActionNode *v = at ? b.Relatif(&n, f->ChaineCitee(at->decalage).c_str()) : nil;
@@ -277,6 +280,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 		if(!d.fait && d.entree < 0.0f){ d.fait = true; drapeauxObjetPoses.push_back(d); }
 	drapeauxObjet.clear();
 	actionsObjet.clear();
+	boutonsHistorique.clear();
 	synchros.clear();
 	interactions.clear();
 	for(Parole &d : paroles)
@@ -557,6 +561,8 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; drapeauxObjetPoses.push_back(d); }
 	for(ActionObjet &d : actionsObjet)     // FUN_006561a0
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; actionsObjetPosees.push_back(d); }
+	for(BoutonHistorique &d : boutonsHistorique)   // FUN_0061bab0
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; boutonsLances.push_back(d); }
 	for(Synchro &d : synchros){            // FUN_00615f00, puis FUN_00616170 : morte à sa première mise à jour (supposé)
 		if(!d.vivante || Temps(t) < d.entree) continue;
 		if(!d.lancee) d.lancee = true;

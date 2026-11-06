@@ -120,3 +120,50 @@ CInventaireArmes::Vider(int ped)
 {
 	for(int i = 0; i < kTaille; i++) if(!libre[i] && entrees[i].proprietaire == ped) Liberer(i);
 }
+
+int
+CInventaireArmes::PoserMunitions(const CMondeArmes &m, int ped, int32 arme, int32 n)
+{
+	int i = Trouver(ped, arme);
+	if(i == -1) return -1;
+	Poser(m, i, n);
+	if(entrees[i].munitions < 1) Liberer(i);
+	return i;
+}
+
+int
+CObjetsJoueur::Case(int32 modele) const
+{
+	if((uint32)modele <= 0x4f) return modele;
+	uint32 i = (uint32)(modele - premier);
+	return i <= 0x4f ? (int)i : 0;
+}
+
+// Le compte borné à [0, le maximum du type] : fcom contre 0 puis contre le maximum (0x541bb2 … 0x541bd6), puis l'arrondi (0x85c6f0).
+static int32
+Borner(const CMondeArmes &m, int32 modele, int32 v)
+{
+	int32 max = m.Type(modele).maximum;
+	float f = (float)v;
+	if(f < 0.0f) f = 0.0f;
+	else if((float)max < f) f = (float)max;
+	return (int32)f;
+}
+
+int32
+CObjetsJoueur::Poser(const CMondeArmes &m, int32 modele, int32 n)
+{
+	int i = Case(modele);
+	int32 avant = nombres[i];
+	nombres[i] = Borner(m, modele, n);
+	return avant;
+}
+
+bool
+CObjetsJoueur::Ajouter(const CMondeArmes &m, int32 modele, int32 n)
+{
+	int i = Case(modele);
+	if(premier + i == bigGulp) return false;
+	nombres[i] = Borner(m, modele, nombres[i] + n);
+	return true;
+}

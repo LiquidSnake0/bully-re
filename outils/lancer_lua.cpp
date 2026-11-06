@@ -41,6 +41,8 @@
 #include "../src/peds/Patrouilles.h"
 #include "../src/objects/ObjectData.h"
 #include "../src/objects/ObjetsAnimes.h"
+#include "../src/objects/Collectibles.h"
+#include "../src/objects/Ramassages.h"
 #include "../src/core/IplFile.h"
 #include "../src/anim/Hxd.h"
 #include "../src/anim/AnimGroups.h"
@@ -53,6 +55,7 @@
 #include "../src/hud/HudComponents.h"
 #include "../src/hud/EcranDeFin.h"
 #include "../src/hud/ObjectifsMission.h"
+#include "../src/hud/ButtonHistory.h"
 #include "../src/render/CameraMgr.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
@@ -206,13 +209,25 @@ static std::vector<CGestionnaireHache> gestionnairesHaches;
 static size_t capaciteHaches = 10;
 static int objetVise = -1;   // l'objet que le joueur vise (--viser-objet), sa poignée ; -1 aucun
 
-// --- Les ramassages (CPickups : 300 entrées de 0x48 octets dès 0xc0a0f8 ; l'octet +0x46, son bit 3 « prise » ; le mot +0x40, sa
-// génération) ---
-// FUN_00443af0 prend la première entrée libre (300 au plus, -1 sinon) ; la poignée est l'indice | la génération << 16
-// (FUN_00443e90 la vérifie). L'outil garde le modèle, la position, le nom de sa fiche de ramassage et l'objet script qui l'a créé
-// (FUN_005db7e0, FUN_005d9760 : il est retiré avec la mission) ; la génération commence à 1 et monte à chaque création (supposé).
-struct CRamassage { bool pris = false; int32 modele = -1; CVector pos; std::string fiche; uint16 generation = 0; int32 script = -1; };
-static CRamassage ramassages[300];
+// --- Les ramassages (src/objects/Ramassages : CPickups, 300 entrées de 0x48 octets dès 0xc0a100) ---
+// L'outil note en plus l'objet script qui a créé chacun (FUN_005db7e0, FUN_005d9760 : il est retiré avec la mission).
+static CRamassages ramassages;
+static CObjetsJoueur objetsJoueur;   // les objets du joueur (DAT_00cf0060, src/peds/Armes)
+static CCollectibles collectibles;   // les collectibles (CCollectiblesMgr, 0xbceb50, src/objects/Collectibles)
+// Supposé aussi : le joueur de l'outil naît en (0, 0, 0), dans FootFieldTrig (le terrain de football, dont main.lua suit
+// l'entrée et la sortie du joueur dans la table 0), quand le jeu le crée au point de la sauvegarde ; il n'est suivi qu'une fois
+// posé par le gestionnaire de zones (les déclencheurs, la population des collectibles).
+static bool joueurPose = false;
+
+// Les collectibles des placements : FUN_00438790 (le gestionnaire des entrées inst des .ipb, lu dans l'index) cherche le haché de
+// l'instance (+0x74) parmi les collectibles (FUN_00426270) ; un collectible pris (FUN_004261f0) ou indisponible (FUN_00426200) n'est
+// pas posé, sinon il devient un objet fictif (CDummyObject de 0x128 octets, FUN_00465250, FUN_004cf0b0) à la position de l'entrée, sa
+// zone (+0x111) arrondie de +0x44, son haché en +0x124 et son placement en +0x110. Ce gestionnaire tourne quand CIplStore charge le
+// placement autour du joueur (FUN_00439220) ; l'outil, qui lit les 85 .ipb une fois au départ sans les diffuser, garde les entrées
+// collectibles et les juge à chaque image comme si leur placement était chargé (supposé).
+struct CCollectiblePose { int32 modele = -1; CVector pos; int8 zone = 0; uint32 hache = 0; uint8 placement = 0; bool converti = false; };
+static std::vector<CCollectiblePose> collectiblesPoses;
+static uint8 placementCourant = 0;
 
 // Le nom d'un modèle d'arme ou d'objet (le +4 de son modelinfo est son HashString), nil sinon.
 static const std::string *
@@ -1836,7 +1851,8 @@ AvancerMission(lua_State *L)
 			{
 				std::vector<int> partis;
 				for(int i = 1; i < SCRIPT_PED_POOL_SIZE; i++) if(const CScriptPed *p = pietons.Acceder(i)) if(p->script == mission.script) partis.push_back(i);
-				for(CRamassage &r : ramassages) if(r.pris && r.script == mission.script) r.pris = false;   // FUN_005d9760
+				for(int i = 0; i < CRamassages::kTaille; i++)
+					if(ramassages.entrees[i].Pris() && ramassages.entrees[i].script == mission.script) ramassages.Retirer(i);   // FUN_005d9760
 				int n = pietons.SupprimerDuScript(mission.script);
 				for(int h : partis) OublierControleurs(h);
 				if(n) printf("        %d piéton(s) laissé(s) par la mission, libéré(s)\n", n);
@@ -2486,8 +2502,9 @@ CreerPed(lua_State *L, const char *quoi, int32 modele, const CVector &pos, float
 
 // --- Les armes : leurs types et l'inventaire (src/peds/Armes) ---
 
-// Une fiche ObjectButes lue en CTypeArme : +0x18 (24) le genre, +0x1c (28) l'arbre, +0x34 (52) le maximum, +0x54 (84) le nom
-// des munitions, +0x64 (100), les octets +0x68 (104) et +0x69 (105).
+// Une fiche ObjectButes lue en CTypeArme : +0x18 (24) le genre, +0x1c (28) l'arbre, +0x25 (37) le ramassage au contact, +0x34 (52)
+// le maximum, +0x44 (68) le décalage en hauteur des ramassages, +0x54 (84) le nom des munitions, +0x64 (100), les octets +0x68 (104)
+// et +0x69 (105).
 static CTypeArme
 LireTypeArme(const CActionTrack &t, const std::map<uint16, std::string> &chaines)
 {
@@ -2499,6 +2516,8 @@ LireTypeArme(const CActionTrack &t, const std::map<uint16, std::string> &chaines
 	const CActionAttribut *b = t.Champ(104), *c = t.Champ(105);
 	a.tir68 = b && b->valeur[0]; a.tir69 = c && c->valeur[0];
 	const CActionAttribut *l = t.Champ(43); a.tireLachee = l && l->valeur[0];
+	const CActionAttribut *ac = t.Champ(37); a.auContact = ac && ac->valeur[0];
+	if(const CActionAttribut *dz = t.Champ(68)) if(dz->taille >= 4) memcpy(&a.decalageRamassage, dz->valeur, 4);
 	auto it = chaines.find(28); if(it != chaines.end()) a.arbre = it->second;
 	it = chaines.find(84); if(it != chaines.end()) a.nomMunition = it->second;
 	it = chaines.find(80); if(it != chaines.end()) a.nomProjectile = it->second;
@@ -2551,6 +2570,10 @@ ChargerArmes(void)
 		                            ActionHash("ProjectileButes"), t, &ch))
 			typesProjectiles[a.first] = LireTypeProjectile(t, ch);
 	armes.sansFin[0] = modeles.Index("marble"); armes.sansFin[1] = modeles.Index("supermarble"); armes.sansFin[2] = modeles.Index("RubBand");
+	// DAT_00a136b8 et les quatre modèles que FUN_00541ae0 traite à part (InitModelIndices, la table des noms 0xa136e8).
+	if(!modeles.objets.empty()) objetsJoueur.premier = modeles.objets.begin()->first;
+	objetsJoueur.chocolats = modeles.Index("ChocBox"); objetsJoueur.fleurs = modeles.Index("FlowerGift");
+	objetsJoueur.ticket = modeles.Index("ticket"); objetsJoueur.bigGulp = modeles.Index("BigGulp");
 	printf("%d fiches d'armes et d'objets (ObjectButes) pour %zu armes et %zu objets, %zu fiches de projectiles\n", lues, modeles.armes.size(),
 	       modeles.objets.size(), typesProjectiles.size());
 }
@@ -2605,6 +2628,16 @@ NoterObjet(const CIplSpec &e)
 	return 0;
 }
 
+static int32
+NoterInstance(const CIplInst &e)
+{
+	if(collectibles.Indice(e.unk116) < 0) return 0;
+	CCollectiblePose c;
+	c.modele = e.modelId; c.pos = e.pos; c.zone = (int8)lroundf(e.unk68); c.hache = e.unk116; c.placement = placementCourant;
+	collectiblesPoses.push_back(c);
+	return 0;
+}
+
 static void
 ChargerObjets(void)
 {
@@ -2613,6 +2646,7 @@ ChargerObjets(void)
 	if(monde < 0) return;
 	const CdImage &img = CdStream::ms_images[monde];
 	CIplFile::ms_specHandler = NoterObjet;
+	CIplFile::ms_instHandler = NoterInstance;
 	int fichiers = 0;
 	for(int32 i = 0; i < img.m_numEntries; i++){
 		const CDirectoryEntry &d = img.m_entries[i];
@@ -2623,10 +2657,12 @@ ChargerObjets(void)
 		CFileMgr::Seek(fd, d.offset * CDSTREAM_SECTOR_SIZE, 0);
 		bool ok = CFileMgr::ReadExact(fd, buf.data(), (uint32)buf.size());
 		CFileMgr::CloseFile(fd);
-		if(ok){ CIplFile::Load(buf.data(), (uint32)buf.size()); fichiers++; }
+		if(ok){ placementCourant = (uint8)fichiers; CIplFile::Load(buf.data(), (uint32)buf.size()); fichiers++; }
 	}
 	CIplFile::ms_specHandler = nil;
+	CIplFile::ms_instHandler = nil;
 	printf("%d lignes de object.dat ; %zu objets cassables dans les entrées spec de %d .ipb\n", CObjectData::ms_numObjectInfos, objets.size(), fichiers);
+	printf("%zu collectibles posés par les entrées inst des .ipb\n", collectiblesPoses.size());
 }
 
 // ObjectNameToHashID(nom) (0x5c2390) : le HashString du nom, rendu en pointeur léger (thunk_FUN_0073b520 : le type 2).
@@ -2998,6 +3034,25 @@ MissionObjectiveRemove(lua_State *L)
 	return 0;
 }
 
+// PAnimRequest(déclencheur) (0x5c4590, lue à l'assembleur de 0x5c4590 à 0x5c4673) : la case du pool des déclencheurs (0x20c7c48 ;
+// nulle pour un indice négatif ou une case libre), son périmètre (+0x20) et le modèle de son PLACEMENT (+0x10) ; sans modèle (-1),
+// vrai. Sinon le modèle doit être chargé (FUN_0052dbe0 : l'octet +4 de son entrée de diffusion à 1 ; sinon FUN_00531ed0(modèle, 0x1e)
+// le demande et la réponse est fausse), puis sa collision (le mot +0x30 du +0xc du modelinfo : l'entrée 0x56b8 + n ; sinon
+// FUN_00531ed0(…, 0x16)) ; le modèle est noté à l'objet script courant (FUN_005db7e0, FUN_005d92f0 : relâché à la fin de la mission).
+// L'outil n'a pas de diffusion : un modèle est chargé dès qu'on le demande (comme pour RequestModel), la réponse est vraie.
+static int
+PAnimRequest(lua_State *L)
+{
+	Journal("PAnimRequest", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	const CTriggerPerimeter *pe = h >= 0 ? donnees.PerimetreDe(h) : nil;
+	int32 m = pe && !pe->placement.empty() ? modeles.Index(pe->placement.c_str()) : -1;
+	if(m != -1 && journalRestant > 0) printf("%6.2f s  PAnimRequest : le modèle %d (%s) du déclencheur %d est demandé, chargé (supposé)\n",
+	                                        maintenant / 1000.0, m, pe->placement.c_str(), h);
+	lua_pushboolean(L, 1);
+	return 1;
+}
+
 // AreaRegisterAnimProps() (0x5b6d60 → 0x438700) : la table DAT_00bd3e78 jusqu'à son compte DAT_00bd5c54, que rien n'augmente
 // (vérifié à l'assembleur : écrit seulement en 0x416b07, remis à 0) ; elle ne crée rien.
 static int
@@ -3019,32 +3074,21 @@ GetPointListSize(lua_State *L)
 }
 
 // PickupCreateXYZ(modèle, x, y, z[, fiche]) (0x5d0b90) : avec cinq arguments, la fiche de ramassage du nom (FUN_005fa7b0, FUN_005d0b20 :
-// PickupData/<nom> dans l'arbre des réglages) ; FUN_00443e90(x, y, z, modèle, 1, fiche, 0, 0) → FUN_00443af0 (sans fiche, celle du type
-// de l'arme, +0x88, ou la fiche par défaut DAT_00c0f560) ; la poignée notée à l'objet script courant (FUN_005db7e0, FUN_005d9760) et
-// rendue. L'outil garde le nom de la fiche, sans la lire.
+// PickupData/<nom> dans l'arbre des réglages) ; FUN_00443e90(x, y, z, modèle, 1, fiche, 0, 0) → FUN_00443af0(x, y, z, modèle, fiche, 0,
+// 0, 0, 0) (sans fiche, celle du type de l'arme, +0x88, ou la fiche par défaut DAT_00c0f560), puis le bit 2 de +0x46 au cinquième
+// argument (1 : ramassé à la main) ; la poignée notée à l'objet script courant (FUN_005db7e0, FUN_005d9760) et rendue. L'outil garde
+// le nom de la fiche, sans la lire (son octet +0x18, le bit 0, est supposé nul).
 static int
 PickupCreateXYZ(lua_State *L)
 {
 	Journal("PickupCreateXYZ", L, 1);
-	int i = 0;
-	while(i < 300 && ramassages[i].pris) i++;
-	if(i >= 300){ lua_pushnumber(L, -1); return 1; }
-	CRamassage &r = ramassages[i];
-	r.pris = true; r.modele = (int32)luaL_optnumber(L, 1, -1);
-	r.pos = CVector((float)luaL_optnumber(L, 2, 0), (float)luaL_optnumber(L, 3, 0), (float)luaL_optnumber(L, 4, 0));
-	r.fiche = lua_gettop(L) == 5 && lua_isstring(L, 5) ? lua_tostring(L, 5) : "";
-	r.generation++;
-	r.script = scriptCourant;
-	lua_pushnumber(L, (double)(i | (uint32)r.generation << 16));
+	int32 m = (int32)luaL_optnumber(L, 1, -1);
+	CVector pos((float)luaL_optnumber(L, 2, 0), (float)luaL_optnumber(L, 3, 0), (float)luaL_optnumber(L, 4, 0));
+	std::string fiche = lua_gettop(L) == 5 && lua_isstring(L, 5) ? lua_tostring(L, 5) : "";
+	int32 h = ramassages.Creer(pos, m, fiche, false, false, 0, 0, false, armes.Type(m).decalageRamassage);
+	if(CRamassage *r = ramassages.Entree(h)){ r->drapeaux |= RAMASSAGE_A_LA_MAIN; r->script = scriptCourant; }
+	lua_pushnumber(L, h);
 	return 1;
-}
-
-static CRamassage *
-RamassageParPoignee(int64_t h)
-{
-	if(h < 0) return nil;
-	uint32 i = (uint32)h & 0xffff, g = (uint32)h >> 16;
-	return i < 300 && ramassages[i].pris && ramassages[i].generation == g ? &ramassages[i] : nil;
 }
 
 // PickupDelete(poignée) (0x5d0d60, hors de l'index, non lu) : l'outil libère l'entrée.
@@ -3052,7 +3096,7 @@ static int
 PickupDelete(lua_State *L)
 {
 	Journal("PickupDelete", L, 1);
-	if(CRamassage *r = RamassageParPoignee(lua_isnumber(L, 1) ? (int64_t)lua_tonumber(L, 1) : -1)) r->pris = false;
+	ramassages.Retirer(ramassages.Indice(lua_isnumber(L, 1) ? (int32)lua_tonumber(L, 1) : -1));
 	return 0;
 }
 
@@ -3065,15 +3109,16 @@ Ramasser(void)
 {
 	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
 	int mieux = -1; float d2 = 4.0f;
-	for(int i = 0; i < 300; i++){
-		if(!ramassages[i].pris) continue;
-		float dx = ramassages[i].pos.x - j->pos.x, dy = ramassages[i].pos.y - j->pos.y, dz = ramassages[i].pos.z - j->pos.z;
+	for(int i = 0; i < CRamassages::kTaille; i++){
+		const CRamassage &q = ramassages.entrees[i];
+		if(!q.Pris() || !(q.drapeaux & RAMASSAGE_A_LA_MAIN)) continue;
+		float dx = q.pos.x - j->pos.x, dy = q.pos.y - j->pos.y, dz = q.pos.z - j->pos.z;
 		float e = dx * dx + dy * dy + dz * dz;
 		if(e < d2){ d2 = e; mieux = i; }
 	}
 	if(mieux < 0){ printf("%6.2f s  le joueur ne trouve rien à ramasser à moins de 2 m\n", maintenant / 1000.0); return; }
-	CRamassage &r = ramassages[mieux];
-	r.pris = false;
+	const CRamassage r = ramassages.entrees[mieux];
+	ramassages.Retirer(mieux);
 	printf("%6.2f s  le joueur ramasse %d (modèle %d, %s) en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, mieux | (int)r.generation << 16, r.modele,
 	       NomDArme(r.modele) ? NomDArme(r.modele)->c_str() : "?", r.pos.x, r.pos.y, r.pos.z);
 	if(armes.Type(r.modele).inventaire != 0) inventaire.Donner(armes, SCRIPT_PED_JOUEUR, r.modele);   // une arme qui se range
@@ -3083,6 +3128,203 @@ Ramasser(void)
 	CActionController &c = controleurs[SCRIPT_PED_JOUEUR];
 	c.pistesArmeLancees.push_back(d);
 	AppliquerArmes(SCRIPT_PED_JOUEUR, c);
+}
+
+// --- Les collectibles (src/objects/Collectibles : CCollectiblesMgr, l'objet 0xbceb50, déclaré avec les ramassages) ---
+static int rappelCollectibles = LUA_NOREF;   // +0x1e8c (0xbd09dc) : CollectiblesOnCollectedCallback
+
+// CGame::Initialise (FUN_0042ee90, après CPickups::Init) → FUN_00428bf0 → FUN_004287a0 : config\dat\colctbls.dat lu en entier
+// (FUN_004264c0 : ouvert, sa taille par FUN_0042d1b0(f, 0, 2) et FUN_0042d2e0, un bloc de GameMalloc), puis ligne à ligne.
+static void
+ChargerCollectibles(void)
+{
+	static uint8 texte[0x4000];
+	int32 n = CFileMgr::LoadFile("config\\dat\\colctbls.dat", texte, sizeof(texte), "rb");
+	collectibles.Initialiser((const char *)texte, n > 0 ? (size_t)n : 0);
+	printf("%d collectibles dans colctbls.dat :", collectibles.nombre);
+	static const char *noms[NUM_COLLECTIBLE_TYPES] = { "nains", "transistors", "élastiques", "cartes", "citrouilles", "tombes", "artefacts" };
+	for(int t = 0; t < NUM_COLLECTIBLE_TYPES; t++) printf(" %d %s%s", collectibles.NombreDuType(t), noms[t], t + 1 < NUM_COLLECTIBLE_TYPES ? "," : "\n");
+}
+
+// Le rappel des scripts de FUN_004288c0 (FUN_005d7f80 : il y en a un ; FUN_005d9ac0, FUN_005d8110, FUN_005d8510 : sa fonction
+// poussée ; six nombres par FUN_005d8460 ; FUN_005d8140(6, 0) l'appelle) : le type, les pris du type, leur nombre, le haché, la
+// poignée du ramassage et l'indice. Le jeu l'appelle dans le script et le thread qui l'ont posé (FUN_005d8830) ; l'outil, dans
+// l'état qu'on lui donne.
+static void
+AppelerRappelCollectible(lua_State *L, const CRappelCollectible &r)
+{
+	if(rappelCollectibles == LUA_NOREF || L == nil) return;
+	printf("%6.2f s  collectibles : le rappel des scripts est appelé (%d, %d, %d, %#x, %d, %d)\n", maintenant / 1000.0, r.type, r.pris,
+	       r.nombre, r.hache, r.ramassage, r.indice);
+	lua_rawgeti(L, LUA_REGISTRYINDEX, rappelCollectibles);
+	lua_pushnumber(L, r.type); lua_pushnumber(L, r.pris); lua_pushnumber(L, r.nombre);
+	lua_pushnumber(L, (double)r.hache); lua_pushnumber(L, r.ramassage); lua_pushnumber(L, r.indice);
+	if(lua_pcall(L, 6, 0, 0) != 0){ printf("        rappel des collectibles : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+}
+
+// La population (FUN_004a0a10 → FUN_004a0130, lu dans l'index et à l'assembleur de 0x4a0130 à 0x4a0200) : à chaque image, un
+// trente-deuxième du pool des objets fictifs (DAT_00c0f600, par le compteur d'images DAT_00c1a99c & 0x1f) ; un objet fictif de la zone
+// visible (+0x111 = DAT_00bd1008), de la zone 1, ou de la zone DAT_00bd09eb quand DAT_00bd09ec est posé (non suivi), à moins de 80 m
+// au plan (_DAT_009051d8) du joueur (FUN_00446890(0) : sa position, ou celle de son véhicule) passe à FUN_0049f2f0 (lu dans l'index) :
+// FUN_0049e390 (non suivi, supposé vrai) ; un collectible (FUN_00426270 sur +0x124) qui n'est ni un nain, ni une citrouille, ni une
+// tombe (FUN_00426210, FUN_00426230, FUN_00426250) devient un ramassage (FUN_00445640), dont la poignée est notée au collectible
+// (FUN_004262c0), et l'objet fictif est retiré (FUN_0045dc20, son destructeur) ; un nain, une citrouille ou une tombe pas pris deviennent
+// un CObject de 0x22c octets (FUN_004d0490 : des objets à casser, non suivis). L'outil passe tous les collectibles posés à chaque image
+// (jusqu'à 31 images plus tôt que le jeu) ; une entrée changée en ramassage n'a plus d'objet fictif, et l'outil, qui ne
+// rediffuse pas les placements, ne la repose plus (un ramassage retiré, ObjectRemovePickupsInTrigger, ne revient pas).
+static void
+PoserLesCollectibles(void)
+{
+	const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	if(j == nil || !joueurPose) return;   // supposé : le joueur de l'outil n'est nulle part avant d'être posé
+	for(CCollectiblePose &c : collectiblesPoses){
+		int i = collectibles.Indice(c.hache);
+		if(c.converti || i < 0 || collectibles.Pris(i) || !collectibles.Disponible(i) || collectibles.AuSol(i)) continue;
+		if(c.zone != zones.zoneVisible && c.zone != 1) continue;
+		float dx = c.pos.x - j->pos.x, dy = c.pos.y - j->pos.y;
+		if(dx * dx + dy * dy >= 80.0f * 80.0f) continue;
+		int32 h = ramassages.CreerDuCollectible(c.pos, c.modele, (int16)i, c.hache, c.placement, armes.Type(c.modele).decalageRamassage);
+		collectibles.PoserRamassage(i, h);
+		c.converti = true;   // FUN_0045dc20 et le destructeur : l'objet fictif n'est plus
+		const std::string *nom = NomDArme(c.modele);
+		printf("%6.2f s  collectibles : l'entrée %d (modèle %d, %s) devient le ramassage %#x en (%.2f, %.2f, %.2f), à %.1f m du joueur\n",
+		       maintenant / 1000.0, i, c.modele, nom ? nom->c_str() : "?", h, c.pos.x, c.pos.y, c.pos.z, sqrtf(dx * dx + dy * dy));
+	}
+}
+
+// CPickups::Update (FUN_00445970, lu à l'assembleur de 0x445970 à 0x44598f) : FUN_00445710 pour chaque entrée prise du pool, de
+// 0xc0a100 à 0xc0f560. La prise au contact (CRamassages::AuContact) mène à FUN_00444ac0(joueur, 1) ; l'outil en suit les objets (les
+// genres 2 à 4 du type, CRamassages::PrendreObjet) et appelle le rappel des collectibles après le compte (le jeu l'appelle depuis
+// FUN_004288c0, juste avant FUN_00541ae0).
+static void
+AvancerRamassages(void)
+{
+	const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	if(j == nil || !joueurPose) return;
+	for(int i = 0; i < CRamassages::kTaille; i++){
+		const CRamassage &r = ramassages.entrees[i];
+		if(!r.Pris()) continue;
+		const CTypeArme &t = armes.Type(r.modele);
+		if(!ramassages.AuContact(i, j->pos, j->sante, t.auContact)) continue;
+		const CRamassage avant = r;
+		CRappelCollectible rappel;
+		bool aRappel = false;
+		int pris = ramassages.PrendreObjet(i, t.genre, armes, objetsJoueur, collectibles, &rappel, &aRappel);
+		const std::string *nom = NomDArme(avant.modele);
+		if(pris) printf("%6.2f s  le joueur prend au contact le ramassage %#x (modèle %d, %s%s) en (%.2f, %.2f, %.2f) : il en a %d\n",
+		                maintenant / 1000.0, ramassages.Poignee(i), avant.modele, nom ? nom->c_str() : "?",
+		                avant.drapeaux & RAMASSAGE_COLLECTIBLE ? ", un collectible" : "", avant.pos.x, avant.pos.y, avant.pos.z,
+		                objetsJoueur.Nombre(avant.modele));
+		if(aRappel) AppelerRappelCollectible(etatLua, rappel);
+	}
+}
+
+// ObjectRemovePickupsInTrigger(déclencheur[, modèle]) (0x5c31b0, hors de l'index ; lue à l'assembleur de 0x5c31b0 à 0x5c3338) : le
+// déclencheur (FUN_005d8200, la case du pool 0x20c7c48, nulle pour un indice négatif ou une case libre), le modèle au second argument
+// s'il y en a deux (-1 sinon) ; les ramassages de ce modèle dans le déclencheur sont retirés (CRamassages::RetirerSi) ; puis les
+// CObject du pool DAT_00c0f618 de ce modèle (+0x10e) dans le déclencheur, au plus 256, sont retirés du monde (FUN_0045dc20,
+// FUN_0045e540) et détruits : l'outil n'a que les objets cassables des entrées spec, non suivis ici.
+static int
+ObjectRemovePickupsInTrigger(lua_State *L)
+{
+	Journal("ObjectRemovePickupsInTrigger", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	int32 m = lua_gettop(L) > 1 ? (int32)luaL_optnumber(L, 2, -1) : -1;
+	if(h < 0) return 0;
+	int n = ramassages.RetirerSi(m, [&](const CVector &p){ return donnees.DansDeclencheur(h, p); });
+	if(n) printf("%6.2f s  %d ramassage(s) retiré(s) du déclencheur %d\n", maintenant / 1000.0, n, h);
+	return 0;
+}
+
+// CollectiblesSetTypeAvailable(type[, b]) (0x5bafa0, lu à l'assembleur de 0x5bafa0 à 0x5bafe7) : b vrai par défaut, le second
+// argument s'il y en a deux (FUN_005d8f20) ; le type (FUN_005d8200) ; FUN_00426340(type, b) : l'octet « disponible » (+5 + 2i) de
+// chaque entrée du type.
+static int
+CollectiblesSetTypeAvailable(lua_State *L)
+{
+	Journal("CollectiblesSetTypeAvailable", L, 1);
+	bool b = lua_gettop(L) >= 2 ? lua_toboolean(L, 2) != 0 : true;
+	collectibles.PoserDisponible((int)luaL_optnumber(L, 1, -1), b);
+	return 0;
+}
+
+// CollectiblesSetAllAsCollected(type[, b]) (0x5bb010, lu de 0x5bb010 à 0x5bb058) : le type, b vrai par défaut ; FUN_00428ba0 passe
+// chaque entrée du type à FUN_004288c0(i, b), qui appelle le rappel des scripts pour chacune quand b est vrai.
+static int
+CollectiblesSetAllAsCollected(lua_State *L)
+{
+	Journal("CollectiblesSetAllAsCollected", L, 1);
+	bool b = lua_gettop(L) >= 2 ? lua_toboolean(L, 2) != 0 : true;
+	CRappelCollectible r[CCollectibles::kTaille];
+	int n = collectibles.ToutMarquer((int)luaL_optnumber(L, 1, -1), b, r, CCollectibles::kTaille);
+	for(int i = 0; i < n; i++) AppelerRappelCollectible(L, r[i]);
+	return 0;
+}
+
+// CollectiblesGetNumCollectable(type) (0x5bb060) : FUN_004262e0, le mot +0x1454 + 2 × type ; CollectiblesGetNumCollected(type)
+// (0x5bb090) : FUN_004262f0, les entrées du type à l'octet « pris » posé (lues à l'assembleur de 0x5bb060 à 0x5bb0be).
+static int
+CollectiblesGetNumCollectable(lua_State *L)
+{
+	Journal("CollectiblesGetNumCollectable", L, 1);
+	lua_pushnumber(L, collectibles.NombreDuType((int)luaL_optnumber(L, 1, -1)));
+	return 1;
+}
+
+static int
+CollectiblesGetNumCollected(lua_State *L)
+{
+	Journal("CollectiblesGetNumCollected", L, 1);
+	lua_pushnumber(L, collectibles.PrisDuType((int)luaL_optnumber(L, 1, -1)));
+	return 1;
+}
+
+// CollectiblesOnCollectedCallback(fonction) (0x5baff0 → FUN_005d9f00(L, 0, 0xbd09dc)) : l'argument mis au registre (luaL_ref,
+// FUN_0073c360), l'ancien rappel lâché (FUN_005d9a60) ; le jeu note le script et le thread courants (FUN_005dbbf0, +0x114c).
+static int
+CollectiblesOnCollectedCallback(lua_State *L)
+{
+	Journal("CollectiblesOnCollectedCallback", L, 1);
+	if(lua_gettop(L) < 1) return 0;
+	if(rappelCollectibles != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, rappelCollectibles);
+	lua_pushvalue(L, 1);
+	rappelCollectibles = luaL_ref(L, LUA_REGISTRYINDEX);
+	return 0;
+}
+
+// --- Les objets du joueur (src/peds/Armes : CObjetsJoueur, les 80 compteurs de DAT_00cf0060, déclarés avec les ramassages) ---
+
+// Les plages des modèles weap (0xa136b0 … 0xa136b4) et item (0xa136b8 … 0xa136bc) : les entrées des sections weap et item des
+// .idb (src/core/ModelEnum), de la première à la dernière.
+static bool
+DansLaPlage(const std::map<int32, std::string> &m, int32 id)
+{
+	return !m.empty() && id >= m.begin()->first && id <= m.rbegin()->first;
+}
+
+// ItemGetCurrentNum(modèle) (0x5be2d0, lu à l'assembleur de 0x5be2d0 à 0x5be33f) : le modèle (FUN_005d8200) ; une arme, ses
+// munitions dans l'inventaire du joueur (FUN_0045cdf0 sur DAT_00c1aea8 + 0x1c4) ; un item, son compteur (FUN_00541cb0) ; 0 sinon.
+static int
+ItemGetCurrentNum(lua_State *L)
+{
+	Journal("ItemGetCurrentNum", L, 1);
+	int32 m = (int32)luaL_optnumber(L, 1, -1), n = 0;
+	if(DansLaPlage(modeles.armes, m)) n = inventaire.Munitions(armes, SCRIPT_PED_JOUEUR, m);
+	else if(DansLaPlage(modeles.objets, m)) n = objetsJoueur.Nombre(m);
+	lua_pushnumber(L, n);
+	return 1;
+}
+
+// ItemSetCurrentNum(modèle, n) (0x5be340, lu de 0x5be340 à 0x5be3a2) : une arme, FUN_0045d0f0(modèle, n, 1) sur l'inventaire du
+// joueur (posée si elle y est) ; un item, FUN_00541c10(modèle, n).
+static int
+ItemSetCurrentNum(lua_State *L)
+{
+	Journal("ItemSetCurrentNum", L, 1);
+	int32 m = (int32)luaL_optnumber(L, 1, -1), n = (int32)luaL_optnumber(L, 2, 0);
+	if(DansLaPlage(modeles.armes, m)) inventaire.PoserMunitions(armes, SCRIPT_PED_JOUEUR, m, n);
+	else if(DansLaPlage(modeles.objets, m)) objetsJoueur.Poser(armes, m, n);
+	return 0;
 }
 
 // GiveWeaponToPlayer(arme[, b]) (0x5be100, lu à l'assembleur de 0x5be100 à 0x5be151) : l'arme (FUN_005d8200), b vrai par défaut
@@ -5585,10 +5827,7 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 static const char *const kEvenementsDeclencheur[] = {"un piéton entre", "le joueur entre", "un projectile", "un piéton sort",
                                                      "le joueur sort", "dedans"};
 
-// Supposé aussi : le joueur de l'outil naît en (0, 0, 0), dans FootFieldTrig (le terrain de football, dont main.lua suit
-// l'entrée et la sortie du joueur dans la table 0), quand le jeu le crée au point de la sauvegarde ; il n'est suivi qu'une fois
-// posé par le gestionnaire de zones.
-static bool joueurPose = false;
+// (joueurPose : déclaré avec les ramassages.)
 
 static void
 SuivreDeclencheurs(void)
@@ -5835,10 +6074,14 @@ PedMePlaying(lua_State *L)
 	return 1;
 }
 
-// L'historique des boutons (HUDButtonHistory) : la leçon de combo de 1_02 pose une séquence (ButtonHistoryAdd…),
-// puis deux fonctions du script, appelées quand le joueur réussit ou rate la séquence. L'outil garde ces deux
-// fonctions ; --sequence@s fait réussir le joueur (la fonction « réussie » est appelée), rien ne la rate de soi-même.
-static int rappelReussi = LUA_NOREF, rappelRate = LUA_NOREF;
+// L'historique des boutons (src/hud/ButtonHistory : HUDButtonHistory, l'objet DAT_00c674f4) : les leçons de 1_02 et de 1_06 posent
+// une séquence (ButtonHistoryAdd…) et trois fonctions du script (FUN_005d9f00 sur +0x70, +0x74 et +0x78 : FUN_008b52e0, FUN_0053aca0
+// et FUN_0053acb0 rendent ces adresses), appelées quand le joueur réussit la séquence, la rate, ou tape le bon bouton. Dans le mode de
+// l'arbre (ButtonHistoryEnableActionTreeInput), ce sont les pistes ActionRegisterButtonHistory des nœuds que le joueur joue qui
+// rapportent les boutons. --sequence@s fait réussir le joueur d'un coup (l'outil pose tous les pas faits : un raccourci de l'outil,
+// qui ne tape pas les boutons).
+static CButtonHistory historiqueBoutons;
+static int rappelReussi = LUA_NOREF, rappelRate = LUA_NOREF, rappelBonBouton = LUA_NOREF;
 
 static void
 Oublier(lua_State *L, int &ref)
@@ -5847,12 +6090,19 @@ Oublier(lua_State *L, int &ref)
 	ref = LUA_NOREF;
 }
 
+// FUN_005d9f00(L, 0, case) : la fonction du premier argument mise au registre, l'ancienne lâchée (sans fonction, la case reste vide).
+static void
+PoserRappelBoutons(lua_State *L, int &ref)
+{
+	Oublier(L, ref);
+	if(lua_isfunction(L, 1)){ lua_pushvalue(L, 1); ref = luaL_ref(L, LUA_REGISTRYINDEX); }
+}
+
 static int
 ButtonHistorySetCallbackPassed(lua_State *L)
 {
 	Journal("ButtonHistorySetCallbackPassed", L, 1);
-	Oublier(L, rappelReussi);
-	if(lua_isfunction(L, 1)){ lua_pushvalue(L, 1); rappelReussi = luaL_ref(L, LUA_REGISTRYINDEX); }
+	PoserRappelBoutons(L, rappelReussi);
 	return 0;
 }
 
@@ -5860,31 +6110,150 @@ static int
 ButtonHistorySetCallbackFailed(lua_State *L)
 {
 	Journal("ButtonHistorySetCallbackFailed", L, 1);
-	Oublier(L, rappelRate);
-	if(lua_isfunction(L, 1)){ lua_pushvalue(L, 1); rappelRate = luaL_ref(L, LUA_REGISTRYINDEX); }
+	PoserRappelBoutons(L, rappelRate);
 	return 0;
 }
 
 static int
-ButtonHistoryClearSequence(lua_State *L)
+ButtonHistorySetCallbackCorrectButton(lua_State *L)
 {
-	Journal("ButtonHistoryClearSequence", L, 1);
-	Oublier(L, rappelReussi);
-	Oublier(L, rappelRate);
+	Journal("ButtonHistorySetCallbackCorrectButton", L, 1);
+	PoserRappelBoutons(L, rappelBonBouton);
 	return 0;
 }
 
-// --sequence@s : le joueur tape la séquence demandée ; la fonction « réussie » du script est appelée.
+// ButtonHistoryClearSequence() (0x5bd810 → FUN_0053abb0) : la séquence vidée ; les rappels restent.
+static int
+ButtonHistoryClearSequence(lua_State *L)
+{
+	Journal("ButtonHistoryClearSequence", L, 1);
+	historiqueBoutons.Effacer();
+	return 0;
+}
+
+// ButtonHistoryAddSequence(bouton, tenir, …) (0x5bd850, lu à l'assembleur de 0x5bd850 à 0x5bd8b7) : par paires, FUN_0053ad50(bouton,
+// tenir, 750, -1, -1) (0x2ee : le délai du pas).
+static int
+ButtonHistoryAddSequence(lua_State *L)
+{
+	Journal("ButtonHistoryAddSequence", L, 1);
+	int n = lua_gettop(L);
+	for(int i = 0; i < n; i += 2) historiqueBoutons.Ajouter((int32)luaL_optnumber(L, i + 1, 0), lua_toboolean(L, i + 2) != 0, 0x2ee);
+	return 0;
+}
+
+// Les secondes des scripts en millisecondes : × 1000 (le double 0x900138), puis l'arrondi 0x85c6f0 (tronqué).
+static int32
+EnMs(lua_State *L, int i)
+{
+	return (int32)((double)luaL_optnumber(L, i, 0) * 1000.0);
+}
+
+// ButtonHistoryAddSequenceTimeInterval(bouton, tenir, secondes, …) (0x5bd8f0, lu de 0x5bd8f0 à 0x5bd96d) : par triplets,
+// FUN_0053ad50(bouton, tenir, secondes × 1000, -1, -1).
+static int
+ButtonHistoryAddSequenceTimeInterval(lua_State *L)
+{
+	Journal("ButtonHistoryAddSequenceTimeInterval", L, 1);
+	int n = lua_gettop(L);
+	for(int i = 0; i < n; i += 3)
+		historiqueBoutons.Ajouter((int32)luaL_optnumber(L, i + 1, 0), lua_toboolean(L, i + 2) != 0, EnMs(L, i + 3));
+	return 0;
+}
+
+// ButtonHistoryAddSequenceTimeIntervalCharge(bouton, s1, s2, s3, …) (0x5bd970, lu de 0x5bd970 à 0x5bda19) : par quadruplets,
+// FUN_0053ad50(bouton, 0, s1 × 1000, s2 × 1000, s3 × 1000).
+static int
+ButtonHistoryAddSequenceTimeIntervalCharge(lua_State *L)
+{
+	Journal("ButtonHistoryAddSequenceTimeIntervalCharge", L, 1);
+	int n = lua_gettop(L);
+	for(int i = 0; i < n; i += 4)
+		historiqueBoutons.Ajouter((int32)luaL_optnumber(L, i + 1, 0), false, EnMs(L, i + 2), EnMs(L, i + 3), EnMs(L, i + 4));
+	return 0;
+}
+
+// ButtonHistorySetSequenceTime(secondes) (0x5bd820 → FUN_0053ac70(secondes × 1000)).
+static int
+ButtonHistorySetSequenceTime(lua_State *L)
+{
+	Journal("ButtonHistorySetSequenceTime", L, 1);
+	historiqueBoutons.PoserDuree(EnMs(L, 1));
+	return 0;
+}
+
+// ButtonHistoryIgnoreController(b) (0x5bd720 → FUN_0053b2e0, le booléen par FUN_005d8f20).
+static int
+ButtonHistoryIgnoreController(lua_State *L)
+{
+	Journal("ButtonHistoryIgnoreController", L, 1);
+	historiqueBoutons.IgnorerManette(lua_toboolean(L, 1) != 0, (uint32)maintenant);
+	return 0;
+}
+
+// ButtonHistoryIgnoreSequence(bouton, …) (0x5bda20 → FUN_0053ade0 pour chaque argument).
+static int
+ButtonHistoryIgnoreSequence(lua_State *L)
+{
+	Journal("ButtonHistoryIgnoreSequence", L, 1);
+	int n = lua_gettop(L);
+	for(int i = 1; i <= n; i++) historiqueBoutons.Ignorer((int32)luaL_optnumber(L, i, 0));
+	return 0;
+}
+
+// ButtonHistoryEnableActionTreeInput(b) (0x5bda60 → FUN_0053af90 : l'octet +0xb0).
+static int
+ButtonHistoryEnableActionTreeInput(lua_State *L)
+{
+	Journal("ButtonHistoryEnableActionTreeInput", L, 1);
+	historiqueBoutons.parArbre = lua_toboolean(L, 1) != 0;
+	return 0;
+}
+
+// ButtonHistoryAddSequenceLocalText(texte) (0x5bda90 → FUN_0053ad20 : 31 caractères en +0xcc).
+static int
+ButtonHistoryAddSequenceLocalText(lua_State *L)
+{
+	Journal("ButtonHistoryAddSequenceLocalText", L, 1);
+	historiqueBoutons.texte = std::string(luaL_optstring(L, 1, "")).substr(0, 31);
+	return 0;
+}
+
+// Un rappel de l'historique, avec ses arguments (FUN_005d9ac0, FUN_005d8110, FUN_005d8510, FUN_005d8460, FUN_005d8450, FUN_005d8140).
+static void
+AppelerRappelBoutons(lua_State *L, int ref, const char *quoi, int nargs, int32 bouton, bool expiree)
+{
+	if(ref == LUA_NOREF || L == nil) return;
+	printf("%6.2f s  historique des boutons : le rappel « %s » est appelé\n", maintenant / 1000.0, quoi);
+	lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+	if(nargs >= 1) lua_pushnumber(L, bouton);
+	if(nargs >= 2) lua_pushboolean(L, expiree);
+	if(lua_pcall(L, nargs, 0, 0) != 0){ printf("        rappel de l'historique des boutons : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+}
+
+// FUN_0053c250 (la méthode 8 de HUDButtonHistory) : à chaque image où le composant 21 est montré (supposé : le gestionnaire du HUD
+// passe les composants visibles), l'historique avance et appelle ses rappels.
+static void
+AvancerHistoriqueBoutons(lua_State *L)
+{
+	if(!hud.Visible(21)) return;
+	CButtonHistory::Evenements e = historiqueBoutons.Avancer((uint32)maintenant, rappelReussi != LUA_NOREF, rappelRate != LUA_NOREF,
+	                                                          rappelBonBouton != LUA_NOREF);
+	if(e.reussie) AppelerRappelBoutons(L, rappelReussi, "réussie", 0, 0, false);
+	if(e.bonBouton) AppelerRappelBoutons(L, rappelBonBouton, "bon bouton", 1, e.bouton, false);
+	if(e.ratee) AppelerRappelBoutons(L, rappelRate, "ratée", 2, e.bouton, e.expiree);
+}
+
+// --sequence@s : le joueur réussit la séquence posée : l'outil la tient pour tapée (tous ses pas faits) ; l'image suivante appelle le
+// rappel « réussie » comme FUN_0053c250.
 static void
 ReussirSequence(lua_State *L)
 {
-	if(rappelReussi == LUA_NOREF){ printf("%6.2f s  le joueur tape une séquence : aucune n'est posée\n", maintenant / 1000.0); return; }
-	int ref = rappelReussi;
-	rappelReussi = LUA_NOREF;
-	lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
-	luaL_unref(L, LUA_REGISTRYINDEX, ref);
+	CButtonHistory &h = historiqueBoutons;
+	if(h.nombre < 1 || h.manetteIgnoree){ printf("%6.2f s  le joueur tape une séquence : aucune n'est posée\n", maintenant / 1000.0); return; }
+	for(int i = 0; i < h.nombre; i++) h.pas[i].fait = true;
+	h.courant = h.nombre; h.echouee = false; h.evenement = true;
 	printf("%6.2f s  le joueur réussit la séquence de boutons\n", maintenant / 1000.0);
-	if(lua_pcall(L, 0, 0, 0) != 0){ printf("        rappel de la séquence : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
 }
 
 static int
@@ -6586,6 +6955,15 @@ main(int argc, char **argv)
 	lua_register(L, "ButtonHistorySetCallbackPassed", ButtonHistorySetCallbackPassed);
 	lua_register(L, "ButtonHistorySetCallbackFailed", ButtonHistorySetCallbackFailed);
 	lua_register(L, "ButtonHistoryClearSequence", ButtonHistoryClearSequence);
+	lua_register(L, "ButtonHistorySetCallbackCorrectButton", ButtonHistorySetCallbackCorrectButton);
+	lua_register(L, "ButtonHistoryAddSequence", ButtonHistoryAddSequence);
+	lua_register(L, "ButtonHistoryAddSequenceTimeInterval", ButtonHistoryAddSequenceTimeInterval);
+	lua_register(L, "ButtonHistoryAddSequenceTimeIntervalCharge", ButtonHistoryAddSequenceTimeIntervalCharge);
+	lua_register(L, "ButtonHistorySetSequenceTime", ButtonHistorySetSequenceTime);
+	lua_register(L, "ButtonHistoryIgnoreController", ButtonHistoryIgnoreController);
+	lua_register(L, "ButtonHistoryIgnoreSequence", ButtonHistoryIgnoreSequence);
+	lua_register(L, "ButtonHistoryEnableActionTreeInput", ButtonHistoryEnableActionTreeInput);
+	lua_register(L, "ButtonHistoryAddSequenceLocalText", ButtonHistoryAddSequenceLocalText);
 	lua_register(L, "PedIsPlaying", PedIsPlaying);
 	lua_register(L, "PedMePlaying", PedMePlaying);
 	lua_register(L, "PlayerIsInAreaObject", PlayerIsInAreaObject);
@@ -6703,6 +7081,15 @@ main(int argc, char **argv)
 	lua_register(L, "GetPointListSize", GetPointListSize);
 	lua_register(L, "PickupCreateXYZ", PickupCreateXYZ);
 	lua_register(L, "PickupDelete", PickupDelete);
+	lua_register(L, "PAnimRequest", PAnimRequest);
+	lua_register(L, "ObjectRemovePickupsInTrigger", ObjectRemovePickupsInTrigger);
+	lua_register(L, "ItemGetCurrentNum", ItemGetCurrentNum);
+	lua_register(L, "ItemSetCurrentNum", ItemSetCurrentNum);
+	lua_register(L, "CollectiblesSetTypeAvailable", CollectiblesSetTypeAvailable);
+	lua_register(L, "CollectiblesSetAllAsCollected", CollectiblesSetAllAsCollected);
+	lua_register(L, "CollectiblesGetNumCollectable", CollectiblesGetNumCollectable);
+	lua_register(L, "CollectiblesGetNumCollected", CollectiblesGetNumCollected);
+	lua_register(L, "CollectiblesOnCollectedCallback", CollectiblesOnCollectedCallback);
 	lua_register(L, "RegisterHashEventHandler", RegisterHashEventHandler);
 	lua_register(L, "SetNumberOfHandledHashEventObjects", SetNumberOfHandledHashEventObjects);
 	lua_register(L, "ObjectToggleVulnerability", ObjectToggleVulnerability);
@@ -6801,6 +7188,7 @@ main(int argc, char **argv)
 	if(modeles.Charger()) printf("%zu noms de modèles dans Objects/ide.img\n", modeles.Nombre());
 	else printf("Objects\\ide.img introuvable : MODELENUM répondra -1\n");
 	ChargerArmes();
+	ChargerCollectibles();   // CGame::Initialise : les collectibles avant les placements
 	ChargerObjets();
 	ChargerPedStats();
 	ChargerMissions();
@@ -7046,6 +7434,13 @@ main(int argc, char **argv)
 				printf("%6.2f s  le piéton %d retient %s ligne %d\n", maintenant / 1000.0, c.first, kSpeechEvents[e.evenement], e.ligne);
 			}
 			c.second.parolesLancees.clear();
+			// ActionRegisterButtonHistory (FUN_0061bab0 → FUN_0053b340) : le bouton et l'état rapportés à l'historique des boutons.
+			for(const CActionController::BoutonHistorique &b : c.second.boutonsLances){
+				historiqueBoutons.Rapporter(b.bouton, b.etat, (uint32)maintenant);
+				if(historiqueBoutons.parArbre)
+					printf("%6.2f s  le piéton %d rapporte le bouton %d (état %d) à l'historique des boutons\n", maintenant / 1000.0, c.first, b.bouton, b.etat);
+			}
+			c.second.boutonsLances.clear();
 			for(; c.second.departsLances > 0; c.second.departsLances--)
 				for(auto it = parolesTenues.begin(); it != parolesTenues.end(); ){
 					if(it->ped != c.first){ ++it; continue; }
@@ -7122,6 +7517,7 @@ main(int argc, char **argv)
 				       CheminVu(cible, cible.joue).c_str());
 			}
 		}
+		AvancerHistoriqueBoutons(L);
 		intentionsPietons.clear();   // FUN_005f3720 : l'intention ne vaut que pour l'image
 		VieillirBoutons();
 		for(auto it = demandes.begin(); it != demandes.end(); ) it = maintenant > it->second ? demandes.erase(it) : ++it;
@@ -7162,6 +7558,8 @@ main(int argc, char **argv)
 		MettreAJour(L);
 		AvancerPietons();
 		AvancerObjets();
+		PoserLesCollectibles();
+		AvancerRamassages();
 		ecranDeFin.Avancer(33.0f / 20.0f);   // FUN_007073c0 : le pas du moteur (ms_fTimeStep)
 		PoursuivrePieton();   // --suivre : la manette du joueur
 		AvancerCinematique();
