@@ -51,6 +51,29 @@ CObjetsAnimes::Creer(const Declencheur &d)
 	return (int)i;
 }
 
+int
+CObjetsAnimes::CreerParScript(const Declencheur &d, uint8 octet3a8)
+{
+	if(d.modele == -1) return -1;
+	int i = ObjetDe(d.handle);
+	if(i >= 0) return i;
+	i = Creer(d);
+	objets[i].octet3a8 = octet3a8;
+	return i;
+}
+
+int
+CObjetsAnimes::CreerPersistant(int32 modele, const CVector &pos, float cap, int8 zone)
+{
+	Declencheur d;
+	d.handle = -1; d.modele = modele; d.pos = pos; d.lacet = cap; d.zone = zone;
+	d.fiche = fiche ? fiche(modele) : nil;
+	int i = Creer(d);
+	objets[i].octet3a8 = 0;
+	objets[i].drapeaux[13] = 0;
+	return i;
+}
+
 std::vector<int>
 CObjetsAnimes::CreerPourZone(int zone, const std::vector<Declencheur> &declencheurs, int saison)
 {

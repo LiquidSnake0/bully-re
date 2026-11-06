@@ -83,6 +83,20 @@ main(void)
 	VERIF(q.OuvrirPorte(k, 1, true, false) && q.Drapeau(k, 9) && q.Drapeau(k, 0) && q.Drapeau(k, 15));
 	VERIF(!q.OuvrirPorte(k, 0, true, false));
 	VERIF(q.FermerPorte(k, true, false) && !q.Drapeau(k, 9) && !q.Drapeau(k, 0) && !q.Drapeau(k, 15));
+	// PAnimCreate (CreerParScript) : un déclencheur propre à une mission, d'une autre zone, a son objet ; déjà là, il le garde ; sans
+	// modèle, rien. CreatePersistentEntity (CreerPersistant) : sans déclencheur, l'octet +0x3a8 à 0, gardé hors de sa zone.
+	CObjetsAnimes s2;
+	CObjetsAnimes::Declencheur md = D(9, 10015, 0, 2, true);
+	int a = s2.CreerParScript(md, 1);
+	VERIF(a >= 0 && s2.ObjetDe(9) == a && s2.Objet(a)->octet3a8 == 1 && s2.Objet(a)->modele == 10015);
+	VERIF(s2.CreerParScript(md, 0) == a);
+	VERIF(s2.CreerParScript(D(10, -1, 0), 1) == -1);
+	int b = s2.CreerPersistant(10003, CVector(1, 2, 3), 90.0f, 0);
+	VERIF(b >= 0 && b != a && s2.Objet(b)->declencheur == -1 && s2.Objet(b)->octet3a8 == 0);
+	std::vector<CObjetsAnimes::Declencheur> ds2 = { md };
+	VERIF(s2.RetirerHorsZone(2, ds2).empty() && s2.Objet(a) && s2.Objet(b));   // la mission et la case 0 restent
+	s2.Liberer(b);
+	VERIF(s2.Objet(b) == nil);
 	printf("test_objetsanimes : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;
 }

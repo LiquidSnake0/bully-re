@@ -60,7 +60,7 @@ Ped(const CPedIdeEntry &e)
 static int32 Obj(const CObjIdeEntry &e){ Noter(e.model, e.id); return 0; }
 static int32 Car(const CCarIdeEntry &e){ Noter(e.model, e.id); return 0; }
 static int32 Weap(const CWeapIdeEntry &e){ Noter(e.model, e.id); gEnCours->armes[e.id] = e.model; return 0; }
-static int32 Panm(const CPanmIdeEntry &e){ Noter(e.model, e.id); return 0; }
+static int32 Panm(const CPanmIdeEntry &e){ Noter(e.model, e.id); gEnCours->animes.insert(e.id); return 0; }
 static int32 Simple(const CSimpleIdeEntry &e)
 {
 	Noter(e.model, e.id);

@@ -145,6 +145,21 @@ public:
 	// (DAT_01b652d4) et que /Global/Door/DoorFunctions/Closing/ (0xa76b60) existe : les drapeaux 0, 15 et 9 à 0, FUN_005b3030 et le
 	// nœud joué (sans genre, +0x20 et +0x3c à 1 et FUN_004ee540 : non suivis). Rend vrai sauf pour une porte fermée.
 	bool FermerPorte(int i, bool noeud, bool fermeDeja);
+	// PAnimCreate (0x5c4680, hors de l'index ; lue à l'assembleur de 0x5c4680 à 0x5c48b0) : la case du déclencheur, sa matrice faite de
+	// ses angles (+0x10 … +0x18, le lacet +0x38 retiré en degrés : 0x900158, 0x900160) et de sa position (+4), puis, s'il a un modèle
+	// (le +0x10 de son périmètre), FUN_0044cd20 comme pour la zone mais sans les conditions de FUN_00416540 (une mission, une autre zone,
+	// l'emplacement 5 ou la saison n'empêchent rien), l'octet +0x3a8 au troisième argument du script (1 par défaut) ; FUN_0045d560 (le
+	// monde), le modèle demandé et chargé tout de suite (FUN_00531ed0(modèle, 0x16), FUN_00533d90), sa collision (FUN_0056f300,
+	// FUN_0056f970), le modèle noté à l'objet script (FUN_005d92f0) et FUN_004ef420 sur l'objet : non suivis. Un déclencheur qui a déjà
+	// son objet le garde (supposé : le jeu en créerait un second et le +0x1c du déclencheur passerait au nouveau). Rend l'objet, -1 sans
+	// modèle.
+	int CreerParScript(const Declencheur &d, uint8 octet3a8);
+	// CreatePersistentEntity d'un modèle animé (le type 10 du modelinfo ; FUN_005bd090, lu dans l'index) : FUN_0044cd20(modèle, zone,
+	// matrice, 0, 0, 0, 0), sans déclencheur (la case 0 : ni le +0x1c d'un déclencheur, ni le drapeau 13), l'octet +0x3a8 à 0 ; le
+	// cap en +0x10 (FUN_00412ad0). L'objet reste au changement de zone (FUN_00416490 garde ceux de la case 0). Rend l'objet.
+	int CreerPersistant(int32 modele, const CVector &pos, float cap, int8 zone);
+	// DeletePersistentEntity (FUN_005bca50 → FUN_0044a510 ; FUN_0045dc20, FUN_0045e540, le destructeur) : l'objet rendu au pool.
+	void Liberer(int i) { if(CObjetAnime *o = Objet(i)){ o->libre = true; o->declencheur = -1; } }
 	void Vider(void) { objets.clear(); }
 	// La fiche PropButes d'un modèle (le +0x70 de son modelinfo, FUN_00520080), que l'appelant fournit ; nil sans fiche.
 	std::function<const CFicheObjetAnime *(int32)> fiche;

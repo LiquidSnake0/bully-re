@@ -7,6 +7,7 @@
 #pragma once
 #include "../common.h"
 #include <map>
+#include <set>
 #include <string>
 
 class CModelEnum
@@ -45,6 +46,8 @@ public:
 	// Les noms des entrées weap (0xa136b0 … 0xa136b4) et item (0xa136b8 … 0xa136bc) : CWeapon::RegisterCB (FUN_004da2d0)
 	// cherche la fiche de chacune par son nom (FUN_0050eaa0, le +4 du modelinfo). Indice du modèle → nom.
 	std::map<int32, std::string> armes, objets;
+	// Les entrées panm (les objets animés : le type 10 du modelinfo, l'octet +8, que CreatePersistentEntity et FUN_00438790 testent).
+	std::set<int32> animes;
 	static const char *const typesDePietons[15];
 	int32 doublons = 0;                    // un même nom sous deux indices : le premier gagne
 };

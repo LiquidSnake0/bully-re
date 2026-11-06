@@ -6,6 +6,7 @@
 #include "../src/hud/EcranDeFin.h"
 #include "../src/hud/ObjectifsMission.h"
 #include "../src/hud/ButtonHistory.h"
+#include "../src/hud/Marqueurs.h"
 #include <cstdio>
 
 static int echecs = 0;
@@ -97,6 +98,24 @@ main(void)
 		m.parArbre = true; m.Effacer(); m.Ajouter(9, false, 1000000000); m.PoserDuree(5000); m.IgnorerManette(false, 0);
 		e = m.Avancer(100000, true, true, true);
 		VERIF(!e.ratee && !e.expiree);
+	}
+	// Les marqueurs du radar (FUN_0054a460, FUN_0054a2c0, FUN_0054a7f0, FUN_0054a740) : le clochard de 1_06_01 (l'icône 17 : un piéton,
+	// le genre 0xd), le point de l'escalier, une poignée périmée.
+	{
+		static CMarqueurs m;
+		int32 a = m.AjouterEntite(0xd, 0x401, 4, 17, false, 1000);
+		VERIF(a == (1 << 12 | 0) && m.traces[0].Prise() && m.traces[0].affichage == 1 && m.traces[0].echeance == 3500);
+		VERIF(m.AjouterEntite(4, 0, 4, 17, false, 0) == -1);   // l'icône 0x11 réservée aux piétons
+		int32 b = m.AjouterPoint(4, CVector(123.884f, -2.49f, 6.06f), 1, 0, false, 1000);
+		VERIF(b == (1 << 12 | 1) && (m.traces[1].drapeaux & 0x10) && m.traces[1].entite == 0);
+		VERIF(m.AjouterPoint(4, CVector(0, 0, 0), 1, 0, false, 0) == -1);
+		m.PoserAffichage(b, 5);
+		VERIF(m.traces[1].affichage == 5);
+		m.Retirer(b);
+		VERIF(!m.traces[1].Prise() && m.Indice(b) == 1);   // la génération reste : la poignée retrouve encore la trace
+		int32 c = m.AjouterPoint(4, CVector(1, 1, 1), 1, 0, false, 0);
+		VERIF(c == (2 << 12 | 1) && m.Indice(b) == -1);
+		VERIF(m.RetirerEntite(0xd, 0x401) == 1 && !m.traces[0].Prise());
 	}
 	printf("test_hud : %s\n", echecs ? "ÉCHEC" : "OK");
 	return echecs ? 1 : 0;
