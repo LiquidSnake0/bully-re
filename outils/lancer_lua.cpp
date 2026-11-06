@@ -3034,6 +3034,25 @@ MissionObjectiveRemove(lua_State *L)
 	return 0;
 }
 
+// PAnimRequest(déclencheur) (0x5c4590, lue à l'assembleur de 0x5c4590 à 0x5c4673) : la case du pool des déclencheurs (0x20c7c48 ;
+// nulle pour un indice négatif ou une case libre), son périmètre (+0x20) et le modèle de son PLACEMENT (+0x10) ; sans modèle (-1),
+// vrai. Sinon le modèle doit être chargé (FUN_0052dbe0 : l'octet +4 de son entrée de diffusion à 1 ; sinon FUN_00531ed0(modèle, 0x1e)
+// le demande et la réponse est fausse), puis sa collision (le mot +0x30 du +0xc du modelinfo : l'entrée 0x56b8 + n ; sinon
+// FUN_00531ed0(…, 0x16)) ; le modèle est noté à l'objet script courant (FUN_005db7e0, FUN_005d92f0 : relâché à la fin de la mission).
+// L'outil n'a pas de diffusion : un modèle est chargé dès qu'on le demande (comme pour RequestModel), la réponse est vraie.
+static int
+PAnimRequest(lua_State *L)
+{
+	Journal("PAnimRequest", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	const CTriggerPerimeter *pe = h >= 0 ? donnees.PerimetreDe(h) : nil;
+	int32 m = pe && !pe->placement.empty() ? modeles.Index(pe->placement.c_str()) : -1;
+	if(m != -1 && journalRestant > 0) printf("%6.2f s  PAnimRequest : le modèle %d (%s) du déclencheur %d est demandé, chargé (supposé)\n",
+	                                        maintenant / 1000.0, m, pe->placement.c_str(), h);
+	lua_pushboolean(L, 1);
+	return 1;
+}
+
 // AreaRegisterAnimProps() (0x5b6d60 → 0x438700) : la table DAT_00bd3e78 jusqu'à son compte DAT_00bd5c54, que rien n'augmente
 // (vérifié à l'assembleur : écrit seulement en 0x416b07, remis à 0) ; elle ne crée rien.
 static int
@@ -7062,6 +7081,7 @@ main(int argc, char **argv)
 	lua_register(L, "GetPointListSize", GetPointListSize);
 	lua_register(L, "PickupCreateXYZ", PickupCreateXYZ);
 	lua_register(L, "PickupDelete", PickupDelete);
+	lua_register(L, "PAnimRequest", PAnimRequest);
 	lua_register(L, "ObjectRemovePickupsInTrigger", ObjectRemovePickupsInTrigger);
 	lua_register(L, "ItemGetCurrentNum", ItemGetCurrentNum);
 	lua_register(L, "ItemSetCurrentNum", ItemSetCurrentNum);
