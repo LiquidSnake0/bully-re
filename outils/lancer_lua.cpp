@@ -214,6 +214,7 @@ static int objetVise = -1;   // l'objet que le joueur vise (--viser-objet), sa p
 // (FUN_005db7e0, FUN_005d9760 : il est retiré avec la mission) ; la génération commence à 1 et monte à chaque création (supposé).
 struct CRamassage { bool pris = false; int32 modele = -1; CVector pos; std::string fiche; uint16 generation = 0; int32 script = -1; };
 static CRamassage ramassages[300];
+static CObjetsJoueur objetsJoueur;   // les objets du joueur (DAT_00cf0060, src/peds/Armes)
 
 // Le nom d'un modèle d'arme ou d'objet (le +4 de son modelinfo est son HashString), nil sinon.
 static const std::string *
@@ -2552,6 +2553,10 @@ ChargerArmes(void)
 		                            ActionHash("ProjectileButes"), t, &ch))
 			typesProjectiles[a.first] = LireTypeProjectile(t, ch);
 	armes.sansFin[0] = modeles.Index("marble"); armes.sansFin[1] = modeles.Index("supermarble"); armes.sansFin[2] = modeles.Index("RubBand");
+	// DAT_00a136b8 et les quatre modèles que FUN_00541ae0 traite à part (InitModelIndices, la table des noms 0xa136e8).
+	if(!modeles.objets.empty()) objetsJoueur.premier = modeles.objets.begin()->first;
+	objetsJoueur.chocolats = modeles.Index("ChocBox"); objetsJoueur.fleurs = modeles.Index("FlowerGift");
+	objetsJoueur.ticket = modeles.Index("ticket"); objetsJoueur.bigGulp = modeles.Index("BigGulp");
 	printf("%d fiches d'armes et d'objets (ObjectButes) pour %zu armes et %zu objets, %zu fiches de projectiles\n", lues, modeles.armes.size(),
 	       modeles.objets.size(), typesProjectiles.size());
 }
@@ -3172,6 +3177,41 @@ CollectiblesOnCollectedCallback(lua_State *L)
 	if(rappelCollectibles != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, rappelCollectibles);
 	lua_pushvalue(L, 1);
 	rappelCollectibles = luaL_ref(L, LUA_REGISTRYINDEX);
+	return 0;
+}
+
+// --- Les objets du joueur (src/peds/Armes : CObjetsJoueur, les 80 compteurs de DAT_00cf0060, déclarés avec les ramassages) ---
+
+// Les plages des modèles weap (0xa136b0 … 0xa136b4) et item (0xa136b8 … 0xa136bc) : les entrées des sections weap et item des
+// .idb (src/core/ModelEnum), de la première à la dernière.
+static bool
+DansLaPlage(const std::map<int32, std::string> &m, int32 id)
+{
+	return !m.empty() && id >= m.begin()->first && id <= m.rbegin()->first;
+}
+
+// ItemGetCurrentNum(modèle) (0x5be2d0, lu à l'assembleur de 0x5be2d0 à 0x5be33f) : le modèle (FUN_005d8200) ; une arme, ses
+// munitions dans l'inventaire du joueur (FUN_0045cdf0 sur DAT_00c1aea8 + 0x1c4) ; un item, son compteur (FUN_00541cb0) ; 0 sinon.
+static int
+ItemGetCurrentNum(lua_State *L)
+{
+	Journal("ItemGetCurrentNum", L, 1);
+	int32 m = (int32)luaL_optnumber(L, 1, -1), n = 0;
+	if(DansLaPlage(modeles.armes, m)) n = inventaire.Munitions(armes, SCRIPT_PED_JOUEUR, m);
+	else if(DansLaPlage(modeles.objets, m)) n = objetsJoueur.Nombre(m);
+	lua_pushnumber(L, n);
+	return 1;
+}
+
+// ItemSetCurrentNum(modèle, n) (0x5be340, lu de 0x5be340 à 0x5be3a2) : une arme, FUN_0045d0f0(modèle, n, 1) sur l'inventaire du
+// joueur (posée si elle y est) ; un item, FUN_00541c10(modèle, n).
+static int
+ItemSetCurrentNum(lua_State *L)
+{
+	Journal("ItemSetCurrentNum", L, 1);
+	int32 m = (int32)luaL_optnumber(L, 1, -1), n = (int32)luaL_optnumber(L, 2, 0);
+	if(DansLaPlage(modeles.armes, m)) inventaire.PoserMunitions(armes, SCRIPT_PED_JOUEUR, m, n);
+	else if(DansLaPlage(modeles.objets, m)) objetsJoueur.Poser(armes, m, n);
 	return 0;
 }
 
@@ -6793,6 +6833,8 @@ main(int argc, char **argv)
 	lua_register(L, "GetPointListSize", GetPointListSize);
 	lua_register(L, "PickupCreateXYZ", PickupCreateXYZ);
 	lua_register(L, "PickupDelete", PickupDelete);
+	lua_register(L, "ItemGetCurrentNum", ItemGetCurrentNum);
+	lua_register(L, "ItemSetCurrentNum", ItemSetCurrentNum);
 	lua_register(L, "CollectiblesSetTypeAvailable", CollectiblesSetTypeAvailable);
 	lua_register(L, "CollectiblesSetAllAsCollected", CollectiblesSetAllAsCollected);
 	lua_register(L, "CollectiblesGetNumCollectable", CollectiblesGetNumCollectable);
