@@ -2839,6 +2839,29 @@ PoserObjetsAnimes(int zone)
 	printf("%6.2f s  objets animés : %zu créés pour la zone %d (FUN_00416540) : %s\n", maintenant / 1000.0, crees.size(), zone, liste.c_str());
 }
 
+// PAnimCreate(déclencheur[, x, b]) (0x5c4680, CObjetsAnimes::CreerParScript) : l'objet animé du déclencheur, même propre à une
+// mission ; b (le troisième argument, FUN_005d8f20 s'il y en a trois ou plus) va à l'octet +0x3a8, 1 par défaut. Ne rend rien.
+static int
+PAnimCreate(lua_State *L)
+{
+	Journal("PAnimCreate", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	uint8 b = lua_gettop(L) >= 3 ? (lua_toboolean(L, 3) ? 1 : 0) : 1;
+	if(h < 0 || donnees.ZoneParHandle(h) == nil) return 0;
+	if(!objetsAnimes.fiche) objetsAnimes.fiche = [](int32 m){ std::string n = NomDeModele(m); return n.empty() ? (const CFicheObjetAnime *)nil : FicheAnimee(n); };
+	for(const CObjetsAnimes::Declencheur &d : DeclencheursDuPool()){
+		if(d.handle != h) continue;
+		bool avait = objetsAnimes.ObjetDe(h) >= 0;
+		int i = objetsAnimes.CreerParScript(d, b);
+		const CTriggerZone *z = donnees.ZoneParHandle(h);
+		if(i >= 0 && !avait)
+			printf("%6.2f s  objets animés : PAnimCreate crée l'objet %d (modèle %d, %s) du déclencheur %s\n", maintenant / 1000.0, i, d.modele,
+			       NomDeModele(d.modele).c_str(), z ? z->nom.c_str() : "?");
+		break;
+	}
+	return 0;
+}
+
 // PAnimExists(déclencheur) (0x5c48c0, lu à l'assembleur de 0x5c48c0 à 0x5c4927) : le déclencheur (FUN_005d8200, rien en dessous
 // de 0), sa case du pool (DAT_020c7c48 : son octet d'état sans le bit 0x80), son objet (+0x1c), le +0x114 de l'objet (sa
 // géométrie) et le +0x94 de celle-ci non nuls ; un booléen (FUN_005d8450). L'outil n'a pas la géométrie : l'objet suffit.
@@ -7082,6 +7105,7 @@ main(int argc, char **argv)
 	lua_register(L, "PickupCreateXYZ", PickupCreateXYZ);
 	lua_register(L, "PickupDelete", PickupDelete);
 	lua_register(L, "PAnimRequest", PAnimRequest);
+	lua_register(L, "PAnimCreate", PAnimCreate);
 	lua_register(L, "ObjectRemovePickupsInTrigger", ObjectRemovePickupsInTrigger);
 	lua_register(L, "ItemGetCurrentNum", ItemGetCurrentNum);
 	lua_register(L, "ItemSetCurrentNum", ItemSetCurrentNum);

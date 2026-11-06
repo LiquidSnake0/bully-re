@@ -51,6 +51,17 @@ CObjetsAnimes::Creer(const Declencheur &d)
 	return (int)i;
 }
 
+int
+CObjetsAnimes::CreerParScript(const Declencheur &d, uint8 octet3a8)
+{
+	if(d.modele == -1) return -1;
+	int i = ObjetDe(d.handle);
+	if(i >= 0) return i;
+	i = Creer(d);
+	objets[i].octet3a8 = octet3a8;
+	return i;
+}
+
 std::vector<int>
 CObjetsAnimes::CreerPourZone(int zone, const std::vector<Declencheur> &declencheurs, int saison)
 {
