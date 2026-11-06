@@ -318,6 +318,26 @@ static int ConditionMission(uint32 type, const uint32 mots[6]);
 static int ConditionTenue(uint32 nom);
 // --demander N@s : une ActionRequest du joueur (la manette) en attente jusqu'à cet instant (ms).
 static std::map<uint32, uint32> demandes;
+// --tenir N,durée@s : la manette tient le bouton brut N de s à s + durée (ms).
+struct BoutonTenu { uint32 bouton, debut, fin; };
+static std::vector<BoutonTenu> boutonsTenus;
+// L'octet d'état d'un bouton brut du joueur, que lit ActionRequest (FUN_005fd570) : une demande en attente pose le bit 0 ; un bouton
+// tenu suit les octets que FUN_005f3930 pose et que FUN_005f3720 fait vieillir chez les autres piétons : 3 à l'image de l'appui
+// (appuyé, tenu), 2 tant qu'il reste tenu (le bit 0 tombe), 8 à l'image du lâcher, 0 ensuite. Supposé pour le joueur : le relevé de
+// la manette qui remplit ces octets n'est pas lu.
+static unsigned char
+EtatBoutonJoueur(uint32 bouton)
+{
+	unsigned char etat = 0;
+	auto it = demandes.find(bouton);
+	if(it != demandes.end() && maintenant <= it->second) etat |= 1;
+	for(const BoutonTenu &b : boutonsTenus){
+		if(b.bouton != bouton || maintenant < b.debut) continue;
+		if(maintenant < b.fin) etat |= maintenant < b.debut + 33 ? 3 : 2;
+		else if(maintenant < b.fin + 33) etat |= 8;
+	}
+	return etat;
+}
 // L'état des 47 boutons bruts des autres piétons (+0x20 du composant +0x2e0, 12 octets par bouton : l'octet d'état en +0),
 // que les pistes ActionRequest de leur arbre de l'IA appuient (FUN_005f3930 : 3 lâché → 8, 2 appuyé et tenu → 3, sinon
 // appuyé → 1) et que FUN_005f3720 fait vieillir à chaque image (le bit 0 tombe : 3 → 2, 1 → 0 ; 8 → 0).
@@ -985,10 +1005,8 @@ struct CJugeOutil : CJugeAction {
 				unsigned char etat = it != boutonsPietons.end() && mots[0] < BOUTONS_PIETON ? it->second[mots[0]] : 0;
 				return EtatBoutonCondition(etat, mots[1]);
 			}
-			auto it = demandes.find(mots[0]);
-			// La manette de l'outil : une demande en attente pose le bit 0 du bouton ; la durée tenue n'est pas suivie.
-			unsigned char etat = it != demandes.end() && maintenant <= it->second ? 1 : 0;
-			return EtatBoutonCondition(etat, mots[1]);
+			// La manette de l'outil : une demande en attente pose le bit 0 du bouton, un bouton tenu (--tenir) ses octets d'état.
+			return EtatBoutonCondition(EtatBoutonJoueur(mots[0]), mots[1]);
 		}
 		if(type == kTemps){
 			bool ok; float v = TempsDuNoeud(&ok);
@@ -7248,6 +7266,15 @@ main(int argc, char **argv)
 			std::string e = argv[++i]; size_t at = e.find('@');
 			attentes.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), (uint32)strtoul(e.c_str(), nil, 0)});
 		}
+		else if(strcmp(argv[i], "--tenir") == 0 && i + 1 < argc){
+			// --tenir N,durée@s : le bouton brut N de la manette tenu de s à s + durée secondes (le tir chargé : 8).
+			std::string e = argv[++i]; size_t at = e.find('@'), v = e.find(',');
+			BoutonTenu b;
+			b.bouton = (uint32)strtoul(e.c_str(), nil, 0);
+			b.debut = (uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000);
+			b.fin = b.debut + (uint32)(v != std::string::npos && (at == std::string::npos || v < at) ? atof(e.c_str() + v + 1) * 1000 : 250);
+			boutonsTenus.push_back(b);
+		}
 		else if(strcmp(argv[i], "--porte") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
 			poussees.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
@@ -7739,6 +7766,14 @@ main(int argc, char **argv)
 			demandes[e.second] = maintenant + 250;
 			printf("%6.2f s  le joueur demande l'action %u\n", maintenant / 1000.0, e.second);
 			e.first = 0xffffffffu; demande = true;
+		}
+		// Les boutons tenus de la manette (--tenir) : l'appui et le lâcher journalisés ; manette coupée, le bouton n'est pas tenu.
+		for(BoutonTenu &b : boutonsTenus){
+			if(maintenant >= b.debut && maintenant < b.debut + 33){
+				if(controleJoueur != 1){ b.fin = b.debut; printf("%6.2f s  la manette est coupée : le joueur ne tient pas le bouton %u\n", maintenant / 1000.0, b.bouton); }
+				else printf("%6.2f s  le joueur tient le bouton %u (%.2f s)\n", maintenant / 1000.0, b.bouton, (b.fin - b.debut) / 1000.0);
+			}
+			else if(b.fin > b.debut && maintenant >= b.fin && maintenant < b.fin + 33) printf("%6.2f s  le joueur lâche le bouton %u\n", maintenant / 1000.0, b.bouton);
 		}
 		// Les contrôleurs de l'IA d'abord (FUN_00484490) : l'intention qu'ils posent se lit dans l'arbre d'actions à la
 		// même image.
