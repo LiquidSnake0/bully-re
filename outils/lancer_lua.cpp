@@ -58,6 +58,7 @@
 #include "../src/hud/ButtonHistory.h"
 #include "../src/hud/Marqueurs.h"
 #include "../src/hud/BarreSante.h"
+#include "../src/hud/MinuterieMission.h"
 #include "../src/render/CameraMgr.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
@@ -723,11 +724,18 @@ struct CJugeOutil : CJugeAction {
 		static const uint32 kHudVerrou = ActionHash("WeaponHudLocked"), kModeleDemande = ActionHash("WeaponModelRequest"),
 		                    kArmeHud = ActionHash("WeaponDesiredIsFocusWeapon");
 		if(type == kHudVerrou) return hudArmesVerrouille;
-		// WeaponFlags (0x937c84, FUN_0065bb20) : sans arme en main, faux ; le drapeau +8 de l'entrée d'inventaire de l'arme (FUN_0045cb70,
-		// FUN_0045cb40 : les mots +4 + 4n), sinon de l'objet arme (+0x26c + 4n). Les pistes SetWeaponFlags qui les posent ne sont pas
-		// jouées : 0, donc faux.
+		// WeaponFlags (0x937c84, FUN_0065bb20, lue dans l'index) : sans arme en main (le modèle +0x10e de l'objet arme à -1), faux ; le
+		// drapeau +8 de l'entrée d'inventaire de l'arme (FUN_0045cb70, FUN_0045cb40 : le mot +4 + 4n) s'il y en a une, sinon celui de
+		// l'objet arme (+0x26c + 4n) ; non nul, vrai. SetWeaponFlags et PedSetWeaponFlag les posent.
 		static const uint32 kDrapeauxArme = ActionHash("WeaponFlags");
-		if(type == kDrapeauxArme) return 0;
+		if(type == kDrapeauxArme){
+			if(moi == nil || moi->armeTenue == -1) return 0;
+			int n = (int)mots[1];
+			bool trouve = false;
+			bool v = inventaire.LireDrapeau(ped, moi->armeTenue, n, trouve);
+			if(trouve) return v;
+			return n >= 0 && n < 8 && moi->drapeauxArme[n] != 0;
+		}
 		if(type == kModeleDemande) return 1;
 		if(type == kArmeHud){
 			CScriptPed *q = pietons.Acceder(ped);
@@ -3799,6 +3807,19 @@ PedHideHealthBar(lua_State *L)
 	return 0;
 }
 
+// PedSetWeaponFlag(ped, arme, n, b) (0x5cf090, lue à l'assembleur de 0x5cf090 à 0x5cf100) : le piéton du genre 2 de l'objet script
+// (FUN_005c7220) ; si le modèle de son objet arme (+0x10e de +0x1d0) est l'arme du deuxième argument, le drapeau n (le troisième) de
+// l'objet arme (+0x26c + 4n) reçoit le booléen du quatrième (FUN_005d8f20) ; l'entrée d'inventaire n'est pas touchée. Ne rend rien.
+static int
+PedSetWeaponFlag(lua_State *L)
+{
+	Journal("PedSetWeaponFlag", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	int n = (int)luaL_optnumber(L, 3, 0);
+	if(p && p->armeTenue != -1 && p->armeTenue == (int32)luaL_optnumber(L, 2, -2) && n >= 0 && n < 8) p->drapeauxArme[n] = lua_toboolean(L, 4) ? 1 : 0;
+	return 0;
+}
+
 // PlayerUnequip() (0x5be400 → FUN_0055c780 sur le HUD des armes, DAT_00c674f0 ; lu à l'assembleur de 0x55c780 à 0x55c7db) : l'arme
 // du HUD (+0xc0) à -1 ; FUN_0045cdf0(-1) sur l'inventaire du joueur (+0x1c4 ; son résultat n'est pas lu) ; si le joueur tient une
 // arme (le modèle +0x10e de son objet arme +0x1d0 n'est pas -1), l'arme voulue (+0x18 du composant +0x2e0) passe à -1, les mains
@@ -5548,35 +5569,40 @@ PedCanSeeObject(lua_State *L)
 	return 1;
 }
 
-// La minuterie de mission (le composant du HUD qui l'affiche : +0xc la durée en ms, +0x10 son départ, +0x14 le temps écoulé à l'arrêt,
-// l'octet +0x19 en marche, +0x1a en pause ; l'horloge DAT_00c1a9b4) :
-// - MissionTimerStart(s) (0x5c1fb0) : FUN_0043f600(1) (en marche, plus en pause) puis FUN_0043f540 (la durée s × 1000, le départ
-//   maintenant) ;
-// - MissionTimerStop() (0x5c20c0) : FUN_0043f600(0) : en marche et pas en pause, le temps écoulé gardé ; arrêtée ;
-// - le reste (FUN_0043f5a0) : en marche, la durée moins le temps écoulé (0 au-delà) ; sinon la durée moins le temps gardé ; en secondes
-//   (× 0,001, _DAT_00900fa0) ; MissionTimerHasFinished (0x5c20d0) : le reste n'est pas positif ; MissionTimerGetTimeRemaining
-//   (0x5c2120) : le reste arrondi. MissionTimerStartFixed (une heure de l'horloge du jeu) et MissionTimerPause ne sont pas suivies.
-struct CMinuterieMission { uint32 duree = 0, depart = 0, ecoule = 0; bool enMarche = false, enPause = false; };
+// La minuterie de mission (src/hud/MinuterieMission.h) ; MissionTimerStart(s) (0x5c1fb0) : FUN_0043f600(1) puis FUN_0043f540(s, un
+// entier de 16 bits) ; MissionTimerStop() (0x5c20c0) : FUN_0043f600(0) ; MissionTimerHasFinished (0x5c20d0) : le reste n'est pas
+// positif ; MissionTimerGetTimeRemaining (0x5c2120) : le reste arrondi.
 static CMinuterieMission minuterieMission;
-static float
-ResteMinuterie(void)
-{
-	const CMinuterieMission &m = minuterieMission;
-	int64_t r;
-	if(!m.enPause && m.enMarche){
-		uint32 e = maintenant - m.depart;
-		if(m.duree < e) return 0.0f;
-		r = (int64_t)m.duree - e;
-	}else r = (int64_t)m.duree - m.ecoule;
-	return (float)r * 0.001f;
-}
 
 static int
 MissionTimerStart(lua_State *L)
 {
 	Journal("MissionTimerStart", L, 1);
-	minuterieMission.enPause = false; minuterieMission.enMarche = true;
-	minuterieMission.duree = (uint32)((int16)luaL_optnumber(L, 1, 0) * 1000); minuterieMission.depart = maintenant;
+	minuterieMission.Marche(maintenant, true);
+	minuterieMission.Poser(maintenant, (int16)luaL_optnumber(L, 1, 0));
+	return 0;
+}
+
+// MissionTimerStartFixed(h, m, s) (0x5c1ff0) : la minuterie jusqu'à une heure de l'horloge du jeu (CMinuterieMission::DureeFixe ; les
+// secondes de l'horloge, DAT_00bceb48, sont la part de minute de l'outil).
+static int
+MissionTimerStartFixed(lua_State *L)
+{
+	Journal("MissionTimerStartFixed", L, 1);
+	int32 seconde = (int32)((horloge.minutes - (float)(int32)horloge.minutes) * 60.0f);
+	uint16 d = CMinuterieMission::DureeFixe((int32)luaL_optnumber(L, 1, 0), (int32)luaL_optnumber(L, 2, 0), (int32)luaL_optnumber(L, 3, 0),
+	                                        horloge.Heure(), horloge.Minute(), seconde);
+	minuterieMission.Marche(maintenant, true);
+	minuterieMission.Poser(maintenant, d);
+	return 0;
+}
+
+// MissionTimerPause(b) (0x5c2090, lue à l'assembleur de 0x5c2090 à 0x5c20b6) : le booléen (FUN_005d8f20) à FUN_0043f560. Ne rend rien.
+static int
+MissionTimerPause(lua_State *L)
+{
+	Journal("MissionTimerPause", L, 1);
+	minuterieMission.Pause(maintenant, lua_toboolean(L, 1) != 0);
 	return 0;
 }
 
@@ -5584,9 +5610,7 @@ static int
 MissionTimerStop(lua_State *L)
 {
 	Journal("MissionTimerStop", L, 1);
-	CMinuterieMission &m = minuterieMission;
-	if(!m.enPause && m.enMarche) m.ecoule = maintenant - m.depart;
-	m.enPause = false; m.enMarche = false;
+	minuterieMission.Marche(maintenant, false);
 	return 0;
 }
 
@@ -5594,7 +5618,7 @@ static int
 MissionTimerHasFinished(lua_State *L)
 {
 	appels["MissionTimerHasFinished"]++;
-	lua_pushboolean(L, ResteMinuterie() <= 0.0f);
+	lua_pushboolean(L, minuterieMission.Reste(maintenant) <= 0.0f);
 	return 1;
 }
 
@@ -5602,7 +5626,7 @@ static int
 MissionTimerGetTimeRemaining(lua_State *L)
 {
 	appels["MissionTimerGetTimeRemaining"]++;
-	lua_pushnumber(L, (int)lrintf(ResteMinuterie()));
+	lua_pushnumber(L, (int)lrintf(minuterieMission.Reste(maintenant)));
 	return 1;
 }
 
@@ -5869,11 +5893,26 @@ static void
 AppliquerTirs(int ped, CActionController &c)
 {
 	CScriptPed *p = pietons.Acceder(ped);
+	// WeaponSetCharge (FUN_0065e7c0) et WeaponIncrementCharge (FUN_0065e810, le pas d'une image : 1/30 s ; supposé, le pas de la
+	// mise à jour des pistes n'est pas lu) avant les tirs de l'image.
+	if(p){
+		for(const CActionController::Charge &d : c.chargesPosees) p->armeCharge = d.valeur;
+		for(size_t i = 0; i < c.croissancesActives.size(); i++)
+			p->armeCharge = CChargeArme::Augmenter(p->armeCharge, 1.0f / 30.0f, p->armeTenue != -1 && p->armeTenue == modeles.Index("slingshot"));
+	}
+	c.chargesPosees.clear();
+	// SetWeaponFlags (FUN_00661d40) : l'entrée d'inventaire de l'arme en main et l'objet arme.
+	for(const CActionController::DrapeauArme &d : c.drapeauxArmeLances){
+		if(p == nil || p->armeTenue == -1 || d.numero < 0 || d.numero >= 8) continue;
+		inventaire.PoserDrapeau(ped, p->armeTenue, d.numero, d.valeur);
+		p->drapeauxArme[d.numero] = d.valeur;
+	}
+	c.drapeauxArmeLances.clear();
 	for(const CActionController::Tir &d : c.tirsLances){
 		if(p == nil || p->armeTenue == -1) continue;   // FUN_0065d160 sans arme en main
-		float charge = 0.0f;   // l'objet arme +0x128 (WeaponSetCharge, WeaponIncrementCharge, non jouées) vaut -100 (_DAT_00906520) : 0
-		(void)d;
+		float charge = CChargeArme::AuTir(p->armeCharge, d.facteur);   // FUN_00661f10
 		Tirer(ped, charge);
+		p->armeCharge = CChargeArme::kVide;   // FUN_00664710, après le tir
 		if(p->drapeaux[24] == 0) inventaire.Retirer(armes, ped, p->armeMunition, 1, p->type == SCRIPT_PED_TYPE_JOUEUR, modeles.Index("RBandBall"));
 		if(d.lacher && p->armeTenue == p->armeMunition && inventaire.Munitions(armes, ped, p->armeMunition) == 0) LacherArme(ped);
 	}
@@ -6161,9 +6200,15 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 			if(!TetherLoco(ped, l, !l.lancee)) l.vie = -2.0f;
 			l.lancee = true;
 		}
-		for(const CActionController::Regard &r : k->regardsActifs){   // FUN_00620dc0
-			const CScriptPed *q = pietons.Acceder(r.genre == 0 ? CibleDe(ped) : r.genre == 1 ? p->cibleDePrise : -1);
-			if(q && q != p) p->cap = atan2f(q->pos.y - p->pos.y, q->pos.x - p->pos.x) * 180.0f / 3.14159265f + r.decalage;
+		// FUN_00620dc0 : la cible du genre de la piste par FUN_00477ab0 (CScriptPedPool::CibleDeGenre ; le genre 0, PedGetTargetPed, est
+		// ici la cible de l'IA) : un piéton, ou un objet animé et sa position.
+		for(const CActionController::Regard &r : k->regardsActifs){
+			CVector v; bool vise = false;
+			CScriptPedPool::Cible e = pietons.CibleDeGenre(ped, r.genre);
+			if(r.genre == 0){ e.pieton = CibleDe(ped); e.objet = -1; }
+			if(const CScriptPed *q = pietons.Acceder(e.pieton)){ if(q != p){ v = q->pos; vise = true; } }
+			else if(const CObjetAnime *o = objetsAnimes.Objet(e.objet)){ v = o->pos; vise = true; }
+			if(vise) p->cap = atan2f(v.y - p->pos.y, v.x - p->pos.x) * 180.0f / 3.14159265f + r.decalage;
 		}
 		for(const CActionController::Drapeau &d : k->drapeauxPoses) if(d.numero < SCRIPT_PED_DRAPEAUX) p->drapeaux[d.numero] = d.valeur;
 		k->drapeauxPoses.clear();
@@ -7416,6 +7461,9 @@ main(int argc, char **argv)
 	lua_register(L, "PlayerHasWeapon", PlayerHasWeapon);
 	lua_register(L, "WeaponEquipped", WeaponEquipped);
 	lua_register(L, "PlayerUnequip", PlayerUnequip);
+	lua_register(L, "MissionTimerStartFixed", MissionTimerStartFixed);
+	lua_register(L, "MissionTimerPause", MissionTimerPause);
+	lua_register(L, "PedSetWeaponFlag", PedSetWeaponFlag);
 	lua_register(L, "PedShowHealthBar", PedShowHealthBar);
 	lua_register(L, "PedHideHealthBar", PedHideHealthBar);
 	lua_register(L, "PlayerSetPosSimple", PlayerSetPosSimple);

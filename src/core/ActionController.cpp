@@ -86,6 +86,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kMinuterie = ActionHash("SetActionTimer"), kScript = ActionHash("Script"),
 	                    kVoulueP = ActionHash("PropSetDesired"), kVoulueG = ActionHash("PropGetDesired"),
 	                    kAttacher = ActionHash("PropAttach"), kDetacher = ActionHash("PropDetach"), kTir = ActionHash("WeaponFire"),
+	                    kChargePoser = ActionHash("WeaponSetCharge"), kChargeAugmenter = ActionHash("WeaponIncrementCharge"),
+	                    kDrapeauArme = ActionHash("SetWeaponFlags"),
 	                    kPassage = ActionHash("PropSetInTransition"), kDrapeauObjet = ActionHash("PropFlags"),
 	                    kActionObjet = ActionHash("PropSetPedAction"), kSynchro = ActionHash("Sync"),
                     kBoutonHistorique = ActionHash("ActionRegisterButtonHistory"),
@@ -184,6 +186,12 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			  infosArme.push_back({a, Reel(p, 44, -1.0f), Reel(p, 64, 0.0f), false, m ? f->ChaineCitee(m->decalage) : std::string()}); }
 		}else if(p.type == kTir){
 			tirs.push_back({a, Reel(p, 52, 0.0f), Octet(p, 50), false});
+		}else if(p.type == kChargePoser){
+			charges.push_back({a, Reel(p, 24, 0.0f), false});
+		}else if(p.type == kChargeAugmenter){
+			croissances.push_back({a, Reel(p, 16, -1.0f)});
+		}else if(p.type == kDrapeauArme){
+			drapeauxArme.push_back({a, (int32)p.Mot(28), (int32)Octet(p, 24), false});
 		}else if(p.type == kVoulueP){
 			pistesArme.push_back({a, ARME_VOULUE_POSER, p.Mot(24), Octet(p, 29), false});
 		}else if(p.type == kPassage){
@@ -304,7 +312,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	for(const DemandeBouton &d : demandesBouton)   // FUN_00626160 : l'arrêt d'une piste au mode 2 lâche son bouton
 		if(!d.morte && d.lancee && d.mode == 2) laches.push_back(d.bouton);
 	demandesBouton.clear();
-	effacements.clear(); fuites.clear(); repos.clear(); infosArme.clear(); pistesArme.clear(); tirs.clear(); droits.clear(); desPistes.clear(); minuteries.clear();
+	effacements.clear(); fuites.clear(); repos.clear(); infosArme.clear(); pistesArme.clear(); tirs.clear(); charges.clear(); croissances.clear(); drapeauxArme.clear(); droits.clear(); desPistes.clear(); minuteries.clear();
 	appelsScript.clear();
 	lances.clear();                    // FUN_005f7390 : l'arrêt d'une piste spawn arrête son contrôleur
 	finExecutees = -1.0f;
@@ -605,6 +613,15 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 	tirsLances.clear();
 	for(Tir &d : tirs)                // FUN_00661f10
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; tirsLances.push_back(d); }
+	chargesPosees.clear();
+	for(Charge &d : charges)          // FUN_0065e7c0
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; chargesPosees.push_back(d); }
+	drapeauxArmeLances.clear();
+	for(DrapeauArme &d : drapeauxArme)   // FUN_00661d40
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; drapeauxArmeLances.push_back(d); }
+	croissancesActives.clear();
+	for(const Croissance &r : croissances)   // FUN_0065e810, tant que la piste vit
+		if(Temps(t) >= r.entree && (r.vie < 0.0f || Temps(t) <= r.entree + r.vie)) croissancesActives.push_back(r);
 	reposLances = 0;
 	for(Repos &d : repos)         // FUN_0061d8e0
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; reposLances++; }
