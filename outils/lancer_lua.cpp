@@ -402,6 +402,16 @@ static bool nisEnCours = false;
 static bool rumbleAmbiant = false, rumbleMission = false;
 static bool CinematiqueEnCours(void);   // DAT_020c5be4
 static bool ParoleEnCours(int ped);     // FUN_005a27b0 : une ligne du piéton (ou, à -1, une ligne quelconque) se joue
+// Le nom d'un modèle par son indice (le HashString de ce nom est le +4 du modelinfo) ; vide s'il est inconnu.
+static std::string
+NomDeModele(int32 m)
+{
+	static std::map<int32, std::string> parIndice;
+	if(parIndice.empty()) for(const auto &e : modeles.parNom) parIndice.emplace(e.second, e.first);
+	auto it = parIndice.find(m);
+	return it == parIndice.end() ? std::string() : it->second;
+}
+
 struct CJugeOutil : CJugeAction {
 	int ped; float t;
 	// Les tirages du contexte qui juge (+0x24 et les dés +0x28 à +0x34, CActionController::tirageContexte et des) : ceux
@@ -418,6 +428,13 @@ struct CJugeOutil : CJugeAction {
 		return c ? c->des[i & 3] : desSeuls[i & 3];
 	}
 	CJugeOutil(int p, float t_) : ped(p), t(t_) {}
+	// Le contexte d'un objet animé (DAT_00a453f8, que l'emplacement +0x40 de l'objet rend, FUN_0044cbd0) : sans piéton (+8, jamais
+	// écrit : vérifié à l'assembleur, seul le destructeur de 0x8f2507 le touche), l'objet en +0xc (DAT_00a45404, FUN_004ed7f0).
+	int objet = -1;
+	static CJugeOutil DeLObjet(int o, float t_){ CJugeOutil j(-1, t_); j.objet = o; return j; }
+	// FUN_004eaa60 : l'objet du contexte. Sans piéton, le +0xc ; avec un piéton, l'objet dont il se sert (+0x548), sinon son
+	// objet visé (+0x438) ou repéré (+0x444) s'il est animé (les 3 bits bas de +0x108 à 6) ; l'outil n'a que des objets animés.
+	int ObjetDuContexte(void) const;
 	int JoueNom(uint32 nom) const override { return arbres.JoueHachage(NoeudJoue(ped), nom & 0x7fffffff); }
 	bool ACible(void) const override { return CibleDe(ped) >= 0; }
 	// Le temps du nœud joué par le contrôleur qui juge (le +0x10 du contexte), sinon celui du contrôleur d'actions.
@@ -448,6 +465,26 @@ struct CJugeOutil : CJugeAction {
 		                    kGroupeHumiliation = ActionHash("HumiliationGroupIs"), kTempsPasse = ActionHash("ActionNodePlayTimePast"),
 		                    kGroupeAnim = ActionHash("AnimationGroupLoaded"), kParolePrete = ActionHash("IsSpeechPreloaded"),
 		                    kPositionCible = ActionHash("TargetRelativePosition");
+		// Les conditions des objets animés (leurs juges, l'emplacement 1 des tables : lus dans l'index le 06.11.2026) : PropFlags
+		// (0x936874, FUN_00654f90) : le mot +0x160 + 4 × (+4) de l'objet du contexte non nul ; PropPedIsUsingMe (0x937d88,
+		// FUN_006551c0) : son +0x234 (un piéton s'en sert) ; PropModelID (0x937cac, FUN_00655480) : le nom haché de son modèle (+4 du
+		// modelinfo) vaut +4. Sans objet, faux. PedConditionGroup (0x937080, FUN_00601d90, lue à l'assembleur de 0x601d90 à 0x601dc1) :
+		// avec un piéton (+8 du contexte), le groupe +4 jugé dans le contexte du piéton (son emplacement +0x40) ; sans, vrai si le
+		// contexte a un objet (+0xc).
+		static const uint32 kDrapeauObjet = ActionHash("PropFlags"), kObjetUtilise = ActionHash("PropPedIsUsingMe"),
+		                    kModeleObjet = ActionHash("PropModelID"), kGroupePieton = ActionHash("PedConditionGroup");
+		if(type == kDrapeauObjet) return objetsAnimes.Drapeau(ObjetDuContexte(), (int)mots[0]);
+		if(type == kObjetUtilise){ const CObjetAnime *o = objetsAnimes.Objet(ObjetDuContexte()); return o && o->utilisateur >= 0; }
+		if(type == kModeleObjet){
+			const CObjetAnime *o = objetsAnimes.Objet(ObjetDuContexte());
+			return o && (ActionHash(NomDeModele(o->modele).c_str()) & 0x7fffffff) == (mots[0] & 0x7fffffff);
+		}
+		if(type == kGroupePieton){
+			if(ped < 0) return objet >= 0;
+			std::vector<int32> groupe;
+			if(!f.GroupeDe(d, groupe)) return 0;
+			return arbres.JugerListe(f, groupe, CJugeOutil(ped, t)) == 1;
+		}
 		const CScriptPed *moi = pietons.Acceder(ped);
 		// WeaponEquiped (ConditionWeaponEquiped 0x9365a4, FUN_0065bd80, lu à l'assembleur de 0x65bde9 à 0x65be1e) : sans piéton,
 		// faux ; l'arme en passage (+0x1574) avec l'octet +9, sinon l'arme en main (+0x10e). Sans arme : vrai si le nom +4 manque
@@ -2612,6 +2649,13 @@ PAnimDestroyedByPed(lua_State *L)
 	return 1;
 }
 
+int
+CJugeOutil::ObjetDuContexte(void) const
+{
+	if(ped < 0) return objet;
+	return -1;
+}
+
 // --- Les objets animés des déclencheurs (src/objects/ObjetsAnimes) ---
 static std::map<uint32, CFicheObjetAnime> fichesAnimees;   // par HashString du nom du modèle
 
@@ -2693,6 +2737,103 @@ PAnimExists(lua_State *L)
 	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
 	lua_pushboolean(L, h >= 0 && donnees.ZoneParHandle(h) && objetsAnimes.ObjetDe(h) >= 0);
 	return 1;
+}
+
+// Le contrôleur d'actions de chaque objet animé (+0x1bc), par indice dans le pool : figé (src/core/ActionController.h).
+static std::map<int, CActionController> controleursObjets;
+
+// FUN_005c4410(L, n, &lus) : l'objet animé des premiers arguments, n arguments après eux. Un de plus : un déclencheur (un nombre,
+// FUN_006d79c0 : son +0x1c) ou un pointeur léger (FUN_00436ac0, non suivi) ; deux de plus : une case du pool et son genre
+// (FUN_0044a510, non suivi) ; sinon un modèle et une position (FUN_00460650, non suivi). -1 sans objet.
+static int
+ObjetAnimeArg(lua_State *L, int n)
+{
+	if(lua_gettop(L) == n + 1 && lua_isnumber(L, 1)) return objetsAnimes.ObjetDe((int)lua_tonumber(L, 1));
+	return -1;
+}
+
+// PAnimSetActionNode(objet, nœud, fichier) (0x5c52a0, lu à l'assembleur de 0x5c52a0 à 0x5c5557) : avec trois arguments, un
+// déclencheur (FUN_00415e80 sur le pool 0x20c7e98, son objet +0x1c) ou un pointeur léger (FUN_00436ac0) ; avec sept, un modèle
+// et une position (non suivi). Le nœud doit commencer par « \ » ou « / » ; FUN_00520810 donne l'indice du fichier parmi les
+// arbres diffusés, FUN_005f59b0 cherche le nœud, et s'il manque le fichier est demandé (FUN_00531ed0(0x5d41 + indice, 0x13)),
+// chargé (FUN_00533d90) puis le nœud cherché de nouveau ; trouvé, le fichier est noté à l'objet script (FUN_005db7e0,
+// FUN_005d9990) et FUN_004ef1f0(nœud, indice) le pose (lu dans l'index) : avec le fichier de l'arbre de l'objet (+0x22c) et une
+// fiche qui en a un (+0x6c), FUN_004edec0 joue le nœud tel quel (+0x188 à 0, FUN_005f48f0, puis une image du contrôleur,
+// FUN_005f49a0) ; sinon le nœud devient la racine (+0x228) et le fichier +0x22c, l'action des piétons (+0x230) revient à 0, et la
+// descente (+0x4c) dans le contexte de l'objet (DAT_00a453f8, sans piéton) choisit ce que FUN_004edec0 joue. Rien n'est rendu.
+static int
+PAnimSetActionNode(lua_State *L)
+{
+	Journal("PAnimSetActionNode", L, 1);
+	int i = lua_gettop(L) == 3 && lua_isnumber(L, 1) ? objetsAnimes.ObjetDe((int)lua_tonumber(L, 1)) : -1;
+	CObjetAnime *o = objetsAnimes.Objet(i);
+	const char *noeud = luaL_optstring(L, 2, ""), *fichier = luaL_optstring(L, 3, "");
+	if(o == nil || (noeud[0] != '/' && noeud[0] != '\\')) return 0;
+	if(!arbres.TrouverOuCharger(noeud, fichier)){
+		printf("        PAnimSetActionNode : %s absent de %s\n", noeud, fichier);
+		return 0;
+	}
+	const CActionNode *n = arbres.Trouver(noeud);
+	CActionController &c = controleursObjets[i];
+	c.fige = true;
+	float t = maintenant / 1000.0f;
+	bool meme = !o->fichier.empty() && ActionHash(CActionBank::NomCat(o->fichier.c_str()).c_str()) == ActionHash(CActionBank::NomCat(fichier).c_str());
+	if(meme) c.Jouer(arbres, n, t);
+	else {
+		o->fichier = fichier;
+		o->actionPieton = nil;
+		c.arbre = n;
+		c.Racine(arbres, n);
+		if(!c.Entrer(arbres, n, CJugeOutil::DeLObjet(i, t), t)) c.joue = nil;
+	}
+	if(journalRestant > 0) printf("%6.2f s  objet animé du déclencheur %d : %s%s\n", t, o->declencheur, c.joue ? arbres.CheminDe(c.joue).c_str() : "rien",
+	                              meme ? "" : " (par la descente)");
+	return 0;
+}
+
+// PAnimSetPropFlag(objet, n, valeur) (0x5c55b0, lu à l'assembleur de 0x5c55b0 à 0x5c560b) : l'objet de FUN_005c4410(L, 2), le
+// nombre n (FUN_005d8200) et le booléen (FUN_005d8f20) passés à FUN_004ea300. PAnimGetPropFlag(objet, n) (0x5c5610, lu de
+// 0x5c5610 à 0x5c5673) : FUN_005c4410(L, 1), le mot +0x160 + 4n non nul ; faux sans objet.
+static int
+PAnimSetPropFlag(lua_State *L)
+{
+	Journal("PAnimSetPropFlag", L, 1);
+	int i = ObjetAnimeArg(L, 2);
+	if(i >= 0) objetsAnimes.PoserDrapeau(i, (int)lua_tonumber(L, 2), lua_toboolean(L, 3) != 0);
+	return 0;
+}
+
+static int
+PAnimGetPropFlag(lua_State *L)
+{
+	Journal("PAnimGetPropFlag", L, 1);
+	int i = ObjetAnimeArg(L, 1);
+	lua_pushboolean(L, i >= 0 && objetsAnimes.Drapeau(i, lua_isnumber(L, 2) ? (int)lua_tonumber(L, 2) : -1));
+	return 1;
+}
+
+// Une image des contrôleurs des objets animés (le contrôleur +0x1bc de chacun) : les pistes PropFlags (FUN_00655b50) et
+// PropSetPedAction (FUN_006561a0) de leur nœud, lancées à leur entrée, posent les drapeaux de l'objet et ce qu'il offre aux
+// piétons (+0x230).
+static void
+AvancerObjets(void)
+{
+	float t = maintenant / 1000.0f;
+	for(auto it = controleursObjets.begin(); it != controleursObjets.end(); ){
+		CObjetAnime *o = objetsAnimes.Objet(it->first);
+		if(o == nil){ it = controleursObjets.erase(it); continue; }
+		CActionController &c = it->second;
+		c.Avancer(arbres, nil, CJugeOutil::DeLObjet(it->first, t), t);
+		for(const CActionController::DrapeauObjet &d : c.drapeauxObjetPoses) objetsAnimes.PoserDrapeau(it->first, d.numero, d.valeur);
+		c.drapeauxObjetPoses.clear();
+		for(const CActionController::ActionObjet &a : c.actionsObjetPosees){
+			o->actionPieton = a.noeud;
+			if(journalRestant > 0) printf("%6.2f s  objet animé du déclencheur %d : il offre %s aux piétons\n", t, o->declencheur,
+			                              a.noeud ? arbres.CheminDe(a.noeud).c_str() : "rien");
+		}
+		c.actionsObjetPosees.clear();
+		++it;
+	}
 }
 
 // AreaRegisterAnimProps() (0x5b6d60 → 0x438700) : la table DAT_00bd3e78 jusqu'à son compte DAT_00bd5c54, que rien n'augmente
@@ -6339,6 +6480,9 @@ main(int argc, char **argv)
 	lua_register(L, "ObjectGetModelIndex", ObjectGetModelIndex);
 	lua_register(L, "PAnimDestroyedByPed", PAnimDestroyedByPed);
 	lua_register(L, "PAnimExists", PAnimExists);
+	lua_register(L, "PAnimSetActionNode", PAnimSetActionNode);
+	lua_register(L, "PAnimSetPropFlag", PAnimSetPropFlag);
+	lua_register(L, "PAnimGetPropFlag", PAnimGetPropFlag);
 	lua_register(L, "AreaRegisterAnimProps", AreaRegisterAnimProps);
 	lua_register(L, "PedGetOffsetInWorldCoords", PedGetOffsetInWorldCoords);
 	lua_register(L, "PedSetStationary", PedSetStationary);
@@ -6761,6 +6905,7 @@ main(int argc, char **argv)
 		if(fondu.enCours && maintenant >= fondu.fin){ fondu.enCours = false; fondu.noir = fondu.versNoir; if(journalRestant > 0){ journalRestant--; printf("%6.2f s  fondu : l'écran est %s\n", maintenant / 1000.0, fondu.versNoir ? "noir" : "rendu"); } }
 		MettreAJour(L);
 		AvancerPietons();
+		AvancerObjets();
 		PoursuivrePieton();   // --suivre : la manette du joueur
 		AvancerCinematique();
 		AvancerZones(L);

@@ -44,6 +44,7 @@ CObjetsAnimes::Creer(const Declencheur &d)
 	o.zone = (int8)d.zone;
 	o.octet3a8 = 1;
 	o.drapeaux[13] = d.porte ? 1 : 0;
+	o.fichier = d.fiche ? d.fiche->fichier : std::string();
 	return (int)i;
 }
 

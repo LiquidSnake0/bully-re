@@ -189,6 +189,24 @@ public:
 	enum { ARME_VOULUE_POSER, ARME_VOULUE_PRENDRE, ARME_ATTACHER, ARME_DETACHER, ARME_PASSAGE };
 	struct PisteArme { float entree; int32 genre; uint32 nom; bool octet, fait; };
 	std::vector<PisteArme> pistesArme, pistesArmeLancees;
+	// Les pistes des objets animés (le registre des pistes FUN_00650150, lu le 06.11.2026) :
+	// - PropFlags (PropFlagsTrack 0x935458, créateur 0x6413c0 ; lancement FUN_00655b50) : l'objet du contexte (FUN_004eaa60 : sans
+	//   piéton, l'objet lui-même, le +0xc du contexte ; avec un piéton, l'objet dont il se sert (+0x548), sinon son objet visé
+	//   (+0x438) puis son objet repéré (+0x444) s'ils sont animés) reçoit FUN_004ea300(+0x1c (28), l'octet +0x18 (24)) ; rend vrai.
+	// - PropSetPedAction (0x938248, créateur 0x64ac50 ; lancement FUN_006561a0) : l'objet du contexte (son +0xc) prend en +0x230 le
+	//   nœud du chemin +0x20 (32), résolu depuis le nœud qui porte la piste (FUN_005f4e30) : ce que l'objet fera jouer au piéton qui
+	//   s'en sert ; rend faux.
+	// - HoldState (0x931368, créateur 0x640b00) : le lancement (FUN_006092d0) garde le contexte en +0x18 et rend faux, la mise à
+	//   jour (FUN_00609b30) rend vrai ; rien à suivre.
+	// `drapeauxObjetPoses` et `actionsObjetPosees` : celles lancées à cette image, que l'appelant applique à l'objet du contexte.
+	struct DrapeauObjet { float entree; int32 numero; bool valeur, fait; };
+	std::vector<DrapeauObjet> drapeauxObjet, drapeauxObjetPoses;
+	struct ActionObjet { float entree; const CActionNode *noeud; bool fait; };
+	std::vector<ActionObjet> actionsObjet, actionsObjetPosees;
+	// Le contrôleur d'un objet animé dans l'outil : son nœud ne finit pas et ne cède à rien (pas d'Opportunity, de Sequence ni de
+	// descente) ; seules ses pistes se lancent. Le moteur fait avancer le contrôleur de l'objet (+0x1bc, FUN_005f49a0 depuis
+	// FUN_004edec0) avec sa racine (+0x228) : non suivi.
+	bool fige = false;
 	struct Repos { float entree; bool fait; };
 	std::vector<Repos> repos;
 	int reposLances = 0;

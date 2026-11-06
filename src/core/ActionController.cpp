@@ -86,7 +86,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kMinuterie = ActionHash("SetActionTimer"), kScript = ActionHash("Script"),
 	                    kVoulueP = ActionHash("PropSetDesired"), kVoulueG = ActionHash("PropGetDesired"),
 	                    kAttacher = ActionHash("PropAttach"), kDetacher = ActionHash("PropDetach"), kTir = ActionHash("WeaponFire"),
-	                    kPassage = ActionHash("PropSetInTransition");
+	                    kPassage = ActionHash("PropSetInTransition"), kDrapeauObjet = ActionHash("PropFlags"),
+	                    kActionObjet = ActionHash("PropSetPedAction");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -123,6 +124,13 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			const CActionAttribut *v = p.Champ(24);
 			float e = Reel(p, 12, 0.0f);
 			drapeaux.push_back({e < 0.0f ? -1.0f : a, p.Mot(28), v && v->taille >= 1 ? (int32)v->valeur[0] : 0, false});
+		}else if(p.type == kDrapeauObjet){
+			const CActionAttribut *v = p.Champ(24);
+			drapeauxObjet.push_back({Reel(p, 12, 0.0f) < 0.0f ? -1.0f : a, (int32)p.Mot(28), v && v->taille >= 1 && v->valeur[0] != 0, false});
+		}else if(p.type == kActionObjet){
+			const CActionAttribut *at = p.Champ(32);
+			const CActionNode *v = at ? b.Relatif(&n, f->ChaineCitee(at->decalage).c_str()) : nil;
+			actionsObjet.push_back({a, v, false});
 		}else if(p.type == kParole){
 			const CActionAttribut *l = p.Champ(28);
 			float e = Reel(p, 12, 0.0f);
@@ -253,6 +261,10 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	for(Mort &d : morts)          // FUN_0060fdc0, à l'arrêt du nœud
 		if(!d.fait && d.entree < 0.0f){ d.fait = true; mortsLancees.push_back(d); }
 	morts.clear();
+	for(DrapeauObjet &d : drapeauxObjet)   // FUN_00655b50, une entrée négative à l'arrêt du nœud (FUN_005f3fb0)
+		if(!d.fait && d.entree < 0.0f){ d.fait = true; drapeauxObjetPoses.push_back(d); }
+	drapeauxObjet.clear();
+	actionsObjet.clear();
 	for(Parole &d : paroles)
 		if(!d.fait && d.entree < 0.0f){ d.fait = true; parolesLancees.push_back(d); }
 	paroles.clear();
@@ -526,6 +538,10 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; mortsLancees.push_back(d); }
 	for(Drapeau &d : drapeaux)    // FUN_0060f8e0
 		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; drapeauxPoses.push_back(d); }
+	for(DrapeauObjet &d : drapeauxObjet)   // FUN_00655b50
+		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; drapeauxObjetPoses.push_back(d); }
+	for(ActionObjet &d : actionsObjet)     // FUN_006561a0
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; actionsObjetPosees.push_back(d); }
 	regardsActifs.clear();
 	poursuitesActives.clear();
 	for(const Regard &r : regards)          // FUN_00620dc0, tant que la piste vit
@@ -581,6 +597,7 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 			c.fait = true;
 			if(const CActionNode *n = b.Relatif(joue, c.chemin.c_str())) pourCible.push_back(n);
 		}
+	if(fige) return false;   // un objet animé de l'outil : le nœud reste
 	if(joue){
 		const CActionNode *n = Occasions(b, juge, t);
 		if(n){ Jouer(b, n, t, &juge); return true; }

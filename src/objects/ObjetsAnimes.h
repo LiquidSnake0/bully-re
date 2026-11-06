@@ -28,6 +28,7 @@
 #include <vector>
 
 struct CActionTrack;
+struct CActionNode;
 
 // La fiche PropButes d'un modèle animé (le +0x70 de son modelinfo). FUN_00520460 (l'initialisation du modelinfo) la cherche
 // dans l'arbre des réglages sous Props/Info (PropGlbl.cat), en profondeur (FUN_0072bd60 → FUN_0072ada0 : le premier nœud du nom
@@ -61,6 +62,10 @@ struct CObjetAnime {
 	// écarté du relevé des piétons (FUN_004989f0).
 	int32 drapeaux[OBJET_ANIME_DRAPEAUX] = {};
 	int utilisateur = -1;       // +0x234 : le piéton qui s'en sert (FUN_004ed6e0)
+	// +0x22c : le fichier de son arbre (FUN_00520810 en donne l'indice ; l'outil garde le nom), celui de sa fiche à la création ;
+	// +0x230 : le nœud que l'objet fait jouer au piéton qui s'en sert (la piste PropSetPedAction, FUN_006561a0).
+	std::string fichier;
+	const CActionNode *actionPieton = nil;
 	uint16 generation = 0;
 };
 
