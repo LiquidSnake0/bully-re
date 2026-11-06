@@ -3270,6 +3270,29 @@ PickupCreateXYZ(lua_State *L)
 	return 1;
 }
 
+// PickupCreateFromPed(modèle, ped[, fiche]) (0x5d0cc0, lue à l'assembleur de 0x5d0cc0 à 0x5d0d5e) : le modèle (FUN_005d8200), le
+// piéton (FUN_005c7220, le genre 2 de l'objet script) ; avec exactement trois arguments (FUN_0073ad50), la fiche de ramassage du nom
+// (FUN_005fa7b0, FUN_005d0b20 : PickupData/<nom>), sinon aucune ; FUN_00443d90(piéton, modèle, fiche) (CRamassages::CreerDuPieton) ;
+// la poignée notée à l'objet script courant (FUN_005db7e0, FUN_005d9760 : retirée avec la mission) et rendue (FUN_005d8460). Le jeu
+// ne vérifie pas le piéton (FUN_00443d90 lit sa matrice) : sans lui, l'outil ne crée rien et ne rend rien.
+static int
+PickupCreateFromPed(lua_State *L)
+{
+	Journal("PickupCreateFromPed", L, 1);
+	int32 m = (int32)luaL_optnumber(L, 1, -1);
+	const CScriptPed *p = lua_isnumber(L, 2) ? pietons.Acceder((int)lua_tonumber(L, 2)) : nil;
+	if(p == nil) return 0;
+	std::string fiche = lua_gettop(L) == 3 && lua_isstring(L, 3) ? lua_tostring(L, 3) : "";
+	int32 h = ramassages.CreerDuPieton(p->pos, m, fiche, armes.Type(m).decalageRamassage);
+	if(CRamassage *r = ramassages.Entree(h)){
+		r->script = scriptCourant;
+		if(journalRestant > 0) printf("%6.2f s  ramassage %d (modèle %d, %s) laissé par le piéton %d en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0,
+		                              h, m, fiche.c_str(), (int)lua_tonumber(L, 2), r->pos.x, r->pos.y, r->pos.z);
+	}
+	lua_pushnumber(L, h);
+	return 1;
+}
+
 // PickupDelete(poignée) (0x5d0d60, hors de l'index, non lu) : l'outil libère l'entrée.
 static int
 PickupDelete(lua_State *L)
@@ -7281,6 +7304,7 @@ main(int argc, char **argv)
 	lua_register(L, "GetPointListSize", GetPointListSize);
 	lua_register(L, "PickupCreateXYZ", PickupCreateXYZ);
 	lua_register(L, "PickupDelete", PickupDelete);
+	lua_register(L, "PickupCreateFromPed", PickupCreateFromPed);
 	lua_register(L, "PAnimRequest", PAnimRequest);
 	lua_register(L, "PAnimCreate", PAnimCreate);
 	lua_register(L, "AddBlipForChar", AddBlipForChar);

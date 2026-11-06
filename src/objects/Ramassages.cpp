@@ -53,6 +53,14 @@ CRamassages::CreerDuCollectible(const CVector &pos, int32 modele, int16 indice, 
 	return h;
 }
 
+int32
+CRamassages::CreerDuPieton(const CVector &pieton, int32 modele, const std::string &fiche, float decalageZ)
+{
+	int32 h = Creer(CVector(pieton.x, pieton.y, pieton.z + 0.45f), modele, fiche, false, false, 0, 0, false, decalageZ);
+	if(CRamassage *r = Entree(h)) r->drapeaux &= (uint8)~(RAMASSAGE_FICHE | RAMASSAGE_A_LA_MAIN);
+	return h;
+}
+
 bool
 CRamassages::AuContact(int i, const CVector &joueur, float santeJoueur, bool typeAuContact) const
 {
