@@ -608,7 +608,7 @@ main(void)
 		VERIF(!g.RecruterAllie(SCRIPT_PED_JOUEUR, prefet, false));
 		// Renvoyer le premier suiveur lui fait d'abord renvoyer le sien ; les champs de FUN_00485820, la laisse lâchée.
 		VERIF(g.RenvoyerAllie(SCRIPT_PED_JOUEUR, algie));
-		VERIF(j->suiveur == -1 && a->meneur == -1 && a->suiveur == -1 && a->laisse == 0 && a->etatAllie == 1 && a->recrute13c8);
+		VERIF(j->suiveur == -1 && a->meneur == -1 && a->suiveur == -1 && a->laisse == 0 && a->etatAllie == 1 && a->sprintSansFin);
 		VERIF(g.Acceder(autre)->meneur == -1 && g.Acceder(autre)->laisse == 0);
 		// Un nouveau suiveur remplace l'ancien ; le piéton supprimé n'est plus tenu par personne.
 		VERIF(g.RecruterAllie(SCRIPT_PED_JOUEUR, algie, true) && g.RecruterAllie(SCRIPT_PED_JOUEUR, autre, true));

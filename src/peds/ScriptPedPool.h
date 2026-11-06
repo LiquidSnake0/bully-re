@@ -309,6 +309,7 @@ struct CScriptPed {
 	// rayon +0x364, la position du piéton au moment de la pose en +0x368 … +0x370, le décalage +0x378 … +0x380, les octets
 	// +0x3b4 à 1 et +0x3b5 à 0) : le piéton tenu, -1 sinon.
 	int laissePieton = -1;
+	int laisseDeclencheur = -1;  // +0x384 : le déclencheur d'une laisse du genre 3 (PedRestrictToTrigger, FUN_004999e0)
 	CVector laisseDecalage;
 	bool laisse3b4 = false, laisse3b5 = false;
 	// Le groupe des alliés (+0x2f0 de CPed : le piéton lui-même, puis son meneur en +0x2f4 et son suiveur en +0x2f8, deux
@@ -326,7 +327,10 @@ struct CScriptPed {
 	int32 groupe308 = 0, groupe30c = 0;   // +0x308, +0x30c
 	int32 etatAllie = 1;         // +0x318 : 1 au recrutement et au renvoi ; SetAllyState (FUN_0062a2c0) l'écrit chez un suiveur
 	int32 moralAllie = 0;        // +0x31c : 0 au recrutement ; SetAllyMorale (FUN_0062a2f0)
-	bool recrute13c8 = false;    // +0x13c8 : 1 au recrutement comme au renvoi (FUN_00485820)
+	// +0x13c8 : le sprint sans fin ; PedSetInfiniteSprint (0x5cde60) le pose, FUN_00485fa0 (le recrutement) et FUN_00485820 (le renvoi)
+	// le mettent à 1 ; FUN_0047cee0 ne dépense pas la réserve de sprint (+0x18d0) avec lui, ni quand le meneur est le joueur.
+	bool sprintSansFin = false;
+	bool teleportable = true;    // +0x1c99 : PedCanTeleportOnAreaTransition (0x5cd080) ; 1 depuis le constructeur (0x480465)
 	int32 groupe14ec = 0;        // +0x14ec : le troisième argument de PedRecruitAlly (FUN_005d8f20), chez les deux ; 0 au renvoi
 	// Le piéton critique pour la mission (PedSetMissionCritical, 0x5cca10) : l'octet +0x141c, le rappel Lua +0x18e8 (une
 	// fonction gardée par lancer_lua) et +0x1420 ; FUN_004782a0 appelle le rappel quand la santé tombe à 0.

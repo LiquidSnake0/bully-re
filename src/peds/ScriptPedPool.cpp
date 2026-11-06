@@ -600,7 +600,7 @@ CScriptPedPool::RenvoyerAllie(int meneur, int allie)
 	a->meneur = -1;
 	// FUN_00485820 : FUN_004852e0 (le marqueur et la barre de santé, non suivis), FUN_004851f0 (le rappel Lua +0x141c, non
 	// suivi), +0x318, +0x13c8, +0x14d0 à 1, +0x14ec et +0x153c à 0, la laisse lâchée (FUN_004998f0) ; puis +0x2f8 du meneur.
-	a->etatAllie = 1; a->recrute13c8 = true; a->groupe14ec = 0;
+	a->etatAllie = 1; a->sprintSansFin = true; a->groupe14ec = 0;
 	if(a->laisse != 0){ a->laisse = 0; a->laissePieton = -1; }
 	m->suiveur = -1;
 	return true;
@@ -625,7 +625,7 @@ CScriptPedPool::RecruterAllie(int meneur, int allie, bool forcer)
 	}
 	a->laisse3b4 = true; a->laisse3b5 = true;   // FUN_00499960 pose 1 et 0, FUN_00485fa0 les deux à 1
 	a->attitudes.Ecrire(m->type, 4);   // FUN_00473080
-	a->recrute13c8 = true;
+	a->sprintSansFin = true;
 	m->groupeTenu = forcer;
 	return true;
 }

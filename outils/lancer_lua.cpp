@@ -3563,6 +3563,40 @@ PedSetTetherToPoint(lua_State *L)
 	return 0;
 }
 
+// PedRestrictToTrigger(ped, déclencheur) (0x5c99e0, lu à l'assembleur de 0x5c99e0 à 0x5c9a2b) : rien sans piéton ; le déclencheur
+// est un mot (movzx) ; FUN_004999e0 (ecx = le piéton + 0x358) pose le rayon +0x364 à 0, le genre 3 (+0x360), le déclencheur
+// (+0x384), les octets +0x3b4 à 1 et +0x3b5 à 0, puis deux fois FUN_00499840 (le genre 3 : le point devient la position du
+// piéton, ramenée dans le déclencheur par FUN_004995c0, non suivi). Dans la laisse, FUN_00499530 juge alors la position dans la zone
+// du déclencheur (FUN_006d6ed0) ; l'outil ne tire pas le piéton vers elle (TetherLoco n'est pas sur ces piétons).
+static int
+PedRestrictToTrigger(lua_State *L)
+{
+	Journal("PedRestrictToTrigger", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p == nil) return 0;
+	p->laisse = 3; p->laisseRayon = 0; p->laisseDeclencheur = (uint16)(int)luaL_optnumber(L, 2, 0);
+	p->laissePieton = -1; p->laisse3b4 = true; p->laisse3b5 = false; p->laissePoint = p->pos;
+	return 0;
+}
+
+// PedSetInfiniteSprint(ped, b) (0x5cde60, lu à l'assembleur de 0x5cde60 à 0x5cdea1) : +0x13c8 au booléen (FUN_005d8f20) ;
+// PedCanTeleportOnAreaTransition(ped, b) (0x5cd080) : l'octet +0x1c99, que FUN_0048b970 lit pour les poursuivants du joueur.
+static int
+PedSetInfiniteSprint(lua_State *L)
+{
+	Journal("PedSetInfiniteSprint", L, 1);
+	if(CScriptPed *p = PedArg(L, 1)) p->sprintSansFin = BooleenArg(L, 2);
+	return 0;
+}
+
+static int
+PedCanTeleportOnAreaTransition(lua_State *L)
+{
+	Journal("PedCanTeleportOnAreaTransition", L, 1);
+	if(CScriptPed *p = PedArg(L, 1)) p->teleportable = BooleenArg(L, 2);
+	return 0;
+}
+
 static int
 PedClearTether(lua_State *L)
 {
@@ -4561,6 +4595,7 @@ CombatLoco(int ped, bool joueur, bool premiere)
 static void
 RefaireLaisse(CScriptPed &p)
 {
+	if(p.laisse == 3){ p.laissePoint = p.pos; return; }   // le genre 3 : la position du piéton (FUN_004995c0 non suivi)
 	if(p.laisse != 2) return;
 	const CScriptPed *q = pietons.Acceder(p.laissePieton);
 	if(q == nil){ p.laisse = 0; return; }
@@ -4659,8 +4694,8 @@ TetherLoco(int ped, CActionController::Laisse &l, bool premiere)
 	static int journalLaisses = 400;   // les départs et arrêts journalisés (les premiers)
 	if(l.enMarche != avant && journalLaisses > 0){
 		journalLaisses--;
-		printf("%6.2f s  TetherLoco de %d : %s (%.2f, %.2f, %.2f), à %.2f m, vitesse %.2f\n", maintenant / 1000.0, ped,
-		       l.enMarche ? "en marche vers" : "arrêté près de", vise.x, vise.y, vise.z, d, v);
+		printf("%6.2f s  TetherLoco de %d, en (%.2f, %.2f, %.2f) : %s (%.2f, %.2f, %.2f), à %.2f m, vitesse %.2f\n", maintenant / 1000.0,
+		       ped, p->pos.x, p->pos.y, p->pos.z, l.enMarche ? "en marche vers" : "arrêté près de", vise.x, vise.y, vise.z, d, v);
 	}
 	p->intentionVitesse = l.enMarche ? v : 0;
 	if(l.enMarche){
@@ -5490,6 +5525,22 @@ SoundPlayPreloadedSpeech(lua_State *L)
 	return 0;
 }
 
+// SoundStopCurrentSpeechEvent([ped]) (0x5d3a00, lu à l'assembleur de 0x5d3a00 à 0x5d3a48) : avec un argument (lua_gettop positif),
+// le piéton (FUN_005c7220) et FUN_005a5880(DAT_00cf4378, piéton, 0, 0x19) : sa ligne en cours s'arrête ; sans argument,
+// FUN_005a5c60 arrête toutes les lignes. L'outil n'a qu'une ligne à la fois : elle finit à cette image. F_Stage1Objectives
+// (la fonction 15 de 1_05.lur) coupe ainsi Algie quand une bande est battue.
+static int
+SoundStopCurrentSpeechEvent(lua_State *L)
+{
+	Journal("SoundStopCurrentSpeechEvent", L, 1);
+	if(lua_gettop(L) > 0){
+		CScriptPed *p = PedArg(L, 1);
+		if(p == nil || !parole.enCours || parole.ped != (int)lua_tonumber(L, 1)) return 0;
+	}
+	if(parole.enCours) parole.fin = maintenant;
+	return 0;
+}
+
 // SoundSpeechPlaying([ped[, événement[, ligne]]]) (0x5d3a50 → FUN_005a27b0) : sans piéton, quelqu'un parle ; avec, ce
 // piéton parle, et de cet événement et de cette ligne si le script les donne.
 static int
@@ -6167,6 +6218,10 @@ main(int argc, char **argv)
 	lua_register(L, "PedGetLastHitWeapon", PedGetLastHitWeapon);
 	lua_register(L, "PedGetWhoHitMeLast", PedGetWhoHitMeLast);
 	lua_register(L, "PedIsHit", PedIsHit);
+	lua_register(L, "SoundStopCurrentSpeechEvent", SoundStopCurrentSpeechEvent);
+	lua_register(L, "PedRestrictToTrigger", PedRestrictToTrigger);
+	lua_register(L, "PedSetInfiniteSprint", PedSetInfiniteSprint);
+	lua_register(L, "PedCanTeleportOnAreaTransition", PedCanTeleportOnAreaTransition);
 	lua_register(L, "PedFindInAreaXYZ", PedFindInAreaXYZ);
 	lua_register(L, "PedSetMissionCritical", PedSetMissionCritical);
 	lua_register(L, "PedRecruitAlly", PedRecruitAlly);
