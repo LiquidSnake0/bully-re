@@ -59,6 +59,26 @@ main(void)
 	col.PoserRamassage(idx, t);
 	CRamassage *e = q.Entree(t);
 	VERIF(e && e->collectible == 1 && e->octet45 == 12 && (e->drapeaux & RAMASSAGE_COLLECTIBLE) && col.Ramassage(1) == t);
+	// Au contact : à moins de 1 m au plan, au plus 2 m d'écart en hauteur, le type pris au contact, le joueur vivant.
+	VERIF(q.AuContact(q.Indice(t), CVector(123.9f, -9.3f, 11.0f), 100.0f, true));
+	VERIF(!q.AuContact(q.Indice(t), CVector(124.6f, -9.058f, 12.658f), 100.0f, true));   // 1,15 m au plan
+	VERIF(!q.AuContact(q.Indice(t), CVector(123.451f, -9.058f, 10.5f), 100.0f, true));   // 2,16 m plus bas
+	VERIF(!q.AuContact(q.Indice(t), CVector(123.451f, -9.058f, 12.0f), 100.0f, false));  // l'octet +0x25 du type
+	VERIF(!q.AuContact(q.Indice(t), CVector(123.451f, -9.058f, 12.0f), 0.0f, true));     // la santé
+	VERIF(!q.AuContact(q.Indice(h2), CVector(0, 0, 0), 100.0f, true));                   // une brique : à la main
+	// Pris (le genre 4, un item de maximum 10) : marqué, le rappel des scripts, compté, retiré.
+	CMonde m;
+	CTypeArme radio; radio.lu = true; radio.genre = 4; radio.maximum = 10; radio.auContact = true; m.types[476] = radio;
+	CObjetsJoueur o; o.premier = 460;
+	CRappelCollectible r1; bool a = false;
+	VERIF(q.PrendreObjet(q.Indice(t), 4, m, o, col, &r1, &a) == 1);
+	VERIF(a && r1.type == COLLECTIBLE_RADIO && r1.pris == 1 && r1.nombre == 2 && r1.ramassage == t && r1.indice == 1);
+	VERIF(col.Pris(1) && o.Nombre(476) == 1 && q.Entree(t) == nil);
+	// Plein : rien n'est pris ; un autre genre non plus.
+	o.Poser(m, 476, 10);
+	int32 t2 = q.CreerDuCollectible(CVector(0, 0, 0), 476, 0, 0, 0, 0.0f);
+	VERIF(q.PrendreObjet(q.Indice(t2), 4, m, o, col, &r1, &a) == 0 && !a && q.Entree(t2) != nil && !col.Pris(0));
+	VERIF(q.PrendreObjet(q.Indice(t2), 0, m, o, col, &r1, &a) == 0);
 
 	printf(echecs ? "test_ramassages : %d échec(s)\n" : "test_ramassages : tout passe\n", echecs);
 	return echecs != 0;

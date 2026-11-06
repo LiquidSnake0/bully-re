@@ -21,6 +21,11 @@
 #include "../common.h"
 #include <string>
 
+class CCollectibles;
+class CObjetsJoueur;
+struct CMondeArmes;
+struct CRappelCollectible;
+
 enum {
 	RAMASSAGE_FICHE = 1, RAMASSAGE_OBJET_PRET = 2, RAMASSAGE_A_LA_MAIN = 4, RAMASSAGE_PRIS = 8, RAMASSAGE_COLLECTIBLE = 0x10,
 	RAMASSAGE_NEUF = 0x20
@@ -59,6 +64,21 @@ public:
 	// placement qui l'a posé) en +0x45 ; une poignée valable reçoit l'indice du collectible en +0x42, puis FUN_004453f0 prépare l'objet
 	// visible, qui reçoit +0x3c en +0x228 et +0x45 en +0x110 (FUN_004386f0 le range avec les entités de son placement) : non suivis.
 	int32 CreerDuCollectible(const CVector &pos, int32 modele, int16 indice, uint32 hache, uint8 octet110, float decalageZ);
+	// FUN_00445710 (la mise à jour d'un ramassage pris, depuis FUN_00445970 ; lue dans l'index), la prise au contact : le joueur à
+	// moins de 40 m au plan (_DAT_009053a4 ; FUN_0041a380 ne compte que x et y), le ramassage actif (+0x44), l'objet visible prêt
+	// (FUN_004453f0 : il rend vrai quand le modèle est chargé, supposé tout de suite), pas à la main (bit 2), le +0x149c du joueur non
+	// nul (supposé), l'octet +0x25 du type de son modèle, la santé du joueur (+0x1cb8) positive, au plus 2 m d'écart en hauteur
+	// (_DAT_00900bfc) et moins de 1 m au plan : FUN_00444ac0(joueur, 1). Hors de 40 m, l'objet visible est rendu (FUN_004447a0(1, 0))
+	// et, inactif, l'échéance de la réapparition le réactive : non suivis.
+	bool AuContact(int i, const CVector &joueur, float santeJoueur, bool typeAuContact) const;
+	// FUN_00444ac0(ramassage, piéton, annonce) (lue dans l'index), les genres 2 à 4 du type (les objets) : rien si l'octet +0x1570 du
+	// piéton ne vaut pas 2 (supposé 2 pour le joueur) ; pour le joueur (+0x1310 = 13) : plein (le compteur au maximum du type), le
+	// message FUN_00444150 et rien ; sinon un collectible est marqué pris (FUN_004288c0(+0x42, 1) : son rappel des scripts, rendu dans
+	// `rappel` avec `aRappel`) et compté (FUN_004289b0 : les statistiques, non suivies), puis FUN_00541ae0(modèle, 1, 1, 0) ; le son 8,
+	// 10 ou 9 (FUN_0059c000), les bits 4, 5 et 0 (FUN_00443870), l'objet script (FUN_005d97a0) : non suivis ; le ramassage est retiré
+	// (FUN_004447a0(1, 1)). Rend 1 pris, 0 plein ou d'un autre genre (les armes, les munitions, la santé : non suivis ici).
+	int PrendreObjet(int i, int genre, const CMondeArmes &m, CObjetsJoueur &objets, CCollectibles &c, CRappelCollectible *rappel,
+	                 bool *aRappel);
 	// La poignée vérifiée comme FUN_00443e90 et ses voisines : l'indice sous 300, l'entrée prise (bit 3) et la même génération.
 	CRamassage *Entree(int32 h);
 	int Indice(int32 h) const;

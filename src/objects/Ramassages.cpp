@@ -1,4 +1,7 @@
 #include "Ramassages.h"
+#include "Collectibles.h"
+#include "../peds/Armes.h"
+#include <cmath>
 
 int32
 CRamassages::Creer(const CVector &pos, int32 modele, const std::string &fiche, bool ficheBit, bool collectible, uint32 mot3c,
@@ -50,3 +53,32 @@ CRamassages::CreerDuCollectible(const CVector &pos, int32 modele, int16 indice, 
 	return h;
 }
 
+bool
+CRamassages::AuContact(int i, const CVector &joueur, float santeJoueur, bool typeAuContact) const
+{
+	if(i < 0 || i >= kTaille) return false;
+	const CRamassage &r = entrees[i];
+	if(!r.Pris() || r.actif != 1) return false;
+	float dx = joueur.x - r.pos.x, dy = joueur.y - r.pos.y;
+	if(dx * dx + dy * dy - 40.0f * 40.0f > 0.0f) return false;
+	if((r.drapeaux & RAMASSAGE_A_LA_MAIN) || !typeAuContact || !(0.0f < santeJoueur)) return false;
+	if(fabsf(joueur.z - r.pos.z) > 2.0f) return false;
+	return dx * dx + dy * dy - 1.0f <= 0.0f;
+}
+
+int
+CRamassages::PrendreObjet(int i, int genre, const CMondeArmes &m, CObjetsJoueur &objets, CCollectibles &c, CRappelCollectible *rappel,
+                          bool *aRappel)
+{
+	if(aRappel) *aRappel = false;
+	if(i < 0 || i >= kTaille || genre < 2 || genre > 4) return 0;
+	CRamassage &r = entrees[i];
+	if(objets.Nombre(r.modele) >= m.Type(r.modele).maximum) return 0;   // FUN_00444150 : le joueur n'en porte pas plus
+	if(r.drapeaux & RAMASSAGE_COLLECTIBLE){
+		bool a = c.Marquer(r.collectible, true, rappel);
+		if(aRappel) *aRappel = a;
+	}
+	objets.Ajouter(m, r.modele, 1);
+	Retirer(i);
+	return 1;
+}

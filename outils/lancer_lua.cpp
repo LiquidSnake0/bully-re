@@ -3171,6 +3171,33 @@ PoserLesCollectibles(void)
 	}
 }
 
+// CPickups::Update (FUN_00445970, lu à l'assembleur de 0x445970 à 0x44598f) : FUN_00445710 pour chaque entrée prise du pool, de
+// 0xc0a100 à 0xc0f560. La prise au contact (CRamassages::AuContact) mène à FUN_00444ac0(joueur, 1) ; l'outil en suit les objets (les
+// genres 2 à 4 du type, CRamassages::PrendreObjet) et appelle le rappel des collectibles après le compte (le jeu l'appelle depuis
+// FUN_004288c0, juste avant FUN_00541ae0).
+static void
+AvancerRamassages(void)
+{
+	const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	if(j == nil || !joueurPose) return;
+	for(int i = 0; i < CRamassages::kTaille; i++){
+		const CRamassage &r = ramassages.entrees[i];
+		if(!r.Pris()) continue;
+		const CTypeArme &t = armes.Type(r.modele);
+		if(!ramassages.AuContact(i, j->pos, j->sante, t.auContact)) continue;
+		const CRamassage avant = r;
+		CRappelCollectible rappel;
+		bool aRappel = false;
+		int pris = ramassages.PrendreObjet(i, t.genre, armes, objetsJoueur, collectibles, &rappel, &aRappel);
+		const std::string *nom = NomDArme(avant.modele);
+		if(pris) printf("%6.2f s  le joueur prend au contact le ramassage %#x (modèle %d, %s%s) en (%.2f, %.2f, %.2f) : il en a %d\n",
+		                maintenant / 1000.0, ramassages.Poignee(i), avant.modele, nom ? nom->c_str() : "?",
+		                avant.drapeaux & RAMASSAGE_COLLECTIBLE ? ", un collectible" : "", avant.pos.x, avant.pos.y, avant.pos.z,
+		                objetsJoueur.Nombre(avant.modele));
+		if(aRappel) AppelerRappelCollectible(etatLua, rappel);
+	}
+}
+
 // CollectiblesSetTypeAvailable(type[, b]) (0x5bafa0, lu à l'assembleur de 0x5bafa0 à 0x5bafe7) : b vrai par défaut, le second
 // argument s'il y en a deux (FUN_005d8f20) ; le type (FUN_005d8200) ; FUN_00426340(type, b) : l'octet « disponible » (+5 + 2i) de
 // chaque entrée du type.
@@ -7345,6 +7372,7 @@ main(int argc, char **argv)
 		AvancerPietons();
 		AvancerObjets();
 		PoserLesCollectibles();
+		AvancerRamassages();
 		ecranDeFin.Avancer(33.0f / 20.0f);   // FUN_007073c0 : le pas du moteur (ms_fTimeStep)
 		PoursuivrePieton();   // --suivre : la manette du joueur
 		AvancerCinematique();
