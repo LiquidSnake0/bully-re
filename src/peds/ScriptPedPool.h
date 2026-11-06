@@ -384,6 +384,9 @@ struct CScriptPed {
 	// la pose, la piste PropGetDesired la prend), celle en main (+0x10e, le modèle de l'objet arme +0x1d0 : -1 sans arme ; la piste
 	// PropAttach la pose) et celle en passage de l'une à l'autre (+0x1574, -1 à la construction : 0x480835).
 	int32 armeVoulue = 0, armeTenue = -1, armePassage = -1;
+	// La charge de l'objet arme (+0x128 de +0x1d0, CChargeArme) : vide (-100) au départ (supposé : le constructeur de l'objet arme
+	// n'est pas lu), posée par WeaponSetCharge, augmentée par WeaponIncrementCharge, lue puis vidée par WeaponFire.
+	float armeCharge = -100.0f;
 	uint32 instantMort = 0;      // +0x18b8 : l'horloge (ms) à la mort d'un autre que le joueur
 	// Le geste en cours.
 	// L'intention de mouvement du composant d'actions (+0x2e0) : sa direction (+0, +4, +8) et sa vitesse (+0x1c), que la

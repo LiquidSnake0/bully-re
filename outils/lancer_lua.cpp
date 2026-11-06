@@ -5869,11 +5869,19 @@ static void
 AppliquerTirs(int ped, CActionController &c)
 {
 	CScriptPed *p = pietons.Acceder(ped);
+	// WeaponSetCharge (FUN_0065e7c0) et WeaponIncrementCharge (FUN_0065e810, le pas d'une image : 1/30 s ; supposé, le pas de la
+	// mise à jour des pistes n'est pas lu) avant les tirs de l'image.
+	if(p){
+		for(const CActionController::Charge &d : c.chargesPosees) p->armeCharge = d.valeur;
+		for(size_t i = 0; i < c.croissancesActives.size(); i++)
+			p->armeCharge = CChargeArme::Augmenter(p->armeCharge, 1.0f / 30.0f, p->armeTenue != -1 && p->armeTenue == modeles.Index("slingshot"));
+	}
+	c.chargesPosees.clear();
 	for(const CActionController::Tir &d : c.tirsLances){
 		if(p == nil || p->armeTenue == -1) continue;   // FUN_0065d160 sans arme en main
-		float charge = 0.0f;   // l'objet arme +0x128 (WeaponSetCharge, WeaponIncrementCharge, non jouées) vaut -100 (_DAT_00906520) : 0
-		(void)d;
+		float charge = CChargeArme::AuTir(p->armeCharge, d.facteur);   // FUN_00661f10
 		Tirer(ped, charge);
+		p->armeCharge = CChargeArme::kVide;   // FUN_00664710, après le tir
 		if(p->drapeaux[24] == 0) inventaire.Retirer(armes, ped, p->armeMunition, 1, p->type == SCRIPT_PED_TYPE_JOUEUR, modeles.Index("RBandBall"));
 		if(d.lacher && p->armeTenue == p->armeMunition && inventaire.Munitions(armes, ped, p->armeMunition) == 0) LacherArme(ped);
 	}

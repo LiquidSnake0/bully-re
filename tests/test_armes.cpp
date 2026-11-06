@@ -86,6 +86,10 @@ main(void)
 	VERIF(o.Poser(m, RADIO, -4) == 10 && o.Nombre(RADIO) == 0);   // FUN_00541c10 : borné à 0
 	VERIF(!o.Ajouter(m, BIG_GULP, 1) && o.Nombre(BIG_GULP) == 0);
 
+	// La charge (FUN_0065e810, FUN_00661f10) : le lance-pierre charge deux fois moins vite ; au tir, bornée à [0, 1], × le facteur.
+	VERIF(CChargeArme::Augmenter(0.0f, 0.5f, true) == 0.25f && CChargeArme::Augmenter(0.0f, 0.5f, false) == 0.5f);
+	VERIF(CChargeArme::AuTir(CChargeArme::kVide, 1.0f) == 0.0f && CChargeArme::AuTir(0.4f, 2.0f) == 0.8f && CChargeArme::AuTir(0.7f, 2.0f) == 1.0f);
+	VERIF(CChargeArme::AuTir(0.3f, 0.0f) == 0.3f && CChargeArme::AuTir(1.5f, -1.0f) == 1.0f);
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;
 }

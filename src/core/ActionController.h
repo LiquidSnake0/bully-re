@@ -189,6 +189,15 @@ public:
 	//   munition retirée (FUN_0045cf70) ; avec l'octet +0x32 (50), l'arme est lâchée quand il n'en reste plus. `tirsLances`.
 	struct Tir { float entree, facteur; bool lacher, fait; };
 	std::vector<Tir> tirs, tirsLances;
+	// - WeaponSetCharge (WeaponSetChargeTrack 0x935c74 ; lancement FUN_0065e7c0, lu dans l'index) : la charge de l'objet arme du
+	//   piéton (+0x128 de +0x1d0) reçoit le flottant +0x18 (24) ; sa mise à jour (FUN_006094f0) rend faux. `chargesPosees`.
+	// - WeaponIncrementCharge (WeaponIncrementChargeTrack ; lancement FUN_0061abf0, qui garde le contexte en +0x18) : sa mise à jour
+	//   (FUN_0065e810, CChargeArme::Augmenter) fait monter la charge à chaque image tant qu'elle vit (+0x10 (16), -1 : avec le nœud).
+	//   `croissancesActives`.
+	struct Charge { float entree, valeur; bool fait; };
+	std::vector<Charge> charges, chargesPosees;
+	struct Croissance { float entree, vie; };
+	std::vector<Croissance> croissances, croissancesActives;
 	// - PropSetInTransition (PropSetInTransitionTrack 0x935378, lancement FUN_00660840) : l'arme du nom haché +0x18 (24, FUN_0051adb0)
 	//   passe en +0x1574, l'arme en passage, que la PropAttach suivante prend en main (1_03 : PlayerPickupSlingshot).
 	enum { ARME_VOULUE_POSER, ARME_VOULUE_PRENDRE, ARME_ATTACHER, ARME_DETACHER, ARME_PASSAGE };

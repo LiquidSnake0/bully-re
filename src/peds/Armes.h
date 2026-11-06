@@ -42,6 +42,25 @@ struct CMondeArmes {
 	virtual ~CMondeArmes(void) {}
 };
 
+// La charge de l'objet arme d'un piéton (son +0x128 ; l'objet arme est le +0x1d0 du piéton), que les pistes WeaponSetCharge et
+// WeaponIncrementCharge mènent et que WeaponFire lit. Lu dans l'index le 06.11.2026.
+struct CChargeArme {
+	// _DAT_00906520 : la charge vide, que FUN_00664710 (le tir de WeaponFire, son emplacement +0x14) remet après chaque tir, et que
+	// WeaponSetCharge pose quand l'arme est rangée, lâchée ou que le lance-pierre est gêné (Weapons.cat, SlingShotActions.cat).
+	static constexpr float kVide = -100.0f;
+	// FUN_0065e810 (la mise à jour de WeaponIncrementCharge, à chaque image avec son pas) : la charge gagne le pas, × 0,5
+	// (_DAT_009055a0) si le modèle de l'objet arme (+0x10e) est le lance-pierre (DAT_00bf444c, « slingshot » dans la table des noms de
+	// 0xa13858), × 1 sinon.
+	static float Augmenter(float charge, float pas, bool lancePierre) { return (lancePierre ? 0.5f : 1.0f) * pas + charge; }
+	// FUN_00661f10 (le lancement de WeaponFire) : la charge × le facteur +0x34 de la piste s'il est positif, puis bornée à [0, 1] (une
+	// charge négative, ou NaN, donne 0), gardée en +0x44 pour le tir.
+	static float AuTir(float charge, float facteur) {
+		if(0.0f < facteur) charge *= facteur;
+		if(!(0.0f <= charge)) return 0.0f;
+		return 1.0f < charge ? 1.0f : charge;
+	}
+};
+
 struct CEntreeInventaire {
 	int16 munitions = 0;          // +0
 	int16 arme = -1;              // +2
