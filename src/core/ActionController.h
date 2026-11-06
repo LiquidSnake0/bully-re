@@ -207,6 +207,12 @@ public:
 	struct DrapeauObjet { float entree; int32 numero; bool valeur, fait; };
 	std::vector<DrapeauObjet> drapeauxObjet, drapeauxObjetPoses;
 	struct ActionObjet { float entree; const CActionNode *noeud; bool fait; };
+	// ActionRegisterButtonHistory (0x9358c0 ; lancement FUN_0061bab0, lu dans l'index) : le bouton (+0x20, 32) et l'état (+0x24, 36 :
+	// 0 pressé, 1 relâché, 3 tenu) rapportés à l'historique des boutons (FUN_0053b340 sur DAT_00c674f4) à son entrée ; sa mise à
+	// jour (FUN_00626190 → FUN_0053b1e0 : l'historique de la manette, hors du mode de l'arbre) n'est pas suivie. `boutonsLances` :
+	// ceux lancés à cette image, que l'appelant rapporte.
+	struct BoutonHistorique { float entree; int32 bouton, etat; bool fait; };
+	std::vector<BoutonHistorique> boutonsHistorique, boutonsLances;
 	std::vector<ActionObjet> actionsObjet, actionsObjetPosees;
 	// - Sync (SyncTrack 0x938208, créateur 0x64abb0 ; lancement FUN_00615f00, mise à jour FUN_00616170, lus dans l'index) : le
 	//   piéton se cale sur un point de synchronisation : le genre +0x28 (40 : 2 le partenaire +0x430, 3 l'objet du contexte par

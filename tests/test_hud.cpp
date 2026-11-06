@@ -5,6 +5,7 @@
 #include "../src/hud/HudComponents.h"
 #include "../src/hud/EcranDeFin.h"
 #include "../src/hud/ObjectifsMission.h"
+#include "../src/hud/ButtonHistory.h"
 #include <cstdio>
 
 static int echecs = 0;
@@ -62,6 +63,41 @@ main(void)
 	VERIF(om.Ajouter("1_05_MOBJ_02", 0, false, 6000) == 0 && om.tete == 0 && om.objectifs[0].suivant == 1);
 	for(int k = 0; k < 8; k++) om.Ajouter("Y", 0, false, 7000);
 	VERIF(om.nombre == 10 && om.Ajouter("Z", 0, false, 8000) == -1);
+	// L'historique des boutons dans le mode de l'arbre (FUN_0053b370, FUN_0053c250) : la première leçon de 1_06_01, le bouton 6 tenu.
+	{
+		CButtonHistory h;
+		h.parArbre = true;
+		h.Effacer();
+		VERIF(h.echecAnnonce && h.nombre == 0);
+		h.Ajouter(6, true, 0x2ee);
+		h.IgnorerManette(false, 1000);
+		VERIF(h.nombre == 1 && h.tenus == 1 && h.masque == 1u << 6 && h.pas[1].bouton == 6);   // le pas tenu recopié derrière
+		CButtonHistory::Evenements e = h.Avancer(1100, true, true, true);
+		VERIF(!e.reussie && !e.ratee && !e.bonBouton);
+		h.Rapporter(6, 0, 1200);                // pressé : le bon bouton, pas encore tenu
+		e = h.Avancer(1200, true, true, true);
+		VERIF(!e.reussie && !e.ratee && h.boutonRapporte == 0 && h.courant == 0);
+		e = h.Avancer(1950, true, true, true);   // 750 ms après le dernier rapport : pas encore
+		VERIF(!e.ratee);
+		e = h.Avancer(1951, true, true, true);
+		VERIF(e.ratee && e.bouton == 6 && !e.expiree && h.echouee);
+		e = h.Avancer(1990, true, true, true);   // l'échec n'est annoncé qu'une fois
+		VERIF(!e.ratee);
+		h.Effacer(); h.Ajouter(6, true, 0x2ee); h.IgnorerManette(false, 3000);
+		h.Rapporter(6, 3, 3100);                // tenu
+		e = h.Avancer(3100, true, true, true);
+		VERIF(e.reussie && e.bonBouton && h.manetteIgnoree && !h.echouee);
+		e = h.Avancer(3200, true, true, true);
+		VERIF(!e.reussie);                       // la manette est ignorée après la réussite
+		// Hors du mode de l'arbre, un rapport ne compte pas.
+		CButtonHistory m;
+		m.Rapporter(9, 1, 10);
+		VERIF(m.boutonRapporte == 0);
+		// La durée de la séquence (+0xb4) ne court pas dans ce mode (+0xb8 reste à 0).
+		m.parArbre = true; m.Effacer(); m.Ajouter(9, false, 1000000000); m.PoserDuree(5000); m.IgnorerManette(false, 0);
+		e = m.Avancer(100000, true, true, true);
+		VERIF(!e.ratee && !e.expiree);
+	}
 	printf("test_hud : %s\n", echecs ? "ÉCHEC" : "OK");
 	return echecs ? 1 : 0;
 }

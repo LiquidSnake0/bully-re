@@ -55,6 +55,7 @@
 #include "../src/hud/HudComponents.h"
 #include "../src/hud/EcranDeFin.h"
 #include "../src/hud/ObjectifsMission.h"
+#include "../src/hud/ButtonHistory.h"
 #include "../src/render/CameraMgr.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
@@ -6053,10 +6054,14 @@ PedMePlaying(lua_State *L)
 	return 1;
 }
 
-// L'historique des boutons (HUDButtonHistory) : la leçon de combo de 1_02 pose une séquence (ButtonHistoryAdd…),
-// puis deux fonctions du script, appelées quand le joueur réussit ou rate la séquence. L'outil garde ces deux
-// fonctions ; --sequence@s fait réussir le joueur (la fonction « réussie » est appelée), rien ne la rate de soi-même.
-static int rappelReussi = LUA_NOREF, rappelRate = LUA_NOREF;
+// L'historique des boutons (src/hud/ButtonHistory : HUDButtonHistory, l'objet DAT_00c674f4) : les leçons de 1_02 et de 1_06 posent
+// une séquence (ButtonHistoryAdd…) et trois fonctions du script (FUN_005d9f00 sur +0x70, +0x74 et +0x78 : FUN_008b52e0, FUN_0053aca0
+// et FUN_0053acb0 rendent ces adresses), appelées quand le joueur réussit la séquence, la rate, ou tape le bon bouton. Dans le mode de
+// l'arbre (ButtonHistoryEnableActionTreeInput), ce sont les pistes ActionRegisterButtonHistory des nœuds que le joueur joue qui
+// rapportent les boutons. --sequence@s fait réussir le joueur d'un coup (l'outil pose tous les pas faits : un raccourci de l'outil,
+// qui ne tape pas les boutons).
+static CButtonHistory historiqueBoutons;
+static int rappelReussi = LUA_NOREF, rappelRate = LUA_NOREF, rappelBonBouton = LUA_NOREF;
 
 static void
 Oublier(lua_State *L, int &ref)
@@ -6065,12 +6070,19 @@ Oublier(lua_State *L, int &ref)
 	ref = LUA_NOREF;
 }
 
+// FUN_005d9f00(L, 0, case) : la fonction du premier argument mise au registre, l'ancienne lâchée (sans fonction, la case reste vide).
+static void
+PoserRappelBoutons(lua_State *L, int &ref)
+{
+	Oublier(L, ref);
+	if(lua_isfunction(L, 1)){ lua_pushvalue(L, 1); ref = luaL_ref(L, LUA_REGISTRYINDEX); }
+}
+
 static int
 ButtonHistorySetCallbackPassed(lua_State *L)
 {
 	Journal("ButtonHistorySetCallbackPassed", L, 1);
-	Oublier(L, rappelReussi);
-	if(lua_isfunction(L, 1)){ lua_pushvalue(L, 1); rappelReussi = luaL_ref(L, LUA_REGISTRYINDEX); }
+	PoserRappelBoutons(L, rappelReussi);
 	return 0;
 }
 
@@ -6078,31 +6090,150 @@ static int
 ButtonHistorySetCallbackFailed(lua_State *L)
 {
 	Journal("ButtonHistorySetCallbackFailed", L, 1);
-	Oublier(L, rappelRate);
-	if(lua_isfunction(L, 1)){ lua_pushvalue(L, 1); rappelRate = luaL_ref(L, LUA_REGISTRYINDEX); }
+	PoserRappelBoutons(L, rappelRate);
 	return 0;
 }
 
 static int
-ButtonHistoryClearSequence(lua_State *L)
+ButtonHistorySetCallbackCorrectButton(lua_State *L)
 {
-	Journal("ButtonHistoryClearSequence", L, 1);
-	Oublier(L, rappelReussi);
-	Oublier(L, rappelRate);
+	Journal("ButtonHistorySetCallbackCorrectButton", L, 1);
+	PoserRappelBoutons(L, rappelBonBouton);
 	return 0;
 }
 
-// --sequence@s : le joueur tape la séquence demandée ; la fonction « réussie » du script est appelée.
+// ButtonHistoryClearSequence() (0x5bd810 → FUN_0053abb0) : la séquence vidée ; les rappels restent.
+static int
+ButtonHistoryClearSequence(lua_State *L)
+{
+	Journal("ButtonHistoryClearSequence", L, 1);
+	historiqueBoutons.Effacer();
+	return 0;
+}
+
+// ButtonHistoryAddSequence(bouton, tenir, …) (0x5bd850, lu à l'assembleur de 0x5bd850 à 0x5bd8b7) : par paires, FUN_0053ad50(bouton,
+// tenir, 750, -1, -1) (0x2ee : le délai du pas).
+static int
+ButtonHistoryAddSequence(lua_State *L)
+{
+	Journal("ButtonHistoryAddSequence", L, 1);
+	int n = lua_gettop(L);
+	for(int i = 0; i < n; i += 2) historiqueBoutons.Ajouter((int32)luaL_optnumber(L, i + 1, 0), lua_toboolean(L, i + 2) != 0, 0x2ee);
+	return 0;
+}
+
+// Les secondes des scripts en millisecondes : × 1000 (le double 0x900138), puis l'arrondi 0x85c6f0 (tronqué).
+static int32
+EnMs(lua_State *L, int i)
+{
+	return (int32)((double)luaL_optnumber(L, i, 0) * 1000.0);
+}
+
+// ButtonHistoryAddSequenceTimeInterval(bouton, tenir, secondes, …) (0x5bd8f0, lu de 0x5bd8f0 à 0x5bd96d) : par triplets,
+// FUN_0053ad50(bouton, tenir, secondes × 1000, -1, -1).
+static int
+ButtonHistoryAddSequenceTimeInterval(lua_State *L)
+{
+	Journal("ButtonHistoryAddSequenceTimeInterval", L, 1);
+	int n = lua_gettop(L);
+	for(int i = 0; i < n; i += 3)
+		historiqueBoutons.Ajouter((int32)luaL_optnumber(L, i + 1, 0), lua_toboolean(L, i + 2) != 0, EnMs(L, i + 3));
+	return 0;
+}
+
+// ButtonHistoryAddSequenceTimeIntervalCharge(bouton, s1, s2, s3, …) (0x5bd970, lu de 0x5bd970 à 0x5bda19) : par quadruplets,
+// FUN_0053ad50(bouton, 0, s1 × 1000, s2 × 1000, s3 × 1000).
+static int
+ButtonHistoryAddSequenceTimeIntervalCharge(lua_State *L)
+{
+	Journal("ButtonHistoryAddSequenceTimeIntervalCharge", L, 1);
+	int n = lua_gettop(L);
+	for(int i = 0; i < n; i += 4)
+		historiqueBoutons.Ajouter((int32)luaL_optnumber(L, i + 1, 0), false, EnMs(L, i + 2), EnMs(L, i + 3), EnMs(L, i + 4));
+	return 0;
+}
+
+// ButtonHistorySetSequenceTime(secondes) (0x5bd820 → FUN_0053ac70(secondes × 1000)).
+static int
+ButtonHistorySetSequenceTime(lua_State *L)
+{
+	Journal("ButtonHistorySetSequenceTime", L, 1);
+	historiqueBoutons.PoserDuree(EnMs(L, 1));
+	return 0;
+}
+
+// ButtonHistoryIgnoreController(b) (0x5bd720 → FUN_0053b2e0, le booléen par FUN_005d8f20).
+static int
+ButtonHistoryIgnoreController(lua_State *L)
+{
+	Journal("ButtonHistoryIgnoreController", L, 1);
+	historiqueBoutons.IgnorerManette(lua_toboolean(L, 1) != 0, (uint32)maintenant);
+	return 0;
+}
+
+// ButtonHistoryIgnoreSequence(bouton, …) (0x5bda20 → FUN_0053ade0 pour chaque argument).
+static int
+ButtonHistoryIgnoreSequence(lua_State *L)
+{
+	Journal("ButtonHistoryIgnoreSequence", L, 1);
+	int n = lua_gettop(L);
+	for(int i = 1; i <= n; i++) historiqueBoutons.Ignorer((int32)luaL_optnumber(L, i, 0));
+	return 0;
+}
+
+// ButtonHistoryEnableActionTreeInput(b) (0x5bda60 → FUN_0053af90 : l'octet +0xb0).
+static int
+ButtonHistoryEnableActionTreeInput(lua_State *L)
+{
+	Journal("ButtonHistoryEnableActionTreeInput", L, 1);
+	historiqueBoutons.parArbre = lua_toboolean(L, 1) != 0;
+	return 0;
+}
+
+// ButtonHistoryAddSequenceLocalText(texte) (0x5bda90 → FUN_0053ad20 : 31 caractères en +0xcc).
+static int
+ButtonHistoryAddSequenceLocalText(lua_State *L)
+{
+	Journal("ButtonHistoryAddSequenceLocalText", L, 1);
+	historiqueBoutons.texte = std::string(luaL_optstring(L, 1, "")).substr(0, 31);
+	return 0;
+}
+
+// Un rappel de l'historique, avec ses arguments (FUN_005d9ac0, FUN_005d8110, FUN_005d8510, FUN_005d8460, FUN_005d8450, FUN_005d8140).
+static void
+AppelerRappelBoutons(lua_State *L, int ref, const char *quoi, int nargs, int32 bouton, bool expiree)
+{
+	if(ref == LUA_NOREF || L == nil) return;
+	printf("%6.2f s  historique des boutons : le rappel « %s » est appelé\n", maintenant / 1000.0, quoi);
+	lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+	if(nargs >= 1) lua_pushnumber(L, bouton);
+	if(nargs >= 2) lua_pushboolean(L, expiree);
+	if(lua_pcall(L, nargs, 0, 0) != 0){ printf("        rappel de l'historique des boutons : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+}
+
+// FUN_0053c250 (la méthode 8 de HUDButtonHistory) : à chaque image où le composant 21 est montré (supposé : le gestionnaire du HUD
+// passe les composants visibles), l'historique avance et appelle ses rappels.
+static void
+AvancerHistoriqueBoutons(lua_State *L)
+{
+	if(!hud.Visible(21)) return;
+	CButtonHistory::Evenements e = historiqueBoutons.Avancer((uint32)maintenant, rappelReussi != LUA_NOREF, rappelRate != LUA_NOREF,
+	                                                          rappelBonBouton != LUA_NOREF);
+	if(e.reussie) AppelerRappelBoutons(L, rappelReussi, "réussie", 0, 0, false);
+	if(e.bonBouton) AppelerRappelBoutons(L, rappelBonBouton, "bon bouton", 1, e.bouton, false);
+	if(e.ratee) AppelerRappelBoutons(L, rappelRate, "ratée", 2, e.bouton, e.expiree);
+}
+
+// --sequence@s : le joueur réussit la séquence posée : l'outil la tient pour tapée (tous ses pas faits) ; l'image suivante appelle le
+// rappel « réussie » comme FUN_0053c250.
 static void
 ReussirSequence(lua_State *L)
 {
-	if(rappelReussi == LUA_NOREF){ printf("%6.2f s  le joueur tape une séquence : aucune n'est posée\n", maintenant / 1000.0); return; }
-	int ref = rappelReussi;
-	rappelReussi = LUA_NOREF;
-	lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
-	luaL_unref(L, LUA_REGISTRYINDEX, ref);
+	CButtonHistory &h = historiqueBoutons;
+	if(h.nombre < 1 || h.manetteIgnoree){ printf("%6.2f s  le joueur tape une séquence : aucune n'est posée\n", maintenant / 1000.0); return; }
+	for(int i = 0; i < h.nombre; i++) h.pas[i].fait = true;
+	h.courant = h.nombre; h.echouee = false; h.evenement = true;
 	printf("%6.2f s  le joueur réussit la séquence de boutons\n", maintenant / 1000.0);
-	if(lua_pcall(L, 0, 0, 0) != 0){ printf("        rappel de la séquence : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
 }
 
 static int
@@ -6804,6 +6935,15 @@ main(int argc, char **argv)
 	lua_register(L, "ButtonHistorySetCallbackPassed", ButtonHistorySetCallbackPassed);
 	lua_register(L, "ButtonHistorySetCallbackFailed", ButtonHistorySetCallbackFailed);
 	lua_register(L, "ButtonHistoryClearSequence", ButtonHistoryClearSequence);
+	lua_register(L, "ButtonHistorySetCallbackCorrectButton", ButtonHistorySetCallbackCorrectButton);
+	lua_register(L, "ButtonHistoryAddSequence", ButtonHistoryAddSequence);
+	lua_register(L, "ButtonHistoryAddSequenceTimeInterval", ButtonHistoryAddSequenceTimeInterval);
+	lua_register(L, "ButtonHistoryAddSequenceTimeIntervalCharge", ButtonHistoryAddSequenceTimeIntervalCharge);
+	lua_register(L, "ButtonHistorySetSequenceTime", ButtonHistorySetSequenceTime);
+	lua_register(L, "ButtonHistoryIgnoreController", ButtonHistoryIgnoreController);
+	lua_register(L, "ButtonHistoryIgnoreSequence", ButtonHistoryIgnoreSequence);
+	lua_register(L, "ButtonHistoryEnableActionTreeInput", ButtonHistoryEnableActionTreeInput);
+	lua_register(L, "ButtonHistoryAddSequenceLocalText", ButtonHistoryAddSequenceLocalText);
 	lua_register(L, "PedIsPlaying", PedIsPlaying);
 	lua_register(L, "PedMePlaying", PedMePlaying);
 	lua_register(L, "PlayerIsInAreaObject", PlayerIsInAreaObject);
@@ -7273,6 +7413,13 @@ main(int argc, char **argv)
 				printf("%6.2f s  le piéton %d retient %s ligne %d\n", maintenant / 1000.0, c.first, kSpeechEvents[e.evenement], e.ligne);
 			}
 			c.second.parolesLancees.clear();
+			// ActionRegisterButtonHistory (FUN_0061bab0 → FUN_0053b340) : le bouton et l'état rapportés à l'historique des boutons.
+			for(const CActionController::BoutonHistorique &b : c.second.boutonsLances){
+				historiqueBoutons.Rapporter(b.bouton, b.etat, (uint32)maintenant);
+				if(historiqueBoutons.parArbre)
+					printf("%6.2f s  le piéton %d rapporte le bouton %d (état %d) à l'historique des boutons\n", maintenant / 1000.0, c.first, b.bouton, b.etat);
+			}
+			c.second.boutonsLances.clear();
 			for(; c.second.departsLances > 0; c.second.departsLances--)
 				for(auto it = parolesTenues.begin(); it != parolesTenues.end(); ){
 					if(it->ped != c.first){ ++it; continue; }
@@ -7349,6 +7496,7 @@ main(int argc, char **argv)
 				       CheminVu(cible, cible.joue).c_str());
 			}
 		}
+		AvancerHistoriqueBoutons(L);
 		intentionsPietons.clear();   // FUN_005f3720 : l'intention ne vaut que pour l'image
 		VieillirBoutons();
 		for(auto it = demandes.begin(); it != demandes.end(); ) it = maintenant > it->second ? demandes.erase(it) : ++it;
