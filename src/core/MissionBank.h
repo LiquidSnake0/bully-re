@@ -54,6 +54,14 @@ struct CMissionData {
 	int coronaTaille = 0;       // champ 40, un entier : la taille passée au marqueur (+0x28) : 25 ou 23, 3 pour 1_01
 	std::string coronaInvite;   // champ 48 : la clé de texte affichée dans le pavé (BUT_LAUNCH, BUT_MISSION)
 	bool Jouable(void) const { return !script.empty() && script != "none.lua"; }
+	// Le nœud « Run » de la mission (FUN_006abf20, au départ de main : FUN_006ab510(« Run ») le cherche sous le nœud de la mission
+	// par l'emplacement +0xc, le joue au second contrôleur de la mission, FUN_005f48f0, et le fait avancer d'une image,
+	// FUN_005f49a0) : ses pistes Script (ScriptTrack, lancement FUN_006851a0), dans l'ordre. +0x24 l'espace de noms, +0x28 la
+	// fonction, l'octet +0x18 : un argument, le nombre +0x1c ; l'octet +0x20 : la poignée du piéton du contexte en premier ;
+	// l'octet +0x21 : celle du déclencheur de son objet. 1_06_01 y appelle F_SetStage(1), les cinq missions suivantes du même
+	// script F_SetStage(2) à F_SetStage(6).
+	struct Appel { std::string espace, fonction; bool avecNombre = false, avecPieton = false, avecDeclencheur = false; float nombre = 0.0f; };
+	std::vector<Appel> run;
 };
 
 class CMissionBank

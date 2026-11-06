@@ -299,6 +299,21 @@ struct CScriptPed {
 	int cibleObjectif = -1;      // +0x540 (+0x184 du composant de visée en +0x3bc) : la cible d'un objectif d'attaque, que la
 	                             // condition Objective pose quand elle passe (FUN_0048c330)
 	bool mort = false;           // +0x1c98 : posé par la piste Death (FUN_00479110), lu par PedIsDead (0x5c8f30)
+	// Les objets du piéton, des indices dans le pool des objets animés (src/objects/ObjetsAnimes), -1 sans : l'objet visé (+0x438)
+	// et son point de synchronisation (+0x43c, le nom haché : FeetSync…), que la condition TargetProp pose depuis l'objet repéré
+	// (FUN_004979b0 → FUN_00478610) ; l'objet repéré par le relevé (+0x444, FUN_004989f0), son point (+0x448) et sa distance
+	// (+0x44c) ; les objets relevés trop loin ou moins bien placés (la liste +0x450, dix entrées de 12 octets, leur nombre en
+	// +0x4c8 : FUN_0048c6b0) ; l'objet dont il se sert (+0x548, FUN_004ed6e0), qui arrête le relevé (FUN_004991e0) ; +0x1520,
+	// posé à 1 par FUN_004ed6e0.
+	int objetVise = -1;
+	uint32 syncVise = 0;
+	int objetRepere = -1;
+	uint32 syncRepere = 0;
+	float distanceRepere = 0.0f;
+	struct ObjetProche { int objet; uint32 sync; float distance; };
+	std::vector<ObjetProche> objetsProches;
+	int objetUtilise = -1;
+	bool utiliseObjet = false;
 	// La laisse (le composant +0x358, FUN_00499910 PedSetTetherToXYZ, FUN_004998f0 la lâche) : son genre (+0x360 : 0 aucune,
 	// 1 un point, 2 et 3 un piéton ou un déclencheur, que l'outil ne suit pas), son rayon (+0x364) et son point (+0x368 … +0x370) ;
 	// IsTethered (FUN_00603040) lit le genre.

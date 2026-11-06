@@ -623,11 +623,12 @@ Avec l'outil (sous zsh, `${=…}`) :
 
     LA=/Global/Player/Attacks/Strikes/LightAttacks
     J1=13.5,14.1,…,24.3 (dix-neuf jabs) ; J2=28,28.6,…,37 (seize) ; J3=39,39.6,…,48 (seize)
-    build/outils/lancer_lua 160 --mission 1_05 --sans-cinematiques --courir 187.3,-132.2,6.1@5 \
+    build/outils/lancer_lua 200 --mission 1_05 --sans-cinematiques --courir 187.3,-132.2,6.1@5 \
       --suivre 4,0.8@12.5 --viser 4@12.5 --jouer $LA@$J1 --suivre 5,0.8@27 --viser 5@27 --jouer $LA@$J2 \
       --suivre 6,0.8@38 --viser 6@38 --jouer $LA@$J3 \
       --courir 209.2,-73.3,6@59 --porte DT_tschool_SchoolFrontDoorL@66 --courir -675.8,-325.4,5.9@70 \
-      --suivre 12,0.8@105 --viser 12@105 --jouer $LA@106,106.6,…,115 --suivre 13,0.8@117 --viser 13@117 --jouer $LA@118,118.6,…,127
+      --suivre 12,0.8@105 --viser 12@105 --jouer $LA@106,106.6,…,115 --suivre 13,0.8@117 --viser 13@117 --jouer $LA@118,118.6,…,127 \
+      --courir -657.2,-293.5,5.9@155
 
 (`J1`, `J2`, `J3` et les deux séries de l'embuscade : seize ou dix-neuf instants de 0,6 s en 0,6 s.) Le joueur court à la bibliothèque,
 Algie le suit (`TetherLoco`, 5,51 s) ; le premier bully attaque Algie à 12,08 s ; dix-neuf jabs (six manquent « dans son dos ») : il fuit
@@ -637,8 +638,37 @@ dans le hall à 67,29 s ; `F_Stage2`. L'outil n'a pas de sol : le joueur court a
 qu'Algie, qui s'arrête à 2,40 m de sa place et monte au même pas que lui, soit dans la hauteur de `_1_05B_BATHROOMSECONDFLOOR` (de 5,23 à
 7,23 m) : `F_CutAlgieToStall` à 86,69 s, Algie dans la cabine à 91,64 s, la minuterie arrêtée ; l'embuscade (les bullies 12 et 13)
 attaque à 104,54 s, morts à 117,97 et 129,99 s ; la chasse d'eau à 147,01 s, Algie au lavabo, puis `F_Stage3` : Algie suit de nouveau le
-joueur, l'objectif `1_05_MOBJ_03` à 154,18 s. La suite (le casier, `F_NIS_AlgieLocker`) attend les objets animés des déclencheurs
-(docs/suite.md).
+joueur, l'objectif `1_05_MOBJ_03` à 154,18 s. Le joueur court au casier (155 s) et entre dans `_1_05B_ALGIELOCKER` à 161,24 s :
+`F_NIS_AlgieLocker` ; Algie suit `_1_05B_ROUTEALGIELOCKER`, et au nœud 1 (163,15 s) `F_routeAlgieLocker` pose `SaveAlgieBooks` au casier
+(l'objet animé de `NLock02B06`, créé quand le joueur est entré à l'école, 67,29 s ; il offre alors `/Global/NLockA/PedPropsActions/Interact/NPCGetItem`
+aux piétons) et `/Global/1_05/Anims/Rummage/Locker` à Algie : `TargetProp` lui fait viser le casier (1,09 m), la piste `PropInteract`
+(163,25 s) lui fait jouer l'action du casier, `GetBooks`, la fouille et `CloseDoor` (166,12 s) ; il prend ses livres (`NerdBooks`), s'éloigne
+sur `_1_05B_ALGIEFLEE`, et le joueur joue `/Global/Player/Gifts/GetMoney` (168,50 s) : la prise met le joueur dans `Give_Seek` et Algie dans
+`ReceiveWait`, qui passe dix secondes plus tard à `Give/Receive` ; son `PlayOnTarget` fait jouer `Give/Give` au joueur (178,60 s ; l'outil
+prend le partenaire de prise, faute du composant de visée des piétons de l'IA) ; l'écran `M_PASS` (182,62 s), les messages de respect,
+le fondu et **`MissionSucceed` : `1_05` se termine réussie à 185,20 s**.
+
+## `1_06_01` (« Get Help - Mission 1 ») (06.11.2026, séance 2)
+
+`1_06_01` suit `1_05` dans la banque (`chap1.cat`) ; elle s'active, comme `1_05`, quand `1_04` est réussie (`MissionCond` sur le
+haché de « 1_04 », 0x6a9d3c6 ; `TimeCond` de 8 h à 23 h, celle de `1_05` s'arrête à 19 h) et ne démarre pas seule (le champ 51 est nul) ; ses six missions (`1_06_01` et les
+cinq `#3e2f5b3x` de la banque `1_06`) partagent le script `chap1\1_06_01.lua` et diffèrent par le nœud `Run` de leur entrée dans
+`chap1.cat` (`Active/Run`), dont la piste `Script` appelle `F_SetStage(1)` à `F_SetStage(6)` au départ de `main` (`FUN_006abf20` →
+`FUN_006ab510("Run")`). Lancée seule (`build/outils/lancer_lua 150 --mission 1_06_01 --sans-cinematiques`) :
+
+1. `main` attend `bStageLoaded`, que `F_SetStage` pose (1,02 s) ; la cinématique `1-06` (au dortoir, zone 14) est sautée ; Gary (4) et
+   Pete (5), recrutés et critiques, sont posés dans la cour (4,52 s).
+2. `F_SetupRoutingToHobo` : l'objectif `1_06_OBJ01` (un `table.insert` du résultat de `MissionObjectiveAdd`, réel depuis cette séance),
+   le marqueur de `_1_06BEGIN`, `T_GarySpeech` (quatre lignes de `M_1_06_01`) ; `F_RoutingToHobo` attend le joueur dans `_FIGHTINGAREA`.
+3. La suite, lue dans `1_06_01.lur` : la cinématique `1-06B`, le clochard (`gHobo`) créé sur `_1_06BEGIN`, `F_SetupAchieveReceiver`
+   (`1_06_OBJ02` : aller chercher le transistor par l'escalier `_STAIRCORONA`, `_LOWCORONA`, `_HIGHGROUND`, l'échelle
+   `/Global/Ladder/Ladder_Actions`, les portes du bus `_BUSDOORS` par `PAnimIsOpen` et `PAnimOpenDoor`), `F_GoMeetWithHobo`
+   (`/Global/1_06/1_06_Give/Give/GiveHobo_1_06`), puis l'entraînement au combat avec le clochard (`F_SetupMissionStageHoboFight`,
+   `F_CorrectButtonPressed`).
+
+Avec `--entrer _FIGHTINGAREA@14`, le joueur entre dans la zone du clochard à 14,03 s : la cinématique `1-06B` est sautée, le clochard
+(le piéton 4, modèle 87, `STAT_HOBO`) est créé endormi devant le joueur (15,41 s), l'objectif `1_06_OBJ02` (le transistor) s'affiche à
+15,97 s et `F_AchieveReceiver` attend l'objet 476 (`ItemGetCurrentNum`).
 
 ## Suite
 

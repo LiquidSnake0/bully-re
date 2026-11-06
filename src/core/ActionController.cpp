@@ -86,7 +86,9 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kMinuterie = ActionHash("SetActionTimer"), kScript = ActionHash("Script"),
 	                    kVoulueP = ActionHash("PropSetDesired"), kVoulueG = ActionHash("PropGetDesired"),
 	                    kAttacher = ActionHash("PropAttach"), kDetacher = ActionHash("PropDetach"), kTir = ActionHash("WeaponFire"),
-	                    kPassage = ActionHash("PropSetInTransition");
+	                    kPassage = ActionHash("PropSetInTransition"), kDrapeauObjet = ActionHash("PropFlags"),
+	                    kActionObjet = ActionHash("PropSetPedAction"), kSynchro = ActionHash("Sync"),
+	                    kInteraction = ActionHash("PropInteract");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -123,6 +125,17 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			const CActionAttribut *v = p.Champ(24);
 			float e = Reel(p, 12, 0.0f);
 			drapeaux.push_back({e < 0.0f ? -1.0f : a, p.Mot(28), v && v->taille >= 1 ? (int32)v->valeur[0] : 0, false});
+		}else if(p.type == kDrapeauObjet){
+			const CActionAttribut *v = p.Champ(24);
+			drapeauxObjet.push_back({Reel(p, 12, 0.0f) < 0.0f ? -1.0f : a, (int32)p.Mot(28), v && v->taille >= 1 && v->valeur[0] != 0, false});
+		}else if(p.type == kActionObjet){
+			const CActionAttribut *at = p.Champ(32);
+			const CActionNode *v = at ? b.Relatif(&n, f->ChaineCitee(at->decalage).c_str()) : nil;
+			actionsObjet.push_back({a, v, false});
+		}else if(p.type == kSynchro){
+			synchros.push_back({a, (int32)p.Mot(40), false, true, Octet(p, 8)});
+		}else if(p.type == kInteraction){
+			interactions.push_back({a, false});
 		}else if(p.type == kParole){
 			const CActionAttribut *l = p.Champ(28);
 			float e = Reel(p, 12, 0.0f);
@@ -138,9 +151,16 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			minuteries.push_back({a, Reel(p, 24, 0.0f), false});
 		}else if(p.type == kScript){
 			const CActionAttribut *sc = p.Champ(36), *fn = p.Champ(40);
-			if(fn && !Octet(p, 44) && !(Octet(p, 24) && !Octet(p, 32)))
-				appelsScript.push_back({a, sc ? f->ChaineCitee(sc->decalage) : std::string(), f->ChaineCitee(fn->decalage),
-				                        Octet(p, 24), Reel(p, 28, 0.0f), false});
+			// FUN_006851a0 : avec l'octet +0x18, le nombre +0x1c en dernier argument ; l'octet +0x20 le fait précéder de la poignée
+			// du piéton, l'octet +0x21 (à 1) de celle du déclencheur de l'objet du contexte.
+			if(fn && !Octet(p, 44)){
+				AppelScript as{a, sc ? f->ChaineCitee(sc->decalage) : std::string(), f->ChaineCitee(fn->decalage),
+				               Octet(p, 24) && Octet(p, 32), Reel(p, 28, 0.0f), false};
+				as.avecNombre = Octet(p, 24);
+				const CActionAttribut *d21 = p.Champ(33);
+				as.avecDeclencheur = Octet(p, 24) && !Octet(p, 32) && d21 && d21->valeur[0] == 1;
+				appelsScript.push_back(as);
+			}
 		}else if(p.type == kDe){
 			desPistes.push_back({a, p.Mot(24), false, Octet(p, 8)});
 		}else if(p.type == kPrendreDroits || p.type == kRendreDroits){
@@ -253,6 +273,12 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	for(Mort &d : morts)          // FUN_0060fdc0, à l'arrêt du nœud
 		if(!d.fait && d.entree < 0.0f){ d.fait = true; mortsLancees.push_back(d); }
 	morts.clear();
+	for(DrapeauObjet &d : drapeauxObjet)   // FUN_00655b50, une entrée négative à l'arrêt du nœud (FUN_005f3fb0)
+		if(!d.fait && d.entree < 0.0f){ d.fait = true; drapeauxObjetPoses.push_back(d); }
+	drapeauxObjet.clear();
+	actionsObjet.clear();
+	synchros.clear();
+	interactions.clear();
 	for(Parole &d : paroles)
 		if(!d.fait && d.entree < 0.0f){ d.fait = true; parolesLancees.push_back(d); }
 	paroles.clear();
@@ -329,6 +355,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 		// FUN_00632810), la piste meurt aussitôt ; à l'octet +8, elle ne retient le nœud que jusque-là.
 		for(const Droits &g : droits) finParRetenues |= g.retient;
 		for(const De &g : desPistes) finParRetenues |= g.retient;
+		for(const Synchro &g : synchros) finParRetenues |= g.retient;
 	}
 }
 
@@ -526,6 +553,17 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; mortsLancees.push_back(d); }
 	for(Drapeau &d : drapeaux)    // FUN_0060f8e0
 		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; drapeauxPoses.push_back(d); }
+	for(DrapeauObjet &d : drapeauxObjet)   // FUN_00655b50
+		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; drapeauxObjetPoses.push_back(d); }
+	for(ActionObjet &d : actionsObjet)     // FUN_006561a0
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; actionsObjetPosees.push_back(d); }
+	for(Synchro &d : synchros){            // FUN_00615f00, puis FUN_00616170 : morte à sa première mise à jour (supposé)
+		if(!d.vivante || Temps(t) < d.entree) continue;
+		if(!d.lancee) d.lancee = true;
+		else d.vivante = false;
+	}
+	for(Interaction &d : interactions)     // FUN_00656120
+		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; interactionsLancees++; }
 	regardsActifs.clear();
 	poursuitesActives.clear();
 	for(const Regard &r : regards)          // FUN_00620dc0, tant que la piste vit
@@ -579,8 +617,10 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 	for(SurCible &c : surCible)   // FUN_006615f0
 		if(!c.fait && Temps(t) >= c.entree){
 			c.fait = true;
-			if(const CActionNode *n = b.Relatif(joue, c.chemin.c_str())) pourCible.push_back(n);
+			c.noeud = b.Relatif(joue, c.chemin.c_str());
+			if(c.noeud) pourCible.push_back(c.noeud);
 		}
+	if(fige) return false;   // un objet animé de l'outil : le nœud reste
 	if(joue){
 		const CActionNode *n = Occasions(b, juge, t);
 		if(n){ Jouer(b, n, t, &juge); return true; }
@@ -596,6 +636,7 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(sousControleurs) for(const COpportunite &o : occasions) retenu |= o.retient && !o.arretee;
 		for(const Droits &g : droits) retenu |= g.retient && !g.fait;
 		for(const De &g : desPistes) retenu |= g.retient && !g.fait;
+		for(const Synchro &g : synchros) retenu |= g.retient && g.vivante;
 		fini = !retenu;
 	}
 	// Une Opportunity prise sans nœud (un chemin vide) a demandé la fin du nœud (FUN_005f49a0 : l'octet +1, quelles que

@@ -70,21 +70,23 @@ chantier. Un point fini passe en bas, avec son commit.
    les alliés qui passent les portes avec le joueur (`FUN_0048b970`), `PedSetMissionCritical`, `PedFindInAreaXYZ`,
    `SoundStopCurrentSpeechEvent`, `PedRestrictToTrigger`, `PedSetInfiniteSprint` : la première étape, l'école, la cabine, l'embuscade,
    la chasse d'eau, le lavabo ; `F_Stage3` à 154,18 s.
+   Le 06.11 (séance 2), **`1_05` se termine réussie à 185,20 s** (docs/missions.md, « 1_05 ») : les objets animés des déclencheurs
+   (`src/objects/ObjetsAnimes` : leur création pour la zone visible, `FUN_00416540`, leur fiche PropButes, `PAnimExists`,
+   `PAnimSetActionNode`, leurs drapeaux, leur contrôleur et les pistes `PropFlags`, `PropSetPedAction`), `TargetProp` et le relevé des
+   objets proches, les pistes `Sync` et `PropInteract`, l'écran de fin (`MinigameSetCompletion`, `MinigameIsShowingCompletion` : `1_04`
+   finit maintenant à 82,53 s), les objectifs de mission, `PlayOnTarget` qui attend sa cible ; `1_06_01` démarre par le nœud `Run` de sa
+   mission (`F_SetStage`) ; les portes animées (`PAnimOpenDoor`, `PAnimCloseDoor`, les portes nommées par leur objet).
    Suite, dans l'ordre :
-   - finir `1_05` : `F_NIS_AlgieLocker` (le joueur dans `_1_05B_ALGIELOCKER`) attend qu'Algie joue
-     `/Global/NLockA/PedPropsActions/Interact/NPCGetItem/GetBooks/NPCGetItem/GetItem/CloseDoor` ; il y entre par
-     `/Global/1_05/Anims/Rummage/Locker` (`TargetProp`, `FUN_0065c250`, puis `PropInteract`) sur le casier, un objet animé du
-     déclencheur `NLock02B06`. D'où **les objets animés des déclencheurs** : le `PLACEMENT` du périmètre d'un déclencheur est le modèle
-     de son objet (`FUN_006d5450` : +0x10 du périmètre, par `FUN_0051c240` ; le déclencheur le tient en +0x20) ; `FUN_004efe60` crée
-     l'objet (un PAnim de 0x3b8 octets, `FUN_004ed9d0`) et le range en +0x1c du déclencheur ; trois chemins y mènent : la section `prop`
-     des `.ipb` (`PropLoaderImpl`, `FUN_00438d90` : par le nom, pour un déclencheur à l'octet +0x3f bit 0x10, posé on ne sait encore
-     où), la méthode 8 de `TriggerLoaderImpl` (`FUN_00436e00` : pas de mission, un modèle, la zone visible, les drapeaux de saison) et
-     `AreaRegisterAnimProps` (0x438700, la table `DAT_00bd3e78`) ; `PAnimExists` (0x5c48c0 : +0x1c, son +0x114, son +0x94),
-     `PAnimOpenDoor`, `PAnimCloseDoor`, `PAnimDoorStayOpen`, `PAnimSetActionNode`, `PAnimSetPropFlag`, l'arbre du casier (`NLockA.act`),
-     `TargetProp` et la piste `PropInteract` ; puis la fin de `F_NIS_AlgieLocker` (`PedSetWeapon(…, 405)`, `/Global/Player/Gifts/GetMoney`,
-     `MinigameIsShowingCompletion`) et `MissionSucceed`. Restent dans `1_05` : `PedGetUniqueModelStatus` (0x5cdef0 : le mot +0x5c du
-     modelinfo, que rien ne lit encore dans l'outil), les marqueurs (`AddBlipForChar`, `BlipRemove`), la barre de santé d'Algie, la
-     ronde du préfet (`FUN_00472320`), le sol (Algie s'arrête 2,40 m avant sa place : la commande fait courir le joueur à 5,9 m) ;
+   - `1_06_01` (« Get Help », docs/missions.md) : lancée seule, elle attend le joueur dans `_FIGHTINGAREA` ; avec `--entrer
+     _FIGHTINGAREA@14`, voir où s'arrêtent la cinématique `1-06B`, le clochard, la quête du transistor (les coronas, l'échelle
+     `/Global/Ladder`, les portes du bus `_BUSDOORS`), le don (`GiveHobo_1_06`) et l'entraînement au combat (`F_CorrectButtonPressed`) ;
+   - ce qui reste supposé de `1_05` : le composant de visée des piétons de l'IA (le +0xa0 du +0x1c8 que posent `FUN_004d7890` et les
+     pistes `SetTarget`, `TargetLock`, `GiveTargetToFocus` : l'outil prend le partenaire de prise pour cible des `PlayOnTarget`), les
+     points de synchronisation des modèles (`FUN_00467c30`, FeetSync à la position de l'objet), l'arbre propre d'un objet animé à sa
+     création (le départ `RandomLockState` de sa fiche, +0x70) et la descente de son contrôleur (`FUN_005f49a0` depuis sa racine +0x228),
+     la vue et les zones interdites du relevé, `PedGetUniqueModelStatus` (0x5cdef0 : le mot +0x5c du modelinfo), les marqueurs
+     (`AddBlipForChar`, `BlipRemove`), la barre de santé d'Algie, la ronde du préfet (`FUN_00472320`), le sol (la commande fait courir le
+     joueur à 5,9 m de haut aux toilettes et au casier), la tenue de l'écran de fin (0,5 s jusqu'au signal `DAT_020c870b`) ;
    - la suite des armes : la charge (`WeaponSetCharge`, `WeaponIncrementCharge` : l'objet arme +0x128, la portée et les dégâts du tir),
      la visée du joueur (`WeaponPlayerFireAutoTarget`, `FUN_00662a40` en entier, la cible qui bouge : les jocks de `1_04` ne sont touchés
      que pendant leurs sauts), le haut du corps en contrôleur à part (le spawn `UpperBody` du nœud de l'arme, pour ne plus passer par
@@ -92,10 +94,10 @@ chantier. Un point fini passe en bas, avec son commit.
      `CProjectile` (`FUN_004d4c40`, le sol, les rebonds, `DetectProjectile`), `SetWeaponFlags` et `WeaponFlags`, `PedSetWeaponFlag`, le genre
      d'un coup de projectile (+0x468), `MissionTimerStartFixed`, `MissionTimerPause` ;
    - les objets : les CObject vraiment créés par le chargeur des `.ipb` (son emplacement +0x18), leur modèle de collision au lieu de la
-     sphère de 0,5 m, leurs effets et leur remplaçant (`FUN_004d0300`) ; les objets animés (`PAnimCreate` 0x5c4680, hors de l'index ;
-     `PAnimSetActionNode`, l'objet +0x1c d'un déclencheur et ses +0x180, +0x184 ; la piste `PropSetPedAction`) : que l'arbre de la porte
-     offre lui-même `PedPropActions` au joueur, que l'arbre de l'arbre (`pxTree`) le fasse grimper sans `--jouer`, que
-     `AreaSetDoorLockedToPeds` passe par l'objet, et `AreaSetDoorPathableToPeds` (`FUN_005eaf00`) ;
+     sphère de 0,5 m, leurs effets et leur remplaçant (`FUN_004d0300`) ; les objets animés hors des déclencheurs des `.dat` (`PAnimCreate`
+     0x5c4680, hors de l'index ; la section prop des `.ipb`, `FUN_00438d90`) : que l'arbre de la porte offre lui-même `PedPropActions` au
+     joueur, que l'arbre de l'arbre (`pxTree`) le fasse grimper sans `--jouer`, que les portes animées jouent leur arbre (`Door.act`,
+     supposé chargé) et leurs événements (`FUN_005b2df0`, `FUN_005b3030`), et `AreaSetDoorPathableToPeds` (`FUN_005eaf00`) ;
    - les ramassages : la fiche (`PickupData/<nom>`, BrickBute), la réapparition, `PickupCreatePoint`, la banque `Weapons/PickUpActions`
      jouée pour de vrai (PropPickup) au lieu de `--ramasser` ;
    - les classes de `AI.act` jugées derrière : `CheckWeather` (`#51223f18`, nommée par sa chaîne), `FactionScan` (`FUN_00600bb0`),
@@ -142,6 +144,17 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- `1_05` se termine réussie à 185,20 s (06.11, séance 2 ; 33048d4, 40d3c33, 6a129cc, 477c762, ab53885, ce870cc, 910cf23, b6527da,
+  bae6062) : les objets animés des déclencheurs (`src/objects/ObjetsAnimes` : `FUN_00416540`, `FUN_0044cd20`,
+  `FUN_00416490`, la fiche PropButes de `FUN_00520460` et `FUN_00729b70`, `CActionBank::ButesCherche`, `AreaRegisterAnimProps` vide),
+  `PAnimExists`, `PAnimSetActionNode` (`FUN_004ef1f0`), `PAnimSetPropFlag`, `PAnimGetPropFlag`, le contrôleur figé de l'objet, les pistes
+  `PropFlags`, `PropSetPedAction`, `Sync`, `PropInteract`, les conditions `PropFlags`, `PropPedIsUsingMe`, `PropModelID`,
+  `PedConditionGroup` et `TargetProp` (`FUN_0065c250`, le relevé `FUN_004989f0`, `FUN_00497e90`, le choix `FUN_004979b0`), l'écran de
+  fin (`src/hud/EcranDeFin.h`), les objectifs de mission (`src/hud/ObjectifsMission.h`), le nœud `Run` des missions et les pistes
+  `Script` à un nombre (`FUN_006abf20`, `FUN_006ab510`, `FUN_006851a0`), `PlayOnTarget` qui attend sa cible (`FUN_006615f0`), les
+  portes animées (`FUN_004eebc0`, `FUN_004eed70`, `PAnimOpenDoor`, `PAnimCloseDoor`, `PAnimDoorStayOpen`, `PAnimIsOpen`, les portes
+  nommées par leur objet) ; `1_06_01` attend le joueur dans `_FIGHTINGAREA`.
 
 - `1_05` va jusqu'à sa troisième étape (06.11 ; fc7617d, e4918b5, cc43ab6, f1538a0, a147a19, 167fc76) : les rondes des préfets
   (`src/peds/Patrouilles` : le gestionnaire `DAT_00c2b034`, `FUN_004720e0`, `AreaDisablePatrolPath` et ses voisines, `DATUnload`),

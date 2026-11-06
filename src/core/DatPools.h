@@ -56,6 +56,10 @@ public:
 	uint32 HachageTrajet(int handle) const { return handle >= 1 && handle < (int)trajets.size() && !trajets[handle].libre ? trajets[handle].hachage : 0; }
 	int EmplacementTrajet(int handle) const { return handle >= 1 && handle < (int)trajets.size() && !trajets[handle].libre ? trajets[handle].emplacement : -1; }
 	const CTriggerZone *ZoneParHandle(int handle) const;
+	// Le périmètre d'un déclencheur (le +0x20 du déclencheur : son PLACEMENT, +0x10 une fois résolu par FUN_006d5450), ou nil ;
+	// l'emplacement de DATLoad sous lequel il a été chargé (+0x3d, DAT_020c7e94 au moment de FUN_006d6a60), -1 pour une case libre.
+	const CTriggerPerimeter *PerimetreDe(int handle) const;
+	int EmplacementZone(int handle) const { return handle >= 0 && handle < (int)zones.size() && !zones[handle].libre ? zones[handle].emplacement : -1; }
 	// Le n-ième point (à partir de 1) d'une liste, ou nil.
 	const CTriggerPointPoint *Point(int handle, int n) const;
 	// PlayerIsInTrigger / PedIsInTrigger (FUN_006d6e50) : la position est dans la zone du déclencheur.

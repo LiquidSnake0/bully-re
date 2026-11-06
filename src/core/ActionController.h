@@ -28,7 +28,12 @@ public:
 	std::vector<const CActionNode *> suitesExecutees;   // les nœuds visés par les Sequence des nœuds exécutés, après
 	// Ses pistes PlayOnTarget (ExecuteOnTargetTrack, mise à jour FUN_006615f0) : à leur instant d'entrée, le nœud
 	// visé (chemin relatif) est joué par la cible du piéton (FUN_004d5980, un piéton : FUN_005f4500), une seule fois.
-	struct SurCible { float entree; std::string chemin; bool fait; };
+	// FUN_006615f0 (lue à l'assembleur de 0x6615f0 à 0x66164f) est la mise à jour : sans cible (le +0xa0 du composant de visée
+	// +0x1c8 du piéton du contexte, FUN_004d5980) ou si ce n'est pas un piéton, elle rend vrai et la piste réessaie à l'image
+	// suivante ; sinon la cible joue le nœud (FUN_005f4500, son contrôleur +0x2e0 + 0x258) et la piste meurt. `noeud` : le nœud
+	// résolu au lancement ; SansCible le remet en attente.
+	struct SurCible { float entree; std::string chemin; bool fait; const CActionNode *noeud = nil; };
+	void SansCible(const CActionNode *n) { for(SurCible &c : surCible) if(c.fait && c.noeud == n) c.fait = false; }
 	std::vector<SurCible> surCible;
 	std::vector<const CActionNode *> pourCible;   // les nœuds à faire jouer à la cible, rendus par Avancer (vidés à chaque image)
 	// Ses pistes Collision (CollisionTrack, table 0x92decc ; mise à jour FUN_005f9e70), y compris celles du nœud qu'une
@@ -189,6 +194,36 @@ public:
 	enum { ARME_VOULUE_POSER, ARME_VOULUE_PRENDRE, ARME_ATTACHER, ARME_DETACHER, ARME_PASSAGE };
 	struct PisteArme { float entree; int32 genre; uint32 nom; bool octet, fait; };
 	std::vector<PisteArme> pistesArme, pistesArmeLancees;
+	// Les pistes des objets animés (le registre des pistes FUN_00650150, lu le 06.11.2026) :
+	// - PropFlags (PropFlagsTrack 0x935458, créateur 0x6413c0 ; lancement FUN_00655b50) : l'objet du contexte (FUN_004eaa60 : sans
+	//   piéton, l'objet lui-même, le +0xc du contexte ; avec un piéton, l'objet dont il se sert (+0x548), sinon son objet visé
+	//   (+0x438) puis son objet repéré (+0x444) s'ils sont animés) reçoit FUN_004ea300(+0x1c (28), l'octet +0x18 (24)) ; rend vrai.
+	// - PropSetPedAction (0x938248, créateur 0x64ac50 ; lancement FUN_006561a0) : l'objet du contexte (son +0xc) prend en +0x230 le
+	//   nœud du chemin +0x20 (32), résolu depuis le nœud qui porte la piste (FUN_005f4e30) : ce que l'objet fera jouer au piéton qui
+	//   s'en sert ; rend faux.
+	// - HoldState (0x931368, créateur 0x640b00) : le lancement (FUN_006092d0) garde le contexte en +0x18 et rend faux, la mise à
+	//   jour (FUN_00609b30) rend vrai ; rien à suivre.
+	// `drapeauxObjetPoses` et `actionsObjetPosees` : celles lancées à cette image, que l'appelant applique à l'objet du contexte.
+	struct DrapeauObjet { float entree; int32 numero; bool valeur, fait; };
+	std::vector<DrapeauObjet> drapeauxObjet, drapeauxObjetPoses;
+	struct ActionObjet { float entree; const CActionNode *noeud; bool fait; };
+	std::vector<ActionObjet> actionsObjet, actionsObjetPosees;
+	// - Sync (SyncTrack 0x938208, créateur 0x64abb0 ; lancement FUN_00615f00, mise à jour FUN_00616170, lus dans l'index) : le
+	//   piéton se cale sur un point de synchronisation : le genre +0x28 (40 : 2 le partenaire +0x430, 3 l'objet du contexte par
+	//   FUN_004eaab0, 4 et 6 un cap seulement), le point +0x2c (44, FeetSync…) ; avec +0x30 (48) non nul, la mise à jour recale
+	//   le piéton (FUN_00615800) et rend vrai tant qu'il n'est pas en place. L'outil n'a pas les points des modèles
+	//   (FUN_00467c30) : la piste ne déplace pas le piéton et meurt à sa première mise à jour (supposé : déjà en place).
+	struct Synchro { float entree; int32 genre; bool lancee, vivante, retient; };
+	std::vector<Synchro> synchros;
+	// - PropInteract (PropInteractTrack 0x935440, créateur 0x641380 ; lancement FUN_00656120) : le piéton se sert de son objet
+	//   visé, que l'appelant traite (`interactionsLancees` : celles lancées à cette image) ; le lancement rend faux.
+	struct Interaction { float entree; bool fait; };
+	std::vector<Interaction> interactions;
+	int interactionsLancees = 0;
+	// Le contrôleur d'un objet animé dans l'outil : son nœud ne finit pas et ne cède à rien (pas d'Opportunity, de Sequence ni de
+	// descente) ; seules ses pistes se lancent. Le moteur fait avancer le contrôleur de l'objet (+0x1bc, FUN_005f49a0 depuis
+	// FUN_004edec0) avec sa racine (+0x228) : non suivi.
+	bool fige = false;
 	struct Repos { float entree; bool fait; };
 	std::vector<Repos> repos;
 	int reposLances = 0;
@@ -216,7 +251,9 @@ public:
 	// mission en cours) est appelée (FUN_005d80a0) ; sans l'octet +0x18, sans argument ; avec, l'octet +0x20 passe la poignée du
 	// piéton (FUN_005c60d0) et le nombre +0x1c. L'octet +0x2c (la réponse choisit un enfant du nœud, FUN_005f4490) et l'octet
 	// +0x21 (la poignée du déclencheur d'un objet animé) ne sont pas suivis. `appelsLances` : ceux de cette image.
-	struct AppelScript { float entree; std::string script, fonction; bool avecPieton; float nombre; bool fait; };
+	// avecNombre : l'octet +0x18 (un argument, le nombre +0x1c) ; avecPieton : l'octet +0x20 (la poignée du piéton d'abord) ;
+	// avecDeclencheur : l'octet +0x21 à 1 (la poignée du déclencheur de l'objet du contexte d'abord, FUN_006d7910 sur son +0x23c).
+	struct AppelScript { float entree; std::string script, fonction; bool avecPieton; float nombre; bool fait; bool avecNombre = false, avecDeclencheur = false; };
 	std::vector<AppelScript> appelsScript, appelsLances;
 	struct Droits { float entree; bool prendre, fait, retient; };   // retient : l'octet +8, jusqu'au lancement
 	std::vector<Droits> droits;

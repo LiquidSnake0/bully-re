@@ -95,12 +95,21 @@ CActionBank::Butes(const char *nom, CActionTrack &piste, const char *cat)
 	return ChercherButes(f, f.racine, ActionHash(nom), piste);
 }
 
+// Les fichiers des réglages lus par ButesChemin, gardés en mémoire.
+static std::map<std::string, std::shared_ptr<CActionBank::Source>> butesLus;
+
+const CActionTreeFile *
+CActionBank::FichierButes(const char *cat)
+{
+	auto it = butesLus.find(cat);
+	return it == butesLus.end() || !it->second || it->second->donnees.empty() ? nil : &it->second->fichier;
+}
+
 bool
 CActionBank::ButesChemin(const char *cat, const std::vector<uint32> &chemin, uint32 type, CActionTrack &piste,
                          std::map<uint16, std::string> *chaines)
 {
-	static std::map<std::string, std::shared_ptr<Source>> lus;
-	std::shared_ptr<Source> &src = lus[cat];
+	std::shared_ptr<Source> &src = butesLus[cat];
 	if(!src){
 		src = std::make_shared<Source>();
 		int32 image = ImageAct();
@@ -131,6 +140,49 @@ CActionBank::ButesChemin(const char *cat, const std::vector<uint32> &chemin, uin
 		return true;
 	}
 	return false;
+}
+
+bool
+CActionBank::ButesCherche(const char *cat, const std::vector<uint32> &chemin, uint32 nom, uint32 type, CActionTrack &piste,
+                          std::map<uint16, std::string> *chaines)
+{
+	// ButesChemin a lu et garde le fichier ; on retrouve sa racine par un chemin vide de piste (le type 0 n'est porté par
+	// rien, la lecture reste faite).
+	CActionTrack rien;
+	ButesChemin(cat, chemin, 0, rien);
+	const CActionTreeFile *f = FichierButes(cat);
+	if(f == nil || chemin.empty()) return false;
+	const CActionNode *n = &f->racine;
+	if((n->hachage & 0x7fffffff) != (chemin[0] & 0x7fffffff)) return false;
+	for(size_t i = 1; i < chemin.size() && n; i++){
+		const CActionNode *e = nil;
+		for(const CActionNode &c : n->enfants) if((c.hachage & 0x7fffffff) == (chemin[i] & 0x7fffffff)){ e = &c; break; }
+		n = e;
+	}
+	if(n == nil) return false;
+	// FUN_0072ada0 : le nœud lui-même s'il a ce nom et la piste, sinon ses enfants dans l'ordre, en profondeur.
+	struct R {
+		static const CActionNode *Chercher(const CActionTreeFile &f, const CActionNode &n, uint32 nom, uint32 type, CActionTrack &t){
+			if((n.hachage & 0x7fffffff) == (nom & 0x7fffffff))
+				for(int32 p : n.pistes){
+					CActionTrack u;
+					if(f.Piste(p, u) && (u.type & 0x7fffffff) == (type & 0x7fffffff)){ t = u; return &n; }
+				}
+			for(const CActionNode &e : n.enfants) if(const CActionNode *r = Chercher(f, e, nom, type, t)) return r;
+			return nil;
+		}
+	};
+	CActionTrack t;
+	if(R::Chercher(*f, *n, nom, type, t) == nil) return false;
+	piste = t;
+	if(chaines){
+		chaines->clear();
+		for(const CActionAttribut &a : t.attributs){
+			std::string c = f->ChaineCitee(a.decalage);
+			if(!c.empty()) (*chaines)[a.position] = c;
+		}
+	}
+	return true;
 }
 
 float

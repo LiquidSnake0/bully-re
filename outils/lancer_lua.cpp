@@ -40,6 +40,7 @@
 #include "../src/peds/Armes.h"
 #include "../src/peds/Patrouilles.h"
 #include "../src/objects/ObjectData.h"
+#include "../src/objects/ObjetsAnimes.h"
 #include "../src/core/IplFile.h"
 #include "../src/anim/Hxd.h"
 #include "../src/anim/AnimGroups.h"
@@ -50,6 +51,8 @@
 #include "../src/peds/ScriptPedPool.h"
 #include "../src/peds/Clothing.h"
 #include "../src/hud/HudComponents.h"
+#include "../src/hud/EcranDeFin.h"
+#include "../src/hud/ObjectifsMission.h"
 #include "../src/render/CameraMgr.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
@@ -188,6 +191,10 @@ PoserMarque(const std::string &nom, const CVector &pos)
 struct CObjetOutil { int32 modele = -1; uint32 nom = 0; CVector pos; int32 sante = 0; bool invulnerable = false, detruit = false;
                      bool parArmeSeule = false, verrouillable = false; int destructeur = -1; };
 static std::vector<CObjetOutil> objets;
+static int journalRestant = 400;   // les lignes de journal qui restent (LANCER_JOURNAL)
+static CObjetsAnimes objetsAnimes;   // les objets animés des déclencheurs : le pool DAT_00c0f608 (src/objects/ObjetsAnimes)
+// Le contrôleur d'actions de chaque objet animé (+0x1bc), par indice dans le pool : figé (src/core/ActionController.h).
+static std::map<int, CActionController> controleursObjets;
 static int PoigneeObjet(size_t i){ return (int)(i << 8) | 1; }
 static CObjetOutil *ObjetParPoignee(int h){ size_t i = (size_t)h >> 8; return h >= 0 && (h & 0xff) == 1 && i < objets.size() ? &objets[i] : nil; }
 
@@ -400,6 +407,17 @@ static bool nisEnCours = false;
 static bool rumbleAmbiant = false, rumbleMission = false;
 static bool CinematiqueEnCours(void);   // DAT_020c5be4
 static bool ParoleEnCours(int ped);     // FUN_005a27b0 : une ligne du piéton (ou, à -1, une ligne quelconque) se joue
+// Le nom d'un modèle par son indice (le HashString de ce nom est le +4 du modelinfo) ; vide s'il est inconnu.
+static std::string
+NomDeModele(int32 m)
+{
+	static std::map<int32, std::string> parIndice;
+	if(parIndice.empty()) for(const auto &e : modeles.parNom) parIndice.emplace(e.second, e.first);
+	auto it = parIndice.find(m);
+	return it == parIndice.end() ? std::string() : it->second;
+}
+
+static bool ObjetNonUtilisable(int i);   // l'objet animé joue NotUseable (FUN_005f46a0 sur son contrôleur)
 struct CJugeOutil : CJugeAction {
 	int ped; float t;
 	// Les tirages du contexte qui juge (+0x24 et les dés +0x28 à +0x34, CActionController::tirageContexte et des) : ceux
@@ -416,6 +434,13 @@ struct CJugeOutil : CJugeAction {
 		return c ? c->des[i & 3] : desSeuls[i & 3];
 	}
 	CJugeOutil(int p, float t_) : ped(p), t(t_) {}
+	// Le contexte d'un objet animé (DAT_00a453f8, que l'emplacement +0x40 de l'objet rend, FUN_0044cbd0) : sans piéton (+8, jamais
+	// écrit : vérifié à l'assembleur, seul le destructeur de 0x8f2507 le touche), l'objet en +0xc (DAT_00a45404, FUN_004ed7f0).
+	int objet = -1;
+	static CJugeOutil DeLObjet(int o, float t_){ CJugeOutil j(-1, t_); j.objet = o; return j; }
+	// FUN_004eaa60 : l'objet du contexte. Sans piéton, le +0xc ; avec un piéton, l'objet dont il se sert (+0x548), sinon son
+	// objet visé (+0x438) ou repéré (+0x444) s'il est animé (les 3 bits bas de +0x108 à 6) ; l'outil n'a que des objets animés.
+	int ObjetDuContexte(void) const;
 	int JoueNom(uint32 nom) const override { return arbres.JoueHachage(NoeudJoue(ped), nom & 0x7fffffff); }
 	bool ACible(void) const override { return CibleDe(ped) >= 0; }
 	// Le temps du nœud joué par le contrôleur qui juge (le +0x10 du contexte), sinon celui du contrôleur d'actions.
@@ -446,6 +471,73 @@ struct CJugeOutil : CJugeAction {
 		                    kGroupeHumiliation = ActionHash("HumiliationGroupIs"), kTempsPasse = ActionHash("ActionNodePlayTimePast"),
 		                    kGroupeAnim = ActionHash("AnimationGroupLoaded"), kParolePrete = ActionHash("IsSpeechPreloaded"),
 		                    kPositionCible = ActionHash("TargetRelativePosition");
+		// Les conditions des objets animés (leurs juges, l'emplacement 1 des tables : lus dans l'index le 06.11.2026) : PropFlags
+		// (0x936874, FUN_00654f90) : le mot +0x160 + 4 × (+4) de l'objet du contexte non nul ; PropPedIsUsingMe (0x937d88,
+		// FUN_006551c0) : son +0x234 (un piéton s'en sert) ; PropModelID (0x937cac, FUN_00655480) : le nom haché de son modèle (+4 du
+		// modelinfo) vaut +4. Sans objet, faux. PedConditionGroup (0x937080, FUN_00601d90, lue à l'assembleur de 0x601d90 à 0x601dc1) :
+		// avec un piéton (+8 du contexte), le groupe +4 jugé dans le contexte du piéton (son emplacement +0x40) ; sans, vrai si le
+		// contexte a un objet (+0xc).
+		static const uint32 kDrapeauObjet = ActionHash("PropFlags"), kObjetUtilise = ActionHash("PropPedIsUsingMe"),
+		                    kModeleObjet = ActionHash("PropModelID"), kGroupePieton = ActionHash("PedConditionGroup");
+		if(type == kDrapeauObjet) return objetsAnimes.Drapeau(ObjetDuContexte(), (int)mots[0]);
+		if(type == kObjetUtilise){ const CObjetAnime *o = objetsAnimes.Objet(ObjetDuContexte()); return o && o->utilisateur >= 0; }
+		if(type == kModeleObjet){
+			const CObjetAnime *o = objetsAnimes.Objet(ObjetDuContexte());
+			return o && (ActionHash(NomDeModele(o->modele).c_str()) & 0x7fffffff) == (mots[0] & 0x7fffffff);
+		}
+		if(type == kGroupePieton){
+			if(ped < 0) return objet >= 0;
+			std::vector<int32> groupe;
+			if(!f.GroupeDe(d, groupe)) return 0;
+			return arbres.JugerListe(f, groupe, CJugeOutil(ped, t)) == 1;
+		}
+		// TargetProp (ConditionTargetProp 0x936690, FUN_0065c250 ; créateur 0x644f40, 0x2c octets) : +4 la portée, +8 une hauteur
+		// (pour les ramassages), les octets +0xc (les ramassages, avec le +0x149c du piéton : non suivi) et +0xd, +0x10 le nom du
+		// modèle (FUN_0051acd0 : faux s'il est inconnu), +0x14 le point de synchronisation, +0x1c le genre de l'objet, l'octet +0x20
+		// et +0x24 passés au relevé, les octets +0x28 (l'objet déjà visé suffit) et +0x29 (il devient aussi la cible du contexte,
+		// FUN_00606b40, et l'objet +0x544 : non suivi). Un point de synchronisation hors des cinq (FUN_00520230), nommé, mène à
+		// l'objet le plus proche du modèle (FUN_00460650, FUN_00467c30, FUN_005eb6f0 : non suivi, faux). Sinon, hors du joueur, le
+		// relevé (FUN_004991e0 : rien quand le piéton se sert déjà d'un objet, +0x548 ; la liste +0x4c8 vidée ; FUN_004989f0), puis
+		// FUN_004979b0(genre, portée, modèle, 1, 0, 0) : l'objet visé (+0x438) et son point (+0x43c).
+		static const uint32 kObjetCible = ActionHash("TargetProp");
+		if(type == kObjetCible){
+			CScriptPed *q = pietons.Acceder(ped);
+			if(q == nil) return 0;
+			uint32 hm = f.ChampCondition(d, 0x10) & 0x7fffffff, b28 = f.ChampCondition(d, 0x28);
+			int32 modele = -1;
+			if(hm){
+				for(const auto &e : modeles.parNom) if((ActionHash(e.first.c_str()) & 0x7fffffff) == hm){ modele = e.second; break; }
+				if(modele == -1) return 0;
+			}
+			if((b28 & 0xff) && objetsAnimes.Objet(q->objetVise) && (hm == 0 || objetsAnimes.Objet(q->objetVise)->modele == modele)) return 1;
+			uint32 sync = f.ChampCondition(d, 0x14) & 0x7fffffff;
+			bool connu = sync == 0;
+			for(const char *n : kPointsDeSynchro) connu |= (ActionHash(n) & 0x7fffffff) == sync;
+			if(!connu) return 0;
+			float portee; memcpy(&portee, &mots[0], 4);
+			if(q->type != SCRIPT_PED_TYPE_JOUEUR && q->objetUtilise < 0){
+				CObjetsAnimes::Releveur r;
+				r.pos = q->pos; r.parScript = q->script >= 0;
+				auto fe = modeles.femme.find(q->modele); r.femme = fe != modeles.femme.end() && fe->second;
+				std::vector<CObjetsAnimes::Repere> proches;
+				CObjetsAnimes::Repere m = objetsAnimes.Relever(r, portee, ObjetNonUtilisable, proches);
+				q->objetsProches.clear();
+				for(const CObjetsAnimes::Repere &e : proches) q->objetsProches.push_back({e.objet, e.sync, e.distance});
+				if(m.objet >= 0){ q->objetRepere = m.objet; q->syncRepere = m.sync; q->distanceRepere = m.distance; }
+			}
+			std::vector<CObjetsAnimes::Repere> proches;
+			for(const CScriptPed::ObjetProche &e : q->objetsProches) proches.push_back({e.objet, e.sync, e.distance});
+			CObjetsAnimes::Repere repere{q->objetRepere, q->syncRepere, q->distanceRepere};
+			CObjetsAnimes::Repere c = objetsAnimes.Choisir(repere, proches, f.ChampCondition(d, 0x1c), portee, modele, ObjetNonUtilisable);
+			if(c.objet < 0) return 0;
+			if(q->objetVise != c.objet && journalRestant > 0){
+				const CObjetAnime *o = objetsAnimes.Objet(c.objet);
+				const CTriggerZone *z = o ? donnees.ZoneParHandle(o->declencheur) : nil;
+				printf("%6.2f s  TargetProp : le piéton %d vise l'objet animé du déclencheur %s, à %.2f m\n", t, ped, z ? z->nom.c_str() : "?", c.distance);
+			}
+			q->objetVise = c.objet; q->syncVise = c.sync;
+			return 1;
+		}
 		const CScriptPed *moi = pietons.Acceder(ped);
 		// WeaponEquiped (ConditionWeaponEquiped 0x9365a4, FUN_0065bd80, lu à l'assembleur de 0x65bde9 à 0x65be1e) : sans piéton,
 		// faux ; l'arme en passage (+0x1574) avec l'octet +9, sinon l'arme en main (+0x10e). Sans arme : vrai si le nom +4 manque
@@ -1266,7 +1358,7 @@ SurMission(uint32 hachage)
 // La piste Script (FUN_006851a0) : le même choix de l'espace de noms ; la fonction est appelée par NSCall avec, si la piste le
 // demande, la poignée du piéton et le nombre de la piste (FUN_005d8460, FUN_005d8480). La réponse n'est pas lue.
 static void
-AppelScript(const std::string &script, const std::string &fonction, int ped, float nombre)
+AppelScript(const std::string &script, const std::string &fonction, int ped, float nombre, bool avecNombre = false, int declencheur = -2)
 {
 	int s = -1;
 	if(script == "mission"){
@@ -1290,7 +1382,10 @@ AppelScript(const std::string &script, const std::string &fonction, int ped, flo
 	lua_pushstring(L, fonction.c_str());
 	lua_pushboolean(L, 0);
 	int n = 3;
+	// FUN_006851a0 : la poignée du piéton (l'octet +0x20) ou celle du déclencheur (+0x21, -1 sans), puis le nombre (FUN_005d8480).
 	if(ped >= 0){ lua_pushnumber(L, ped); lua_pushnumber(L, nombre); n = 5; }
+	else if(declencheur != -2){ lua_pushnumber(L, declencheur); lua_pushnumber(L, nombre); n = 5; }
+	else if(avecNombre){ lua_pushnumber(L, nombre); n = 4; }
 	if(lua_pcall(L, n, 0, 0) != 0){ printf("        piste Script : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
 	scriptCourant = avant;
 }
@@ -1361,7 +1456,6 @@ static bool tousLesControleurs;                        // LANCER_CONTROLEURS : l
 static CLuaApi api;                                   // la frontière moteur / scripts (LANCER_API, sinon docs/api-lua-tables.tsv)
 static std::map<std::string, int> inconnues;          // globales lues avant d'être posées : nil, comme dans le jeu
 static std::map<std::string, int> appels;
-static int journalRestant = 400;
 static std::vector<std::string> derniers;   // les derniers appels, affichés en cas d'erreur
 
 static uint8 *
@@ -1712,6 +1806,13 @@ AvancerMission(lua_State *L)
 			printf("%6.2f s  mission %s : MissionSetup fini, main démarre\n", maintenant / 1000.0, mission.nom.c_str());
 			NouveauThread(L, mission.script, "main");
 			mission.etat = DEROULEMENT;
+			// FUN_006abf20, après le thread main : FUN_006ab510(« Run ») joue le nœud Run de la mission (src/core/MissionBank) ;
+			// ses pistes Script se lancent à cette première image (FUN_005f49a0).
+			for(const CMissionData::Appel &a : banque.missions[mission.indice].run){
+				printf("%6.2f s  mission %s : le nœud Run appelle %s dans %s (piste Script)\n", maintenant / 1000.0, mission.nom.c_str(),
+				       a.fonction.c_str(), a.espace.c_str());
+				AppelScript(a.espace, a.fonction, -1, a.nombre, a.avecNombre, a.avecDeclencheur ? -1 : -2);
+			}
 		}
 		break;
 	case DEROULEMENT:
@@ -1807,6 +1908,10 @@ DATUnload(lua_State *L)
 	int emplacement = (int)luaL_checknumber(L, 1);
 	for(int h = 1; h < donnees.NombreTrajets(); h++)
 		if(donnees.EmplacementTrajet(h) == emplacement) patrouilles.Retirer(donnees.HachageTrajet(h));
+	// Un déclencheur libéré emporte son objet animé (supposé : la libération du déclencheur, FUN_006d6920 en sens inverse, n'est
+	// pas lue).
+	for(int h = 0; h < donnees.NombreZones(); h++)
+		if(donnees.EmplacementZone(h) == emplacement) objetsAnimes.RetirerDuDeclencheur(h);
 	donnees.Decharger(emplacement);
 	return 0;
 }
@@ -2604,6 +2709,302 @@ PAnimDestroyedByPed(lua_State *L)
 		if(const CObjetOutil *o = ObjetParPoignee((int)luaL_optnumber(L, 1, -1))) r = o->destructeur;
 	lua_pushnumber(L, r);
 	return 1;
+}
+
+int
+CJugeOutil::ObjetDuContexte(void) const
+{
+	if(ped < 0) return objet;
+	const CScriptPed *p = pietons.Acceder(ped);
+	if(p == nil) return -1;
+	if(p->objetUtilise >= 0) return p->objetUtilise;
+	if(objetsAnimes.Objet(p->objetVise)) return p->objetVise;
+	return objetsAnimes.Objet(p->objetRepere) ? p->objetRepere : -1;
+}
+
+// FUN_005f46a0(&DAT_01b652c8, 1, 1) sur le contrôleur de l'objet (+0x128, FUN_004ed7f0) : il joue un nœud nommé NotUseable (le
+// HashString 0x44482976), ou un nœud dessous.
+static bool
+ObjetNonUtilisable(int i)
+{
+	auto it = controleursObjets.find(i);
+	return it != controleursObjets.end() && it->second.joue && arbres.JoueHachage(it->second.joue, ActionHash("NotUseable") & 0x7fffffff);
+}
+
+// --- Les objets animés des déclencheurs (src/objects/ObjetsAnimes) ---
+static std::map<uint32, CFicheObjetAnime> fichesAnimees;   // par HashString du nom du modèle
+
+// FUN_00520460 : la fiche PropButes du modèle, cherchée en profondeur sous Props/Info de PropGlbl.cat (FUN_0072bd60), sinon
+// Props/Info/default. Lue une fois par modèle.
+static const CFicheObjetAnime *
+FicheAnimee(const std::string &modele)
+{
+	uint32 h = ActionHash(modele.c_str()) & 0x7fffffff;
+	auto it = fichesAnimees.find(h);
+	if(it != fichesAnimees.end()) return &it->second;
+	CActionTrack t;
+	std::map<uint16, std::string> ch;
+	static const uint32 kProps = ActionHash("Props"), kInfo = ActionHash("Info"), kButes = ActionHash("PropButes"),
+	                    kDefaut = ActionHash("default");
+	CFicheObjetAnime f;
+	if(CActionBank::ButesCherche("PropGlbl.cat", {kProps, kInfo}, h, kButes, t, &ch) ||
+	   CActionBank::ButesChemin("PropGlbl.cat", {kProps, kInfo, kDefaut}, kButes, t, &ch))
+		f = CFicheObjetAnime::Lire(t, ch);
+	return &(fichesAnimees[h] = f);
+}
+
+// FUN_006d6650 : le nom commence par « DT_ » ou « _DT_ » (plus de trois caractères) : le bit 3 de +0x3f du déclencheur.
+static bool
+NomDePorteDT(const std::string &n)
+{
+	return n.size() > 3 && (n.compare(0, 3, "DT_") == 0 || n.compare(0, 4, "_DT_") == 0);
+}
+
+// Le pool des déclencheurs tel que FUN_00416540 et FUN_00416490 le lisent : le modèle du PLACEMENT de leur périmètre
+// (FUN_006d5450 → FUN_0051c240 : -1 pour un nom vide), l'AREACODE, l'emplacement de DATLoad, ISMISSIONSPECIFIC.
+static std::vector<CObjetsAnimes::Declencheur>
+DeclencheursDuPool(void)
+{
+	std::vector<CObjetsAnimes::Declencheur> ds;
+	for(int h = 0; h < donnees.NombreZones(); h++){
+		const CTriggerZone *z = donnees.ZoneParHandle(h);
+		if(z == nil) continue;
+		CObjetsAnimes::Declencheur d;
+		d.handle = h; d.mission = z->mission; d.zone = z->zone; d.emplacement = donnees.EmplacementZone(h);
+		d.porte = NomDePorteDT(z->nom); d.pos = z->pos; d.lacet = z->lacet;
+		const CTriggerPerimeter *pe = donnees.PerimetreDe(h);
+		if(pe && !pe->placement.empty()){
+			d.modele = modeles.Index(pe->placement.c_str());
+			if(d.modele != -1) d.fiche = FicheAnimee(pe->placement);
+		}
+		ds.push_back(d);
+	}
+	return ds;
+}
+
+// FUN_00416ae0, à l'arrivée d'un changement de zone : FUN_00416490 retire les objets animés des autres zones, puis
+// CStreaming::LoadScene (FUN_005343c0) → FUN_00416c70 → FUN_00416540 crée ceux de la zone visible. La saison
+// (DAT_00a147ec[DAT_00a147e0]) n'est pas lue : 0.
+static void
+PoserObjetsAnimes(int zone)
+{
+	if(!objetsAnimes.fiche) objetsAnimes.fiche = [](int32 m){ std::string n = NomDeModele(m); return n.empty() ? (const CFicheObjetAnime *)nil : FicheAnimee(n); };
+	std::vector<CObjetsAnimes::Declencheur> ds = DeclencheursDuPool();
+	std::vector<int> partis = objetsAnimes.RetirerHorsZone(zone, ds);
+	if(!partis.empty()) printf("%6.2f s  objets animés : %zu retirés (FUN_00416490), hors de la zone %d\n", maintenant / 1000.0, partis.size(), zone);
+	std::vector<int> crees = objetsAnimes.CreerPourZone(zone, ds, 0);
+	if(crees.empty()) return;
+	std::string liste;
+	for(int i : crees){
+		const CObjetAnime *o = objetsAnimes.Objet(i);
+		const CTriggerZone *z = o ? donnees.ZoneParHandle(o->declencheur) : nil;
+		if(z) liste += (liste.empty() ? "" : ", ") + z->nom;
+	}
+	printf("%6.2f s  objets animés : %zu créés pour la zone %d (FUN_00416540) : %s\n", maintenant / 1000.0, crees.size(), zone, liste.c_str());
+}
+
+// PAnimExists(déclencheur) (0x5c48c0, lu à l'assembleur de 0x5c48c0 à 0x5c4927) : le déclencheur (FUN_005d8200, rien en dessous
+// de 0), sa case du pool (DAT_020c7c48 : son octet d'état sans le bit 0x80), son objet (+0x1c), le +0x114 de l'objet (sa
+// géométrie) et le +0x94 de celle-ci non nuls ; un booléen (FUN_005d8450). L'outil n'a pas la géométrie : l'objet suffit.
+static int
+PAnimExists(lua_State *L)
+{
+	Journal("PAnimExists", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	lua_pushboolean(L, h >= 0 && donnees.ZoneParHandle(h) && objetsAnimes.ObjetDe(h) >= 0);
+	return 1;
+}
+
+// FUN_005c4410(L, n, &lus) : l'objet animé des premiers arguments, n arguments après eux. Un de plus : un déclencheur (un nombre,
+// FUN_006d79c0 : son +0x1c) ou un pointeur léger (FUN_00436ac0, non suivi) ; deux de plus : une case du pool et son genre
+// (FUN_0044a510, non suivi) ; sinon un modèle et une position (FUN_00460650, non suivi). -1 sans objet.
+static int
+ObjetAnimeArg(lua_State *L, int n)
+{
+	if(lua_gettop(L) == n + 1 && lua_isnumber(L, 1)) return objetsAnimes.ObjetDe((int)lua_tonumber(L, 1));
+	return -1;
+}
+
+// PAnimSetActionNode(objet, nœud, fichier) (0x5c52a0, lu à l'assembleur de 0x5c52a0 à 0x5c5557) : avec trois arguments, un
+// déclencheur (FUN_00415e80 sur le pool 0x20c7e98, son objet +0x1c) ou un pointeur léger (FUN_00436ac0) ; avec sept, un modèle
+// et une position (non suivi). Le nœud doit commencer par « \ » ou « / » ; FUN_00520810 donne l'indice du fichier parmi les
+// arbres diffusés, FUN_005f59b0 cherche le nœud, et s'il manque le fichier est demandé (FUN_00531ed0(0x5d41 + indice, 0x13)),
+// chargé (FUN_00533d90) puis le nœud cherché de nouveau ; trouvé, le fichier est noté à l'objet script (FUN_005db7e0,
+// FUN_005d9990) et FUN_004ef1f0(nœud, indice) le pose (lu dans l'index) : avec le fichier de l'arbre de l'objet (+0x22c) et une
+// fiche qui en a un (+0x6c), FUN_004edec0 joue le nœud tel quel (+0x188 à 0, FUN_005f48f0, puis une image du contrôleur,
+// FUN_005f49a0) ; sinon le nœud devient la racine (+0x228) et le fichier +0x22c, l'action des piétons (+0x230) revient à 0, et la
+// descente (+0x4c) dans le contexte de l'objet (DAT_00a453f8, sans piéton) choisit ce que FUN_004edec0 joue. Rien n'est rendu.
+static int
+PAnimSetActionNode(lua_State *L)
+{
+	Journal("PAnimSetActionNode", L, 1);
+	int i = lua_gettop(L) == 3 && lua_isnumber(L, 1) ? objetsAnimes.ObjetDe((int)lua_tonumber(L, 1)) : -1;
+	CObjetAnime *o = objetsAnimes.Objet(i);
+	const char *noeud = luaL_optstring(L, 2, ""), *fichier = luaL_optstring(L, 3, "");
+	if(o == nil || (noeud[0] != '/' && noeud[0] != '\\')) return 0;
+	if(!arbres.TrouverOuCharger(noeud, fichier)){
+		printf("        PAnimSetActionNode : %s absent de %s\n", noeud, fichier);
+		return 0;
+	}
+	const CActionNode *n = arbres.Trouver(noeud);
+	CActionController &c = controleursObjets[i];
+	c.fige = true;
+	float t = maintenant / 1000.0f;
+	bool meme = !o->fichier.empty() && ActionHash(CActionBank::NomCat(o->fichier.c_str()).c_str()) == ActionHash(CActionBank::NomCat(fichier).c_str());
+	if(meme) c.Jouer(arbres, n, t);
+	else {
+		o->fichier = fichier;
+		o->actionPieton = nil;
+		c.arbre = n;
+		c.Racine(arbres, n);
+		if(!c.Entrer(arbres, n, CJugeOutil::DeLObjet(i, t), t)) c.joue = nil;
+	}
+	if(journalRestant > 0) printf("%6.2f s  objet animé du déclencheur %d : %s%s\n", t, o->declencheur, c.joue ? arbres.CheminDe(c.joue).c_str() : "rien",
+	                              meme ? "" : " (par la descente)");
+	return 0;
+}
+
+// PAnimSetPropFlag(objet, n, valeur) (0x5c55b0, lu à l'assembleur de 0x5c55b0 à 0x5c560b) : l'objet de FUN_005c4410(L, 2), le
+// nombre n (FUN_005d8200) et le booléen (FUN_005d8f20) passés à FUN_004ea300. PAnimGetPropFlag(objet, n) (0x5c5610, lu de
+// 0x5c5610 à 0x5c5673) : FUN_005c4410(L, 1), le mot +0x160 + 4n non nul ; faux sans objet.
+static int
+PAnimSetPropFlag(lua_State *L)
+{
+	Journal("PAnimSetPropFlag", L, 1);
+	int i = ObjetAnimeArg(L, 2);
+	if(i >= 0) objetsAnimes.PoserDrapeau(i, (int)lua_tonumber(L, 2), lua_toboolean(L, 3) != 0);
+	return 0;
+}
+
+static int
+PAnimGetPropFlag(lua_State *L)
+{
+	Journal("PAnimGetPropFlag", L, 1);
+	int i = ObjetAnimeArg(L, 1);
+	lua_pushboolean(L, i >= 0 && objetsAnimes.Drapeau(i, lua_isnumber(L, 2) ? (int)lua_tonumber(L, 2) : -1));
+	return 1;
+}
+
+// Une image des contrôleurs des objets animés (le contrôleur +0x1bc de chacun) : les pistes PropFlags (FUN_00655b50) et
+// PropSetPedAction (FUN_006561a0) de leur nœud, lancées à leur entrée, posent les drapeaux de l'objet et ce qu'il offre aux
+// piétons (+0x230).
+static void
+AvancerObjets(void)
+{
+	float t = maintenant / 1000.0f;
+	for(auto it = controleursObjets.begin(); it != controleursObjets.end(); ){
+		CObjetAnime *o = objetsAnimes.Objet(it->first);
+		if(o == nil){ it = controleursObjets.erase(it); continue; }
+		CActionController &c = it->second;
+		c.Avancer(arbres, nil, CJugeOutil::DeLObjet(it->first, t), t);
+		for(const CActionController::DrapeauObjet &d : c.drapeauxObjetPoses) objetsAnimes.PoserDrapeau(it->first, d.numero, d.valeur);
+		c.drapeauxObjetPoses.clear();
+		for(const CActionController::ActionObjet &a : c.actionsObjetPosees){
+			o->actionPieton = a.noeud;
+			if(journalRestant > 0) printf("%6.2f s  objet animé du déclencheur %d : il offre %s aux piétons\n", t, o->declencheur,
+			                              a.noeud ? arbres.CheminDe(a.noeud).c_str() : "rien");
+		}
+		c.actionsObjetPosees.clear();
+		++it;
+	}
+}
+
+// PropInteract (PropInteractTrack 0x935440 ; lancement FUN_00656120, lu dans l'index) : l'objet visé du piéton (+0x438), s'il est
+// animé (les 3 bits bas de +0x108 à 6) et offre une action (+0x230) : son drapeau 10 à 0 (FUN_004ea300), l'action descendue dans le
+// contexte du piéton (son emplacement +0x4c, jugée pour lui) et jouée par son contrôleur (FUN_005f4490), puis FUN_004ed6e0 (lu dans
+// l'index) : l'objet prend le piéton (+0x234), le piéton l'objet (+0x548) et +0x1520 à 1 ; FUN_004eac70(piéton, 3 pour le joueur,
+// 2 sinon, 1) et FUN_0048be60 (le modèle noté au composant +0x3bc) ne sont pas suivis.
+static void
+Interagir(int ped, CActionController &c)
+{
+	CScriptPed *p = pietons.Acceder(ped);
+	CObjetAnime *o = p ? objetsAnimes.Objet(p->objetVise) : nil;
+	if(o == nil || o->actionPieton == nil) return;
+	float t = maintenant / 1000.0f;
+	objetsAnimes.PoserDrapeau(p->objetVise, 10, false);
+	CJugeOutil juge(ped, t);
+	const CActionNode *n = arbres.Choisir(o->actionPieton, juge);
+	if(n) c.Jouer(arbres, n, t, &juge);
+	o->utilisateur = ped;
+	p->objetUtilise = p->objetVise;
+	p->utiliseObjet = true;
+	printf("%6.2f s  PropInteract : le piéton %d se sert de l'objet animé du déclencheur %d : %s\n", t, ped, o->declencheur,
+	       n ? arbres.CheminDe(n).c_str() : "rien n'aboutit");
+}
+
+// L'écran de fin (src/hud/EcranDeFin.h). MinigameSetCompletion(texte, réussi[, argent[, sous-texte]]) (0x708cc0, lue à l'assembleur
+// de 0x708cc0 à 0x708d42) : la chaîne (FUN_005d82e0), le booléen (FUN_005d8f20), avec trois arguments l'argent (FUN_005d8200,
+// un entier fild), avec quatre le sous-texte, puis FUN_00707390. MinigameAddCompletionMsg(texte[, n]) (0x708de0 → FUN_00705360).
+// MinigameIsShowingCompletion() (0x708f90).
+static CEcranDeFin ecranDeFin;
+
+static int
+MinigameSetCompletion(lua_State *L)
+{
+	Journal("MinigameSetCompletion", L, 1);
+	int n = lua_gettop(L);
+	ecranDeFin.Poser(luaL_optstring(L, 1, ""), lua_toboolean(L, 2) != 0, n >= 3 ? (float)(int)luaL_optnumber(L, 3, 0) : 0.0f,
+	                 n >= 4 ? luaL_optstring(L, 4, "") : nil);
+	printf("%6.2f s  écran de fin : %s%s, %.0f\n", maintenant / 1000.0, ecranDeFin.texte.c_str(), ecranDeFin.reussi ? " (réussi)" : "", ecranDeFin.argent);
+	return 0;
+}
+
+static int
+MinigameAddCompletionMsg(lua_State *L)
+{
+	Journal("MinigameAddCompletionMsg", L, 1);
+	ecranDeFin.Ajouter(luaL_optstring(L, 1, ""), lua_gettop(L) >= 2 ? (int32)luaL_optnumber(L, 2, 0) : 0);
+	return 0;
+}
+
+static int
+MinigameIsShowingCompletion(lua_State *L)
+{
+	Journal("MinigameIsShowingCompletion", L, 1);
+	lua_pushboolean(L, ecranDeFin.Montre());
+	return 1;
+}
+
+// Les objectifs de mission (src/hud/ObjectifsMission.h, l'objet 0x20c4420). MissionObjectiveAdd(texte[, octet[, rappel]])
+// (0x5c1de0, lue à l'assembleur de 0x5c1de0 à 0x5c1e5b) : la chaîne (FUN_005d82e0), avec deux arguments l'octet (FUN_005d8200),
+// FUN_006ae110 ; avec trois, le délai du rappel (FUN_005d82a0 → FUN_006ae420, non suivi) ; rend l'indice de l'objectif
+// (FUN_005d8460 ; -1 quand l'écran de fin se montre ou que dix sont pris). MissionObjectiveComplete(i) (0x5c1f30 → FUN_006ae2f0(i, 1))
+// et MissionObjectiveRemove(i) (0x5c1f60 → FUN_006ae320(i)). Le bouchon ne rendait rien : 1_06_01 passe ce résultat à table.insert.
+static CObjectifsMission objectifsMission;
+
+static int
+MissionObjectiveAdd(lua_State *L)
+{
+	Journal("MissionObjectiveAdd", L, 1);
+	uint8 octet = lua_gettop(L) >= 2 ? (uint8)(int)luaL_optnumber(L, 2, 0) : 0;
+	int i = objectifsMission.Ajouter(lua_isstring(L, 1) ? lua_tostring(L, 1) : nil, octet, ecranDeFin.Montre(), (uint32)maintenant);
+	lua_pushnumber(L, i);
+	return 1;
+}
+
+static int
+MissionObjectiveComplete(lua_State *L)
+{
+	Journal("MissionObjectiveComplete", L, 1);
+	if(lua_isnumber(L, 1)) objectifsMission.Terminer((uint8)(int)lua_tonumber(L, 1), true, (uint32)maintenant);
+	return 0;
+}
+
+static int
+MissionObjectiveRemove(lua_State *L)
+{
+	Journal("MissionObjectiveRemove", L, 1);
+	if(lua_isnumber(L, 1)) objectifsMission.Retirer((uint8)(int)lua_tonumber(L, 1), (uint32)maintenant);
+	return 0;
+}
+
+// AreaRegisterAnimProps() (0x5b6d60 → 0x438700) : la table DAT_00bd3e78 jusqu'à son compte DAT_00bd5c54, que rien n'augmente
+// (vérifié à l'assembleur : écrit seulement en 0x416b07, remis à 0) ; elle ne crée rien.
+static int
+AreaRegisterAnimProps(lua_State *L)
+{
+	Journal("AreaRegisterAnimProps", L, 1);
+	return 0;
 }
 
 // GetPointListSize(liste) (0x5bc740) : la liste du pool (CPointPool__GetSlot), 0 sans elle ; sinon FUN_006d5800 compte les points de
@@ -3491,11 +3892,51 @@ NomDePorte(lua_State *L, uint32 &nom)
 	return true;
 }
 
+// La porte animée i ouverte ou fermée sans piéton (CObjetsAnimes::OuvrirPorte, FermerPorte : FUN_004eebc0, FUN_004eed70) : le nœud de
+// l'arbre des portes (Act/Props/Door.act, diffusé avec l'objet : supposé chargé), joué par le contrôleur de l'objet (FUN_004edec0).
+static bool
+PorteAnimee(int i, bool ouvrir, bool immediat)
+{
+	CObjetAnime *o = objetsAnimes.Objet(i);
+	if(o == nil) return false;
+	const char *chemin = !ouvrir ? "/Global/Door/DoorFunctions/Closing" : immediat ? "/Global/Door/NotUseable/Opened/Immediate" : "/Global/Door/DoorFunctions/Opening";
+	const CActionNode *n = arbres.TrouverOuCharger(chemin, "Act/Props/Door.act") ? arbres.Trouver(chemin) : nil;
+	auto it = controleursObjets.find(i);
+	bool deja = it != controleursObjets.end() && it->second.joue && arbres.JoueHachage(it->second.joue, ActionHash(ouvrir ? "Opening" : "Closing") & 0x7fffffff);
+	bool r = ouvrir ? objetsAnimes.OuvrirPorte(i, 0, n != nil, deja) : objetsAnimes.FermerPorte(i, n != nil, deja);
+	if(r && n && !deja){
+		CActionController &c = controleursObjets[i];
+		c.fige = true;
+		c.Jouer(arbres, n, maintenant / 1000.0f);
+		if(journalRestant > 0) printf("%6.2f s  objet animé du déclencheur %d : %s (%s)\n", maintenant / 1000.0, o->declencheur, ouvrir ? "ouvert" : "fermé", chemin);
+	}
+	return r;
+}
+
+// Le déclencheur d'une porte nommée : une chaîne cherchée parmi les déclencheurs (FUN_006d78c0), ou un nombre ; -1 sinon.
+static int
+DeclencheurDePorte(lua_State *L)
+{
+	if(lua_type(L, 1) == LUA_TSTRING) return donnees.Declencheur(lua_tostring(L, 1));
+	if(lua_type(L, 1) == LUA_TNUMBER){ int t = (int)lua_tonumber(L, 1); return t >= 0 && donnees.ZoneParHandle(t) ? t : -1; }
+	return -1;
+}
+
+// Un déclencheur qui a un objet animé passe par lui (FUN_006d6420 : le drapeau 7, +0x17c, par FUN_004ea260 ; FUN_006d6480 : le
+// drapeau 8, +0x180, et le chemin des piétons FUN_005eaf00, non suivi ; FUN_006d6500 : FUN_004eebc0(0, 0, 0) ou FUN_004eed70(0) ;
+// FUN_006d6450 : le drapeau 8 ; FUN_006d64d0 : le drapeau 9, +0x184) ; sans objet, par la table de CEtatPortes.
 static int
 PoserPorte(lua_State *L, const char *quoi, int bit)
 {
 	Journal(quoi, L, 1);
 	bool v = lua_toboolean(L, 2) != 0;   // FUN_005d8f20, lu avant la porte
+	int i = objetsAnimes.ObjetDe(DeclencheurDePorte(L));
+	if(i >= 0){
+		if(bit == CEtatPortes::VERROUILLEE) objetsAnimes.PoserDrapeau(i, 7, v);
+		else if(bit == CEtatPortes::VERROUILLEE_PIETONS) objetsAnimes.PoserDrapeau(i, 8, v);
+		else PorteAnimee(i, v, false);
+		return 0;
+	}
 	uint32 nom;
 	if(NomDePorte(L, nom)) etatPortes.Poser(nom, bit, v);
 	return 0;
@@ -3505,8 +3946,30 @@ static int
 LirePorte(lua_State *L, const char *quoi, int bit)
 {
 	appels[quoi]++;
+	int i = objetsAnimes.ObjetDe(DeclencheurDePorte(L));
+	if(i >= 0){
+		lua_pushboolean(L, objetsAnimes.Drapeau(i, bit == CEtatPortes::OUVERTE ? 9 : 8));
+		return 1;
+	}
 	uint32 nom;
 	lua_pushboolean(L, NomDePorte(L, nom) && etatPortes.Lire(nom, bit));
+	return 1;
+}
+
+// PAnimOpenDoor(objet) (0x5c4b20 : FUN_005c4410(L, 0), puis FUN_004eebc0(0, 0, 0)), PAnimOpenDoorImmediate (0x5c4b50 :
+// FUN_004eebc0(0, 0, 1)), PAnimCloseDoor (0x5c4b80 : FUN_004eed70(0)), PAnimDoorStayOpen (0x5c4bb0 : FUN_004ea300(0x10, 1)), lues à
+// l'assembleur de 0x5c4b20 à 0x5c4bd6 ; PAnimIsOpen(déclencheur) (0x5c38b0, lue de 0x5c38b0 à 0x5c38fc : FUN_006d79c0, le +0x184
+// de l'objet non nul). Rien n'est rendu, sauf par PAnimIsOpen.
+static int PAnimOpenDoor(lua_State *L){ Journal("PAnimOpenDoor", L, 1); PorteAnimee(ObjetAnimeArg(L, 0), true, false); return 0; }
+static int PAnimOpenDoorImmediate(lua_State *L){ Journal("PAnimOpenDoorImmediate", L, 1); PorteAnimee(ObjetAnimeArg(L, 0), true, true); return 0; }
+static int PAnimCloseDoor(lua_State *L){ Journal("PAnimCloseDoor", L, 1); PorteAnimee(ObjetAnimeArg(L, 0), false, false); return 0; }
+static int PAnimDoorStayOpen(lua_State *L){ Journal("PAnimDoorStayOpen", L, 1); objetsAnimes.PoserDrapeau(ObjetAnimeArg(L, 0), 16, true); return 0; }
+static int
+PAnimIsOpen(lua_State *L)
+{
+	Journal("PAnimIsOpen", L, 1);
+	int i = lua_isnumber(L, 1) ? objetsAnimes.ObjetDe((int)lua_tonumber(L, 1)) : -1;
+	lua_pushboolean(L, objetsAnimes.Drapeau(i, 9));
 	return 1;
 }
 
@@ -5049,7 +5512,12 @@ AppliquerDroits(int ped, CActionController &c)
 	appels.swap(c.appelsLances);
 	for(const CActionController::AppelScript &a : appels){
 		printf("%6.2f s  le piéton %d appelle %s dans %s (piste Script)\n", maintenant / 1000.0, ped, a.fonction.c_str(), a.script.c_str());
-		AppelScript(a.script, a.fonction, a.avecPieton ? ped : -1, a.nombre);
+		int declencheur = -2;
+		if(a.avecDeclencheur){
+			const CObjetAnime *o = objetsAnimes.Objet(CJugeOutil(ped, maintenant / 1000.0f).ObjetDuContexte());
+			declencheur = o ? o->declencheur : -1;
+		}
+		AppelScript(a.script, a.fonction, a.avecPieton ? ped : -1, a.nombre, a.avecNombre, declencheur);
 	}
 }
 
@@ -5876,6 +6344,7 @@ AvancerZones(lua_State *L)
 	if(zones.etat == AREA_PRET && ++imagesEnAttenteDuSignal == 150) printf("%6.2f s  zones : %s n'a pas encore appelé AreaSignalAreaTransitionReadyToLoad, la zone %d attend\n", maintenant / 1000.0, attendu, zones.demande.zone);
 	if(e.zoneChangee) printf("%6.2f s  zones : la zone visible passe de %d à %d\n", maintenant / 1000.0, avant, zones.zoneVisible);
 	if(e.joueurPose){
+		PoserObjetsAnimes(zones.zoneVisible);   // FUN_00416ae0, avant FUN_004162f0
 		CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
 		j->pos = zones.demande.pos; j->cap = zones.demande.cap;
 		joueurPose = true;
@@ -6239,6 +6708,22 @@ main(int argc, char **argv)
 	lua_register(L, "ObjectToggleVulnerability", ObjectToggleVulnerability);
 	lua_register(L, "ObjectGetModelIndex", ObjectGetModelIndex);
 	lua_register(L, "PAnimDestroyedByPed", PAnimDestroyedByPed);
+	lua_register(L, "PAnimExists", PAnimExists);
+	lua_register(L, "PAnimOpenDoor", PAnimOpenDoor);
+	lua_register(L, "PAnimOpenDoorImmediate", PAnimOpenDoorImmediate);
+	lua_register(L, "PAnimCloseDoor", PAnimCloseDoor);
+	lua_register(L, "PAnimDoorStayOpen", PAnimDoorStayOpen);
+	lua_register(L, "PAnimIsOpen", PAnimIsOpen);
+	lua_register(L, "MissionObjectiveAdd", MissionObjectiveAdd);
+	lua_register(L, "MissionObjectiveComplete", MissionObjectiveComplete);
+	lua_register(L, "MissionObjectiveRemove", MissionObjectiveRemove);
+	lua_register(L, "MinigameSetCompletion", MinigameSetCompletion);
+	lua_register(L, "MinigameAddCompletionMsg", MinigameAddCompletionMsg);
+	lua_register(L, "MinigameIsShowingCompletion", MinigameIsShowingCompletion);
+	lua_register(L, "PAnimSetActionNode", PAnimSetActionNode);
+	lua_register(L, "PAnimSetPropFlag", PAnimSetPropFlag);
+	lua_register(L, "PAnimGetPropFlag", PAnimGetPropFlag);
+	lua_register(L, "AreaRegisterAnimProps", AreaRegisterAnimProps);
 	lua_register(L, "PedGetOffsetInWorldCoords", PedGetOffsetInWorldCoords);
 	lua_register(L, "PedSetStationary", PedSetStationary);
 	lua_register(L, "RegisterPedEventHandler", RegisterPedEventHandler);
@@ -6534,6 +7019,15 @@ main(int argc, char **argv)
 			if(CScriptPed *p = pietons.Acceder(c.first))
 				for(const CActionController::Drapeau &d : c.second.drapeauxPoses) if(d.numero < SCRIPT_PED_DRAPEAUX) p->drapeaux[d.numero] = d.valeur;
 			c.second.drapeauxPoses.clear();
+			// PropFlags (FUN_00655b50) : l'objet du contexte du piéton (FUN_004eaa60). PropSetPedAction (FUN_006561a0) écrit dans le
+			// +0xc du contexte, qu'un contexte de piéton n'a pas : rien. PropInteract (FUN_00656120) : Interagir.
+			{
+				int o = CJugeOutil(c.first, maintenant / 1000.0f).ObjetDuContexte();
+				for(const CActionController::DrapeauObjet &d : c.second.drapeauxObjetPoses) objetsAnimes.PoserDrapeau(o, d.numero, d.valeur);
+				c.second.drapeauxObjetPoses.clear();
+				c.second.actionsObjetPosees.clear();
+				for(; c.second.interactionsLancees > 0; c.second.interactionsLancees--) Interagir(c.first, c.second);
+			}
 			AppliquerMorts(c.first, c.second);
 			AppliquerDegatsCible(c.first, c.second);
 			AppliquerDroits(c.first, c.second);
@@ -6611,14 +7105,21 @@ main(int argc, char **argv)
 				       a ? "il joue" : "rien pour lui", a ? CheminVu(c.second, c.second.joue).c_str() : "",
 				       b ? "la cible joue" : "rien pour la cible", b ? CheminVu(controleurs[cible], controleurs[cible].joue).c_str() : (e.cible ? arbres.CheminDe(e.cible).c_str() : ""));
 			}
-			// PlayOnTarget : la cible du piéton (FUN_004d5980 ; dans l'outil, celle de PedLockTarget) joue le nœud.
-			for(const CActionNode *n : c.second.pourCible){
+			// PlayOnTarget : la cible du piéton (FUN_004d5980 ; dans l'outil, celle de PedLockTarget) joue le nœud. Sans elle, la piste
+			// attend (FUN_006615f0 rend vrai) ; l'outil n'a pas le composant de visée des piétons de l'IA (le +0xa0 que posent leurs
+			// pistes SetTarget, TargetLock, GiveTargetToFocus et leurs conditions par FUN_004d7890) : à défaut de verrou, il prend le
+			// partenaire de prise (+0x155c), supposé.
+			std::vector<const CActionNode *> pourCible;
+			pourCible.swap(c.second.pourCible);
+			for(const CActionNode *n : pourCible){
 				const CScriptPed *p = pietons.Acceder(c.first);
-				if(p == nil || p->verrou < 0) continue;
-				CActionController &cible = controleurs[p->verrou];
-				if(!cible.Entrer(arbres, n, CJugeOutil(p->verrou, maintenant / 1000.0f), maintenant / 1000.0f)) cible.Jouer(arbres, n, maintenant / 1000.0f);
-				partenaires[p->verrou] = {c.first, maintenant + 2000};
-				printf("%6.2f s  la cible de %d (%d) joue %s\n", maintenant / 1000.0, c.first, p->verrou, CheminVu(cible, cible.joue).c_str());
+				int qui = p == nil ? -1 : p->verrou >= 0 ? p->verrou : p->cibleDePrise;
+				if(pietons.Acceder(qui) == nil){ c.second.SansCible(n); continue; }
+				CActionController &cible = controleurs[qui];
+				if(!cible.Entrer(arbres, n, CJugeOutil(qui, maintenant / 1000.0f), maintenant / 1000.0f)) cible.Jouer(arbres, n, maintenant / 1000.0f);
+				partenaires[qui] = {c.first, maintenant + 2000};
+				printf("%6.2f s  la cible de %d (%d%s) joue %s\n", maintenant / 1000.0, c.first, qui, p->verrou >= 0 ? "" : ", son partenaire de prise",
+				       CheminVu(cible, cible.joue).c_str());
 			}
 		}
 		intentionsPietons.clear();   // FUN_005f3720 : l'intention ne vaut que pour l'image
@@ -6660,6 +7161,8 @@ main(int argc, char **argv)
 		if(fondu.enCours && maintenant >= fondu.fin){ fondu.enCours = false; fondu.noir = fondu.versNoir; if(journalRestant > 0){ journalRestant--; printf("%6.2f s  fondu : l'écran est %s\n", maintenant / 1000.0, fondu.versNoir ? "noir" : "rendu"); } }
 		MettreAJour(L);
 		AvancerPietons();
+		AvancerObjets();
+		ecranDeFin.Avancer(33.0f / 20.0f);   // FUN_007073c0 : le pas du moteur (ms_fTimeStep)
 		PoursuivrePieton();   // --suivre : la manette du joueur
 		AvancerCinematique();
 		AvancerZones(L);
