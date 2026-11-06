@@ -76,10 +76,24 @@ chantier. Un point fini passe en bas, avec son commit.
    objets proches, les pistes `Sync` et `PropInteract`, l'écran de fin (`MinigameSetCompletion`, `MinigameIsShowingCompletion` : `1_04`
    finit maintenant à 82,53 s), les objectifs de mission, `PlayOnTarget` qui attend sa cible ; `1_06_01` démarre par le nœud `Run` de sa
    mission (`F_SetStage`) ; les portes animées (`PAnimOpenDoor`, `PAnimCloseDoor`, les portes nommées par leur objet).
+   Le 06.11 (séance 3), **`1_06_01` se termine réussie à 61,81 s** (docs/missions.md, « 1_06_01 ») : le gestionnaire des collectibles
+   (`src/objects/Collectibles`, colctbls.dat), les objets du joueur (`ItemGetCurrentNum`, `ItemSetCurrentNum`), les ramassages dans src
+   (`src/objects/Ramassages`), les collectibles des placements changés en ramassages par la population, la prise au contact
+   (`FUN_00445710`, `FUN_00444ac0`), `ObjectRemovePickupsInTrigger`, l'historique des boutons (`src/hud/ButtonHistory` et la piste
+   `ActionRegisterButtonHistory`) : le joueur prend le transistor, le donne au clochard et réussit la leçon du coup chargé ; `1_07`
+   passe `PAnimRequest`.
    Suite, dans l'ordre :
-   - `1_06_01` (« Get Help », docs/missions.md) : lancée seule, elle attend le joueur dans `_FIGHTINGAREA` ; avec `--entrer
-     _FIGHTINGAREA@14`, voir où s'arrêtent la cinématique `1-06B`, le clochard, la quête du transistor (les coronas, l'échelle
-     `/Global/Ladder`, les portes du bus `_BUSDOORS`), le don (`GiveHobo_1_06`) et l'entraînement au combat (`F_CorrectButtonPressed`) ;
+   - `1_07` (« Defend Bucky », docs/missions.md) : lancée seule, elle crée ses objets animés par `PAnimCreate` (un bouchon : la
+     caisse à outils 555, la grille 544, les portes 557 et 558 et leurs nœuds `ParametricDoor`), puis `T_ObjectiveMonitor` ôte 25 points
+     à Bucky toutes les cinq secondes tant que le joueur n'est pas près de lui (`PedFindInAreaObject(4, 2)`) : elle échoue à 64,55 s.
+     `PAnimCreate` (0x5c4680, hors de l'index), `CreatePersistentEntity` (0x5bd090 : la planche `SC_SK8Board`, et la grille de `1_06`),
+     `PedFindInAreaObject`, puis la défense de Bucky contre les bullies ;
+   - ce qui reste de `1_06_01` : l'échelle (`/Global/Ladder/Ladder_Actions` et les marqueurs de `_LOWCORONA` et `_HIGHGROUND` : l'outil
+     monte au transistor en ligne droite), les marqueurs du radar (`AddBlipForChar`, `BlipAddPoint`, `BlipRemove` : le pool de
+     `CRadar`, `FUN_0054a460`, `FUN_0054a2c0`, `FUN_0054a7f0`, `FUN_0054a740`), la diffusion des placements (`CIplStore`, `FUN_00439220`)
+     au lieu des entrées collectibles jugées à chaque image, l'objet visible des ramassages (`FUN_004453f0`), les autres genres de
+     `FUN_00444ac0` (armes, munitions, santé) et la réapparition, l'historique de la manette hors du mode de l'arbre (`FUN_0053ae10`,
+     `FUN_0053b1e0`), le don `Give_Seek` que le joueur quitte avant que le clochard joue `Receive` ;
    - ce qui reste supposé de `1_05` : le composant de visée des piétons de l'IA (le +0xa0 du +0x1c8 que posent `FUN_004d7890` et les
      pistes `SetTarget`, `TargetLock`, `GiveTargetToFocus` : l'outil prend le partenaire de prise pour cible des `PlayOnTarget`), les
      points de synchronisation des modèles (`FUN_00467c30`, FeetSync à la position de l'objet), l'arbre propre d'un objet animé à sa
@@ -144,6 +158,15 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- `1_06_01` se termine réussie à 61,81 s (06.11, séance 3 ; ef92311, f492186, dda40f8, 469ff55, e9c2865, d9701dd, 492c182, 1412b5e, 261b63d) : le gestionnaire des collectibles (`src/objects/Collectibles` :
+  l'objet 0xbceb50, `FUN_00428bf0`, `FUN_004287a0`, `FUN_00426080`, `FUN_004288c0`, `FUN_00428ba0`, les fonctions Lua `Collectibles*`),
+  les objets du joueur (`CObjetsJoueur`, DAT_00cf0060 : `FUN_00541ae0`, `FUN_00541c10`, `FUN_00541cb0`, `ItemGetCurrentNum`,
+  `ItemSetCurrentNum`), les ramassages dans src (`src/objects/Ramassages` : `FUN_00443af0`, `FUN_00443e90`, les bits de +0x46), les
+  collectibles des placements (`FUN_00438790`, la population `FUN_004a0130`, `FUN_0049f2f0`, `FUN_00445640`), la prise au contact
+  (`FUN_00445970`, `FUN_00445710`, `FUN_00444ac0` pour les objets), `ObjectRemovePickupsInTrigger` (`FUN_004448c0`), l'historique des
+  boutons (`src/hud/ButtonHistory` : `FUN_0053abb0`, `FUN_0053ad50`, `FUN_0053b2e0`, `FUN_0053b370` dans le mode de l'arbre,
+  `FUN_0053c250`, la piste `ActionRegisterButtonHistory` et `FUN_0053b340`), `PAnimRequest`.
 
 - `1_05` se termine réussie à 185,20 s (06.11, séance 2 ; 33048d4, 40d3c33, 6a129cc, 477c762, ab53885, ce870cc, 910cf23, b6527da,
   bae6062) : les objets animés des déclencheurs (`src/objects/ObjetsAnimes` : `FUN_00416540`, `FUN_0044cd20`,

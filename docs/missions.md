@@ -670,6 +670,36 @@ Avec `--entrer _FIGHTINGAREA@14`, le joueur entre dans la zone du clochard à 14
 (le piéton 4, modèle 87, `STAT_HOBO`) est créé endormi devant le joueur (15,41 s), l'objectif `1_06_OBJ02` (le transistor) s'affiche à
 15,97 s et `F_AchieveReceiver` attend l'objet 476 (`ItemGetCurrentNum`).
 
+**Le transistor** (06.11, séance 3) est un collectible : la Radio 476 (`radio06` dans colctbls.dat, le type 1) posée par la seconde
+section inst de `zone_school6.ipb` en (123,45, -9,06, 12,66), sur les hauteurs que l'échelle de `_LOWCORONA` mène à `_HIGHGROUND`.
+gamemain rend les transistors indisponibles (`CollectiblesSetTypeAvailable(1, false)`, 0,17 s) ; `F_RoutingToHobo` les rend
+disponibles (14,06 s) et la population change l'entrée en ramassage à 47,5 m du joueur ; pris au contact (1 m au plan, 2 m en hauteur,
+l'octet +0x25 de la fiche Items/Radio), il compte un objet 476. Puis `F_GoMeetWithHobo` : à 2 m du clochard, `ItemSetCurrentNum(476, 0)`
+et `GiveHobo_1_06` (la prise met le joueur dans `Give_Seek` et le clochard dans `ReceiveWait`), le fondu ; `F_SetupMissionStageHoboFight`
+recrée le clochard dans `_RINGAREA` (`Hobo_Blocker`), et `F_SetupNextMove` pose la leçon : `ButtonHistoryAddSequence(6, true)` (le bouton
+6 tenu, 750 ms par pas), trois répétitions. Dans le mode de l'arbre (`ButtonHistoryEnableActionTreeInput(true)` dans `MissionSetup`), la
+piste `ActionRegisterButtonHistory` d'un coup chargé du joueur rapporte (6, 3) : la séquence réussit, `F_PassedCallback`, et `main`
+compte la répétition ; sans coup, elle échoue toutes les 0,76 s et `F_FailedCallback` la fait reposer. Avec l'outil :
+
+    C=/Global/Player/Attacks/Strikes/LightAttacks/#3f638a76/Release/HeavyAttacks/#775a9ffc:Act/Player.act
+    build/outils/lancer_lua 90 --mission 1_06_01 --sans-cinematiques --entrer _FIGHTINGAREA@14 \
+      --courir 123.9,-2.5,6.06@17 --courir 123.45,-9.06,12.66@25 --suivre 4,0.8@28 --jouer $C@46,47.5,49
+
+Le joueur court à l'escalier, puis au transistor en ligne droite (l'outil n'a ni sol ni échelle), le prend à 26,86 s (le rappel
+`CB_CollectibleCollected` de main.lur), rejoint le clochard (36,63 s), le don, la leçon à 44,85 s ; trois coups chargés (46,00, 47,52 et
+49,01 s) font les trois répétitions : `1_06_MOVEUNLK01`, `F_FirstMissionEndCutscene` (le joueur suit `_ENDCUTSCENEPATH`), et
+**`MissionSucceed` : `1_06_01` se termine réussie à 61,81 s**.
+
+## `1_07` (« Defend Bucky ») (06.11.2026, séance 3)
+
+`1_07` suit `1_06_01` dans la banque (`MissionCond`, `MissionCond`, `TimeCond`) et ne se lance pas seule après elle : l'outil la lance
+(`build/outils/lancer_lua 120 --mission 1_07 --sans-cinematiques`). Elle bouclait sur `PAnimRequest(555)` (la caisse à outils `ToolBox`
+10003 du déclencheur 555), un bouchon ; réelle, `main` crée ses objets animés par `PAnimCreate` (un bouchon : 555, la grille 544, les
+portes 557 et 558, que `PAnimSetActionNode` met sur `/Global/1_07/ParametricDoor/…/DoorOnGround`), la planche `SC_SK8Board`
+(`CreatePersistentEntity`, un bouchon), Bucky (le piéton 4, 300 points, sa barre de santé) et deux bullies (146 et 99, l'un à la batte),
+pose le joueur et `1_07_command` (4,52 s) ; `T_ObjectiveMonitor` ôte 25 points à Bucky toutes les cinq secondes tant que le joueur n'est pas
+près de lui (`PedFindInAreaObject(4, 2)`), et `1_07` échoue à 64,55 s (`1_07_BUCKYKO`).
+
 ## Suite
 
 1. Ce que `1_01` ne joue pas encore pour de vrai : les nœuds d'action (`PedSetActionNode` cherche le nœud dans
