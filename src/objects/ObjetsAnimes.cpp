@@ -1,6 +1,9 @@
 #include "ObjetsAnimes.h"
 #include "../core/ActionTree.h"
+#include <cmath>
 #include <cstring>
+
+const char *const kPointsDeSynchro[5] = { "FeetSync", "FeetSyncTop", "FeetSyncBottom", "FeetSyncLeft", "FeetSyncRight" };
 
 CFicheObjetAnime
 CFicheObjetAnime::Lire(const CActionTrack &t, const std::map<uint16, std::string> &chaines)
@@ -115,4 +118,63 @@ CObjetsAnimes::Drapeau(int i, int n) const
 {
 	const CObjetAnime *o = Objet(i);
 	return o && n >= 0 && n < OBJET_ANIME_DRAPEAUX && o->drapeaux[n] != 0;
+}
+
+// Le HashString de FeetSync (0x72554ca1), le seul point de synchronisation que l'outil connaît à un objet.
+static const uint32 kFeetSync = 0x72554ca1;
+static const uint32 kGenreLocker = 0x1f0fbff8;   // HashString(« LOCKER ») : DAT_01b65518
+
+CObjetsAnimes::Repere
+CObjetsAnimes::Relever(const Releveur &p, float portee, const std::function<bool(int)> &inutilisable, std::vector<Repere> &proches) const
+{
+	Repere meilleur;
+	float meilleure = 3.4e38f;
+	proches.clear();
+	if(p.joueur) return meilleur;
+	for(size_t i = 0; i < objets.size(); i++){
+		const CObjetAnime &o = objets[i];
+		if(o.libre || o.actionPieton == nil || o.drapeaux[22] != 0) continue;
+		if(fabsf(o.pos.x - p.pos.x) > 10.0f || fabsf(o.pos.y - p.pos.y) > 10.0f) continue;
+		bool permis = true;
+		if(o.drapeaux[11] != 0 && !p.parScript) permis = false;
+		else if(const CFicheObjetAnime *f = fiche ? fiche(o.modele) : nil){
+			if(!f->pnj || (!p.femme && !f->garcons) || (p.femme && !f->filles)) permis = false;
+		}
+		if(!permis || inutilisable((int)i)) continue;
+		float dmax = portee;
+		if(dmax == 0.0f){ const CFicheObjetAnime *f = fiche ? fiche(o.modele) : nil; dmax = f ? f->distance : 2.0f; }
+		float dx = o.pos.x - p.pos.x, dy = o.pos.y - p.pos.y, dz = o.pos.z - p.pos.z, d = sqrtf(dx * dx + dy * dy + dz * dz);
+		Repere r{(int)i, kFeetSync, d};
+		if(d >= dmax || d >= meilleure){
+			// FUN_0048c6b0 : un proche du même modèle (ou du même genre) n'est remplacé que par un plus près ; dix au plus.
+			bool vu = false;
+			for(Repere &q : proches)
+				if(objets[q.objet].modele == o.modele){ vu = true; if(d < q.distance) q = r; break; }
+			if(!vu && proches.size() < 10) proches.push_back(r);
+			continue;
+		}
+		meilleur = r;
+		meilleure = d;
+	}
+	return meilleur;
+}
+
+CObjetsAnimes::Repere
+CObjetsAnimes::Choisir(const Repere &repere, const std::vector<Repere> &proches, uint32 genre, float portee, int32 modele,
+                       const std::function<bool(int)> &inutilisable) const
+{
+	auto genreDe = [&](int i) -> uint32 { const CFicheObjetAnime *f = fiche ? fiche(objets[i].modele) : nil; return f ? f->genre : 0; };
+	if(const CObjetAnime *o = Objet(repere.objet)){
+		bool ecarte = (genreDe(repere.objet) & 0x7fffffff) != kGenreLocker && o->drapeaux[8] != 0;
+		if(!ecarte && (portee == 0.0f || repere.distance < portee) && !inutilisable(repere.objet) &&
+		   (modele == -1 || modele == o->modele) && (genre == 0 || (genreDe(repere.objet) & 0x7fffffff) == (genre & 0x7fffffff)))
+			return repere;
+	}
+	if(portee != 0.0f)
+		for(const Repere &q : proches){
+			const CObjetAnime *o = Objet(q.objet);
+			if(o == nil || q.distance >= portee || (modele != -1 && modele != o->modele)) continue;
+			if((genreDe(q.objet) & 0x7fffffff) == (genre & 0x7fffffff)) return q;
+		}
+	return Repere();
 }

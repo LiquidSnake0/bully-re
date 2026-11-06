@@ -86,6 +86,12 @@ public:
 	// construit l'objet sur place, à +4 (FUN_0063a170 pour MissionCond, FUN_0063a270 pour TimeCond) :
 	// le champ +k de l'objet est le mot +4+k de l'enregistrement. mots[i] = champ +4 * (i + 1).
 	bool Condition(int32 decalage, uint32 &type, uint32 mots[6]) const;
+	// Le champ +champ de l'objet d'une condition (le mot +4 + champ de son enregistrement), au-delà des six de Condition ; 0 hors
+	// du fichier.
+	uint32 ChampCondition(int32 decalage, uint32 champ) const {
+		uint32 at = finEntete + (uint32)decalage + 4 + champ;
+		return decalage >= 0 && at + 4 <= n ? Mot(at) : 0;
+	}
 	// La seconde table de renvois : sa valeur est le décalage, après la fin de l'arbre (finArbre), d'une liste de
 	// conditions écrite comme celle d'un nœud (un octet n, puis n mots : des décalages dans les données). Le champ
 	// +4 d'une ConditionGroup (le mot +8 de son enregistrement) y renvoie : c'est le groupe à évaluer. -1 si aucun

@@ -23,6 +23,7 @@
 // dans l'outil, c'est le premier déclencheur de tags.DAT, d'emplacement 5, qu'aucun chemin ne prend.
 #pragma once
 #include "../common.h"
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -69,9 +70,41 @@ struct CObjetAnime {
 	uint16 generation = 0;
 };
 
+// Les cinq points de synchronisation d'un objet (FUN_00520bf0 range leurs noms hachés en DAT_00c8e8e8, FUN_00520230 les rend,
+// FUN_00519070 leur nombre ; les noms de FUN_00488a80, la table 0x90ea6c).
+extern const char *const kPointsDeSynchro[5];   // FeetSync, FeetSyncTop, FeetSyncBottom, FeetSyncLeft, FeetSyncRight
+
 class CObjetsAnimes
 {
 public:
+	// Le relevé des objets proches d'un piéton (FUN_004991e0 → FUN_004989f0 → FUN_00497e90 pour un objet animé), dans la branche
+	// des piétons de l'IA (la branche du joueur, FUN_00497ce0 et la visée, n'est pas suivie).
+	struct Releveur {
+		CVector pos;
+		bool joueur = false;
+		bool parScript = false;     // l'octet +0x1570 à 2 : créé par un script
+		bool femme = false;         // l'octet +0x50 de son modelinfo
+	};
+	struct Repere { int objet = -1; uint32 sync = 0; float distance = 0.0f; };
+	// FUN_004989f0 (réduit) : les objets animés à moins de 10 m en x et en y (les secteurs de _DAT_00900140 autour du piéton ;
+	// l'outil prend la boîte, sans les secteurs) qui offrent une action aux piétons (+0x230) et n'ont pas le drapeau 22 (+0x1b8).
+	// Pour chacun, FUN_00497e90 : écarté si le drapeau 11 (+0x18c) est posé et que le piéton n'est pas créé par un script, si la
+	// fiche ne l'ouvre pas aux piétons (+0x7c), aux garçons (+0x7d) ou aux filles (+0x7e), ou si l'objet joue un nœud nommé
+	// NotUseable (FUN_005f46a0 sur son contrôleur, DAT_01b652c8 ; `inutilisable`) ; sinon ses points de synchronisation un par un
+	// (FUN_00467c30) : plus loin que `portee` (ou la portée de la fiche, +0x78, sans portée) ou que le meilleur, il entre dans les
+	// proches (FUN_0048c6b0 : dix au plus, un par modèle, le plus près) ; sinon il devient le meilleur. Supposés : les zones
+	// interdites (FUN_0046ee60), FUN_004ea2b0, le +0x138 de l'objet, les modèles DAT_00bf4460 et DAT_00bf4140, la vue
+	// (FUN_00437b40, FUN_00497cc0, FUN_00496850 et son cône de 60°) ; le seul point lu est FeetSync, à la position de l'objet (le
+	// point du modèle n'est pas lu).
+	Repere Relever(const Releveur &p, float portee, const std::function<bool(int)> &inutilisable, std::vector<Repere> &proches) const;
+	// FUN_004979b0 (lu dans l'index) : l'objet visé parmi le repéré puis les proches. Le repéré d'abord : un objet dont le genre
+	// (+0x80 de sa fiche, FUN_005fa710) n'est pas LOCKER (DAT_01b65518) est écarté s'il a le drapeau 8 (+0x180, verrouillé aux
+	// piétons ; le drapeau 7, +0x17c, ne compte que pour DAT_00c1aea8, non suivi) ; puis à moins de `portee` (0 : sans borne), pas
+	// NotUseable, du modèle voulu (-1 : tous) et du genre voulu (FUN_00467a30 : le +0x80 de sa fiche ; 0 : tous). Puis, avec une
+	// portée, les proches dans l'ordre, plus près que la portée, du modèle voulu et du genre voulu (comparé même nul). Le genre
+	// DAMAGEABLE (DAT_01b654d4) et l'emplacement +0x7c de l'objet ne sont pas suivis. Rend l'objet et son point, -1 sinon.
+	Repere Choisir(const Repere &repere, const std::vector<Repere> &proches, uint32 genre, float portee, int32 modele,
+	               const std::function<bool(int)> &inutilisable) const;
 	// Un déclencheur tel que FUN_00416540 le juge.
 	struct Declencheur {
 		int handle = -1;
@@ -100,6 +133,8 @@ public:
 	void PoserDrapeau(int i, int n, bool v);
 	bool Drapeau(int i, int n) const;
 	void Vider(void) { objets.clear(); }
+	// La fiche PropButes d'un modèle (le +0x70 de son modelinfo, FUN_00520080), que l'appelant fournit ; nil sans fiche.
+	std::function<const CFicheObjetAnime *(int32)> fiche;
 	std::vector<CObjetAnime> objets;   // le pool DAT_00c0f608
 private:
 	int Creer(const Declencheur &d);   // FUN_0044cd20

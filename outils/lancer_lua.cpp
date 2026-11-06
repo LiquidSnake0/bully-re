@@ -189,7 +189,10 @@ PoserMarque(const std::string &nom, const CVector &pos)
 struct CObjetOutil { int32 modele = -1; uint32 nom = 0; CVector pos; int32 sante = 0; bool invulnerable = false, detruit = false;
                      bool parArmeSeule = false, verrouillable = false; int destructeur = -1; };
 static std::vector<CObjetOutil> objets;
+static int journalRestant = 400;   // les lignes de journal qui restent (LANCER_JOURNAL)
 static CObjetsAnimes objetsAnimes;   // les objets animés des déclencheurs : le pool DAT_00c0f608 (src/objects/ObjetsAnimes)
+// Le contrôleur d'actions de chaque objet animé (+0x1bc), par indice dans le pool : figé (src/core/ActionController.h).
+static std::map<int, CActionController> controleursObjets;
 static int PoigneeObjet(size_t i){ return (int)(i << 8) | 1; }
 static CObjetOutil *ObjetParPoignee(int h){ size_t i = (size_t)h >> 8; return h >= 0 && (h & 0xff) == 1 && i < objets.size() ? &objets[i] : nil; }
 
@@ -412,6 +415,7 @@ NomDeModele(int32 m)
 	return it == parIndice.end() ? std::string() : it->second;
 }
 
+static bool ObjetNonUtilisable(int i);   // l'objet animé joue NotUseable (FUN_005f46a0 sur son contrôleur)
 struct CJugeOutil : CJugeAction {
 	int ped; float t;
 	// Les tirages du contexte qui juge (+0x24 et les dés +0x28 à +0x34, CActionController::tirageContexte et des) : ceux
@@ -484,6 +488,53 @@ struct CJugeOutil : CJugeAction {
 			std::vector<int32> groupe;
 			if(!f.GroupeDe(d, groupe)) return 0;
 			return arbres.JugerListe(f, groupe, CJugeOutil(ped, t)) == 1;
+		}
+		// TargetProp (ConditionTargetProp 0x936690, FUN_0065c250 ; créateur 0x644f40, 0x2c octets) : +4 la portée, +8 une hauteur
+		// (pour les ramassages), les octets +0xc (les ramassages, avec le +0x149c du piéton : non suivi) et +0xd, +0x10 le nom du
+		// modèle (FUN_0051acd0 : faux s'il est inconnu), +0x14 le point de synchronisation, +0x1c le genre de l'objet, l'octet +0x20
+		// et +0x24 passés au relevé, les octets +0x28 (l'objet déjà visé suffit) et +0x29 (il devient aussi la cible du contexte,
+		// FUN_00606b40, et l'objet +0x544 : non suivi). Un point de synchronisation hors des cinq (FUN_00520230), nommé, mène à
+		// l'objet le plus proche du modèle (FUN_00460650, FUN_00467c30, FUN_005eb6f0 : non suivi, faux). Sinon, hors du joueur, le
+		// relevé (FUN_004991e0 : rien quand le piéton se sert déjà d'un objet, +0x548 ; la liste +0x4c8 vidée ; FUN_004989f0), puis
+		// FUN_004979b0(genre, portée, modèle, 1, 0, 0) : l'objet visé (+0x438) et son point (+0x43c).
+		static const uint32 kObjetCible = ActionHash("TargetProp");
+		if(type == kObjetCible){
+			CScriptPed *q = pietons.Acceder(ped);
+			if(q == nil) return 0;
+			uint32 hm = f.ChampCondition(d, 0x10) & 0x7fffffff, b28 = f.ChampCondition(d, 0x28);
+			int32 modele = -1;
+			if(hm){
+				for(const auto &e : modeles.parNom) if((ActionHash(e.first.c_str()) & 0x7fffffff) == hm){ modele = e.second; break; }
+				if(modele == -1) return 0;
+			}
+			if((b28 & 0xff) && objetsAnimes.Objet(q->objetVise) && (hm == 0 || objetsAnimes.Objet(q->objetVise)->modele == modele)) return 1;
+			uint32 sync = f.ChampCondition(d, 0x14) & 0x7fffffff;
+			bool connu = sync == 0;
+			for(const char *n : kPointsDeSynchro) connu |= (ActionHash(n) & 0x7fffffff) == sync;
+			if(!connu) return 0;
+			float portee; memcpy(&portee, &mots[0], 4);
+			if(q->type != SCRIPT_PED_TYPE_JOUEUR && q->objetUtilise < 0){
+				CObjetsAnimes::Releveur r;
+				r.pos = q->pos; r.parScript = q->script >= 0;
+				auto fe = modeles.femme.find(q->modele); r.femme = fe != modeles.femme.end() && fe->second;
+				std::vector<CObjetsAnimes::Repere> proches;
+				CObjetsAnimes::Repere m = objetsAnimes.Relever(r, portee, ObjetNonUtilisable, proches);
+				q->objetsProches.clear();
+				for(const CObjetsAnimes::Repere &e : proches) q->objetsProches.push_back({e.objet, e.sync, e.distance});
+				if(m.objet >= 0){ q->objetRepere = m.objet; q->syncRepere = m.sync; q->distanceRepere = m.distance; }
+			}
+			std::vector<CObjetsAnimes::Repere> proches;
+			for(const CScriptPed::ObjetProche &e : q->objetsProches) proches.push_back({e.objet, e.sync, e.distance});
+			CObjetsAnimes::Repere repere{q->objetRepere, q->syncRepere, q->distanceRepere};
+			CObjetsAnimes::Repere c = objetsAnimes.Choisir(repere, proches, f.ChampCondition(d, 0x1c), portee, modele, ObjetNonUtilisable);
+			if(c.objet < 0) return 0;
+			if(q->objetVise != c.objet && journalRestant > 0){
+				const CObjetAnime *o = objetsAnimes.Objet(c.objet);
+				const CTriggerZone *z = o ? donnees.ZoneParHandle(o->declencheur) : nil;
+				printf("%6.2f s  TargetProp : le piéton %d vise l'objet animé du déclencheur %s, à %.2f m\n", t, ped, z ? z->nom.c_str() : "?", c.distance);
+			}
+			q->objetVise = c.objet; q->syncVise = c.sync;
+			return 1;
 		}
 		const CScriptPed *moi = pietons.Acceder(ped);
 		// WeaponEquiped (ConditionWeaponEquiped 0x9365a4, FUN_0065bd80, lu à l'assembleur de 0x65bde9 à 0x65be1e) : sans piéton,
@@ -1400,7 +1451,6 @@ static bool tousLesControleurs;                        // LANCER_CONTROLEURS : l
 static CLuaApi api;                                   // la frontière moteur / scripts (LANCER_API, sinon docs/api-lua-tables.tsv)
 static std::map<std::string, int> inconnues;          // globales lues avant d'être posées : nil, comme dans le jeu
 static std::map<std::string, int> appels;
-static int journalRestant = 400;
 static std::vector<std::string> derniers;   // les derniers appels, affichés en cas d'erreur
 
 static uint8 *
@@ -2653,7 +2703,20 @@ int
 CJugeOutil::ObjetDuContexte(void) const
 {
 	if(ped < 0) return objet;
-	return -1;
+	const CScriptPed *p = pietons.Acceder(ped);
+	if(p == nil) return -1;
+	if(p->objetUtilise >= 0) return p->objetUtilise;
+	if(objetsAnimes.Objet(p->objetVise)) return p->objetVise;
+	return objetsAnimes.Objet(p->objetRepere) ? p->objetRepere : -1;
+}
+
+// FUN_005f46a0(&DAT_01b652c8, 1, 1) sur le contrôleur de l'objet (+0x128, FUN_004ed7f0) : il joue un nœud nommé NotUseable (le
+// HashString 0x44482976), ou un nœud dessous.
+static bool
+ObjetNonUtilisable(int i)
+{
+	auto it = controleursObjets.find(i);
+	return it != controleursObjets.end() && it->second.joue && arbres.JoueHachage(it->second.joue, ActionHash("NotUseable") & 0x7fffffff);
 }
 
 // --- Les objets animés des déclencheurs (src/objects/ObjetsAnimes) ---
@@ -2713,6 +2776,7 @@ DeclencheursDuPool(void)
 static void
 PoserObjetsAnimes(int zone)
 {
+	if(!objetsAnimes.fiche) objetsAnimes.fiche = [](int32 m){ std::string n = NomDeModele(m); return n.empty() ? (const CFicheObjetAnime *)nil : FicheAnimee(n); };
 	std::vector<CObjetsAnimes::Declencheur> ds = DeclencheursDuPool();
 	std::vector<int> partis = objetsAnimes.RetirerHorsZone(zone, ds);
 	if(!partis.empty()) printf("%6.2f s  objets animés : %zu retirés (FUN_00416490), hors de la zone %d\n", maintenant / 1000.0, partis.size(), zone);
@@ -2738,9 +2802,6 @@ PAnimExists(lua_State *L)
 	lua_pushboolean(L, h >= 0 && donnees.ZoneParHandle(h) && objetsAnimes.ObjetDe(h) >= 0);
 	return 1;
 }
-
-// Le contrôleur d'actions de chaque objet animé (+0x1bc), par indice dans le pool : figé (src/core/ActionController.h).
-static std::map<int, CActionController> controleursObjets;
 
 // FUN_005c4410(L, n, &lus) : l'objet animé des premiers arguments, n arguments après eux. Un de plus : un déclencheur (un nombre,
 // FUN_006d79c0 : son +0x1c) ou un pointeur léger (FUN_00436ac0, non suivi) ; deux de plus : une case du pool et son genre
