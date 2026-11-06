@@ -56,6 +56,7 @@
 #include "../src/hud/EcranDeFin.h"
 #include "../src/hud/ObjectifsMission.h"
 #include "../src/hud/ButtonHistory.h"
+#include "../src/hud/Marqueurs.h"
 #include "../src/render/CameraMgr.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
@@ -214,6 +215,8 @@ static int objetVise = -1;   // l'objet que le joueur vise (--viser-objet), sa p
 static CRamassages ramassages;
 static CObjetsJoueur objetsJoueur;   // les objets du joueur (DAT_00cf0060, src/peds/Armes)
 static CCollectibles collectibles;   // les collectibles (CCollectiblesMgr, 0xbceb50, src/objects/Collectibles)
+static CMarqueurs marqueurs;   // les marqueurs du radar (CRadar, DAT_00c674cc, src/hud/Marqueurs)
+static std::vector<std::pair<int32, int32>> marqueursDuScript;   // la poignée, le script qui l'a posé
 // Supposé aussi : le joueur de l'outil naît en (0, 0, 0), dans FootFieldTrig (le terrain de football, dont main.lua suit
 // l'entrée et la sortie du joueur dans la table 0), quand le jeu le crée au point de la sauvegarde ; il n'est suivi qu'une fois
 // posé par le gestionnaire de zones (les déclencheurs, la population des collectibles).
@@ -1853,6 +1856,8 @@ AvancerMission(lua_State *L)
 				for(int i = 1; i < SCRIPT_PED_POOL_SIZE; i++) if(const CScriptPed *p = pietons.Acceder(i)) if(p->script == mission.script) partis.push_back(i);
 				for(int i = 0; i < CRamassages::kTaille; i++)
 					if(ramassages.entrees[i].Pris() && ramassages.entrees[i].script == mission.script) ramassages.Retirer(i);   // FUN_005d9760
+				for(auto it = marqueursDuScript.begin(); it != marqueursDuScript.end(); )
+					if(it->second == mission.script){ marqueurs.Retirer(it->first); it = marqueursDuScript.erase(it); } else ++it;
 				int n = pietons.SupprimerDuScript(mission.script);
 				for(int h : partis) OublierControleurs(h);
 				if(n) printf("        %d piéton(s) laissé(s) par la mission, libéré(s)\n", n);
@@ -2908,6 +2913,62 @@ DeletePersistentEntity(lua_State *L)
 	if(h < 0) return 0;
 	if(g == 5) objetsAnimes.Liberer(h >> 8);
 	else if(g == 0 && (h & 0xff) == 2 && (size_t)(h >> 8) < persistants.size()) persistants[(size_t)(h >> 8)].detruit = true;
+	return 0;
+}
+
+// --- Les marqueurs du radar (src/hud/Marqueurs : les 300 traces de CRadar, DAT_00c674cc + 0x210) ---
+// FUN_005d9220 note chaque marqueur à l'objet script qui le pose (avec ses trois derniers arguments) : l'outil le retire avec la
+// mission, comme ses ramassages (supposé : le même retrait que FUN_005d9760).
+// (marqueurs et marqueursDuScript : déclarés avec les ramassages.)
+
+// AddBlipForChar(ped, _, icône[, couleur, a, f, g]) (0x5b8bb0, lu à l'assembleur de 0x5b8bb0 à 0x5b8d39) : le piéton (FUN_005c7220),
+// sinon -1 ; le deuxième argument n'est pas lu ; l'icône au troisième (FUN_005d8200), la couleur au quatrième (5 par défaut), puis
+// un entier (-1) et deux flottants (0 et 2) que FUN_005d9220 garde avec le marqueur. Les traces de ce piéton aux genres 6, 2 et 0xd
+// sont rendues (FUN_0054a740), puis FUN_0054a460(l'icône 0x11 : le genre 0xd, sinon 2 ; la poignée du piéton, une couleur RVBA
+// nulle, la couleur, l'icône, 0) et l'affichage à 5 (FUN_00548aa0). Rend la poignée du marqueur.
+static int
+AddBlipForChar(lua_State *L)
+{
+	Journal("AddBlipForChar", L, 1);
+	int ped = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	if(pietons.Acceder(ped) == nil){ lua_pushnumber(L, -1); return 1; }
+	int32 icone = (int32)luaL_optnumber(L, 3, 0), couleur = lua_gettop(L) >= 4 ? (int32)luaL_optnumber(L, 4, 5) : 5;
+	marqueurs.RetirerEntite(6, ped); marqueurs.RetirerEntite(2, ped); marqueurs.RetirerEntite(0xd, ped);
+	int32 h = marqueurs.AjouterEntite(icone == 0x11 ? 0xd : 2, ped, couleur, icone, false, (uint32)maintenant);
+	marqueurs.PoserAffichage(h, 5);
+	if(h != -1) marqueursDuScript.push_back({h, scriptCourant});
+	lua_pushnumber(L, h);
+	return 1;
+}
+
+// BlipAddPoint(liste, icône[, n, couleur, a, f, g]) (0x5b8690, lu de 0x5b8690 à 0x5b884c) : la liste de points (FUN_006d6300), son
+// n-ième point (FUN_006d5860, FUN_006d58a0 ; le premier sans n), l'icône au deuxième argument, la couleur au quatrième (1 par
+// défaut), un entier (-1) et deux flottants (0 et 2) pour FUN_005d9220 ; la position notée en DAT_00bf4508 … DAT_00bf4510 et
+// DAT_00bf4520 à 1 ; FUN_0054a2c0(4, la position, une couleur RVBA (0, 0x7f, 0, 0xff), la couleur, l'icône, 0), l'affichage à 5.
+static int
+BlipAddPoint(lua_State *L)
+{
+	Journal("BlipAddPoint", L, 1);
+	int l = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	int n = lua_gettop(L) >= 3 ? (int)luaL_optnumber(L, 3, 1) : 1;
+	const CTriggerPointPoint *pt = donnees.Point(l, n < 1 ? 1 : n);
+	if(pt == nil) pt = donnees.Point(l, 1);
+	CVector pos = pt ? pt->pos : CVector(0, 0, 0);
+	int32 icone = (int32)luaL_optnumber(L, 2, 0), couleur = lua_gettop(L) >= 4 ? (int32)luaL_optnumber(L, 4, 1) : 1;
+	int32 h = marqueurs.AjouterPoint(4, pos, couleur, icone, false, (uint32)maintenant);
+	marqueurs.PoserAffichage(h, 5);
+	if(h != -1) marqueursDuScript.push_back({h, scriptCourant});
+	lua_pushnumber(L, h);
+	return 1;
+}
+
+// BlipRemove(poignée) (0x5b8170, lu de 0x5b8170 à 0x5b81a5) : avec un nombre (FUN_005d81c0), DAT_00bf4520 à 0 et FUN_0054a7f0.
+static int
+BlipRemove(lua_State *L)
+{
+	Journal("BlipRemove", L, 1);
+	if(!lua_isnumber(L, 1)) return 0;
+	marqueurs.Retirer((int32)lua_tonumber(L, 1));
 	return 0;
 }
 
@@ -7176,6 +7237,9 @@ main(int argc, char **argv)
 	lua_register(L, "PickupDelete", PickupDelete);
 	lua_register(L, "PAnimRequest", PAnimRequest);
 	lua_register(L, "PAnimCreate", PAnimCreate);
+	lua_register(L, "AddBlipForChar", AddBlipForChar);
+	lua_register(L, "BlipAddPoint", BlipAddPoint);
+	lua_register(L, "BlipRemove", BlipRemove);
 	lua_register(L, "CreatePersistentEntity", CreatePersistentEntity);
 	lua_register(L, "DeletePersistentEntity", DeletePersistentEntity);
 	lua_register(L, "ObjectRemovePickupsInTrigger", ObjectRemovePickupsInTrigger);
