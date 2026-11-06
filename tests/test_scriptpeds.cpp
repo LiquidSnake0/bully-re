@@ -139,6 +139,16 @@ main(void)
 		VERIF(pa->sante == 100 && pa->santeMax == 100);        // le constructeur de CPed : 100 et 100
 		int32 col[64] = {};
 		col[4] = 120; col[5] = 50; col[63] = 20;               // F santé maximale, G régénération, BM seuil d'humiliation
+		// Le pas du contrôleur d'actions (FUN_004812d0) : 0,02 × le pas de CTimer × la colonne V (0x14) / 100 ; sans entrée (le joueur
+		// de l'outil), la colonne vaut 100.
+		VERIF(fabsf(q.PasDuControleur(a, 1.65f) - 0.033f) < 1e-6f);
+		VERIF(q.PasDuControleur(-1, 1.65f) == 0.0f);
+		col[0x14] = 50;
+		VERIF(q.PoserStats(a, col) && fabsf(q.PasDuControleur(a, 1.0f) - 0.01f) < 1e-7f);
+		VERIF(q.PasDuControleur(a, 1.0f) == CScriptPedPool::PasDuControleur(1.0f, 50));
+		VERIF(fabsf(q.PasDuControleur(SCRIPT_PED_JOUEUR, 1.65f) - 0.033f) < 1e-6f);
+		col[0x14] = 0;
+		VERIF(q.PoserStats(a, col) && q.PasDuControleur(a, 1.65f) == 0.0f);
 		VERIF(q.PoserStats(a, col) && pa->sante == 120 && pa->santeMax == 120 && pa->santeMin == 0 && q.Stat(a, 63) == 20);
 		VERIF(q.Blesser(a, 20, -1) && pa->sante == 100);
 		for(int i = 0; i < 30; i++) q.Avancer(1.0f / 30);    // une seconde : + 50 / 100 point

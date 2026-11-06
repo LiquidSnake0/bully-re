@@ -759,6 +759,7 @@ CScriptPedPool::PoserStats(int h, const int32 colonnes[64])
 	CScriptPed *p = Acceder(h);
 	if(p == nil) return false;
 	for(int i = 0; i < 64; i++) p->stats[i] = colonnes[i];
+	p->statsLues = true;
 	p->santeMax = (float)colonnes[4];
 	p->santeMin = 0;
 	p->regeneration = (float)colonnes[5];
@@ -775,6 +776,14 @@ CScriptPedPool::Stat(int h, int n) const
 {
 	const CScriptPed *p = Acceder(h);
 	return p && n >= 0 && n < 64 ? p->stats[n] : 0;
+}
+
+float
+CScriptPedPool::PasDuControleur(int h, float pasTimer) const
+{
+	const CScriptPed *p = Acceder(h);
+	if(p == nil) return 0.0f;
+	return PasDuControleur(pasTimer, p->statsLues ? p->stats[0x14] : 100);
 }
 
 bool

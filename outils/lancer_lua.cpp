@@ -281,6 +281,8 @@ static int journalIA = 80;   // les passages du contrôleur de l'IA journalisés
 // (LoadAnimationGroup) et que la condition AnimationGroupLoaded demande ; une demande est servie à l'image suivante.
 static CAnimGroups groupesAnim;
 static uint32 imageCourante = 0;      // le compteur d'images de la boucle (pour les demandes de groupes)
+// CTimer::ms_fTimeStep pour une image de l'outil (33 ms) : FUN_0045b810 compte 1 pour 20 ms.
+static const float kPasTimer = 33.0f / 20.0f;
 // Les lignes que les pistes SpeechTrack des arbres retiennent (la tenue +0x28 : cinq places en 0x1b655d0, le rappel
 // 0x619550) : préchargées à l'image suivante (l'outil n'a pas de diffusion), jouées quand une piste SpeechStartTrack
 // du piéton les lâche, ou à l'échéance selon la tenue (1 : jouée, 2 : annulée). Une nouvelle ligne retenue par le même
@@ -5893,12 +5895,13 @@ static void
 AppliquerTirs(int ped, CActionController &c)
 {
 	CScriptPed *p = pietons.Acceder(ped);
-	// WeaponSetCharge (FUN_0065e7c0) et WeaponIncrementCharge (FUN_0065e810, le pas d'une image : 1/30 s ; supposé, le pas de la
-	// mise à jour des pistes n'est pas lu) avant les tirs de l'image.
+	// WeaponSetCharge (FUN_0065e7c0) et WeaponIncrementCharge (FUN_0065e810, avec le pas que CPed::ProcessControl passe au
+	// contrôleur, FUN_004812d0 : CScriptPedPool::PasDuControleur, 0,033 s pour une image de 33 ms) avant les tirs de l'image.
 	if(p){
 		for(const CActionController::Charge &d : c.chargesPosees) p->armeCharge = d.valeur;
 		for(size_t i = 0; i < c.croissancesActives.size(); i++)
-			p->armeCharge = CChargeArme::Augmenter(p->armeCharge, 1.0f / 30.0f, p->armeTenue != -1 && p->armeTenue == modeles.Index("slingshot"));
+			p->armeCharge = CChargeArme::Augmenter(p->armeCharge, pietons.PasDuControleur(ped, kPasTimer),
+			                                       p->armeTenue != -1 && p->armeTenue == modeles.Index("slingshot"));
 	}
 	c.chargesPosees.clear();
 	// SetWeaponFlags (FUN_00661d40) : l'entrée d'inventaire de l'arme en main et l'objet arme.

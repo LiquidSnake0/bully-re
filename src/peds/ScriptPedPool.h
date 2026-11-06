@@ -214,6 +214,7 @@ struct CScriptPed {
 	float santeMin = 0;          // +0x1ca8, PedSetMinHealth (0x5c8ef0)
 	float regeneration = 0;      // +0x1cac : la colonne G de pedstats.dat (taux de régénération, n/100)
 	int32 stats[64] = {};        // +0x1900 : les 64 colonnes B à BM de son entrée de pedstats.dat (GameGetPedStat)
+	bool statsLues = false;      // l'outil : une entrée de pedstats.dat posée (PoserStats)
 	// +0x1310 : le type du piéton (PREFECT 0 … COP 7, TEACHER 8, BULLY 11, DEFAULT 12, PLAYER1 13 ; CModelEnum::typesDePietons),
 	// recopié du modelinfo (+0x4c) par le constructeur de CPed (FUN_0047ffe0), changé par PedSetFaction (0x5cb570, jamais en
 	// 13), lu par PedGetFaction (0x5cb5c0), IsPlayer (FUN_005ffe40 : 13), IsAuthority (FUN_005ffb20) et PedType (FUN_005ffac0).
@@ -504,6 +505,21 @@ public:
 	bool PoserStats(int handle, const int32 colonnes[64]);
 	// GameGetPedStat (FUN_00476f10) : la colonne n ; le cas des modèles uniques de la colonne 6 n'est pas suivi.
 	int32 Stat(int handle, int n) const;
+	// Le pas que CPed::ProcessControl (FUN_004812d0) passe au composant d'actions du piéton (+0x2e0) à chaque image, lu à
+	// l'assembleur de 0x48192d à 0x481969 : (float)(0,02 (le flottant 0xa3396c) × CTimer::ms_fTimeStep (0xc1a9a4)) ×
+	// (float)(la colonne 0x14 de ses stats (FUN_00476f10) / 100,0 (le double 0x900130)), des secondes. La colonne 0x14 est la V de
+	// pedstats.dat, « Animation Speed factor (100 = 100% speed) » : 100 dans les 75 entrées. FUN_004850b0 le reçoit (rien si le pas
+	// est nul et DAT_00c2b1cc vaut 1) et le passe à FUN_00485050, qui le donne à chaque contrôleur du composant, dont celui des actions
+	// (FUN_00484040 → FUN_005f49a0 : le temps du nœud joué, +8, avance du pas ; FUN_005f4230 passe le pas à la mise à jour de chaque
+	// piste vivante, l'emplacement +0xc de sa vftable : WeaponIncrementCharge, FUN_0065e810, l'ajoute à la charge).
+	static float PasDuControleur(float pasTimer, int32 vitesseAnimation) {
+		float a = 0.02f * pasTimer;
+		float b = (float)((double)vitesseAnimation / 100.0);
+		return a * b;
+	}
+	// Le même pour un piéton du pool : sa colonne V. Un piéton sans entrée de pedstats.dat (dans l'outil, le joueur, qui ne reçoit pas
+	// encore STAT_PLAYER de son modèle 0) prend 100, la valeur de toutes les entrées, STAT_PLAYER compris.
+	float PasDuControleur(int handle, float pasTimer) const;
 	// GameSetPedStat (FUN_00476fa0) : la colonne n ; 4 (santé maximale) ramène la santé sous le nouveau maximum,
 	// 5 pose la régénération. Les autres cas (2, 3, 0x10, 0x16, 0x17 : vision, vitesse) ne sont pas suivis.
 	bool PoserStat(int handle, int n, int32 valeur);
