@@ -3737,6 +3737,26 @@ PedFindInAreaXYZ(lua_State *L)
 	return (int)trouves.size() + 1;
 }
 
+// PedFindInAreaObject(ped, r) (0x5d0a30, lue à l'assembleur de 0x5d0a30 à 0x5d0b1e) : le piéton (FUN_005c7220, le genre 2) ; sans
+// lui, rien n'est rendu ; sinon sa position (FUN_005c2810(&pos, 2, poignée)) et la même recherche que PedFindInAreaXYZ
+// (FUN_005cf850(liste, x, y, z, r, r, r)) : le booléen « au moins un », puis la poignée de chacun, le piéton lui-même compris.
+static int
+PedFindInAreaObject(lua_State *L)
+{
+	Journal("PedFindInAreaObject", L, 1);
+	const CScriptPed *c = lua_isnumber(L, 1) ? pietons.Acceder((int)lua_tonumber(L, 1)) : nil;
+	if(c == nil) return 0;
+	float r = (float)luaL_optnumber(L, 2, 0);
+	std::vector<int> trouves;
+	for(int h = 0; h < SCRIPT_PED_POOL_SIZE; h++){
+		const CScriptPed *p = pietons.Acceder(h);
+		if(p && fabsf(p->pos.x - c->pos.x) <= r && fabsf(p->pos.y - c->pos.y) <= r) trouves.push_back(h);
+	}
+	lua_pushboolean(L, !trouves.empty());
+	for(int h : trouves) lua_pushnumber(L, h);
+	return (int)trouves.size() + 1;
+}
+
 // PlayerWeaponHudLock(b) (0x5d1b80 → PlayerWeaponHudLock 0x55bb20) : l'octet +0x13c du HUD des armes, que lit WeaponHudLocked.
 static int
 PlayerWeaponHudLock(lua_State *L)
@@ -7093,6 +7113,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedSetInfiniteSprint", PedSetInfiniteSprint);
 	lua_register(L, "PedCanTeleportOnAreaTransition", PedCanTeleportOnAreaTransition);
 	lua_register(L, "PedFindInAreaXYZ", PedFindInAreaXYZ);
+	lua_register(L, "PedFindInAreaObject", PedFindInAreaObject);
 	lua_register(L, "PedSetMissionCritical", PedSetMissionCritical);
 	lua_register(L, "PedRecruitAlly", PedRecruitAlly);
 	lua_register(L, "PedDismissAlly", PedDismissAlly);
