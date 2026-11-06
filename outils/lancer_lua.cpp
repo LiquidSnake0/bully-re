@@ -2962,6 +2962,23 @@ BlipAddPoint(lua_State *L)
 	return 1;
 }
 
+// BlipAddXYZ(x, y, z, icône[, couleur, a, f, g]) (0x5b8400, lu à l'assembleur de 0x5b8400 à 0x5b85c7) : la position (FUN_005d82a0 ×
+// 3), l'icône au quatrième argument (FUN_005d8200), la couleur au cinquième (1 par défaut), un entier au sixième (-1) et deux flottants
+// (0 et 2) pour FUN_005d9220 ; DAT_00bf4520 à 1 et la position en DAT_00bf4508 … DAT_00bf4510 ; FUN_0054a2c0(4, la position, la
+// couleur RVBA (0, 0x7f, 0, 0xff), la couleur, l'icône, 0), l'affichage à 5 (FUN_00548aa0). Rend la poignée du marqueur.
+static int
+BlipAddXYZ(lua_State *L)
+{
+	Journal("BlipAddXYZ", L, 1);
+	CVector pos((float)luaL_optnumber(L, 1, 0), (float)luaL_optnumber(L, 2, 0), (float)luaL_optnumber(L, 3, 0));
+	int32 icone = (int32)luaL_optnumber(L, 4, 0), couleur = lua_gettop(L) >= 5 ? (int32)luaL_optnumber(L, 5, 1) : 1;
+	int32 h = marqueurs.AjouterPoint(4, pos, couleur, icone, false, (uint32)maintenant);
+	marqueurs.PoserAffichage(h, 5);
+	if(h != -1) marqueursDuScript.push_back({h, scriptCourant});
+	lua_pushnumber(L, h);
+	return 1;
+}
+
 // BlipRemove(poignée) (0x5b8170, lu de 0x5b8170 à 0x5b81a5) : avec un nombre (FUN_005d81c0), DAT_00bf4520 à 0 et FUN_0054a7f0.
 static int
 BlipRemove(lua_State *L)
@@ -7240,6 +7257,7 @@ main(int argc, char **argv)
 	lua_register(L, "AddBlipForChar", AddBlipForChar);
 	lua_register(L, "BlipAddPoint", BlipAddPoint);
 	lua_register(L, "BlipRemove", BlipRemove);
+	lua_register(L, "BlipAddXYZ", BlipAddXYZ);
 	lua_register(L, "CreatePersistentEntity", CreatePersistentEntity);
 	lua_register(L, "DeletePersistentEntity", DeletePersistentEntity);
 	lua_register(L, "ObjectRemovePickupsInTrigger", ObjectRemovePickupsInTrigger);
