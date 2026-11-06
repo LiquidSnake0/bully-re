@@ -51,6 +51,7 @@
 #include "../src/peds/ScriptPedPool.h"
 #include "../src/peds/Clothing.h"
 #include "../src/hud/HudComponents.h"
+#include "../src/hud/EcranDeFin.h"
 #include "../src/render/CameraMgr.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
@@ -2918,6 +2919,39 @@ Interagir(int ped, CActionController &c)
 	p->utiliseObjet = true;
 	printf("%6.2f s  PropInteract : le piéton %d se sert de l'objet animé du déclencheur %d : %s\n", t, ped, o->declencheur,
 	       n ? arbres.CheminDe(n).c_str() : "rien n'aboutit");
+}
+
+// L'écran de fin (src/hud/EcranDeFin.h). MinigameSetCompletion(texte, réussi[, argent[, sous-texte]]) (0x708cc0, lue à l'assembleur
+// de 0x708cc0 à 0x708d42) : la chaîne (FUN_005d82e0), le booléen (FUN_005d8f20), avec trois arguments l'argent (FUN_005d8200,
+// un entier fild), avec quatre le sous-texte, puis FUN_00707390. MinigameAddCompletionMsg(texte[, n]) (0x708de0 → FUN_00705360).
+// MinigameIsShowingCompletion() (0x708f90).
+static CEcranDeFin ecranDeFin;
+
+static int
+MinigameSetCompletion(lua_State *L)
+{
+	Journal("MinigameSetCompletion", L, 1);
+	int n = lua_gettop(L);
+	ecranDeFin.Poser(luaL_optstring(L, 1, ""), lua_toboolean(L, 2) != 0, n >= 3 ? (float)(int)luaL_optnumber(L, 3, 0) : 0.0f,
+	                 n >= 4 ? luaL_optstring(L, 4, "") : nil);
+	printf("%6.2f s  écran de fin : %s%s, %.0f\n", maintenant / 1000.0, ecranDeFin.texte.c_str(), ecranDeFin.reussi ? " (réussi)" : "", ecranDeFin.argent);
+	return 0;
+}
+
+static int
+MinigameAddCompletionMsg(lua_State *L)
+{
+	Journal("MinigameAddCompletionMsg", L, 1);
+	ecranDeFin.Ajouter(luaL_optstring(L, 1, ""), lua_gettop(L) >= 2 ? (int32)luaL_optnumber(L, 2, 0) : 0);
+	return 0;
+}
+
+static int
+MinigameIsShowingCompletion(lua_State *L)
+{
+	Journal("MinigameIsShowingCompletion", L, 1);
+	lua_pushboolean(L, ecranDeFin.Montre());
+	return 1;
 }
 
 // AreaRegisterAnimProps() (0x5b6d60 → 0x438700) : la table DAT_00bd3e78 jusqu'à son compte DAT_00bd5c54, que rien n'augmente
@@ -6564,6 +6598,9 @@ main(int argc, char **argv)
 	lua_register(L, "ObjectGetModelIndex", ObjectGetModelIndex);
 	lua_register(L, "PAnimDestroyedByPed", PAnimDestroyedByPed);
 	lua_register(L, "PAnimExists", PAnimExists);
+	lua_register(L, "MinigameSetCompletion", MinigameSetCompletion);
+	lua_register(L, "MinigameAddCompletionMsg", MinigameAddCompletionMsg);
+	lua_register(L, "MinigameIsShowingCompletion", MinigameIsShowingCompletion);
 	lua_register(L, "PAnimSetActionNode", PAnimSetActionNode);
 	lua_register(L, "PAnimSetPropFlag", PAnimSetPropFlag);
 	lua_register(L, "PAnimGetPropFlag", PAnimGetPropFlag);
@@ -6999,6 +7036,7 @@ main(int argc, char **argv)
 		MettreAJour(L);
 		AvancerPietons();
 		AvancerObjets();
+		ecranDeFin.Avancer(33.0f / 20.0f);   // FUN_007073c0 : le pas du moteur (ms_fTimeStep)
 		PoursuivrePieton();   // --suivre : la manette du joueur
 		AvancerCinematique();
 		AvancerZones(L);
