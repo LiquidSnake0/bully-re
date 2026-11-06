@@ -1143,3 +1143,26 @@ en échec plutôt que de les masquer.
   rapportés à l'historique. `1_06_01` : le transistor à 26,86 s, la leçon à 44,85 s, réussie à 61,81 s.
 - **Bilan** : 1 061 fonctions recréées (6,9 % du code), contre 1 002 (6,4 %) ; 2 028 comprises (11,6 %) ; 10 commits.
 
+## 06.11.2026, séance 4 (de 6 h 30 à 7 h 51)
+
+- **`PAnimCreate`** (0x5c4680, hors de l'index, lue à l'assembleur) : l'objet animé d'un déclencheur, même propre à une mission
+  (`CObjetsAnimes::CreerParScript`) ; dans `1_07`, la caisse à outils, la grille et les portes du garage ; dans `1_01`, la grille de
+  l'école s'ouvre ; dans `1_03`, les portes du garage et le tas de tonneaux de Davis jouent leurs arbres.
+- **`PedFindInAreaObject`** (0x5d0a30) : la recherche de `PedFindInAreaXYZ` autour d'un piéton ; `T_ObjectiveMonitor` de `1_07` cesse
+  de la redemander à chaque image.
+- **`CreatePersistentEntity` et `DeletePersistentEntity`** (0x5bd090, 0x5bca50, lues dans l'index) : les modèles panm deviennent des
+  objets animés sans déclencheur, les autres des CObject (rangés à part des objets cassables de l'outil) ; main.lua en pose trente et
+  une dès 1,12 s ; la poignée et le genre rendus (0 pour un CObject, 5 pour un objet animé).
+- **Les marqueurs du radar** (`src/hud/Marqueurs`) : les 300 traces de CRadar (DAT_00c674cc + 0x210), leurs poignées (la génération <<
+  12 | l'indice) ; `AddBlipForChar`, `BlipAddPoint`, `BlipAddXYZ` et `BlipRemove` réelles, les marqueurs retirés avec la mission.
+- **`1_07` jusqu'à la porte du garage** : le joueur rejoint Bucky (39,07 s), bat les quatre bullies (53,00 à 86,00 s) et ouvre la
+  porte (`cbDoorOpened`, 94,02 s) ; la dernière étape de `F_MissionSpawnerFinished` reste à trouver.
+- **La machine partagée** : le verrou a été pris par lots (batch16 et suivants) ; deux vérifications ont échoué à la compilation (un
+  nom en double dans un test, les marqueurs déclarés après leur usage) et ont été relancées ; un essai de `1_07` a tourné entre deux
+  vérifications.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 148,04 s), `1_04` à 82,53 s, `1_05` à 185,20 s et
+  `1_06_01` à 61,81 s à chaque commit ; journaux identiques hors les objets animés créés par `PAnimCreate` (trois lignes dans `1_01`,
+  vingt-sept dans `1_03`), les entités persistantes (une trentaine de lignes par mission) et les arguments de `BlipRemove`.
+- **Bilan** : 1 077 fonctions recréées (7,0 % du code), contre 1 061 (6,9 %) ; 2 041 comprises (11,7 %) ; 6 commits (cinq de moteur et la
+  documentation : la séance s'arrête là, le contexte de l'agent étant chargé).
+

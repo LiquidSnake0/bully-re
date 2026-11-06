@@ -700,6 +700,25 @@ portes 557 et 558, que `PAnimSetActionNode` met sur `/Global/1_07/ParametricDoor
 pose le joueur et `1_07_command` (4,52 s) ; `T_ObjectiveMonitor` ôte 25 points à Bucky toutes les cinq secondes tant que le joueur n'est pas
 près de lui (`PedFindInAreaObject(4, 2)`), et `1_07` échoue à 64,55 s (`1_07_BUCKYKO`).
 
+**La défense de Bucky** (06.11, séance 4) : `PAnimCreate` est réelle (la caisse, la grille et les portes ont leur objet), comme
+`PedFindInAreaObject` (`T_ObjectiveMonitor` trouve Bucky et le met dans `/Global/1_07/Idle`). L'objectif `objReachBucky` réussit quand le
+joueur passe `_1_07_GATE_T` puis `_1_07_GATETRIG` ou `_1_07_FIGHTTRIGGER` (`F_ReachedBucky`) ; `objDefeatEnemies` attend
+`F_MissionSpawnerFinished`. Avec l'outil :
+
+    LA=/Global/Player/Attacks/Strikes/LightAttacks
+    P=/Global/1_07/ParametricDoor/POpenUp/PedPropActions/#3be30de2/LiftOpen/success:Act/Conv/1_07.act
+    J(a) = seize instants de 0,6 s en 0,6 s depuis a
+    build/outils/lancer_lua 160 --mission 1_07 --sans-cinematiques --courir 157.9,6.66,6.4@5 --courir 150.15,6.6,6.4@25 \
+      --suivre 5,0.8@40 --viser 5@40 --jouer $LA@J(41) --suivre 6,0.8@51 --viser 6@51 --jouer $LA@J(52) \
+      --suivre 7,0.8@62 --viser 7@62 --jouer $LA@J(63) --suivre 8,0.8@73 --viser 8@73 --jouer $LA@J(74) \
+      --courir 124.1,12.3,6.1@87 --jouer $P@94 --courir 157.6,6.48,6.35@97
+
+Le joueur court au portail puis à la grille ; Bucky est rejoint à 39,07 s (`1_07_Objective1`, la grille joue `CloseGate/PropClosed`,
+deux bullies de plus, 85 et 102, l'un à la batte) ; les greasers 5 et 6 attaquent Bucky et le joueur (41,58 s). Seize jabs chacun : le
+piéton 5 meurt à 53,00 s, le 6 à 63,99 s (`T_MonitorGreasers` : Bucky recruté, `1_07_Objective2` et le marqueur de la caisse à outils
+à 64,15 s), le 7 à 74,98 s, le 8 à 86,00 s (la porte 558 passe à `Closed`, `T_DoorMonitor`). Au corona du garage, `LiftOpen/success`
+appelle `cbDoorOpened` (94,02 s) et la porte s'ouvre aux piétons ; `F_MissionSpawnerFinished` n'a pas encore sa dernière étape à 160 s.
+
 ## Suite
 
 1. Ce que `1_01` ne joue pas encore pour de vrai : les nœuds d'action (`PedSetActionNode` cherche le nœud dans

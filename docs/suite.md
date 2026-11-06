@@ -82,12 +82,15 @@ chantier. Un point fini passe en bas, avec son commit.
    (`FUN_00445710`, `FUN_00444ac0`), `ObjectRemovePickupsInTrigger`, l'historique des boutons (`src/hud/ButtonHistory` et la piste
    `ActionRegisterButtonHistory`) : le joueur prend le transistor, le donne au clochard et réussit la leçon du coup chargé ; `1_07`
    passe `PAnimRequest`.
+   Le 06.11 (séance 4), **`1_07` va jusqu'à la porte du garage** (docs/missions.md, « 1_07 ») : `PAnimCreate` (les objets animés des
+   missions : dans `1_01` la grille de l'école, dans `1_03` les portes du garage et les tonneaux de Davis ont maintenant leur objet),
+   `PedFindInAreaObject`, `CreatePersistentEntity` et `DeletePersistentEntity`, les marqueurs du radar (`src/hud/Marqueurs` :
+   `AddBlipForChar`, `BlipAddPoint`, `BlipAddXYZ`, `BlipRemove`) ; le joueur rejoint Bucky, bat les quatre bullies et ouvre la porte.
    Suite, dans l'ordre :
-   - `1_07` (« Defend Bucky », docs/missions.md) : lancée seule, elle crée ses objets animés par `PAnimCreate` (un bouchon : la
-     caisse à outils 555, la grille 544, les portes 557 et 558 et leurs nœuds `ParametricDoor`), puis `T_ObjectiveMonitor` ôte 25 points
-     à Bucky toutes les cinq secondes tant que le joueur n'est pas près de lui (`PedFindInAreaObject(4, 2)`) : elle échoue à 64,55 s.
-     `PAnimCreate` (0x5c4680, hors de l'index), `CreatePersistentEntity` (0x5bd090 : la planche `SC_SK8Board`, et la grille de `1_06`),
-     `PedFindInAreaObject`, puis la défense de Bucky contre les bullies ;
+   - `1_07` (« Defend Bucky », docs/missions.md) : après la porte (94,02 s), `F_MissionSpawnerFinished` attend sa dernière étape (le
+     compteur que `F_SpawnerCallback` fait monter) et le joueur près de `_1_07_PLYRDOOR` ; voir ce qui la fait monter après la porte
+     (Bucky qui suit `_1_07_…`, les gestionnaires de déclencheurs `cbOnTriggerEnteredByPed`), puis la fin de la mission ;
+     `PAnimFollowPath` et `PAnimSetPathFollowSpeed` (les entités persistantes de `1_01` et `1_02` qui suivent un trajet) ;
    - ce qui reste de `1_06_01` : l'échelle (`/Global/Ladder/Ladder_Actions` et les marqueurs de `_LOWCORONA` et `_HIGHGROUND` : l'outil
      monte au transistor en ligne droite), les marqueurs du radar (`AddBlipForChar`, `BlipAddPoint`, `BlipRemove` : le pool de
      `CRadar`, `FUN_0054a460`, `FUN_0054a2c0`, `FUN_0054a7f0`, `FUN_0054a740`), la diffusion des placements (`CIplStore`, `FUN_00439220`)
@@ -158,6 +161,12 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- `1_07` va jusqu'à la porte du garage (06.11, séance 4 ; 1054924, bebd02c, de6c457, 6fcb4cb, d6444c1) : `PAnimCreate` (`CObjetsAnimes::CreerParScript`, la matrice et
+  `FUN_0044cd20` sans les conditions de `FUN_00416540`), `PedFindInAreaObject` (0x5d0a30), `CreatePersistentEntity` (0x5bd090 : les
+  modèles panm en objets animés sans déclencheur, `CObjetsAnimes::CreerPersistant`, les autres en CObject) et `DeletePersistentEntity`
+  (0x5bca50), les marqueurs du radar (`src/hud/Marqueurs` : les 300 traces de CRadar, `FUN_0054a460`, `FUN_0054a2c0`, `FUN_0054a7f0`,
+  `FUN_0054a740`, `FUN_00548aa0` ; `AddBlipForChar`, `BlipAddPoint`, `BlipAddXYZ`, `BlipRemove`).
 
 - `1_06_01` se termine réussie à 61,81 s (06.11, séance 3 ; ef92311, f492186, dda40f8, 469ff55, e9c2865, d9701dd, 492c182, 1412b5e, 261b63d) : le gestionnaire des collectibles (`src/objects/Collectibles` :
   l'objet 0xbceb50, `FUN_00428bf0`, `FUN_004287a0`, `FUN_00426080`, `FUN_004288c0`, `FUN_00428ba0`, les fonctions Lua `Collectibles*`),
