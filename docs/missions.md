@@ -719,6 +719,39 @@ piéton 5 meurt à 53,00 s, le 6 à 63,99 s (`T_MonitorGreasers` : Bucky recrut�
 à 64,15 s), le 7 à 74,98 s, le 8 à 86,00 s (la porte 558 passe à `Closed`, `T_DoorMonitor`). Au corona du garage, `LiftOpen/success`
 appelle `cbDoorOpened` (94,02 s) et la porte s'ouvre aux piétons ; `F_MissionSpawnerFinished` n'a pas encore sa dernière étape à 160 s.
 
+**La fin de `1_07`** (06.11, séance 5). Lu dans `1_07.lur` : l'étape de la mission est l'upvalue r53 de `T_MonitorGreasers` (1 après la
+première vague, 2 après la seconde paire, 3 après la porte, 4 après la seconde vague) ; après la porte, `PedFollowPath(Bucky,
+_1_07_TOGATEWAIT)` attend le drapeau r54 que pose `cbDoorOpened`, puis la seconde vague est créée (le 145 à la batte sur
+`_1_07_SPAWNPOINT04`, le 102 sur `_1_07_SPAWNPOINT05`), l'étape passe à 3, Bucky suit `_1_07_TOTOOLBOX` avec `CB_GrabWhatever` et
+`F_DoBuckyGrabbingNIS` le pose près de la caisse : au dernier nœud de `_1_07_TOTOOLBOXF`, `CB_GrabWhatever` lui fait jouer
+`/Global/WProps/Peds/ScriptedPropInteract`, dont la condition `PropTargetInteractive` (2 m) lui fait viser la caisse, que
+`/Global/ToolBox/Useable` offre aux piétons ; il s'en approche (`SeekEntityPosition` du genre 4, 1 m), la piste `PropInteract` lui fait
+jouer `/Global/ToolBox/PedPropsActions/Interact/StartUsing` et il prend le circuit ; l'objectif `1_07_Objective3`. La seconde vague
+n'attaque que quand le joueur entre dans `_1_07_FIGHTTRIGGER` (`F_MissionSpawnerFinished` à l'étape 3 appelle `F_SpawnerCallback` pour
+chacun : `PedMakeMissionChar`, `PedRestrictToTrigger(_1_07_NOAMBIENTPEDS)`, `PedAttack` sur le joueur et sur Bucky) ; battue, l'étape
+passe à 4 (`1_07_Objective4`) et la mission attend le joueur dans le pavé de 0,8 m autour du point 1 de `_1_07_PLYRDOOR` (157,646, 6,477,
+6,354 ; la hauteur comprise). `objDefeatEnemies` réussit et `F_CompleteMission` joue `F_Peanut_Confontation` (le joueur force la grille,
+`/Global/1_07/FakeTry/startOpen`, le clochard Bum arrive sur `_1_07_BUM`), `F_BuckyThanksThePlayer` (le clochard ouvre la grille,
+`HoboOpenGate`, et part sur `_1_07_TOBUSPATH`), puis le don de la planche (`/Global/Give1_07/Give_Attempt` : la prise, `Player_Part2`
+par le `PlayOnTarget` de Bucky), `SK8_Examine`, l'écran `M_PASS` et `MissionSucceed`. Avec l'outil (sous zsh, `${=…}`) :
+
+    LA=/Global/Player/Attacks/Strikes/LightAttacks
+    P=/Global/1_07/ParametricDoor/POpenUp/PedPropActions/#3be30de2/LiftOpen/success:Act/Conv/1_07.act
+    J(a) = seize instants de 0,6 s en 0,6 s depuis a
+    build/outils/lancer_lua 200 --mission 1_07 --sans-cinematiques --courir 157.9,6.66,6.4@5 --courir 150.15,6.6,6.4@25 \
+      --suivre 5,0.8@40 --viser 5@40 --jouer $LA@J(41) --suivre 6,0.8@51 --viser 6@51 --jouer $LA@J(52) \
+      --suivre 7,0.8@62 --viser 7@62 --jouer $LA@J(63) --suivre 8,0.8@73 --viser 8@73 --jouer $LA@J(74) \
+      --courir 124.1,12.3,6.1@87 --jouer $P@94 --courir 157.6,6.48,6.35@97 \
+      --courir 135,27,6.1@103 --suivre 9,0.8@108 --viser 9@108 --jouer $LA@J(109) \
+      --suivre 10,0.8@120 --viser 10@120 --jouer $LA@J(121) --courir 157.646,6.477,6.354@132
+
+Après la porte (94,02 s), Bucky arrive à 1,00 m de la caisse (98,14 s), s'en sert (100,42 s) et prend le circuit (101,54 s) ; le joueur
+reprend la main à 102,96 s, entre dans `_1_07_FIGHTTRIGGER` et la seconde vague l'attaque (105,77 s) ; seize jabs sur chacun : le piéton
+9 meurt à 120,98 s, le 10 à 132,99 s, en laissant une santé (`PickupCreateFromPed`, 127,78 s) ; Bucky, renvoyé (`PedHasAlly`), se cache
+(`/Global/1_07/Cower`, 121,01 s). Le joueur va au point de `_1_07_PLYRDOOR` : `F_CompleteMission` à 133,95 s, le clochard (134,51 s),
+la grille ouverte (138,04 s), la prise du don (145,17 s), Bucky dit `THANKS_JIMMY`, `M_PASS` (148,73 s) et **`MissionSucceed` : `1_07`
+se termine réussie à 151,47 s**.
+
 ## Suite
 
 1. Ce que `1_01` ne joue pas encore pour de vrai : les nœuds d'action (`PedSetActionNode` cherche le nœud dans

@@ -1166,3 +1166,43 @@ en échec plutôt que de les masquer.
 - **Bilan** : 1 077 fonctions recréées (7,0 % du code), contre 1 061 (6,9 %) ; 2 041 comprises (11,7 %) ; 6 commits (cinq de moteur et la
   documentation : la séance s'arrête là, le contexte de l'agent étant chargé).
 
+## 06.11.2026, séance 5 (de 19 h 00 à 21 h 05)
+
+- **`PropTargetInteractive`** (`FUN_00655110`, lue à l'assembleur ; le créateur 0x645470, `FUN_00654e30`) : le relevé des objets proches
+  et le choix de `TargetProp` mis en commun (`ReleverObjetsProches`, `ViserObjetChoisi`) ; le juge rendait toujours faux. Dans `1_07`,
+  Bucky vise la caisse à outils, joue `StartUsing` et prend le circuit : `F_DoBuckyGrabbingNIS` se termine, l'objectif 3 (103,22 s).
+- **`PickupCreateFromPed`** (0x5d0cc0 ; `FUN_00443d90`, `CRamassages::CreerDuPieton`) : la santé que laisse le second piéton de la
+  seconde vague, 0,45 m au-dessus de lui, prise au contact.
+- **`PedHasAlly`** (0x5cd730) et **`PedIsModel`** (0x5c92a0) : Bucky est renvoyé quand il part se cacher ; avec la commande étendue
+  (le joueur entre dans `_1_07_FIGHTTRIGGER`, bat la seconde vague et va à `_1_07_PLYRDOOR`), **`1_07` se termine réussie à 151,47 s**.
+  Ce que la séance du matin avait lu se vérifie dans `1_07.lur` (l'étape r53, le drapeau r54, la vague du 145 et du 102, l'étape 4 et les
+  0,8 m de `_1_07_PLYRDOOR`), à deux corrections près : ce qui suit l'étape 4 n'est pas une troisième vague mais `F_CompleteMission`
+  (le clochard et ses trajets, `PedFollowPath` sans rappel), et `PAnimFollowPath` n'est pas dans `1_07` (seulement dans `1_01` et
+  `1_02`, docs/suite.md).
+- **`PlayerUnequip`** (`FUN_0055c780`), **`PlayerSetPosSimple`** (0x5d2bd0), **`PlayerFaceHeadingNow`** (0x5c7360) : le joueur de
+  `F_CompleteMission`.
+- **`PAnimDelete`** (0x5c4930) : la tourelle de l'école, la grille de `1_01`, les portes de `1_03`, la grille de `1_07` ; la zone
+  visible recrée les objets qui ne sont pas propres à une mission, et les indices des objets créés ensuite changent dans les journaux.
+- **`FUN_00477ab0`** (`CScriptPedPool::CibleDeGenre`) : l'entité visée selon un genre, pour `FaceTarget` et `SeekEntityPosition` ; Bucky
+  s'approche de la caisse à 1 m.
+- **La barre de santé secondaire** (`src/hud/BarreSante.h`, le composant 12 du HUD) : `PedShowHealthBar`, `PedHideHealthBar`,
+  `FUN_00553690`, `FUN_00551380`, `FUN_005513b0`.
+- **`PedMakeMissionChar`** (0x5ca890, `FUN_004770a0`) : un piéton de la population redevient de mission. **`AreaClearAllPeds`**
+  (0x5b7e70) est recréée (`CScriptPedPool::AmbiantsAVider`) mais pas branchée : branchée, elle détruisait les trois joueurs de foot de
+  `F_FootballFieldThread` rendus à la population, les piétons suivants prenaient leurs cases, et les commandes, qui visent les piétons par
+  leur poignée, ne visaient plus les bons : `1_04` n'allait plus au bout, `1_05` échouait à 57,88 s. La vérification a été refaite sans
+  elle (docs/suite.md : refaire ces commandes).
+- **`PedStopSocializing`** (0x5cdbf0, `FUN_00490f50`) : l'état social, le partenaire et les bits de l'octet +0x224 remis à zéro.
+- **La machine partagée** : l'autre agent a tenu le verrou (dotnet test) au premier passage ; une vérification a échoué deux fois à la
+  compilation (un nom de variable en double dans `tests/test_ramassages.cpp`) et a été relancée ; deux instantanés sont vérifiés par
+  passage du verrou (`build/k1` à `build/k8`). Les commits sont faits depuis les instantanés vérifiés (`git --work-tree=build/kN add`) :
+  le crochet pre-commit compte l'avancement sur l'arbre de travail, un commit fait pendant que les correctifs suivants y étaient a eu un
+  compte faux, refait avant d'être poussé. La vérification du huitième commit a été refaite (`AreaClearAllPeds` débranchée).
+- **REA amont** : 651 commits en attente (581 à la séance 3) ; les plus proches de bully-re sont #9151 (les vues gardées des catalogues
+  progressifs du serveur MCP) et #8991 (le décodeur des commandes rizin d'un coup) ; rien qui touche l'index ou Ghidra ; rien fusionné.
+  La séance n'a pas ouvert REA : l'index `export/index.sqlite` et `objdump` sur `bully.exe` ont suffi.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 148,04 s), `1_04` à 82,53 s, `1_05` à 185,20 s et
+  `1_06_01` à 61,81 s à chaque commit ; journaux identiques hors les destructions de `PAnimDelete` et les indices des objets (de trois à
+  vingt-huit lignes par mission). `1_07` : la caisse à 102,96 s au premier commit, puis réussie à 151,47 s dès le troisième.
+- **Bilan** : 1 105 fonctions recréées (7,1 % du code), contre 1 077 (7,0 %) ; 2 073 comprises (11,8 %) ; 10 commits (neuf de moteur et la documentation).
+

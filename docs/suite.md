@@ -86,11 +86,30 @@ chantier. Un point fini passe en bas, avec son commit.
    missions : dans `1_01` la grille de l'école, dans `1_03` les portes du garage et les tonneaux de Davis ont maintenant leur objet),
    `PedFindInAreaObject`, `CreatePersistentEntity` et `DeletePersistentEntity`, les marqueurs du radar (`src/hud/Marqueurs` :
    `AddBlipForChar`, `BlipAddPoint`, `BlipAddXYZ`, `BlipRemove`) ; le joueur rejoint Bucky, bat les quatre bullies et ouvre la porte.
+   Le 06.11 (séance 5), **`1_07` se termine réussie à 151,47 s** (docs/missions.md, « 1_07 ») : `PropTargetInteractive` (Bucky se
+   sert de la caisse à outils), `PickupCreateFromPed`, `PedHasAlly`, `PedIsModel`, `PlayerUnequip`, `PlayerSetPosSimple`,
+   `PlayerFaceHeadingNow`, `PAnimDelete`, la cible par genre de `FaceTarget` et `SeekEntityPosition` (`FUN_00477ab0`), la barre de santé
+   secondaire (`src/hud/BarreSante.h`), `PedMakeMissionChar` et `PedStopSocializing` ; le joueur entre dans `_1_07_FIGHTTRIGGER`, bat la
+   seconde vague, va à `_1_07_PLYRDOOR`, et la mission joue le clochard, le don de la planche et l'écran `M_PASS`.
    Suite, dans l'ordre :
-   - `1_07` (« Defend Bucky », docs/missions.md) : après la porte (94,02 s), `F_MissionSpawnerFinished` attend sa dernière étape (le
-     compteur que `F_SpawnerCallback` fait monter) et le joueur près de `_1_07_PLYRDOOR` ; voir ce qui la fait monter après la porte
-     (Bucky qui suit `_1_07_…`, les gestionnaires de déclencheurs `cbOnTriggerEnteredByPed`), puis la fin de la mission ;
-     `PAnimFollowPath` et `PAnimSetPathFollowSpeed` (les entités persistantes de `1_01` et `1_02` qui suivent un trajet) ;
+   - la suite des armes : la charge (`WeaponSetCharge`, `WeaponIncrementCharge` : l'objet arme +0x128, la portée et les dégâts du tir),
+     la visée du joueur (`WeaponPlayerFireAutoTarget`, `FUN_00662a40` en entier, la cible qui bouge : les jocks de `1_04` ne sont touchés
+     que pendant leurs sauts), le haut du corps en contrôleur à part (le spawn `UpperBody` du nœud de l'arme, pour ne plus passer par
+     `--tirer`), le départ du tir (la douille « Muzzle », l'os d'une arme lancée : `FUN_0065e880`), `WeaponFireOffset`, la physique des
+     `CProjectile` (`FUN_004d4c40`, le sol, les rebonds, `DetectProjectile`), `SetWeaponFlags` et `WeaponFlags`, `PedSetWeaponFlag`, le genre
+     d'un coup de projectile (+0x468), `MissionTimerStartFixed`, `MissionTimerPause` ;
+   - les entités qui suivent un trajet : `PAnimFollowPath` (0x5c3b30), `PAnimSetPathFollowSpeed` (0x5c3c60), `PAnimStopFollowPath`
+     (0x5c3d50), le gestionnaire 0xd13730 (32 entrées de 0x2c octets, le nombre en +0x580 : `FUN_005eb880`, `FUN_005ebfd0`,
+     `FUN_005ebd60` et son objet PathReference, `FUN_005eb910`, `FUN_005ebbf0` → `FUN_005ed400` pour la vitesse, `FUN_005ebb50` →
+     `FUN_005ed6f0` pour l'arrêt, `FUN_005ebb10` et `FUN_005eb8d0` pour le rappel, la mise à jour `FUN_005ec0a0` à lire) : la grille du
+     magasin de l'école (`SCStoreGte_Closed`, une entité persistante) qui roule dans `1_01` et `1_02` à la vitesse -1,2 ;
+   - brancher `AreaClearAllPeds` (0x5b7e70, recréée : `CScriptPedPool::AmbiantsAVider`) : elle détruit les trois joueurs de foot que
+     `F_FootballFieldThread` rend à la population, et les piétons créés ensuite prennent leurs cases : dans `1_04`, `1_05` et `1_06_01`,
+     les poignées des commandes de docs/missions.md changent (branchée, `1_04` n'allait plus au bout et `1_05` échouait à 57,88 s) ;
+     refaire ces commandes avec elle, et lire la liste DAT_00bcd098 qu'elle épargne (`FUN_00424490`) ;
+   - ce qui reste de `1_07` : le dessin de la barre de santé
+     et sa mise à jour, `PedSetEmotionTowardsPed`, `PedSetMinEngage`, `PedSetUniqueModelStatus`, `PedClearHitRecord`,
+     `DoublePedShadowDistance`, l'échange social que `FUN_004906e0` arrête, les genres de `FUN_00477ab0` que l'outil ne suit pas (2, 3, 6 à 0xf) ;
    - ce qui reste de `1_06_01` : l'échelle (`/Global/Ladder/Ladder_Actions` et les marqueurs de `_LOWCORONA` et `_HIGHGROUND` : l'outil
      monte au transistor en ligne droite), les marqueurs du radar (`AddBlipForChar`, `BlipAddPoint`, `BlipRemove` : le pool de
      `CRadar`, `FUN_0054a460`, `FUN_0054a2c0`, `FUN_0054a7f0`, `FUN_0054a740`), la diffusion des placements (`CIplStore`, `FUN_00439220`)
@@ -104,12 +123,6 @@ chantier. Un point fini passe en bas, avec son commit.
      la vue et les zones interdites du relevé, `PedGetUniqueModelStatus` (0x5cdef0 : le mot +0x5c du modelinfo), les marqueurs
      (`AddBlipForChar`, `BlipRemove`), la barre de santé d'Algie, la ronde du préfet (`FUN_00472320`), le sol (la commande fait courir le
      joueur à 5,9 m de haut aux toilettes et au casier), la tenue de l'écran de fin (0,5 s jusqu'au signal `DAT_020c870b`) ;
-   - la suite des armes : la charge (`WeaponSetCharge`, `WeaponIncrementCharge` : l'objet arme +0x128, la portée et les dégâts du tir),
-     la visée du joueur (`WeaponPlayerFireAutoTarget`, `FUN_00662a40` en entier, la cible qui bouge : les jocks de `1_04` ne sont touchés
-     que pendant leurs sauts), le haut du corps en contrôleur à part (le spawn `UpperBody` du nœud de l'arme, pour ne plus passer par
-     `--tirer`), le départ du tir (la douille « Muzzle », l'os d'une arme lancée : `FUN_0065e880`), `WeaponFireOffset`, la physique des
-     `CProjectile` (`FUN_004d4c40`, le sol, les rebonds, `DetectProjectile`), `SetWeaponFlags` et `WeaponFlags`, `PedSetWeaponFlag`, le genre
-     d'un coup de projectile (+0x468), `MissionTimerStartFixed`, `MissionTimerPause` ;
    - les objets : les CObject vraiment créés par le chargeur des `.ipb` (son emplacement +0x18), leur modèle de collision au lieu de la
      sphère de 0,5 m, leurs effets et leur remplaçant (`FUN_004d0300`) ; les objets animés hors des déclencheurs des `.dat` (`PAnimCreate`
      0x5c4680, hors de l'index ; la section prop des `.ipb`, `FUN_00438d90`) : que l'arbre de la porte offre lui-même `PedPropActions` au
@@ -161,6 +174,14 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- `1_07` se termine réussie à 151,47 s (06.11, séance 5 ; d4c9c00, 5e4adb0, c5a6b07, 03efeb4, 7d694fe, 168133b, e6381ce, c53b94e, f7687d6) : `PropTargetInteractive` (`FUN_00655110`, le relevé et le
+  choix de `TargetProp` mis en commun), `PickupCreateFromPed` (0x5d0cc0, `FUN_00443d90` : `CRamassages::CreerDuPieton`), `PedHasAlly`
+  (0x5cd730), `PedIsModel` (0x5c92a0), `PlayerUnequip` (`FUN_0055c780`), `PlayerSetPosSimple` (0x5d2bd0), `PlayerFaceHeadingNow`
+  (0x5c7360), `PAnimDelete` (0x5c4930), `FUN_00477ab0` (`CScriptPedPool::CibleDeGenre` : `FaceTarget` et `SeekEntityPosition` vers
+  l'objet visé et l'allié), la barre de santé secondaire (`src/hud/BarreSante.h` : `PedShowHealthBar` 0x5ca5d0, `PedHideHealthBar`
+  0x5c6770, `FUN_00553690`, `FUN_00551380`, `FUN_005513b0`), `PedMakeMissionChar` (0x5ca890, `FUN_004770a0`), `PedStopSocializing`
+  (0x5cdbf0, `FUN_00490f50`) ; `AreaClearAllPeds` (0x5b7e70) recréée dans src, pas encore branchée.
 
 - `1_07` va jusqu'à la porte du garage (06.11, séance 4 ; 1054924, bebd02c, de6c457, 6fcb4cb, d6444c1) : `PAnimCreate` (`CObjetsAnimes::CreerParScript`, la matrice et
   `FUN_0044cd20` sans les conditions de `FUN_00416540`), `PedFindInAreaObject` (0x5d0a30), `CreatePersistentEntity` (0x5bd090 : les
