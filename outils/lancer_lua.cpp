@@ -42,6 +42,7 @@
 #include "../src/objects/ObjectData.h"
 #include "../src/objects/ObjetsAnimes.h"
 #include "../src/objects/Collectibles.h"
+#include "../src/objects/Ramassages.h"
 #include "../src/core/IplFile.h"
 #include "../src/anim/Hxd.h"
 #include "../src/anim/AnimGroups.h"
@@ -207,14 +208,11 @@ static std::vector<CGestionnaireHache> gestionnairesHaches;
 static size_t capaciteHaches = 10;
 static int objetVise = -1;   // l'objet que le joueur vise (--viser-objet), sa poignée ; -1 aucun
 
-// --- Les ramassages (CPickups : 300 entrées de 0x48 octets dès 0xc0a0f8 ; l'octet +0x46, son bit 3 « prise » ; le mot +0x40, sa
-// génération) ---
-// FUN_00443af0 prend la première entrée libre (300 au plus, -1 sinon) ; la poignée est l'indice | la génération << 16
-// (FUN_00443e90 la vérifie). L'outil garde le modèle, la position, le nom de sa fiche de ramassage et l'objet script qui l'a créé
-// (FUN_005db7e0, FUN_005d9760 : il est retiré avec la mission) ; la génération commence à 1 et monte à chaque création (supposé).
-struct CRamassage { bool pris = false; int32 modele = -1; CVector pos; std::string fiche; uint16 generation = 0; int32 script = -1; };
-static CRamassage ramassages[300];
+// --- Les ramassages (src/objects/Ramassages : CPickups, 300 entrées de 0x48 octets dès 0xc0a100) ---
+// L'outil note en plus l'objet script qui a créé chacun (FUN_005db7e0, FUN_005d9760 : il est retiré avec la mission).
+static CRamassages ramassages;
 static CObjetsJoueur objetsJoueur;   // les objets du joueur (DAT_00cf0060, src/peds/Armes)
+static CCollectibles collectibles;   // les collectibles (CCollectiblesMgr, 0xbceb50, src/objects/Collectibles)
 
 // Le nom d'un modèle d'arme ou d'objet (le +4 de son modelinfo est son HashString), nil sinon.
 static const std::string *
@@ -1838,7 +1836,8 @@ AvancerMission(lua_State *L)
 			{
 				std::vector<int> partis;
 				for(int i = 1; i < SCRIPT_PED_POOL_SIZE; i++) if(const CScriptPed *p = pietons.Acceder(i)) if(p->script == mission.script) partis.push_back(i);
-				for(CRamassage &r : ramassages) if(r.pris && r.script == mission.script) r.pris = false;   // FUN_005d9760
+				for(int i = 0; i < CRamassages::kTaille; i++)
+					if(ramassages.entrees[i].Pris() && ramassages.entrees[i].script == mission.script) ramassages.Retirer(i);   // FUN_005d9760
 				int n = pietons.SupprimerDuScript(mission.script);
 				for(int h : partis) OublierControleurs(h);
 				if(n) printf("        %d piéton(s) laissé(s) par la mission, libéré(s)\n", n);
@@ -2488,8 +2487,9 @@ CreerPed(lua_State *L, const char *quoi, int32 modele, const CVector &pos, float
 
 // --- Les armes : leurs types et l'inventaire (src/peds/Armes) ---
 
-// Une fiche ObjectButes lue en CTypeArme : +0x18 (24) le genre, +0x1c (28) l'arbre, +0x34 (52) le maximum, +0x54 (84) le nom
-// des munitions, +0x64 (100), les octets +0x68 (104) et +0x69 (105).
+// Une fiche ObjectButes lue en CTypeArme : +0x18 (24) le genre, +0x1c (28) l'arbre, +0x25 (37) le ramassage au contact, +0x34 (52)
+// le maximum, +0x44 (68) le décalage en hauteur des ramassages, +0x54 (84) le nom des munitions, +0x64 (100), les octets +0x68 (104)
+// et +0x69 (105).
 static CTypeArme
 LireTypeArme(const CActionTrack &t, const std::map<uint16, std::string> &chaines)
 {
@@ -2501,6 +2501,8 @@ LireTypeArme(const CActionTrack &t, const std::map<uint16, std::string> &chaines
 	const CActionAttribut *b = t.Champ(104), *c = t.Champ(105);
 	a.tir68 = b && b->valeur[0]; a.tir69 = c && c->valeur[0];
 	const CActionAttribut *l = t.Champ(43); a.tireLachee = l && l->valeur[0];
+	const CActionAttribut *ac = t.Champ(37); a.auContact = ac && ac->valeur[0];
+	if(const CActionAttribut *dz = t.Champ(68)) if(dz->taille >= 4) memcpy(&a.decalageRamassage, dz->valeur, 4);
 	auto it = chaines.find(28); if(it != chaines.end()) a.arbre = it->second;
 	it = chaines.find(84); if(it != chaines.end()) a.nomMunition = it->second;
 	it = chaines.find(80); if(it != chaines.end()) a.nomProjectile = it->second;
@@ -3025,32 +3027,21 @@ GetPointListSize(lua_State *L)
 }
 
 // PickupCreateXYZ(modèle, x, y, z[, fiche]) (0x5d0b90) : avec cinq arguments, la fiche de ramassage du nom (FUN_005fa7b0, FUN_005d0b20 :
-// PickupData/<nom> dans l'arbre des réglages) ; FUN_00443e90(x, y, z, modèle, 1, fiche, 0, 0) → FUN_00443af0 (sans fiche, celle du type
-// de l'arme, +0x88, ou la fiche par défaut DAT_00c0f560) ; la poignée notée à l'objet script courant (FUN_005db7e0, FUN_005d9760) et
-// rendue. L'outil garde le nom de la fiche, sans la lire.
+// PickupData/<nom> dans l'arbre des réglages) ; FUN_00443e90(x, y, z, modèle, 1, fiche, 0, 0) → FUN_00443af0(x, y, z, modèle, fiche, 0,
+// 0, 0, 0) (sans fiche, celle du type de l'arme, +0x88, ou la fiche par défaut DAT_00c0f560), puis le bit 2 de +0x46 au cinquième
+// argument (1 : ramassé à la main) ; la poignée notée à l'objet script courant (FUN_005db7e0, FUN_005d9760) et rendue. L'outil garde
+// le nom de la fiche, sans la lire (son octet +0x18, le bit 0, est supposé nul).
 static int
 PickupCreateXYZ(lua_State *L)
 {
 	Journal("PickupCreateXYZ", L, 1);
-	int i = 0;
-	while(i < 300 && ramassages[i].pris) i++;
-	if(i >= 300){ lua_pushnumber(L, -1); return 1; }
-	CRamassage &r = ramassages[i];
-	r.pris = true; r.modele = (int32)luaL_optnumber(L, 1, -1);
-	r.pos = CVector((float)luaL_optnumber(L, 2, 0), (float)luaL_optnumber(L, 3, 0), (float)luaL_optnumber(L, 4, 0));
-	r.fiche = lua_gettop(L) == 5 && lua_isstring(L, 5) ? lua_tostring(L, 5) : "";
-	r.generation++;
-	r.script = scriptCourant;
-	lua_pushnumber(L, (double)(i | (uint32)r.generation << 16));
+	int32 m = (int32)luaL_optnumber(L, 1, -1);
+	CVector pos((float)luaL_optnumber(L, 2, 0), (float)luaL_optnumber(L, 3, 0), (float)luaL_optnumber(L, 4, 0));
+	std::string fiche = lua_gettop(L) == 5 && lua_isstring(L, 5) ? lua_tostring(L, 5) : "";
+	int32 h = ramassages.Creer(pos, m, fiche, false, false, 0, 0, false, armes.Type(m).decalageRamassage);
+	if(CRamassage *r = ramassages.Entree(h)){ r->drapeaux |= RAMASSAGE_A_LA_MAIN; r->script = scriptCourant; }
+	lua_pushnumber(L, h);
 	return 1;
-}
-
-static CRamassage *
-RamassageParPoignee(int64_t h)
-{
-	if(h < 0) return nil;
-	uint32 i = (uint32)h & 0xffff, g = (uint32)h >> 16;
-	return i < 300 && ramassages[i].pris && ramassages[i].generation == g ? &ramassages[i] : nil;
 }
 
 // PickupDelete(poignée) (0x5d0d60, hors de l'index, non lu) : l'outil libère l'entrée.
@@ -3058,7 +3049,7 @@ static int
 PickupDelete(lua_State *L)
 {
 	Journal("PickupDelete", L, 1);
-	if(CRamassage *r = RamassageParPoignee(lua_isnumber(L, 1) ? (int64_t)lua_tonumber(L, 1) : -1)) r->pris = false;
+	ramassages.Retirer(ramassages.Indice(lua_isnumber(L, 1) ? (int32)lua_tonumber(L, 1) : -1));
 	return 0;
 }
 
@@ -3071,15 +3062,16 @@ Ramasser(void)
 {
 	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
 	int mieux = -1; float d2 = 4.0f;
-	for(int i = 0; i < 300; i++){
-		if(!ramassages[i].pris) continue;
-		float dx = ramassages[i].pos.x - j->pos.x, dy = ramassages[i].pos.y - j->pos.y, dz = ramassages[i].pos.z - j->pos.z;
+	for(int i = 0; i < CRamassages::kTaille; i++){
+		const CRamassage &q = ramassages.entrees[i];
+		if(!q.Pris() || !(q.drapeaux & RAMASSAGE_A_LA_MAIN)) continue;
+		float dx = q.pos.x - j->pos.x, dy = q.pos.y - j->pos.y, dz = q.pos.z - j->pos.z;
 		float e = dx * dx + dy * dy + dz * dz;
 		if(e < d2){ d2 = e; mieux = i; }
 	}
 	if(mieux < 0){ printf("%6.2f s  le joueur ne trouve rien à ramasser à moins de 2 m\n", maintenant / 1000.0); return; }
-	CRamassage &r = ramassages[mieux];
-	r.pris = false;
+	const CRamassage r = ramassages.entrees[mieux];
+	ramassages.Retirer(mieux);
 	printf("%6.2f s  le joueur ramasse %d (modèle %d, %s) en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, mieux | (int)r.generation << 16, r.modele,
 	       NomDArme(r.modele) ? NomDArme(r.modele)->c_str() : "?", r.pos.x, r.pos.y, r.pos.z);
 	if(armes.Type(r.modele).inventaire != 0) inventaire.Donner(armes, SCRIPT_PED_JOUEUR, r.modele);   // une arme qui se range
@@ -3091,8 +3083,7 @@ Ramasser(void)
 	AppliquerArmes(SCRIPT_PED_JOUEUR, c);
 }
 
-// --- Les collectibles (src/objects/Collectibles : CCollectiblesMgr, l'objet 0xbceb50) ---
-static CCollectibles collectibles;
+// --- Les collectibles (src/objects/Collectibles : CCollectiblesMgr, l'objet 0xbceb50, déclaré avec les ramassages) ---
 static int rappelCollectibles = LUA_NOREF;   // +0x1e8c (0xbd09dc) : CollectiblesOnCollectedCallback
 
 // CGame::Initialise (FUN_0042ee90, après CPickups::Init) → FUN_00428bf0 → FUN_004287a0 : config\dat\colctbls.dat lu en entier

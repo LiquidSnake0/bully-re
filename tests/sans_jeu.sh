@@ -4,7 +4,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 ko=0
-for t in test_armes test_camera test_cameramgr test_clothing test_collectibles test_hud test_luaapi test_marche test_objetsanimes test_patrouilles test_scriptpeds test_speech test_world test_zones; do
+for t in test_armes test_camera test_cameramgr test_clothing test_collectibles test_hud test_luaapi test_marche test_objetsanimes test_patrouilles test_ramassages test_scriptpeds test_speech test_world test_zones; do
 	if "build/tests/$t" >/dev/null 2>&1; then echo "ok  $t"; else echo "KO  $t"; ko=$((ko+1)); fi
 done
 echo "tests sans le jeu : $ko en erreur"
