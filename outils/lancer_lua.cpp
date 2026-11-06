@@ -2897,6 +2897,29 @@ AvancerObjets(void)
 	}
 }
 
+// PropInteract (PropInteractTrack 0x935440 ; lancement FUN_00656120, lu dans l'index) : l'objet visé du piéton (+0x438), s'il est
+// animé (les 3 bits bas de +0x108 à 6) et offre une action (+0x230) : son drapeau 10 à 0 (FUN_004ea300), l'action descendue dans le
+// contexte du piéton (son emplacement +0x4c, jugée pour lui) et jouée par son contrôleur (FUN_005f4490), puis FUN_004ed6e0 (lu dans
+// l'index) : l'objet prend le piéton (+0x234), le piéton l'objet (+0x548) et +0x1520 à 1 ; FUN_004eac70(piéton, 3 pour le joueur,
+// 2 sinon, 1) et FUN_0048be60 (le modèle noté au composant +0x3bc) ne sont pas suivis.
+static void
+Interagir(int ped, CActionController &c)
+{
+	CScriptPed *p = pietons.Acceder(ped);
+	CObjetAnime *o = p ? objetsAnimes.Objet(p->objetVise) : nil;
+	if(o == nil || o->actionPieton == nil) return;
+	float t = maintenant / 1000.0f;
+	objetsAnimes.PoserDrapeau(p->objetVise, 10, false);
+	CJugeOutil juge(ped, t);
+	const CActionNode *n = arbres.Choisir(o->actionPieton, juge);
+	if(n) c.Jouer(arbres, n, t, &juge);
+	o->utilisateur = ped;
+	p->objetUtilise = p->objetVise;
+	p->utiliseObjet = true;
+	printf("%6.2f s  PropInteract : le piéton %d se sert de l'objet animé du déclencheur %d : %s\n", t, ped, o->declencheur,
+	       n ? arbres.CheminDe(n).c_str() : "rien n'aboutit");
+}
+
 // AreaRegisterAnimProps() (0x5b6d60 → 0x438700) : la table DAT_00bd3e78 jusqu'à son compte DAT_00bd5c54, que rien n'augmente
 // (vérifié à l'assembleur : écrit seulement en 0x416b07, remis à 0) ; elle ne crée rien.
 static int
@@ -6840,6 +6863,15 @@ main(int argc, char **argv)
 			if(CScriptPed *p = pietons.Acceder(c.first))
 				for(const CActionController::Drapeau &d : c.second.drapeauxPoses) if(d.numero < SCRIPT_PED_DRAPEAUX) p->drapeaux[d.numero] = d.valeur;
 			c.second.drapeauxPoses.clear();
+			// PropFlags (FUN_00655b50) : l'objet du contexte du piéton (FUN_004eaa60). PropSetPedAction (FUN_006561a0) écrit dans le
+			// +0xc du contexte, qu'un contexte de piéton n'a pas : rien. PropInteract (FUN_00656120) : Interagir.
+			{
+				int o = CJugeOutil(c.first, maintenant / 1000.0f).ObjetDuContexte();
+				for(const CActionController::DrapeauObjet &d : c.second.drapeauxObjetPoses) objetsAnimes.PoserDrapeau(o, d.numero, d.valeur);
+				c.second.drapeauxObjetPoses.clear();
+				c.second.actionsObjetPosees.clear();
+				for(; c.second.interactionsLancees > 0; c.second.interactionsLancees--) Interagir(c.first, c.second);
+			}
 			AppliquerMorts(c.first, c.second);
 			AppliquerDegatsCible(c.first, c.second);
 			AppliquerDroits(c.first, c.second);

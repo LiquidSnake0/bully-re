@@ -203,6 +203,18 @@ public:
 	std::vector<DrapeauObjet> drapeauxObjet, drapeauxObjetPoses;
 	struct ActionObjet { float entree; const CActionNode *noeud; bool fait; };
 	std::vector<ActionObjet> actionsObjet, actionsObjetPosees;
+	// - Sync (SyncTrack 0x938208, créateur 0x64abb0 ; lancement FUN_00615f00, mise à jour FUN_00616170, lus dans l'index) : le
+	//   piéton se cale sur un point de synchronisation : le genre +0x28 (40 : 2 le partenaire +0x430, 3 l'objet du contexte par
+	//   FUN_004eaab0, 4 et 6 un cap seulement), le point +0x2c (44, FeetSync…) ; avec +0x30 (48) non nul, la mise à jour recale
+	//   le piéton (FUN_00615800) et rend vrai tant qu'il n'est pas en place. L'outil n'a pas les points des modèles
+	//   (FUN_00467c30) : la piste ne déplace pas le piéton et meurt à sa première mise à jour (supposé : déjà en place).
+	struct Synchro { float entree; int32 genre; bool lancee, vivante, retient; };
+	std::vector<Synchro> synchros;
+	// - PropInteract (PropInteractTrack 0x935440, créateur 0x641380 ; lancement FUN_00656120) : le piéton se sert de son objet
+	//   visé, que l'appelant traite (`interactionsLancees` : celles lancées à cette image) ; le lancement rend faux.
+	struct Interaction { float entree; bool fait; };
+	std::vector<Interaction> interactions;
+	int interactionsLancees = 0;
 	// Le contrôleur d'un objet animé dans l'outil : son nœud ne finit pas et ne cède à rien (pas d'Opportunity, de Sequence ni de
 	// descente) ; seules ses pistes se lancent. Le moteur fait avancer le contrôleur de l'objet (+0x1bc, FUN_005f49a0 depuis
 	// FUN_004edec0) avec sa racine (+0x228) : non suivi.
