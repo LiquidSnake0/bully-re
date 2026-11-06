@@ -605,6 +605,9 @@ main(void)
 		VERIF(g.CibleDeGenre(algie, 4).objet == 7 && g.CibleDeGenre(algie, 4).point == 3 && g.CibleDeGenre(algie, 4).pieton == -1);
 		VERIF(g.CibleDeGenre(algie, 1).pieton == autre && g.CibleDeGenre(algie, 9).pieton == -1 && g.CibleDeGenre(algie, 9).objet == -1);
 		a->objetVise = -1; a->syncVise = 0; a->cibleDePrise = -1;
+		// PedStopSocializing : l'état et le partenaire à 0, l'octet +0x224 réduit à ses bits 5 et 6 (le 6 sans jeton effacé aussi).
+		a->etatSocial = 4; a->partenaireSocial = autre; a->drapeauxSociaux = 0xff;
+		VERIF(g.ArreterSocial(algie) && a->etatSocial == 0 && a->partenaireSocial == -1 && a->drapeauxSociaux == 0x20 && !g.ArreterSocial(-1));
 		// PedMakeMissionChar et AreaClearAllPeds : un piéton rendu à la population est vidé, sauf s'il redevient de mission.
 		VERIF(g.RendreAmbiant(prefet) && g.AmbiantsAVider().size() == 1 && g.AmbiantsAVider()[0] == prefet);
 		VERIF(g.RendreMission(prefet, 3) && g.Acceder(prefet)->script == 3 && g.AmbiantsAVider().empty() && !g.RendreMission(prefet, 4));

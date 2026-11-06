@@ -5431,6 +5431,15 @@ PedMakeTargetable(lua_State *L)
 	return 0;
 }
 
+// PedStopSocializing(ped) (0x5cdbf0, CScriptPedPool::ArreterSocial) : l'échange social du piéton arrêté. Ne rend rien.
+static int
+PedStopSocializing(lua_State *L)
+{
+	Journal("PedStopSocializing", L, 1);
+	if(lua_isnumber(L, 1)) pietons.ArreterSocial((int)lua_tonumber(L, 1));
+	return 0;
+}
+
 // PedMakeMissionChar(ped) (0x5ca890, CScriptPedPool::RendreMission) : un piéton de la population redevient un piéton de mission, que le
 // script courant ramassera. Ne rend rien.
 static int
@@ -7429,6 +7438,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedRecruitAlly", PedRecruitAlly);
 	lua_register(L, "PedHasAlly", PedHasAlly);
 	lua_register(L, "PedMakeMissionChar", PedMakeMissionChar);
+	lua_register(L, "PedStopSocializing", PedStopSocializing);
 	lua_register(L, "PedIsModel", PedIsModel);
 	lua_register(L, "PedDismissAlly", PedDismissAlly);
 	lua_register(L, "PedCanSeeObject", PedCanSeeObject);

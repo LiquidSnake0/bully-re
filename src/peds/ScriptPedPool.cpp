@@ -812,6 +812,18 @@ CScriptPedPool::AmbiantsAVider(void) const
 }
 
 bool
+CScriptPedPool::ArreterSocial(int h)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return false;
+	p->partenaireSocial = -1;
+	p->drapeauxSociaux &= 0x60;   // & 0xe0 puis & 0x7f
+	p->etatSocial = 0;
+	p->drapeauxSociaux &= 0xbf;   // le bit 6 : le +0x1e28 du piéton (non suivi) vaut 0, sous 1
+	return true;
+}
+
+bool
 CScriptPedPool::RendreAmbiant(int h)
 {
 	CScriptPed *p = Acceder(h);
