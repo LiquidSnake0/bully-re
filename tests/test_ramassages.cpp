@@ -80,6 +80,15 @@ main(void)
 	VERIF(q.PrendreObjet(q.Indice(t2), 4, m, o, col, &r1, &a) == 0 && !a && q.Entree(t2) != nil && !col.Pris(0));
 	VERIF(q.PrendreObjet(q.Indice(t2), 0, m, o, col, &r1, &a) == 0);
 
+	// Laissé par un piéton (FUN_00443d90) : 0,45 m au-dessus de lui, plus le décalage du type, et pris au contact (bits 0 et 2
+	// effacés, même quand la fiche porte son octet +0x18).
+	static CRamassages pd;
+	int32 s = pd.CreerDuPieton(CVector(10, 20, 6), 502, "HealthBute", 0.1f);
+	const CRamassage *sr = pd.Entree(s);
+	VERIF(sr && sr->modele == 502 && sr->fiche == "HealthBute" && sr->pos.z > 6.5499f && sr->pos.z < 6.5501f && sr->pos.x == 10 && sr->pos.y == 20);
+	VERIF(sr && (sr->drapeaux & (RAMASSAGE_FICHE | RAMASSAGE_A_LA_MAIN)) == 0 && sr->Pris() && !(sr->drapeaux & RAMASSAGE_COLLECTIBLE));
+	VERIF(pd.AuContact(pd.Indice(s), CVector(10.5f, 20, 6), 100.0f, true));
+
 	// ObjectRemovePickupsInTrigger : les entrées prises de ce modèle (ou toutes pour -1) dans le déclencheur.
 	static CRamassages z;
 	z.Creer(CVector(1, 1, 0), 500, "", false, true, 0, 0, false);

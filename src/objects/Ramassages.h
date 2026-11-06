@@ -65,6 +65,12 @@ public:
 	// placement qui l'a posé) en +0x45 ; une poignée valable reçoit l'indice du collectible en +0x42, puis FUN_004453f0 prépare l'objet
 	// visible, qui reçoit +0x3c en +0x228 et +0x45 en +0x110 (FUN_004386f0 le range avec les entités de son placement) : non suivis.
 	int32 CreerDuCollectible(const CVector &pos, int32 modele, int16 indice, uint32 hache, uint8 octet110, float decalageZ);
+	// FUN_00443d90(piéton, modèle, fiche) (lu à l'assembleur de 0x443d90 à 0x443e4f) : FUN_00443af0 à la position du piéton (sa
+	// matrice +0x14, +0x30, sinon +4) plus (0, 0, 0,45) (FUN_00412850, _DAT_009053f0), du modèle et de la fiche, sans collectible ni
+	// les quatre derniers arguments ; une poignée valable (l'entrée prise, bit 3, et la même génération) est rangée dans la liste du
+	// piéton (+0x1da4, son nombre en +0x1db0 : non suivie) et perd les bits 0 (la fiche) et 2 (« à la main ») : un ramassage laissé
+	// par un piéton se prend au contact. Rend la poignée (le registre eax de FUN_00443af0, intact jusqu'au retour), -1 sinon.
+	int32 CreerDuPieton(const CVector &pieton, int32 modele, const std::string &fiche, float decalageZ);
 	// FUN_00445710 (la mise à jour d'un ramassage pris, depuis FUN_00445970 ; lue dans l'index), la prise au contact : le joueur à
 	// moins de 40 m au plan (_DAT_009053a4 ; FUN_0041a380 ne compte que x et y), le ramassage actif (+0x44), l'objet visible prêt
 	// (FUN_004453f0 : il rend vrai quand le modèle est chargé, supposé tout de suite), pas à la main (bit 2), le +0x149c du joueur non

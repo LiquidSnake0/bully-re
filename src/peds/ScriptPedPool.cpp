@@ -562,6 +562,36 @@ CScriptPedPool::PremierMeneur(int h) const
 }
 
 bool
+CScriptPedPool::AUnAllie(int h) const
+{
+	const CScriptPed *p = Acceder(h);
+	return p != nil && (p->meneur >= 0 || p->suiveur >= 0);
+}
+
+bool
+CScriptPedPool::EstDuModele(int h, int32 modele) const
+{
+	const CScriptPed *p = Acceder(h);
+	return p != nil && (float)(int16)p->modele == (float)modele;
+}
+
+CScriptPedPool::Cible
+CScriptPedPool::CibleDeGenre(int h, int genre) const
+{
+	Cible c;
+	const CScriptPed *p = Acceder(h);
+	if(p == nil) return c;
+	switch(genre){
+	case 0: c.pieton = p->verrou; break;
+	case 1: c.pieton = p->cibleDePrise; break;
+	case 4: c.objet = p->objetVise; c.point = p->syncVise; break;
+	case 0x10: c.pieton = p->suiveur >= 0 ? p->suiveur : p->meneur; break;
+	default: break;
+	}
+	return c;
+}
+
+bool
 CScriptPedPool::DansSesSuiveurs(int meneur, int autre) const
 {
 	const CScriptPed *p = Acceder(meneur);
@@ -757,6 +787,39 @@ CScriptPedPool::PoserStat(int h, int n, int32 v)
 		p->santeMax = (float)v;
 		if(p->santeMax < p->sante) p->sante = p->santeMax;
 	}else if(n == 5) p->regeneration = (float)v;
+	return true;
+}
+
+bool
+CScriptPedPool::RendreMission(int h, int32 script)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil || p->script != -1) return false;
+	p->script = script;
+	return true;
+}
+
+std::vector<int>
+CScriptPedPool::AmbiantsAVider(void) const
+{
+	std::vector<int> v;
+	for(int h = SCRIPT_PED_POOL_SIZE - 1; h >= 0; h--){
+		const CScriptPed *p = Acceder(h);
+		if(p == nil || p->script != -1 || h == SCRIPT_PED_JOUEUR || p->type == SCRIPT_PED_TYPE_JOUEUR) continue;
+		v.push_back(h);
+	}
+	return v;
+}
+
+bool
+CScriptPedPool::ArreterSocial(int h)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return false;
+	p->partenaireSocial = -1;
+	p->drapeauxSociaux &= 0x60;   // & 0xe0 puis & 0x7f
+	p->etatSocial = 0;
+	p->drapeauxSociaux &= 0xbf;   // le bit 6 : le +0x1e28 du piéton (non suivi) vaut 0, sous 1
 	return true;
 }
 

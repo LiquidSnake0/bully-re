@@ -346,6 +346,7 @@ struct CScriptPed {
 	// le mettent à 1 ; FUN_0047cee0 ne dépense pas la réserve de sprint (+0x18d0) avec lui, ni quand le meneur est le joueur.
 	bool sprintSansFin = false;
 	bool teleportable = true;    // +0x1c99 : PedCanTeleportOnAreaTransition (0x5cd080) ; 1 depuis le constructeur (0x480465)
+	int32 mot135c = 0;           // +0x135c : PedShowHealthBar le met à 0 en montrant la barre, à 1 avec « non » (non lu ailleurs)
 	int32 groupe14ec = 0;        // +0x14ec : le troisième argument de PedRecruitAlly (FUN_005d8f20), chez les deux ; 0 au renvoi
 	// Le piéton critique pour la mission (PedSetMissionCritical, 0x5cca10) : l'octet +0x141c, le rappel Lua +0x18e8 (une
 	// fonction gardée par lancer_lua) et +0x1420 ; FUN_004782a0 appelle le rappel quand la santé tombe à 0.
@@ -569,6 +570,22 @@ public:
 	bool RenvoyerAllie(int meneur, int allie);
 	// FUN_00485410 : le premier meneur de la chaîne (en remontant les +0x2f4), -1 sans meneur.
 	int PremierMeneur(int handle) const;
+	// FUN_00477ab0(genre, &point) (CPed, lu dans l'index) : l'entité qu'un piéton vise selon un genre, celle des pistes FaceTarget
+	// (FUN_00620dc0, le genre +0x20) et SeekEntityPosition (FUN_0062a720, le genre +0x1c), de FUN_005feed0, FUN_005ff1d0… : 0 sa cible
+	// (PedGetTargetPed : dans l'outil, la cible verrouillée), 1 son partenaire de prise (+0x155c), 4 son objet visé (+0x438, et son
+	// point +0x43c rendu dans `point`), 0x10 son allié (FUN_004851e0 : un meneur vise son suiveur +0x2f8 ; sinon FUN_004851d0 : un
+	// suiveur vise son meneur +0x2f4) ; les autres genres ne sont pas suivis (2 FUN_0048bf20, 3 +0x430, 6 le ramassage de son objectif
+	// de type 0x17, 7 +0x544, 8 FUN_004d7630, 9 +0x4f0 + 4 × (+0x504), 10 FUN_004d6170, 0xc +0xd70, 0xd FUN_00496b60, 0xf +0x11ec) et
+	// un genre inconnu ne vise rien. Rend un piéton (`pieton`) ou un objet animé (`objet`), -1 sinon.
+	struct Cible { int pieton = -1; int objet = -1; uint32 point = 0; };
+	Cible CibleDeGenre(int handle, int genre) const;
+	// PedHasAlly(ped) (0x5cd730, lue à l'assembleur de 0x5cd730 à 0x5cd78c) : le piéton du genre 2 de l'objet script (FUN_005c7220) ;
+	// vrai s'il a un meneur (+0x2f4) ou un suiveur (+0x2f8), faux sans piéton (FUN_005d8450 rend toujours un booléen).
+	bool AUnAllie(int handle) const;
+	// PedIsModel(ped, modèle) (0x5c92a0, lue à l'assembleur de 0x5c92a0 à 0x5c933d) : sans piéton, faux ; sinon le modèle du
+	// piéton (le mot signé +0x10e) et l'entier du second argument (FUN_005d8200), tous deux passés en flottants et comparés
+	// (fucompp : égaux, vrai).
+	bool EstDuModele(int handle, int32 modele) const;
 	// FUN_004853b0 (ecx = le meneur + 0x2f0) : `autre` est dans la chaîne des suiveurs du meneur.
 	bool DansSesSuiveurs(int meneur, int autre) const;
 	// FUN_00485440 (ecx = le piéton + 0x2f0) : `autre` est le piéton, un de ses meneurs ou un de ses suiveurs.
@@ -653,8 +670,28 @@ public:
 	// son contrôleur arrêté, FUN_005f3f40).
 	bool IAAvance(int handle) const;
 	bool sommeilGeneral = false;   // DAT_00c2b108
+	// PedStopSocializing(ped) (0x5cdbf0, lue à l'assembleur de 0x5cdbf0 à 0x5cdc1d : FUN_00490f50 sur le composant social +0xb44 du
+	// piéton du genre 2 ; le jeu ne vérifie pas le piéton) ; FUN_00490f50 (lu dans l'index ; Ghidra le nomme PedStopSocializing) :
+	// FUN_004906e0 (l'échange en cours avec le partenaire, non suivi), le partenaire (+0x70) à 0, les bits 0 à 4 et 7 de l'octet +0x224,
+	// le bit 7 de +0x225 et le bit 0 de +0x226 effacés, l'état (+0x6c) et +0x118 à 0, +0xe0, +0xe4 et +0xe8 à 0x19, +0xfc à 0 ; le bit
+	// 6 de +0x224 effacé si le +0x1e28 du piéton (+4) est sous 1 (FUN_00474940(0), FUN_004749e0(0) ; l'outil ne le suit pas : 0) ; le bit 1 de +0x225 si
+	// FUN_004748e0 est faux ; les bits 0, 2, 3 et 6 de +0x225 et 1, 2 et 4 de +0x226 effacés, +0x12c à -1 si +0x226 avait le bit 1 sans
+	// le bit 2, +0x134 à 0, +0x1f4 à 0x19, FUN_0048dc60 et FUN_0048dbc0 (la conversation), +0x20c à 0x76c (1 900), +0xec à 3 et le
+	// +0x1494 du piéton à 0. L'outil garde l'état, le partenaire et l'octet +0x224 (drapeauxSociaux). Faux sans piéton.
+	bool ArreterSocial(int handle);
 	// lua_PedMakeAmbient (0x5ca850) : rendu à la population, plus ramassé par son script.
 	bool RendreAmbiant(int handle);
+	// PedMakeMissionChar(ped) (0x5ca890, lue à l'assembleur de 0x5ca890 à 0x5ca8d9) : FUN_0047b690(2, 1, 1) → FUN_004770a0(2, 10, 1,
+	// 1) (CPed : qui l'a créé, l'octet +0x1570 ; lu dans l'index) : rien si l'octet vaut déjà 2 (un piéton de mission) ; sinon les
+	// comptes de la population (FUN_00476470, FUN_0049fcf0) et l'octet à 2 ; puis le piéton est noté à l'objet script courant
+	// (FUN_005db7e0, FUN_005d94d0), qui le ramasse à la fin de la mission. Dans l'outil, un piéton de mission est un piéton qui a un
+	// script : un piéton rendu à la population (-1) passe au script `script`. Vrai s'il change.
+	bool RendreMission(int handle, int32 script);
+	// AreaClearAllPeds() (0x5b7e70, lue à l'assembleur de 0x5b7e70 à 0x5b7ecb) : le pool des piétons (DAT_00c0f5f0) parcouru depuis
+	// la fin ; chaque piéton qui n'est ni de mission (l'octet +0x1570 à 2), ni le joueur (+0x1310 à 0xd), ni dans la liste de
+	// DAT_00bcd098 (FUN_00424490 : jusqu'à +0x1804 entrées de 0x100 octets, la poignée en tête ; non suivie, vide) est détruit (la
+	// première méthode de sa vftable, avec 1). Rend les poignées à détruire, dans cet ordre.
+	std::vector<int> AmbiantsAVider(void) const;
 	// Une image de dt secondes : marches, poursuites et coups ; pose les drapeaux d'événements. La régénération
 	// (FUN_00472ff0, à chaque image depuis FUN_004812d0) : entre 0 et le maximum, la santé gagne
 	// régénération / 100 × 0,02 × CTimer::ms_fTimeStep, le pas valant 1 pour 20 ms (FUN_0045b810) : régénération / 100

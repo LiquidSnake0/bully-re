@@ -57,6 +57,7 @@
 #include "../src/hud/ObjectifsMission.h"
 #include "../src/hud/ButtonHistory.h"
 #include "../src/hud/Marqueurs.h"
+#include "../src/hud/BarreSante.h"
 #include "../src/render/CameraMgr.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
@@ -248,6 +249,7 @@ NomDArme(int32 a)
 static CAreaManager zones;
 static CCameraMgr cameras;   // le gestionnaire de caméras (0xc3cc68) : le mode 1 au démarrage (FUN_004f35d0)
 static CHudComponents hud;   // DAT_00c674a0 : les 48 composants du HUD, tous cachés au démarrage (FUN_0053cc70)
+static CBarreSante barreSante;   // le composant 12 (HUDSecondaryHealthBar, DAT_00c674d0), src/hud/BarreSante.h
 // Le fondu de la caméra (CameraFade, 0x4f1980), réduit à ce que la machine des zones et les scripts en
 // attendent : une durée, un sens, et « fini ». Les durées par défaut sont celles d'AreaTransitionButes (DAT_020c8910,
 // lue dans Globals.cat au démarrage) : +0x18 pour le fondu au noir (0,65 s), +0x1c pour le retour (0,5 s) ;
@@ -436,6 +438,42 @@ NomDeModele(int32 m)
 }
 
 static bool ObjetNonUtilisable(int i);   // l'objet animé joue NotUseable (FUN_005f46a0 sur son contrôleur)
+
+// FUN_004991e0 (le relevé des objets proches d'un piéton, depuis TargetProp et PropTargetInteractive ; la branche des piétons de
+// l'IA, CObjetsAnimes::Relever) : rien quand le piéton se sert déjà d'un objet (+0x548) ; sinon la liste des proches (+0x450, leur
+// nombre en +0x4c8) refaite et, s'il y en a un, le repéré (+0x444, son point +0x448, sa distance +0x44c).
+static void
+ReleverObjetsProches(CScriptPed *q, float portee)
+{
+	if(q->objetUtilise >= 0) return;
+	CObjetsAnimes::Releveur r;
+	r.pos = q->pos; r.parScript = q->script >= 0;
+	auto fe = modeles.femme.find(q->modele); r.femme = fe != modeles.femme.end() && fe->second;
+	std::vector<CObjetsAnimes::Repere> proches;
+	CObjetsAnimes::Repere m = objetsAnimes.Relever(r, portee, ObjetNonUtilisable, proches);
+	q->objetsProches.clear();
+	for(const CObjetsAnimes::Repere &e : proches) q->objetsProches.push_back({e.objet, e.sync, e.distance});
+	if(m.objet >= 0){ q->objetRepere = m.objet; q->syncRepere = m.sync; q->distanceRepere = m.distance; }
+}
+
+// FUN_004979b0 sur le repéré et les proches relevés : l'objet choisi devient l'objet visé du piéton (+0x438, son point +0x43c).
+static bool
+ViserObjetChoisi(CScriptPed *q, int ped, uint32 genre, float portee, int32 modele, const char *condition, float t)
+{
+	std::vector<CObjetsAnimes::Repere> proches;
+	for(const CScriptPed::ObjetProche &e : q->objetsProches) proches.push_back({e.objet, e.sync, e.distance});
+	CObjetsAnimes::Repere repere{q->objetRepere, q->syncRepere, q->distanceRepere};
+	CObjetsAnimes::Repere c = objetsAnimes.Choisir(repere, proches, genre, portee, modele, ObjetNonUtilisable);
+	if(c.objet < 0) return false;
+	if(q->objetVise != c.objet && journalRestant > 0){
+		const CObjetAnime *o = objetsAnimes.Objet(c.objet);
+		const CTriggerZone *z = o ? donnees.ZoneParHandle(o->declencheur) : nil;
+		printf("%6.2f s  %s : le piéton %d vise l'objet animé du déclencheur %s, à %.2f m\n", t, condition, ped, z ? z->nom.c_str() : "?", c.distance);
+	}
+	q->objetVise = c.objet; q->syncVise = c.sync;
+	return true;
+}
+
 struct CJugeOutil : CJugeAction {
 	int ped; float t;
 	// Les tirages du contexte qui juge (+0x24 et les dés +0x28 à +0x34, CActionController::tirageContexte et des) : ceux
@@ -517,7 +555,7 @@ struct CJugeOutil : CJugeAction {
 		// l'objet le plus proche du modèle (FUN_00460650, FUN_00467c30, FUN_005eb6f0 : non suivi, faux). Sinon, hors du joueur, le
 		// relevé (FUN_004991e0 : rien quand le piéton se sert déjà d'un objet, +0x548 ; la liste +0x4c8 vidée ; FUN_004989f0), puis
 		// FUN_004979b0(genre, portée, modèle, 1, 0, 0) : l'objet visé (+0x438) et son point (+0x43c).
-		static const uint32 kObjetCible = ActionHash("TargetProp");
+		static const uint32 kObjetCible = ActionHash("TargetProp"), kObjetVise = ActionHash("PropTargetInteractive");
 		if(type == kObjetCible){
 			CScriptPed *q = pietons.Acceder(ped);
 			if(q == nil) return 0;
@@ -533,28 +571,27 @@ struct CJugeOutil : CJugeAction {
 			for(const char *n : kPointsDeSynchro) connu |= (ActionHash(n) & 0x7fffffff) == sync;
 			if(!connu) return 0;
 			float portee; memcpy(&portee, &mots[0], 4);
-			if(q->type != SCRIPT_PED_TYPE_JOUEUR && q->objetUtilise < 0){
-				CObjetsAnimes::Releveur r;
-				r.pos = q->pos; r.parScript = q->script >= 0;
-				auto fe = modeles.femme.find(q->modele); r.femme = fe != modeles.femme.end() && fe->second;
-				std::vector<CObjetsAnimes::Repere> proches;
-				CObjetsAnimes::Repere m = objetsAnimes.Relever(r, portee, ObjetNonUtilisable, proches);
-				q->objetsProches.clear();
-				for(const CObjetsAnimes::Repere &e : proches) q->objetsProches.push_back({e.objet, e.sync, e.distance});
-				if(m.objet >= 0){ q->objetRepere = m.objet; q->syncRepere = m.sync; q->distanceRepere = m.distance; }
-			}
-			std::vector<CObjetsAnimes::Repere> proches;
-			for(const CScriptPed::ObjetProche &e : q->objetsProches) proches.push_back({e.objet, e.sync, e.distance});
-			CObjetsAnimes::Repere repere{q->objetRepere, q->syncRepere, q->distanceRepere};
-			CObjetsAnimes::Repere c = objetsAnimes.Choisir(repere, proches, f.ChampCondition(d, 0x1c), portee, modele, ObjetNonUtilisable);
-			if(c.objet < 0) return 0;
-			if(q->objetVise != c.objet && journalRestant > 0){
-				const CObjetAnime *o = objetsAnimes.Objet(c.objet);
-				const CTriggerZone *z = o ? donnees.ZoneParHandle(o->declencheur) : nil;
-				printf("%6.2f s  TargetProp : le piéton %d vise l'objet animé du déclencheur %s, à %.2f m\n", t, ped, z ? z->nom.c_str() : "?", c.distance);
-			}
-			q->objetVise = c.objet; q->syncVise = c.sync;
-			return 1;
+			if(q->type != SCRIPT_PED_TYPE_JOUEUR) ReleverObjetsProches(q, portee);
+			return ViserObjetChoisi(q, ped, f.ChampCondition(d, 0x1c), portee, modele, "TargetProp", t);
+		}
+		// PropTargetInteractive (ConditionPropTargetInteractive 0x936838, FUN_00655110, lue à l'assembleur de 0x655110 à 0x65519d ;
+		// créateur 0x645470, 0x18 octets, FUN_00654e30 : +4 la portée, 2 par défaut (_DAT_00900bfc), +8 le genre de l'objet (un
+		// HashString, FUN_0066bd40), l'octet +0xc, +0x10 un flottant (la même valeur par défaut) et les octets +0x14 à +0x17, à 0) : sans
+		// piéton (+8 du contexte), faux ; le relevé FUN_004991e0(portée, +0xc, +0x10, +0x14) sur le composant +0x34c du piéton, sauf pour
+		// le joueur (+0x1310 à 0xd) quand +0xc est nul et la portée nulle ; un partenaire de prise (+0x155c) sans l'octet +0x17 rend
+		// faux ; sinon FUN_004979b0(genre, portée, -1, 0, +0x15, +0x16) : l'objet repéré ou l'un des proches, à moins de la portée, de
+		// n'importe quel modèle, et animé (le quatrième argument nul ne laisse passer que les entités de type 6, les 3 bits bas de
+		// +0x108), devient l'objet visé. L'outil ne relève les objets que pour les piétons de l'IA (la branche du joueur, FUN_00497ce0,
+		// n'est pas suivie) ; ses objets sont tous animés ; +0x15 (le genre DAMAGEABLE) et +0x16 (l'objet verrouillé au joueur) ne
+		// sont pas suivis.
+		if(type == kObjetVise){
+			CScriptPed *q = pietons.Acceder(ped);
+			if(q == nil) return 0;
+			float portee; memcpy(&portee, &mots[0], 4);
+			bool sansReleve = q->type == SCRIPT_PED_TYPE_JOUEUR && (f.ChampCondition(d, 0xc) & 0xff) == 0 && portee == 0.0f;
+			if(!sansReleve && q->type != SCRIPT_PED_TYPE_JOUEUR) ReleverObjetsProches(q, portee);
+			if(q->cibleDePrise >= 0 && ((f.ChampCondition(d, 0x14) >> 24) & 0xff) == 0) return 0;
+			return ViserObjetChoisi(q, ped, mots[1], portee, -1, "PropTargetInteractive", t);
 		}
 		const CScriptPed *moi = pietons.Acceder(ped);
 		// WeaponEquiped (ConditionWeaponEquiped 0x9365a4, FUN_0065bd80, lu à l'assembleur de 0x65bde9 à 0x65be1e) : sans piéton,
@@ -666,14 +703,8 @@ struct CJugeOutil : CJugeAction {
 		}
 		// ParametricTime (ConditionParametricTime 0x937ad8, FUN_005fbed0 ; créateur 0x649580) : le flottant que pointe le
 		// +0x38 du contexte (+0x157c du piéton, que seul le vélo pose) comparé à +4 par +8 (FUN_005fb750).
-		// PropTargetInteractive (0x936838, FUN_00655110 ; créateur 0x645470) : sans piéton, faux ; pour le joueur à +4 nul
-		// et octet +0xc nul, sans relevé des objets, sinon FUN_004991e0 (FUN_004989f0 range en +0x450 les objets proches,
-		// leur nombre en +0x4c8) ; un partenaire de prise (+0x155c) sans l'octet +0x17 rend faux ; puis FUN_004979b0 : l'objet
-		// visé (+0x444) ou l'un des objets relevés, à moins de +4 m (+0x44c), du modèle voulu. L'outil n'a pas d'objets dans
-		// le monde : +0x444 est nul et la liste vide, la condition est fausse.
-		static const uint32 kParametrique = ActionHash("ParametricTime"), kObjetVise = ActionHash("PropTargetInteractive");
+		static const uint32 kParametrique = ActionHash("ParametricTime");
 		if(type == kParametrique) return moi ? ComparerCondition(moi->parametrique, seuil, mots[1]) : -1;
-		if(type == kObjetVise) return 0;
 		// WeaponAmmo (FUN_0065b290) : les munitions (FUN_00486130 : 0 pour une arme sous 1) de l'arme tenue (FUN_00474aa0 :
 		// le modèle +0x10e de l'objet arme +0x1d0, sinon 0), ou avec l'octet +0xc celles de l'arme du HUD (HUDWeapons, le
 		// composant 20, +0xc0) pour le joueur seulement, comparées à +4 par +8 (FUN_005fb750). Sans arme : 0.
@@ -2170,6 +2201,20 @@ AreaRegisterAreaScript(lua_State *L)
 	return 0;
 }
 
+// PlayerSetPosSimple(x, y, z) (0x5d2bd0, lue à l'assembleur de 0x5d2bd0 à 0x5d2c5a) : les trois flottants (FUN_005d82a0) ; le joueur
+// (DAT_00c1aea8) sort du monde (la méthode +0xc de sa vftable), reçoit la position (FUN_0041c390, sans toucher au cap), ses objets de
+// rendu suivent (FUN_00443950, FUN_00465610 : le cadre de son modèle) et il rentre dans le monde (la méthode +8). Ni la zone ni le
+// gestionnaire de zones ne changent, contrairement à PlayerSetPosXYZ. Ne rend rien.
+static int
+PlayerSetPosSimple(lua_State *L)
+{
+	Journal("PlayerSetPosSimple", L, 1);
+	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	j->pos = CVector((float)luaL_optnumber(L, 1, 0), (float)luaL_optnumber(L, 2, 0), (float)luaL_optnumber(L, 3, 0));
+	if(journalRestant > 0) printf("%6.2f s  le joueur est posé en (%.2f, %.2f, %.2f) (PlayerSetPosSimple)\n", maintenant / 1000.0, j->pos.x, j->pos.y, j->pos.z);
+	return 0;
+}
+
 // PlayerSetPosXYZ(x, y, z) (0x5d1280 → 0x415fb0) : même chemin, avec le cap du joueur et la zone visible.
 static int
 PlayerSetPosXYZ(lua_State *L)
@@ -2844,6 +2889,20 @@ PoserObjetsAnimes(int zone)
 	printf("%6.2f s  objets animés : %zu créés pour la zone %d (FUN_00416540) : %s\n", maintenant / 1000.0, crees.size(), zone, liste.c_str());
 }
 
+// PAnimDelete(déclencheur) (0x5c4930, CObjetsAnimes::RetirerDuDeclencheur) : l'objet animé du déclencheur détruit ; son contrôleur
+// part avec lui (AvancerObjets ne garde que les contrôleurs des objets qui existent).
+static int
+PAnimDelete(lua_State *L)
+{
+	Journal("PAnimDelete", L, 1);
+	int d = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	if(objetsAnimes.ObjetDe(d) < 0) return 0;
+	objetsAnimes.RetirerDuDeclencheur(d);
+	const CTriggerZone *z = donnees.ZoneParHandle(d);
+	if(journalRestant > 0) printf("%6.2f s  l'objet animé du déclencheur %s est détruit (PAnimDelete)\n", maintenant / 1000.0, z ? z->nom.c_str() : "?");
+	return 0;
+}
+
 // PAnimCreate(déclencheur[, x, b]) (0x5c4680, CObjetsAnimes::CreerParScript) : l'objet animé du déclencheur, même propre à une
 // mission ; b (le troisième argument, FUN_005d8f20 s'il y en a trois ou plus) va à l'octet +0x3a8, 1 par défaut. Ne rend rien.
 static int
@@ -3237,6 +3296,29 @@ PickupCreateXYZ(lua_State *L)
 	std::string fiche = lua_gettop(L) == 5 && lua_isstring(L, 5) ? lua_tostring(L, 5) : "";
 	int32 h = ramassages.Creer(pos, m, fiche, false, false, 0, 0, false, armes.Type(m).decalageRamassage);
 	if(CRamassage *r = ramassages.Entree(h)){ r->drapeaux |= RAMASSAGE_A_LA_MAIN; r->script = scriptCourant; }
+	lua_pushnumber(L, h);
+	return 1;
+}
+
+// PickupCreateFromPed(modèle, ped[, fiche]) (0x5d0cc0, lue à l'assembleur de 0x5d0cc0 à 0x5d0d5e) : le modèle (FUN_005d8200), le
+// piéton (FUN_005c7220, le genre 2 de l'objet script) ; avec exactement trois arguments (FUN_0073ad50), la fiche de ramassage du nom
+// (FUN_005fa7b0, FUN_005d0b20 : PickupData/<nom>), sinon aucune ; FUN_00443d90(piéton, modèle, fiche) (CRamassages::CreerDuPieton) ;
+// la poignée notée à l'objet script courant (FUN_005db7e0, FUN_005d9760 : retirée avec la mission) et rendue (FUN_005d8460). Le jeu
+// ne vérifie pas le piéton (FUN_00443d90 lit sa matrice) : sans lui, l'outil ne crée rien et ne rend rien.
+static int
+PickupCreateFromPed(lua_State *L)
+{
+	Journal("PickupCreateFromPed", L, 1);
+	int32 m = (int32)luaL_optnumber(L, 1, -1);
+	const CScriptPed *p = lua_isnumber(L, 2) ? pietons.Acceder((int)lua_tonumber(L, 2)) : nil;
+	if(p == nil) return 0;
+	std::string fiche = lua_gettop(L) == 3 && lua_isstring(L, 3) ? lua_tostring(L, 3) : "";
+	int32 h = ramassages.CreerDuPieton(p->pos, m, fiche, armes.Type(m).decalageRamassage);
+	if(CRamassage *r = ramassages.Entree(h)){
+		r->script = scriptCourant;
+		if(journalRestant > 0) printf("%6.2f s  ramassage %d (modèle %d, %s) laissé par le piéton %d en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0,
+		                              h, m, fiche.c_str(), (int)lua_tonumber(L, 2), r->pos.x, r->pos.y, r->pos.z);
+	}
 	lua_pushnumber(L, h);
 	return 1;
 }
@@ -3682,6 +3764,58 @@ PedHasWeapon(lua_State *L)
 	return 1;
 }
 
+// PedShowHealthBar(ped, oui[, texte[, b[, second[, texte2]]]]) (0x5ca5d0, lue à l'assembleur de 0x5ca5d0 à 0x5ca70a) : le piéton du
+// genre 2 de l'objet script (FUN_005c7220), et avec cinq arguments ou plus le second ; sans piéton, rien. Avec `oui` (FUN_005d8f20) :
+// le mot +0x135c du piéton à 0, FUN_00553690(piéton, second) sur la barre (CBarreSante::Poser), la barre montrée (l'emplacement 5 de
+// sa table, +0x14, avec 1), le texte du troisième argument (FUN_00551380, sinon aucun), l'octet +0xba au quatrième (à 0 sans lui, et
+// +0xbb à 0 quand +0xba l'est), le texte du sixième (FUN_005513b0, sinon aucun). Sans `oui` : le mot +0x135c du piéton, et du second,
+// à 1 (la barre n'est pas cachée). Ne rend rien.
+static int
+PedShowHealthBar(lua_State *L)
+{
+	Journal("PedShowHealthBar", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	CScriptPed *s = lua_gettop(L) >= 5 ? PedArg(L, 5) : nil;
+	if(p == nil) return 0;
+	if(!lua_toboolean(L, 2)){ p->mot135c = 1; if(s) s->mot135c = 1; return 0; }
+	p->mot135c = 0;
+	barreSante.Poser((int)lua_tonumber(L, 1), p->sante, p->santeMax, s ? (int)lua_tonumber(L, 5) : -1, s ? s->sante : 0.0f, s ? s->santeMax : 0.0f);
+	hud.PoserVisible(HUD_BARRE_SANTE, true);
+	barreSante.PoserTexte(lua_gettop(L) >= 3 ? lua_tostring(L, 3) : nil);
+	barreSante.octetBA = lua_gettop(L) >= 4 && lua_toboolean(L, 4);
+	if(!barreSante.octetBA) barreSante.octetBB = false;
+	barreSante.PoserTexte2(lua_gettop(L) >= 6 ? lua_tostring(L, 6) : nil);
+	return 0;
+}
+
+// PedHideHealthBar() (0x5c6770, lue à l'assembleur de 0x5c6770 à 0x5c6790) : FUN_00553690(0, 0) sur la barre, puis la barre cachée
+// (l'emplacement 5 avec 0). Ne rend rien.
+static int
+PedHideHealthBar(lua_State *L)
+{
+	Journal("PedHideHealthBar", L, 1);
+	barreSante.Poser(-1, 0, 0, -1, 0, 0);
+	hud.PoserVisible(HUD_BARRE_SANTE, false);
+	return 0;
+}
+
+// PlayerUnequip() (0x5be400 → FUN_0055c780 sur le HUD des armes, DAT_00c674f0 ; lu à l'assembleur de 0x55c780 à 0x55c7db) : l'arme
+// du HUD (+0xc0) à -1 ; FUN_0045cdf0(-1) sur l'inventaire du joueur (+0x1c4 ; son résultat n'est pas lu) ; si le joueur tient une
+// arme (le modèle +0x10e de son objet arme +0x1d0 n'est pas -1), l'arme voulue (+0x18 du composant +0x2e0) passe à -1, les mains
+// nues ; FUN_0055c6f0(-1) (PoserArmeHud : l'arme du HUD, +0xc4 à -1, la recherche de l'arme dans la liste du HUD) ; l'échéance de
+// l'affichage du HUD (+0x140) à l'horloge (DAT_00c1a9b4) plus 4 s, que l'outil ne dessine pas. Ne rend rien. C'est le contrôleur
+// du joueur qui range ensuite l'arme (Weapons/SelectActions, la condition WeaponDesired).
+static int
+PlayerUnequip(lua_State *L)
+{
+	Journal("PlayerUnequip", L, 1);
+	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	armeHud = -1;
+	if(j && j->armeTenue != -1) j->armeVoulue = -1;
+	PoserArmeHud(-1);
+	return 0;
+}
+
 static int
 PlayerHasWeapon(lua_State *L)
 {
@@ -3777,6 +3911,24 @@ PedIsHit(lua_State *L)
 // PedRecruitAlly(meneur, allié[, b]) (0x5cd550, lu à l'assembleur de 0x5cd550 à 0x5cd5cb) : les deux piétons (FUN_005c7220 ;
 // le meneur peut manquer), FUN_00485fa0(meneur + 0x2f0, allié, 1) (CScriptPedPool::RecruterAllie) ; avec un troisième argument
 // nombre (lua_type 3, FUN_0073ad50), son booléen (FUN_005d8f20) dans +0x14ec des deux. Ne rend rien.
+// PedHasAlly(ped) (0x5cd730) et PedIsModel(ped, modèle) (0x5c92a0) : CScriptPedPool::AUnAllie et EstDuModele ; un booléen, faux sans
+// piéton.
+static int
+PedHasAlly(lua_State *L)
+{
+	Journal("PedHasAlly", L, 1);
+	lua_pushboolean(L, lua_isnumber(L, 1) && pietons.AUnAllie((int)lua_tonumber(L, 1)));
+	return 1;
+}
+
+static int
+PedIsModel(lua_State *L)
+{
+	Journal("PedIsModel", L, 1);
+	lua_pushboolean(L, lua_isnumber(L, 1) && pietons.EstDuModele((int)lua_tonumber(L, 1), (int32)luaL_optnumber(L, 2, 0)));
+	return 1;
+}
+
 static int
 PedRecruitAlly(lua_State *L)
 {
@@ -4507,6 +4659,18 @@ PedFaceHeading(lua_State *L)
 	Journal("PedFaceHeading", L, 1);
 	CScriptPed *p = PedArg(L, 1);
 	if(p && (int)luaL_optnumber(L, 3, 0) == 0) PoserCap(p, (float)luaL_optnumber(L, 2, 0) + 90.0f);
+	return 0;
+}
+
+// PlayerFaceHeadingNow(degrés) (0x5c7360, lue à l'assembleur de 0x5c7360 à 0x5c73b2) : le cap en radians (× π / 180, les doubles
+// 0x900160 et 0x900158) posé au joueur (DAT_00c1aea8) par FUN_004755e0 (CPed::SetHeading : le cap visé +0x1700, la matrice par
+// FUN_00412ad0, +0x10, le vecteur avant aux +0 et +0xc du composant +0x2e0), puis la matrice et le cadre de rendu (FUN_00443950,
+// FUN_006c9990 sur le +0xc de +0x114) : le chemin du mode 0 de PedFaceHeading, sans file d'objectifs. Ne rend rien.
+static int
+PlayerFaceHeadingNow(lua_State *L)
+{
+	Journal("PlayerFaceHeadingNow", L, 1);
+	PoserCap(pietons.Acceder(SCRIPT_PED_JOUEUR), (float)luaL_optnumber(L, 1, 0) + 90.0f);
 	return 0;
 }
 
@@ -5266,6 +5430,30 @@ PedMakeTargetable(lua_State *L)
 	if(CScriptPed *p = PedArg(L, 1)) p->pasCiblable = !lua_toboolean(L, 2);
 	return 0;
 }
+
+// PedStopSocializing(ped) (0x5cdbf0, CScriptPedPool::ArreterSocial) : l'échange social du piéton arrêté. Ne rend rien.
+static int
+PedStopSocializing(lua_State *L)
+{
+	Journal("PedStopSocializing", L, 1);
+	if(lua_isnumber(L, 1)) pietons.ArreterSocial((int)lua_tonumber(L, 1));
+	return 0;
+}
+
+// PedMakeMissionChar(ped) (0x5ca890, CScriptPedPool::RendreMission) : un piéton de la population redevient un piéton de mission, que le
+// script courant ramassera. Ne rend rien.
+static int
+PedMakeMissionChar(lua_State *L)
+{
+	Journal("PedMakeMissionChar", L, 1);
+	if(lua_isnumber(L, 1)) pietons.RendreMission((int)lua_tonumber(L, 1), scriptCourant);
+	return 0;
+}
+
+// AreaClearAllPeds() (0x5b7e70, CScriptPedPool::AmbiantsAVider) n'est pas branchée : elle détruirait les trois joueurs de foot que
+// F_FootballFieldThread de gamemain crée puis rend à la population (3,33 s ou 4,03 s), dans 1_04 (10,06 s), 1_05 (3,43 s) et 1_06_01
+// (40,79 s) ; le pool rendrait leurs cases aux piétons créés ensuite, dont les poignées (celles des commandes de docs/missions.md :
+// --suivre 4, --viser 12…) changeraient. Elle reste un bouchon jusqu'à ce que ces commandes soient refaites.
 
 // PedMakeAmbient(ped) (0x5ca850) : rendu à la population ; le script ne le ramasse plus.
 static int
@@ -7227,6 +7415,11 @@ main(int argc, char **argv)
 	lua_register(L, "PedHasWeapon", PedHasWeapon);
 	lua_register(L, "PlayerHasWeapon", PlayerHasWeapon);
 	lua_register(L, "WeaponEquipped", WeaponEquipped);
+	lua_register(L, "PlayerUnequip", PlayerUnequip);
+	lua_register(L, "PedShowHealthBar", PedShowHealthBar);
+	lua_register(L, "PedHideHealthBar", PedHideHealthBar);
+	lua_register(L, "PlayerSetPosSimple", PlayerSetPosSimple);
+	lua_register(L, "PlayerFaceHeadingNow", PlayerFaceHeadingNow);
 	lua_register(L, "PlayerWeaponHudLock", PlayerWeaponHudLock);
 	lua_register(L, "ObjectNumProjectileImpacts", ObjectNumProjectileImpacts);
 	lua_register(L, "AreaClearAllProjectiles", AreaClearAllProjectiles);
@@ -7243,6 +7436,10 @@ main(int argc, char **argv)
 	lua_register(L, "PedFindInAreaObject", PedFindInAreaObject);
 	lua_register(L, "PedSetMissionCritical", PedSetMissionCritical);
 	lua_register(L, "PedRecruitAlly", PedRecruitAlly);
+	lua_register(L, "PedHasAlly", PedHasAlly);
+	lua_register(L, "PedMakeMissionChar", PedMakeMissionChar);
+	lua_register(L, "PedStopSocializing", PedStopSocializing);
+	lua_register(L, "PedIsModel", PedIsModel);
 	lua_register(L, "PedDismissAlly", PedDismissAlly);
 	lua_register(L, "PedCanSeeObject", PedCanSeeObject);
 	lua_register(L, "MissionTimerStart", MissionTimerStart);
@@ -7252,8 +7449,10 @@ main(int argc, char **argv)
 	lua_register(L, "GetPointListSize", GetPointListSize);
 	lua_register(L, "PickupCreateXYZ", PickupCreateXYZ);
 	lua_register(L, "PickupDelete", PickupDelete);
+	lua_register(L, "PickupCreateFromPed", PickupCreateFromPed);
 	lua_register(L, "PAnimRequest", PAnimRequest);
 	lua_register(L, "PAnimCreate", PAnimCreate);
+	lua_register(L, "PAnimDelete", PAnimDelete);
 	lua_register(L, "AddBlipForChar", AddBlipForChar);
 	lua_register(L, "BlipAddPoint", BlipAddPoint);
 	lua_register(L, "BlipRemove", BlipRemove);
@@ -7629,23 +7828,33 @@ main(int argc, char **argv)
 					it = parolesTenues.erase(it);
 				}
 			// FaceTarget (FUN_00620dc0) et SeekEntityPosition (FUN_0062a940) : le piéton se tourne vers sa cible, ou y va (à
-			// la course de l'outil) jusqu'à la distance d'arrivée. L'outil n'a ni chemins ni virages progressifs.
+			// la course de l'outil) jusqu'à la distance d'arrivée. L'outil n'a ni chemins ni virages progressifs. La cible vient de
+			// FUN_00477ab0 (CScriptPedPool::CibleDeGenre) : un piéton, ou un objet animé, dont le point est sa position (le seul
+			// point de synchronisation que l'outil connaît, FeetSync, y est posé).
 			if(CScriptPed *p = pietons.Acceder(c.first)){
-				auto cibleDe = [&](int genre){ return genre == 0 ? p->verrou : genre == 1 ? p->cibleDePrise : -1; };
+				auto cibleDe = [&](int genre, CVector &pos, const char *&quoi, int &qui){
+					CScriptPedPool::Cible e = pietons.CibleDeGenre(c.first, genre);
+					if(const CScriptPed *q = pietons.Acceder(e.pieton)){
+						if(q == p) return false;
+						pos = q->pos; quoi = "du piéton"; qui = e.pieton; return true;
+					}
+					if(const CObjetAnime *o = objetsAnimes.Objet(e.objet)){ pos = o->pos; quoi = "de l'objet animé du déclencheur"; qui = o->declencheur; return true; }
+					return false;
+				};
 				for(const CActionController::Poursuite &r : c.second.poursuitesActives){
-					const CScriptPed *q = pietons.Acceder(cibleDe(r.genre));
-					if(q == nil || q == p) continue;
-					float dx = q->pos.x - p->pos.x, dy = q->pos.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
+					CVector q; const char *quoi = ""; int qui = -1;
+					if(!cibleDe(r.genre, q, quoi, qui)) continue;
+					float dx = q.x - p->pos.x, dy = q.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
 					if(d <= r.arrivee + 1e-3f) continue;   // arrivé (au millimètre près)
 					float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f, k = d - r.arrivee < pas ? (d - r.arrivee) / d : pas / d;
 					p->pos.x += dx * k; p->pos.y += dy * k;
 					p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
-					if(d - r.arrivee < pas) printf("%6.2f s  le piéton %d arrive à %.2f m du piéton %d (SeekEntityPosition)\n", maintenant / 1000.0, c.first, r.arrivee, cibleDe(r.genre));
+					if(d - r.arrivee < pas) printf("%6.2f s  le piéton %d arrive à %.2f m %s %d (SeekEntityPosition)\n", maintenant / 1000.0, c.first, r.arrivee, quoi, qui);
 				}
 				for(const CActionController::Regard &r : c.second.regardsActifs){
-					const CScriptPed *q = pietons.Acceder(cibleDe(r.genre));
-					if(q == nil || q == p) continue;
-					p->cap = atan2f(q->pos.y - p->pos.y, q->pos.x - p->pos.x) * 180.0f / 3.14159265f + r.decalage;
+					CVector q; const char *quoi = ""; int qui = -1;
+					if(!cibleDe(r.genre, q, quoi, qui)) continue;
+					p->cap = atan2f(q.y - p->pos.y, q.x - p->pos.x) * 180.0f / 3.14159265f + r.decalage;
 				}
 			}
 			AppliquerObjectifs(c.first, c.second);

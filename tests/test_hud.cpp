@@ -7,6 +7,7 @@
 #include "../src/hud/ObjectifsMission.h"
 #include "../src/hud/ButtonHistory.h"
 #include "../src/hud/Marqueurs.h"
+#include "../src/hud/BarreSante.h"
 #include <cstdio>
 
 static int echecs = 0;
@@ -116,6 +117,20 @@ main(void)
 		int32 c = m.AjouterPoint(4, CVector(1, 1, 1), 1, 0, false, 0);
 		VERIF(c == (2 << 12 | 1) && m.Indice(b) == -1);
 		VERIF(m.RetirerEntite(0xd, 0x401) == 1 && !m.traces[0].Prise());
+	}
+	// La barre de santé secondaire (FUN_00553690, FUN_00551380, FUN_005513b0) : les parts de santé, les textes, la remise à zéro.
+	{
+		CBarreSante b;
+		b.Poser(4, 150, 300, -1, 0, 0);
+		VERIF(b.pieton == 4 && b.second == -1 && b.part == 0.5f && b.part2 == 0.0f);
+		b.PoserTexte("1_07_12");
+		VERIF(b.aTexte && strcmp(b.texte, "1_07_12") == 0);
+		b.PoserTexte(nil);
+		VERIF(!b.aTexte);
+		b.PoserTexte2("0123456789012345678901234567890123456789012345678901234567890123456789");
+		VERIF(b.aTexte2 && strlen(b.texte2) == 64);
+		b.mots148[2] = 3; b.Poser(-1, 0, 0, -1, 0, 0);
+		VERIF(b.pieton == -1 && b.part == 0.5f && b.mots148[2] == 0.0f);
 	}
 	printf("test_hud : %s\n", echecs ? "ÉCHEC" : "OK");
 	return echecs ? 1 : 0;
