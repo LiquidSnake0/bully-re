@@ -153,6 +153,17 @@ main(void)
 		col[0x1f] = 80;
 		VERIF(q.PoserStats(a, col) && q.StatLue(a, 0x1f, 100) == 80 && q.StatLue(SCRIPT_PED_JOUEUR, 0x1f, 100) == 100);
 		VERIF(q.StatLue(-1, 0x1f, 100) == 0 && q.StatLue(a, 64, 100) == 0);
+		// L'objet arme (FUN_004da610, FUN_004d92c0, FUN_004da6f0) : la charge à 0 au départ ; PropAttach la remet à 0 avec les
+		// drapeaux, +0x120 et +0x124 à -1 et la munition au modèle ; la remise ôte le modèle et garde la charge.
+		VERIF(pa->armeCharge == 0.0f && pa->armeTenue == -1 && pa->armeInit == -1.0f && pa->armePortee == -1.0f);
+		pa->armeCharge = -100.0f; pa->drapeauxArme[7] = 1; pa->armeInit = 2.0f; pa->armePortee = 30.0f; pa->armeMunition = 304;
+		q.PrendreArme(a, 303);
+		VERIF(pa->armeTenue == 303 && pa->armeCharge == 0.0f && pa->drapeauxArme[7] == 0 && pa->armeMunition == 303);
+		VERIF(pa->armeInit == -1.0f && pa->armePortee == -1.0f);
+		pa->armeCharge = 0.4f; pa->armeInit = 2.0f; pa->armeMunition = 304;
+		q.RemettreArme(a);
+		VERIF(pa->armeTenue == -1 && pa->armeInit == -1.0f && pa->armePortee == -1.0f && pa->armeCharge == 0.4f && pa->armeMunition == 304);
+		q.RemettreArme(-1);
 		VERIF(q.PoserStats(a, col) && pa->sante == 120 && pa->santeMax == 120 && pa->santeMin == 0 && q.Stat(a, 63) == 20);
 		VERIF(q.Blesser(a, 20, -1) && pa->sante == 100);
 		for(int i = 0; i < 30; i++) q.Avancer(1.0f / 30);    // une seconde : + 50 / 100 point

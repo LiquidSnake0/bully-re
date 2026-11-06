@@ -385,9 +385,9 @@ struct CScriptPed {
 	// la pose, la piste PropGetDesired la prend), celle en main (+0x10e, le modèle de l'objet arme +0x1d0 : -1 sans arme ; la piste
 	// PropAttach la pose) et celle en passage de l'une à l'autre (+0x1574, -1 à la construction : 0x480835).
 	int32 armeVoulue = 0, armeTenue = -1, armePassage = -1;
-	// La charge de l'objet arme (+0x128 de +0x1d0, CChargeArme) : vide (-100) au départ (supposé : le constructeur de l'objet arme
-	// n'est pas lu), posée par WeaponSetCharge, augmentée par WeaponIncrementCharge, lue puis vidée par WeaponFire.
-	float armeCharge = -100.0f;
+	// La charge de l'objet arme (+0x128 de +0x1d0, CChargeArme) : 0 depuis son constructeur (FUN_004da610) et à chaque changement de
+	// modèle (FUN_004da6f0), posée par WeaponSetCharge, augmentée par WeaponIncrementCharge, lue puis vidée (-100) par WeaponFire.
+	float armeCharge = 0.0f;
 	// Les drapeaux de l'objet arme (+0x26c + 4n de +0x1d0) : SetWeaponFlags et PedSetWeaponFlag les posent, WeaponFlags les lit quand
 	// l'arme tenue n'a pas d'entrée d'inventaire.
 	int32 drapeauxArme[8] = {};
@@ -402,7 +402,8 @@ struct CScriptPed {
 	float intentionVitesse = 0;
 	float armeInit = -1.0f;      // +0x120 de l'objet arme (+0x1d0, CWeapon) : -1 depuis son constructeur (FUN_004da610),
 	                             // posé par une piste SetWeaponInfo (FUN_00660f50) ; WeaponNeedInit (FUN_0065b7b0) attend -1
-	float armePortee = -1.0f;    // +0x124 : le +0x40 (64) de SetWeaponInfo ; la portée d'un tir sans cible va de lui à +0x120
+	float armePortee = -1.0f;    // +0x124 : le +0x40 (64) de SetWeaponInfo ; la portée d'un tir sans cible va de lui à +0x120 ; -1 au
+	                             // constructeur, à la remise (FUN_004d92c0) et au changement de modèle (FUN_004da6f0), comme +0x120
 	int32 armeMunition = -1;     // +0x12c : l'arme du nom +0x44 (68) de SetWeaponInfo (FUN_0051ad50), le projectile des tirs
 	bool endormi = false;        // +0x1358 : PedSetAsleep (0x5caa30) ; endormi, son arbre de l'IA n'avance plus (FUN_00484490)
 	bool enMarche = false;       // va vers `cible` à `vitesse`
@@ -508,6 +509,18 @@ public:
 	// La colonne n d'un piéton qui a reçu son entrée de pedstats.dat, `sansEntree` sinon (dans l'outil, le joueur, qui ne reçoit pas
 	// encore STAT_PLAYER de son modèle 0 ; 0 pour une poignée invalide).
 	int32 StatLue(int handle, int n, int32 sansEntree) const;
+	// L'objet arme du piéton (+0x1d0, un CWeapon de 0x2d0 octets ; lu dans l'index le 06.11.2026). Son constructeur (FUN_004da610 :
+	// la charge +0x128 à 0, les huit drapeaux +0x26c à 0 par FUN_004e8c20, +0x120 et +0x124 à -1, +0x140 et +0x264 à 0) donne les
+	// valeurs de départ de CScriptPed.
+	// RemettreArme : FUN_004d92c0 (avant chaque PropAttach, dans PropDetach, quand le tir vide l'arme, PedClearAllWeapons…) : +0x120
+	// et +0x124 à -1 (_DAT_009009ac) ; s'il a un modèle (+0x10e), FUN_004da790(0) : plus de modèle (l'emplacement +0x20 de sa vftable
+	// avec -1, FUN_004da340, FUN_004d9fa0 ; le modèle d'avant relâché, FUN_004da530) ; la charge, les drapeaux et +0x12c restent.
+	void RemettreArme(int handle);
+	// PrendreArme : FUN_004d92c0 puis FUN_004da6f0(modèle, 0) (PropAttach, FUN_0065fad0) : le modèle (WeaponRequestModel, toujours là
+	// dans l'outil), +0x128 (la charge) à 0, +0x12c (la munition) au modèle, +0x140 à 0, +0x120 et +0x124 à -1, les huit drapeaux à 0
+	// (FUN_004e8c20 sur +0x26c), +0x268 au second argument, +0x264 au type (WeaponGetType), puis le modèle posé (+0x20 de la
+	// vftable). WeaponNeedInit (+0x120 à -1) fait ensuite jouer SetWeaponInfo, qui donne la vraie munition.
+	void PrendreArme(int handle, int32 modele);
 	// Le pas que CPed::ProcessControl (FUN_004812d0) passe au composant d'actions du piéton (+0x2e0) à chaque image, lu à
 	// l'assembleur de 0x48192d à 0x481969 : (float)(0,02 (le flottant 0xa3396c) × CTimer::ms_fTimeStep (0xc1a9a4)) ×
 	// (float)(la colonne 0x14 de ses stats (FUN_00476f10) / 100,0 (le double 0x900130)), des secondes. La colonne 0x14 est la V de

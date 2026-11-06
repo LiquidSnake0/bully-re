@@ -3733,10 +3733,8 @@ PedClearWeapon(lua_State *L)
 static void
 LacherArme(int h)
 {
-	CScriptPed *p = pietons.Acceder(h);
-	if(p == nil) return;
-	p->armeTenue = -1;
-	p->armeInit = -1.0f;
+	if(pietons.Acceder(h) == nil) return;
+	pietons.RemettreArme(h);
 	RendreArbreAvantArme(h);
 }
 
@@ -6133,8 +6131,7 @@ AppliquerArmes(int ped, CActionController &c)
 			p->armeVoulue = 0;
 		}else if(d.genre == CActionController::ARME_ATTACHER){   // FUN_0065fad0
 			if(p->armePassage == -1 || p->armePassage == 0) continue;
-			p->armeTenue = p->armePassage;   // FUN_004d92c0 puis FUN_004da6f0 : les modèles d'armes sont toujours là dans l'outil
-			p->armeInit = -1.0f;             // FUN_004d92c0 : +0x120 et +0x124 à -1
+			pietons.PrendreArme(ped, p->armePassage);   // FUN_004d92c0 puis FUN_004da6f0 : les modèles d'armes sont toujours là
 			const CTypeArme &t = armes.Type(p->armeTenue);
 			printf("%6.2f s  le piéton %d prend en main l'arme %d (%s)\n", maintenant / 1000.0, ped, p->armeTenue,
 			       modeles.armes.count(p->armeTenue) ? modeles.armes[p->armeTenue].c_str() : "?");
@@ -6159,8 +6156,7 @@ AppliquerArmes(int ped, CActionController &c)
 			if(p->drapeaux[21] != 0){
 				p->armePassage = p->armeTenue;
 				if(p->armeTenue != -1) printf("%6.2f s  le piéton %d range l'arme %d\n", maintenant / 1000.0, ped, p->armeTenue);
-				p->armeTenue = -1;
-				p->armeInit = -1.0f;
+				pietons.RemettreArme(ped);   // FUN_004d92c0
 				if(d.octet) RendreArbreAvantArme(ped);
 			}else p->armePassage = -1;
 		}

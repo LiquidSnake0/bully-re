@@ -778,6 +778,30 @@ CScriptPedPool::Stat(int h, int n) const
 	return p && n >= 0 && n < 64 ? p->stats[n] : 0;
 }
 
+void
+CScriptPedPool::RemettreArme(int h)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return;
+	p->armeInit = -1.0f;
+	p->armePortee = -1.0f;
+	if(p->armeTenue != -1) p->armeTenue = -1;   // FUN_004da790(0)
+}
+
+void
+CScriptPedPool::PrendreArme(int h, int32 modele)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return;
+	RemettreArme(h);
+	p->armeCharge = 0.0f;
+	p->armeMunition = modele;
+	p->armeInit = -1.0f;
+	p->armePortee = -1.0f;
+	for(int32 &d : p->drapeauxArme) d = 0;
+	p->armeTenue = modele;
+}
+
 int32
 CScriptPedPool::StatLue(int h, int n, int32 sansEntree) const
 {
