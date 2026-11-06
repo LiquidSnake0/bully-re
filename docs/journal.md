@@ -1206,3 +1206,26 @@ en échec plutôt que de les masquer.
   vingt-huit lignes par mission). `1_07` : la caisse à 102,96 s au premier commit, puis réussie à 151,47 s dès le troisième.
 - **Bilan** : 1 105 fonctions recréées (7,1 % du code), contre 1 077 (7,0 %) ; 2 073 comprises (11,8 %) ; 10 commits (neuf de moteur et la documentation).
 
+## 06.11.2026, séance 6 (de 21 h 07 à 21 h 55)
+
+- **La charge de l'arme** (`CChargeArme`, `src/peds/Armes.h`) : `WeaponSetCharge` (`FUN_0065e7c0`), `WeaponIncrementCharge`
+  (`FUN_0065e810`, la moitié pour le lance-pierre, DAT_00bf444c « slingshot »), la charge de `WeaponFire` (`FUN_00661f10` : × +0x34,
+  bornée à [0, 1]) et sa remise à -100 (`FUN_00664710`) ; la commande de `1_04` ne joue pas la feuille `Charge` : rien ne change.
+- **Les drapeaux des armes** : `SetWeaponFlags` (`FUN_00661d40`), `WeaponFlags` (`FUN_0065bb20`), `PedSetWeaponFlag` (0x5cf090) ; huit
+  mots par entrée d'inventaire et par objet arme.
+- **La minuterie de mission dans src** (`src/hud/MinuterieMission.h`) : `FUN_0043f600`, `FUN_0043f540`, `FUN_0043f560`, `FUN_0043f5a0` ;
+  `MissionTimerStartFixed` (0x5c1ff0 : l'heure visée de l'horloge du jeu ; quand elle est passée, le double de la visée plus 0x5180 moins
+  l'heure du jeu, lu tel quel) et `MissionTimerPause` (0x5c2090) réelles.
+- **`FaceTarget` des contrôleurs de l'IA** par `FUN_00477ab0` (le genre 0 reste la cible de l'IA) : les pistes du genre 4 et 0x10 de
+  l'IA visent l'objet et l'allié.
+- **Lu sans être recréé** (docs/suite.md) : `WeaponFireOffset` (`FUN_0065d3f0`, `FUN_00662380`, `FUN_0065d160`), l'avancée des
+  PathReference (`FUN_005ed750`) et la mise à jour des entités qui suivent un trajet (`FUN_005ec0a0`), les conditions `CheckWeather`
+  (`FUN_005fcfa0` : DAT_00ce756c, le temps qu'il fait, égal au mot +4) ; le juge de `PedVelocity` est repéré (`FUN_00604c50`) ; l'IA
+  les juge des milliers de fois par mission : les brancher change ses choix, à mesurer seules.
+- **La machine partagée** : l'autre agent a tenu le verrou au premier passage (de 21 h 14 à 21 h 16) ; deux instantanés par passage
+  (`build/k10` à `build/k13`), sans échec.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 148,04 s), `1_04` à 82,53 s, `1_05` à 185,20 s,
+  `1_06_01` à 61,81 s et `1_07` à 151,47 s à chaque commit, journaux identiques.
+- **Bilan** : 1 121 fonctions recréées (7,1 % du code), contre 1 105 (7,1 %) ; 2 086 comprises (11,8 %) ; 5 commits (quatre de moteur et la
+  documentation : la séance s'arrête là, le contexte de l'agent étant chargé).
+

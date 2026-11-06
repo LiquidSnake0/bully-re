@@ -91,18 +91,28 @@ chantier. Un point fini passe en bas, avec son commit.
    `PlayerFaceHeadingNow`, `PAnimDelete`, la cible par genre de `FaceTarget` et `SeekEntityPosition` (`FUN_00477ab0`), la barre de santé
    secondaire (`src/hud/BarreSante.h`), `PedMakeMissionChar` et `PedStopSocializing` ; le joueur entre dans `_1_07_FIGHTTRIGGER`, bat la
    seconde vague, va à `_1_07_PLYRDOOR`, et la mission joue le clochard, le don de la planche et l'écran `M_PASS`.
+   Le 06.11 (séance 6), **la suite des armes commence** : la charge de l'arme (`CChargeArme` : `WeaponSetCharge`, `WeaponIncrementCharge`,
+   la charge lue par `WeaponFire` et vidée après le tir), les drapeaux des armes (`SetWeaponFlags`, `WeaponFlags`, `PedSetWeaponFlag`), la
+   minuterie de mission dans src (`src/hud/MinuterieMission.h` : `MissionTimerStartFixed`, `MissionTimerPause`) et `FaceTarget` des
+   contrôleurs de l'IA par `FUN_00477ab0` ; les sept missions restent réussies.
    Suite, dans l'ordre :
-   - la suite des armes : la charge (`WeaponSetCharge`, `WeaponIncrementCharge` : l'objet arme +0x128, la portée et les dégâts du tir),
+   - la suite des armes : la feuille `Charge` du lance-pierre jouée pour de vrai (la commande de `1_04` joue `Release` sans elle : la
+     charge reste vide) et le pas que le contrôleur passe aux mises à jour des pistes (l'outil prend 1/30 s pour `WeaponIncrementCharge`),
      la visée du joueur (`WeaponPlayerFireAutoTarget`, `FUN_00662a40` en entier, la cible qui bouge : les jocks de `1_04` ne sont touchés
      que pendant leurs sauts), le haut du corps en contrôleur à part (le spawn `UpperBody` du nœud de l'arme, pour ne plus passer par
-     `--tirer`), le départ du tir (la douille « Muzzle », l'os d'une arme lancée : `FUN_0065e880`), `WeaponFireOffset`, la physique des
-     `CProjectile` (`FUN_004d4c40`, le sol, les rebonds, `DetectProjectile`), `SetWeaponFlags` et `WeaponFlags`, `PedSetWeaponFlag`, le genre
-     d'un coup de projectile (+0x468), `MissionTimerStartFixed`, `MissionTimerPause` ;
+     `--tirer`), le départ du tir (la douille « Muzzle », l'os d'une arme lancée : `FUN_0065e880`), `WeaponFireOffset` (`FUN_0065d3f0` pose
+     DAT_01b65c30 … DAT_01b65c38, `FUN_00662380` les applique dans le repère du piéton : de côté × +0x30, devant × +0x34, en hauteur × +0x38
+     et la méthode +0x6c de l'entité ; `FUN_0065d160` les remet à 0 ; le lance-pierre pose 0,2 puis 0 à la même date), la physique des
+     `CProjectile` (`FUN_004d4c40`, le sol, les rebonds, `DetectProjectile`), le genre d'un coup de projectile (+0x468), les drapeaux de
+     l'objet arme à son changement (le +0x26c que garde l'outil n'est jamais remis) ;
    - les entités qui suivent un trajet : `PAnimFollowPath` (0x5c3b30), `PAnimSetPathFollowSpeed` (0x5c3c60), `PAnimStopFollowPath`
      (0x5c3d50), le gestionnaire 0xd13730 (32 entrées de 0x2c octets, le nombre en +0x580 : `FUN_005eb880`, `FUN_005ebfd0`,
      `FUN_005ebd60` et son objet PathReference, `FUN_005eb910`, `FUN_005ebbf0` → `FUN_005ed400` pour la vitesse, `FUN_005ebb50` →
      `FUN_005ed6f0` pour l'arrêt, `FUN_005ebb10` et `FUN_005eb8d0` pour le rappel, la mise à jour `FUN_005ec0a0` à lire) : la grille du
-     magasin de l'école (`SCStoreGte_Closed`, une entité persistante) qui roule dans `1_01` et `1_02` à la vitesse -1,2 ;
+     magasin de l'école (`SCStoreGte_Closed`, une entité persistante) qui roule dans `1_01` et `1_02` à la vitesse -1,2 ; l'avancée de
+     l'objet PathReference est lue (`FUN_005ed750` : +0x10 le segment, +0x14 la vitesse signée, +0x18 la distance sur le segment, +0x30 sa
+     longueur, +0xc fini, `FUN_005ed620` au changement de segment, le drapeau du nœud atteint) ; la mise à jour `FUN_005ec0a0` l'appelle
+     avec le pas × _DAT_00aeb94c, fait tourner l'entité (+0x1c … +0x28 de l'entrée) et appelle le rappel du nœud atteint (trois poignées) ;
    - brancher `AreaClearAllPeds` (0x5b7e70, recréée : `CScriptPedPool::AmbiantsAVider`) : elle détruit les trois joueurs de foot que
      `F_FootballFieldThread` rend à la population, et les piétons créés ensuite prennent leurs cases : dans `1_04`, `1_05` et `1_06_01`,
      les poignées des commandes de docs/missions.md changent (branchée, `1_04` n'allait plus au bout et `1_05` échouait à 57,88 s) ;
@@ -174,6 +184,12 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- La suite des armes, première partie (06.11, séance 6 ; a464efb, 3391c9f, 8fe559d, 671ceda) : la charge de l'arme (`CChargeArme` dans `src/peds/Armes.h` :
+  `FUN_0065e7c0`, `FUN_0065e810`, la charge de `FUN_00661f10` et sa remise par `FUN_00664710`), les drapeaux des armes
+  (`CInventaireArmes::PoserDrapeau` et `LireDrapeau` : `FUN_00661d40`, `FUN_0065bb20`, `PedSetWeaponFlag` 0x5cf090), la minuterie de
+  mission (`src/hud/MinuterieMission.h` : `FUN_0043f600`, `FUN_0043f540`, `FUN_0043f560`, `FUN_0043f5a0`, `MissionTimerStartFixed`
+  0x5c1ff0, `MissionTimerPause` 0x5c2090), `FaceTarget` des contrôleurs de l'IA par `FUN_00477ab0`.
 
 - `1_07` se termine réussie à 151,47 s (06.11, séance 5 ; d4c9c00, 5e4adb0, c5a6b07, 03efeb4, 7d694fe, 168133b, e6381ce, c53b94e, f7687d6) : `PropTargetInteractive` (`FUN_00655110`, le relevé et le
   choix de `TargetProp` mis en commun), `PickupCreateFromPed` (0x5d0cc0, `FUN_00443d90` : `CRamassages::CreerDuPieton`), `PedHasAlly`

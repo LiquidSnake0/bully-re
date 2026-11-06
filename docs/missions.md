@@ -596,6 +596,11 @@ pieds et touche la vitre visée 0,23 s plus tard), suit Gary au terrain, monte d
 s'en prend au joueur (`F_BurtonPissed`), `MinigameSetCompletion("M_PASS")` et `MissionSucceed` à 81,02 s : **`1_04` se termine
 réussie à 81,05 s**. Les jocks qui font leurs tours ne sont pas touchés : la bille part vers la position du piéton au moment du tir.
 
+**La charge du lance-pierre** (06.11, séance 6) : la feuille `Charge` de SlingShotActions.cat (`SLNG_CHARGE_T`) pose la charge de l'objet
+arme à 0 (`WeaponSetCharge`) et la fait monter à chaque image (`WeaponIncrementCharge` : la moitié du pas pour le lance-pierre) ;
+`WeaponFire` la lit, bornée à [0, 1], et la remet à -100. La commande ci-dessus joue directement `…/Charge/Release/Release` : la charge
+reste vide, chaque bille garde ses 9 points, et `1_04` finit toujours à 82,53 s.
+
 ## `1_05` (« Save Algie ») (06.11.2026)
 
 `1_05` s'enchaîne après `1_04`. Lancée seule (`build/outils/lancer_lua 90 --mission 1_05 --sans-cinematiques`), elle bouclait
