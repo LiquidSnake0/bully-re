@@ -41,6 +41,7 @@
 #include "../src/peds/Patrouilles.h"
 #include "../src/objects/ObjectData.h"
 #include "../src/objects/ObjetsAnimes.h"
+#include "../src/objects/Collectibles.h"
 #include "../src/core/IplFile.h"
 #include "../src/anim/Hxd.h"
 #include "../src/anim/AnimGroups.h"
@@ -3083,6 +3084,95 @@ Ramasser(void)
 	CActionController &c = controleurs[SCRIPT_PED_JOUEUR];
 	c.pistesArmeLancees.push_back(d);
 	AppliquerArmes(SCRIPT_PED_JOUEUR, c);
+}
+
+// --- Les collectibles (src/objects/Collectibles : CCollectiblesMgr, l'objet 0xbceb50) ---
+static CCollectibles collectibles;
+static int rappelCollectibles = LUA_NOREF;   // +0x1e8c (0xbd09dc) : CollectiblesOnCollectedCallback
+
+// CGame::Initialise (FUN_0042ee90, après CPickups::Init) → FUN_00428bf0 → FUN_004287a0 : config\dat\colctbls.dat lu en entier
+// (FUN_004264c0 : ouvert, sa taille par FUN_0042d1b0(f, 0, 2) et FUN_0042d2e0, un bloc de GameMalloc), puis ligne à ligne.
+static void
+ChargerCollectibles(void)
+{
+	static uint8 texte[0x4000];
+	int32 n = CFileMgr::LoadFile("config\\dat\\colctbls.dat", texte, sizeof(texte), "rb");
+	collectibles.Initialiser((const char *)texte, n > 0 ? (size_t)n : 0);
+	printf("%d collectibles dans colctbls.dat :", collectibles.nombre);
+	static const char *noms[NUM_COLLECTIBLE_TYPES] = { "nains", "transistors", "élastiques", "cartes", "citrouilles", "tombes", "artefacts" };
+	for(int t = 0; t < NUM_COLLECTIBLE_TYPES; t++) printf(" %d %s%s", collectibles.NombreDuType(t), noms[t], t + 1 < NUM_COLLECTIBLE_TYPES ? "," : "\n");
+}
+
+// Le rappel des scripts de FUN_004288c0 (FUN_005d7f80 : il y en a un ; FUN_005d9ac0, FUN_005d8110, FUN_005d8510 : sa fonction
+// poussée ; six nombres par FUN_005d8460 ; FUN_005d8140(6, 0) l'appelle) : le type, les pris du type, leur nombre, le haché, la
+// poignée du ramassage et l'indice. Le jeu l'appelle dans le script et le thread qui l'ont posé (FUN_005d8830) ; l'outil, dans
+// l'état qu'on lui donne.
+static void
+AppelerRappelCollectible(lua_State *L, const CRappelCollectible &r)
+{
+	if(rappelCollectibles == LUA_NOREF || L == nil) return;
+	printf("%6.2f s  collectibles : le rappel des scripts est appelé (%d, %d, %d, %#x, %d, %d)\n", maintenant / 1000.0, r.type, r.pris,
+	       r.nombre, r.hache, r.ramassage, r.indice);
+	lua_rawgeti(L, LUA_REGISTRYINDEX, rappelCollectibles);
+	lua_pushnumber(L, r.type); lua_pushnumber(L, r.pris); lua_pushnumber(L, r.nombre);
+	lua_pushnumber(L, (double)r.hache); lua_pushnumber(L, r.ramassage); lua_pushnumber(L, r.indice);
+	if(lua_pcall(L, 6, 0, 0) != 0){ printf("        rappel des collectibles : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+}
+
+// CollectiblesSetTypeAvailable(type[, b]) (0x5bafa0, lu à l'assembleur de 0x5bafa0 à 0x5bafe7) : b vrai par défaut, le second
+// argument s'il y en a deux (FUN_005d8f20) ; le type (FUN_005d8200) ; FUN_00426340(type, b) : l'octet « disponible » (+5 + 2i) de
+// chaque entrée du type.
+static int
+CollectiblesSetTypeAvailable(lua_State *L)
+{
+	Journal("CollectiblesSetTypeAvailable", L, 1);
+	bool b = lua_gettop(L) >= 2 ? lua_toboolean(L, 2) != 0 : true;
+	collectibles.PoserDisponible((int)luaL_optnumber(L, 1, -1), b);
+	return 0;
+}
+
+// CollectiblesSetAllAsCollected(type[, b]) (0x5bb010, lu de 0x5bb010 à 0x5bb058) : le type, b vrai par défaut ; FUN_00428ba0 passe
+// chaque entrée du type à FUN_004288c0(i, b), qui appelle le rappel des scripts pour chacune quand b est vrai.
+static int
+CollectiblesSetAllAsCollected(lua_State *L)
+{
+	Journal("CollectiblesSetAllAsCollected", L, 1);
+	bool b = lua_gettop(L) >= 2 ? lua_toboolean(L, 2) != 0 : true;
+	CRappelCollectible r[CCollectibles::kTaille];
+	int n = collectibles.ToutMarquer((int)luaL_optnumber(L, 1, -1), b, r, CCollectibles::kTaille);
+	for(int i = 0; i < n; i++) AppelerRappelCollectible(L, r[i]);
+	return 0;
+}
+
+// CollectiblesGetNumCollectable(type) (0x5bb060) : FUN_004262e0, le mot +0x1454 + 2 × type ; CollectiblesGetNumCollected(type)
+// (0x5bb090) : FUN_004262f0, les entrées du type à l'octet « pris » posé (lues à l'assembleur de 0x5bb060 à 0x5bb0be).
+static int
+CollectiblesGetNumCollectable(lua_State *L)
+{
+	Journal("CollectiblesGetNumCollectable", L, 1);
+	lua_pushnumber(L, collectibles.NombreDuType((int)luaL_optnumber(L, 1, -1)));
+	return 1;
+}
+
+static int
+CollectiblesGetNumCollected(lua_State *L)
+{
+	Journal("CollectiblesGetNumCollected", L, 1);
+	lua_pushnumber(L, collectibles.PrisDuType((int)luaL_optnumber(L, 1, -1)));
+	return 1;
+}
+
+// CollectiblesOnCollectedCallback(fonction) (0x5baff0 → FUN_005d9f00(L, 0, 0xbd09dc)) : l'argument mis au registre (luaL_ref,
+// FUN_0073c360), l'ancien rappel lâché (FUN_005d9a60) ; le jeu note le script et le thread courants (FUN_005dbbf0, +0x114c).
+static int
+CollectiblesOnCollectedCallback(lua_State *L)
+{
+	Journal("CollectiblesOnCollectedCallback", L, 1);
+	if(lua_gettop(L) < 1) return 0;
+	if(rappelCollectibles != LUA_NOREF) luaL_unref(L, LUA_REGISTRYINDEX, rappelCollectibles);
+	lua_pushvalue(L, 1);
+	rappelCollectibles = luaL_ref(L, LUA_REGISTRYINDEX);
+	return 0;
 }
 
 // GiveWeaponToPlayer(arme[, b]) (0x5be100, lu à l'assembleur de 0x5be100 à 0x5be151) : l'arme (FUN_005d8200), b vrai par défaut
@@ -6703,6 +6793,11 @@ main(int argc, char **argv)
 	lua_register(L, "GetPointListSize", GetPointListSize);
 	lua_register(L, "PickupCreateXYZ", PickupCreateXYZ);
 	lua_register(L, "PickupDelete", PickupDelete);
+	lua_register(L, "CollectiblesSetTypeAvailable", CollectiblesSetTypeAvailable);
+	lua_register(L, "CollectiblesSetAllAsCollected", CollectiblesSetAllAsCollected);
+	lua_register(L, "CollectiblesGetNumCollectable", CollectiblesGetNumCollectable);
+	lua_register(L, "CollectiblesGetNumCollected", CollectiblesGetNumCollected);
+	lua_register(L, "CollectiblesOnCollectedCallback", CollectiblesOnCollectedCallback);
 	lua_register(L, "RegisterHashEventHandler", RegisterHashEventHandler);
 	lua_register(L, "SetNumberOfHandledHashEventObjects", SetNumberOfHandledHashEventObjects);
 	lua_register(L, "ObjectToggleVulnerability", ObjectToggleVulnerability);
@@ -6802,6 +6897,7 @@ main(int argc, char **argv)
 	else printf("Objects\\ide.img introuvable : MODELENUM répondra -1\n");
 	ChargerArmes();
 	ChargerObjets();
+	ChargerCollectibles();
 	ChargerPedStats();
 	ChargerMissions();
 	// Le joueur, créé avec le monde (CPlayerPed, modèle 0) : FUN_00484d10 lui pose aussi les arbres de son modèle,
