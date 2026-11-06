@@ -154,6 +154,12 @@ public:
 	// son objet le garde (supposé : le jeu en créerait un second et le +0x1c du déclencheur passerait au nouveau). Rend l'objet, -1 sans
 	// modèle.
 	int CreerParScript(const Declencheur &d, uint8 octet3a8);
+	// CreatePersistentEntity d'un modèle animé (le type 10 du modelinfo ; FUN_005bd090, lu dans l'index) : FUN_0044cd20(modèle, zone,
+	// matrice, 0, 0, 0, 0), sans déclencheur (la case 0 : ni le +0x1c d'un déclencheur, ni le drapeau 13), l'octet +0x3a8 à 0 ; le
+	// cap en +0x10 (FUN_00412ad0). L'objet reste au changement de zone (FUN_00416490 garde ceux de la case 0). Rend l'objet.
+	int CreerPersistant(int32 modele, const CVector &pos, float cap, int8 zone);
+	// DeletePersistentEntity (FUN_005bca50 → FUN_0044a510 ; FUN_0045dc20, FUN_0045e540, le destructeur) : l'objet rendu au pool.
+	void Liberer(int i) { if(CObjetAnime *o = Objet(i)){ o->libre = true; o->declencheur = -1; } }
 	void Vider(void) { objets.clear(); }
 	// La fiche PropButes d'un modèle (le +0x70 de son modelinfo, FUN_00520080), que l'appelant fournit ; nil sans fiche.
 	std::function<const CFicheObjetAnime *(int32)> fiche;

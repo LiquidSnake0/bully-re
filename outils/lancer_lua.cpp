@@ -2862,6 +2862,55 @@ PAnimCreate(lua_State *L)
 	return 0;
 }
 
+// CreatePersistentEntity(modèle, x, y, z, cap, zone[, ?]) (0x5bd090, lu dans l'index) : le modèle par son nom (FUN_0051c1e0) ou son
+// indice ; inconnu (-1), deux -1 sont rendus. Un modèle animé (le type 10 du modelinfo : les entrées panm) devient un objet animé
+// sans déclencheur (FUN_0044cd20, CObjetsAnimes::CreerPersistant) ; un autre, un CObject (0x120, FUN_004ceb60, sans le +0x12 du
+// modelinfo ; sinon un CDummyObject changé en CObject de 0x22c, FUN_004d0490) à la position, au cap (+0x10, FUN_00412ad0), la zone
+// en +0x111 ; la collision, les effets et le monde (FUN_0045d560) ne sont pas suivis. Rend la poignée de l'entité dans son pool
+// (l'indice × 0x100 + l'octet d'état) et son genre : 0 pour un CObject (le pool DAT_00c0f614), 5 pour un objet animé (DAT_00c0f608),
+// 4 pour le pool DAT_00c0f5f8. L'outil range ces CObject à part des objets cassables (l'octet 2 de leurs poignées), que ses
+// projectiles (des sphères de 0,5 m) ne touchent pas (supposé : gamemain en pose une trentaine dès 1,12 s, dont la porte du bus).
+static std::vector<CObjetOutil> persistants;
+static int
+CreatePersistentEntity(lua_State *L)
+{
+	Journal("CreatePersistentEntity", L, 1);
+	int32 m = lua_type(L, 1) == LUA_TSTRING ? modeles.Index(lua_tostring(L, 1)) : (int32)luaL_optnumber(L, 1, -1);
+	if(m < 0){ lua_pushnumber(L, -1); lua_pushnumber(L, -1); return 2; }
+	CVector pos((float)luaL_optnumber(L, 2, 0), (float)luaL_optnumber(L, 3, 0), (float)luaL_optnumber(L, 4, 0));
+	float cap = (float)luaL_optnumber(L, 5, 0);
+	int8 zone = (int8)luaL_optnumber(L, 6, 0);
+	if(modeles.animes.count(m)){
+		if(!objetsAnimes.fiche) objetsAnimes.fiche = [](int32 mm){ std::string n = NomDeModele(mm); return n.empty() ? (const CFicheObjetAnime *)nil : FicheAnimee(n); };
+		int i = objetsAnimes.CreerPersistant(m, pos, cap, zone);
+		const CObjetAnime *o = objetsAnimes.Objet(i);
+		printf("%6.2f s  entité persistante : l'objet animé %d (modèle %d, %s)\n", maintenant / 1000.0, i, m, NomDeModele(m).c_str());
+		lua_pushnumber(L, i * 0x100 + (o ? (o->generation & 0x7f) : 0));
+		lua_pushnumber(L, 5);
+		return 2;
+	}
+	CObjetOutil o;
+	o.modele = m; o.pos = pos;
+	persistants.push_back(o);
+	printf("%6.2f s  entité persistante : le CObject %zu (modèle %d, %s)\n", maintenant / 1000.0, persistants.size() - 1, m, NomDeModele(m).c_str());
+	lua_pushnumber(L, (double)((persistants.size() - 1) * 0x100 + 2));
+	lua_pushnumber(L, 0);
+	return 2;
+}
+
+// DeletePersistentEntity(poignée, genre) (0x5bca50, lu dans l'index : FUN_0044a510 retrouve l'entité, FUN_0045dc20 et FUN_0045e540 la
+// retirent du monde, son destructeur la détruit) : l'objet animé rendu au pool, ou le CObject persistant de l'outil tenu pour retiré.
+static int
+DeletePersistentEntity(lua_State *L)
+{
+	Journal("DeletePersistentEntity", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1, g = (int)luaL_optnumber(L, 2, -1);
+	if(h < 0) return 0;
+	if(g == 5) objetsAnimes.Liberer(h >> 8);
+	else if(g == 0 && (h & 0xff) == 2 && (size_t)(h >> 8) < persistants.size()) persistants[(size_t)(h >> 8)].detruit = true;
+	return 0;
+}
+
 // PAnimExists(déclencheur) (0x5c48c0, lu à l'assembleur de 0x5c48c0 à 0x5c4927) : le déclencheur (FUN_005d8200, rien en dessous
 // de 0), sa case du pool (DAT_020c7c48 : son octet d'état sans le bit 0x80), son objet (+0x1c), le +0x114 de l'objet (sa
 // géométrie) et le +0x94 de celle-ci non nuls ; un booléen (FUN_005d8450). L'outil n'a pas la géométrie : l'objet suffit.
@@ -7127,6 +7176,8 @@ main(int argc, char **argv)
 	lua_register(L, "PickupDelete", PickupDelete);
 	lua_register(L, "PAnimRequest", PAnimRequest);
 	lua_register(L, "PAnimCreate", PAnimCreate);
+	lua_register(L, "CreatePersistentEntity", CreatePersistentEntity);
+	lua_register(L, "DeletePersistentEntity", DeletePersistentEntity);
 	lua_register(L, "ObjectRemovePickupsInTrigger", ObjectRemovePickupsInTrigger);
 	lua_register(L, "ItemGetCurrentNum", ItemGetCurrentNum);
 	lua_register(L, "ItemSetCurrentNum", ItemSetCurrentNum);
