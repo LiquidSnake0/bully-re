@@ -505,6 +505,9 @@ public:
 	bool PoserStats(int handle, const int32 colonnes[64]);
 	// GameGetPedStat (FUN_00476f10) : la colonne n ; le cas des modèles uniques de la colonne 6 n'est pas suivi.
 	int32 Stat(int handle, int n) const;
+	// La colonne n d'un piéton qui a reçu son entrée de pedstats.dat, `sansEntree` sinon (dans l'outil, le joueur, qui ne reçoit pas
+	// encore STAT_PLAYER de son modèle 0 ; 0 pour une poignée invalide).
+	int32 StatLue(int handle, int n, int32 sansEntree) const;
 	// Le pas que CPed::ProcessControl (FUN_004812d0) passe au composant d'actions du piéton (+0x2e0) à chaque image, lu à
 	// l'assembleur de 0x48192d à 0x481969 : (float)(0,02 (le flottant 0xa3396c) × CTimer::ms_fTimeStep (0xc1a9a4)) ×
 	// (float)(la colonne 0x14 de ses stats (FUN_00476f10) / 100,0 (le double 0x900130)), des secondes. La colonne 0x14 est la V de

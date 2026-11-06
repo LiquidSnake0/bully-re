@@ -59,6 +59,15 @@ struct CChargeArme {
 		if(!(0.0f <= charge)) return 0.0f;
 		return 1.0f < charge ? 1.0f : charge;
 	}
+	// FUN_00664710 (le tir), les dégâts passés au projectile (FUN_004d4c40, son dixième argument ; lu dans l'index) : sans fiche de
+	// projectile (+0x48 de la piste), 0 ; sinon ceux de la fiche, (+0x50 − +0x4c) × la charge + +0x4c ; si le flottant +0x2c (44) de
+	// la piste WeaponFire n'est pas -1 (_DAT_009009ac), la charge × lui ; puis × la statistique 0x1f du tireur (FUN_00476f10 : la
+	// colonne AG de pedstats.dat, « Damage_Scale », 100 dans les 75 entrées) / (float)100 (le double 0x900130).
+	static float Degats(bool fiche, float sansCharge, float avecCharge, float charge, float degatsPiste, int32 echelle) {
+		float d = fiche ? (avecCharge - sansCharge) * charge + sansCharge : 0.0f;
+		if(degatsPiste != -1.0f) d = charge * degatsPiste;
+		return ((float)echelle / 100.0f) * d;
+	}
 };
 
 // Les réglages du prochain tir : des globales que les pistes de l'arme posent avant WeaponFire, que le tir (FUN_00664710) lit et

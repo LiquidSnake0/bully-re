@@ -187,7 +187,7 @@ public:
 	//   FUN_00664710) : il faut une arme en main ; la charge (+0x128 de l'objet arme, × +0x34 (52) s'il est positif) bornée à
 	//   [0, 1] ; puis le tir (le projectile des munitions de l'objet arme, +0x12c) et, sans le drapeau 24 du piéton (+0x1374), une
 	//   munition retirée (FUN_0045cf70) ; avec l'octet +0x32 (50), l'arme est lâchée quand il n'en reste plus. `tirsLances`.
-	struct Tir { float entree, facteur; bool lacher, fait; };
+	struct Tir { float entree, facteur; bool lacher, fait; float degats = -1.0f; };   // degats : le flottant +0x2c (44), -1 sans lui
 	std::vector<Tir> tirs, tirsLances;
 	// - WeaponSetCharge (WeaponSetChargeTrack 0x935c74 ; lancement FUN_0065e7c0, lu dans l'index) : la charge de l'objet arme du
 	//   piéton (+0x128 de +0x1d0) reçoit le flottant +0x18 (24) ; sa mise à jour (FUN_006094f0) rend faux. `chargesPosees`.

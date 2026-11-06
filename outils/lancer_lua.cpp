@@ -5871,12 +5871,13 @@ PoserInfoArme(CScriptPed &p, const CActionController::InfoArme &d)
 //   sans fiche ; 0,01 au moins), la durée du vol T = la distance / elle (0,01 au moins), la gravité g = +0x80 × −0,008
 //   (_DAT_00912870), et v = (cible − départ − (0, 0, ½ g T²)) / T, en mètres par pas ; les bornes +0x68 … +0x74 (-1 pour la bille)
 //   ne sont pas suivies ;
-// - les dégâts : +0x4c + charge × (+0x50 − +0x4c), × la statistique 31 / _DAT_00900130 (non suivi).
+// - les dégâts (CChargeArme::Degats) : (+0x50 − +0x4c) × charge + +0x4c, ou la charge × le +0x2c de la piste WeaponFire s'il n'est pas
+//   -1 ; × la statistique 0x1f du tireur / 100 (le joueur de l'outil, sans entrée de pedstats.dat, prend 100, comme STAT_PLAYER).
 // Les réglages du prochain tir (src/peds/Armes.h : WeaponFireOffset, WeaponFireStartOffset, WeaponFireRotation), des globales du
 // moteur que FUN_0065d160 remet à zéro après chaque tir.
 static CReglagesTir reglagesTir;
 static void
-Tirer(int ped, float charge)
+Tirer(int ped, float charge, float degatsPiste = -1.0f)
 {
 	CScriptPed *p = pietons.Acceder(ped);
 	if(p == nil) return;
@@ -5908,7 +5909,7 @@ Tirer(int ped, float charge)
 	CProjectileOutil q;
 	q.actif = true; q.modele = munition; q.tireur = ped; q.pos = depart; q.gravite = g;
 	q.vitesse = CVector(dx / T, dy / T, (dz - 0.5f * g * T * T) / T);
-	q.degats = tp.degatsMin + charge * (tp.degatsMax - tp.degatsMin);
+	q.degats = CChargeArme::Degats(true, tp.degatsMin, tp.degatsMax, charge, degatsPiste, pietons.StatLue(ped, 0x1f, 100));
 	q.naissance = maintenant; q.vie = tp.vie > 0 ? (uint32)tp.vie : 5000;
 	projectiles.push_back(q);
 	printf("%6.2f s  le piéton %d tire : projectile %d (%s) de (%.2f, %.2f, %.2f) vers (%.2f, %.2f, %.2f), %.2f m par pas, %.0f points\n",
@@ -5949,7 +5950,7 @@ AppliquerTirs(int ped, CActionController &c)
 	for(const CActionController::Tir &d : c.tirsLances){
 		if(p == nil || p->armeTenue == -1){ reglagesTir.Remettre(); continue; }   // FUN_00661f10 sans arme en main : FUN_0065d160
 		float charge = CChargeArme::AuTir(p->armeCharge, d.facteur);   // FUN_00661f10
-		Tirer(ped, charge);
+		Tirer(ped, charge, d.degats);
 		p->armeCharge = CChargeArme::kVide;   // FUN_00664710, après le tir
 		if(p->drapeaux[24] == 0) inventaire.Retirer(armes, ped, p->armeMunition, 1, p->type == SCRIPT_PED_TYPE_JOUEUR, modeles.Index("RBandBall"));
 		if(d.lacher && p->armeTenue == p->armeMunition && inventaire.Munitions(armes, ped, p->armeMunition) == 0) LacherArme(ped);

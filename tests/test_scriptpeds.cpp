@@ -149,6 +149,10 @@ main(void)
 		VERIF(fabsf(q.PasDuControleur(SCRIPT_PED_JOUEUR, 1.65f) - 0.033f) < 1e-6f);
 		col[0x14] = 0;
 		VERIF(q.PoserStats(a, col) && q.PasDuControleur(a, 1.65f) == 0.0f);
+		// La colonne d'un piéton qui a son entrée ; la valeur donnée pour un piéton sans entrée ; 0 hors du pool ou des colonnes.
+		col[0x1f] = 80;
+		VERIF(q.PoserStats(a, col) && q.StatLue(a, 0x1f, 100) == 80 && q.StatLue(SCRIPT_PED_JOUEUR, 0x1f, 100) == 100);
+		VERIF(q.StatLue(-1, 0x1f, 100) == 0 && q.StatLue(a, 64, 100) == 0);
 		VERIF(q.PoserStats(a, col) && pa->sante == 120 && pa->santeMax == 120 && pa->santeMin == 0 && q.Stat(a, 63) == 20);
 		VERIF(q.Blesser(a, 20, -1) && pa->sante == 100);
 		for(int i = 0; i < 30; i++) q.Avancer(1.0f / 30);    // une seconde : + 50 / 100 point

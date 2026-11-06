@@ -102,6 +102,11 @@ main(void)
 	VERIF(CChargeArme::AuTir(CChargeArme::kVide, 1.0f) == 0.0f && CChargeArme::AuTir(0.4f, 2.0f) == 0.8f && CChargeArme::AuTir(0.7f, 2.0f) == 1.0f);
 	VERIF(CChargeArme::AuTir(0.3f, 0.0f) == 0.3f && CChargeArme::AuTir(1.5f, -1.0f) == 1.0f);
 
+	// Les dégâts du tir (FUN_00664710) : la bille (9 sans charge, la fiche) ; la piste qui impose les siens ; l'échelle du tireur.
+	VERIF(CChargeArme::Degats(true, 9.0f, 25.0f, 0.0f, -1.0f, 100) == 9.0f && CChargeArme::Degats(true, 9.0f, 25.0f, 0.5f, -1.0f, 100) == 17.0f);
+	VERIF(CChargeArme::Degats(true, 9.0f, 25.0f, 0.5f, 40.0f, 100) == 20.0f && CChargeArme::Degats(true, 9.0f, 25.0f, 1.0f, -1.0f, 50) == 12.5f);
+	VERIF(CChargeArme::Degats(false, 9.0f, 25.0f, 1.0f, -1.0f, 100) == 0.0f && CChargeArme::Degats(true, 9.0f, 25.0f, 1.0f, -1.0f, 0) == 0.0f);
+
 	// Les réglages du tir (FUN_0065d3f0, FUN_0065d430, FUN_0065d350, FUN_0065d160) : le lance-pierre pose 0,2 puis 0 en hauteur, le
 	// dernier l'emporte ; le décalage vise plus haut, devant et de côté dans le repère du tireur, le départ tourne avec lui.
 	{

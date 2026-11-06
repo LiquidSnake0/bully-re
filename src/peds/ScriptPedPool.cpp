@@ -778,6 +778,14 @@ CScriptPedPool::Stat(int h, int n) const
 	return p && n >= 0 && n < 64 ? p->stats[n] : 0;
 }
 
+int32
+CScriptPedPool::StatLue(int h, int n, int32 sansEntree) const
+{
+	const CScriptPed *p = Acceder(h);
+	if(p == nil || n < 0 || n >= 64) return 0;
+	return p->statsLues ? p->stats[n] : sansEntree;
+}
+
 float
 CScriptPedPool::PasDuControleur(int h, float pasTimer) const
 {
