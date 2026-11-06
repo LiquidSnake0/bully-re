@@ -64,6 +64,7 @@ struct CChargeArme {
 struct CEntreeInventaire {
 	int16 munitions = 0;          // +0
 	int16 arme = -1;              // +2
+	int32 drapeaux[8] = {};       // +4 + 4n : les drapeaux de l'arme (SetWeaponFlags, la condition WeaponFlags)
 	int proprietaire = -1;        // +0x24 : l'inventaire qui la tient ; ici, le piéton
 };
 
@@ -109,6 +110,11 @@ public:
 	int PoserMunitions(const CMondeArmes &m, int ped, int32 arme, int32 n);
 	// Les entrées d'un piéton, libérées (le piéton supprimé, ou PedClearAllWeapons).
 	void Vider(int ped);
+	// Le drapeau n de l'entrée de cette arme (FUN_0045cb70 la trouve, FUN_0045cb40 la rend : son mot +4 + 4n). PoserDrapeau : la part
+	// de SetWeaponFlags (FUN_00661d40) sur l'inventaire, rien si l'arme manque. LireDrapeau : la part de WeaponFlags (FUN_0065bb20) ;
+	// faux dans `trouve` si l'arme manque (la condition lit alors l'objet arme). n hors de [0, 7] : rien, faux.
+	void PoserDrapeau(int ped, int32 arme, int n, int32 valeur);
+	bool LireDrapeau(int ped, int32 arme, int n, bool &trouve) const;
 };
 
 // Les objets du joueur (les modèles item de 0xa136b8 à 0xa136bc : les transistors, les cartes, les boîtes de chocolats…) : un

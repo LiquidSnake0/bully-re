@@ -387,6 +387,9 @@ struct CScriptPed {
 	// La charge de l'objet arme (+0x128 de +0x1d0, CChargeArme) : vide (-100) au départ (supposé : le constructeur de l'objet arme
 	// n'est pas lu), posée par WeaponSetCharge, augmentée par WeaponIncrementCharge, lue puis vidée par WeaponFire.
 	float armeCharge = -100.0f;
+	// Les drapeaux de l'objet arme (+0x26c + 4n de +0x1d0) : SetWeaponFlags et PedSetWeaponFlag les posent, WeaponFlags les lit quand
+	// l'arme tenue n'a pas d'entrée d'inventaire.
+	int32 drapeauxArme[8] = {};
 	uint32 instantMort = 0;      // +0x18b8 : l'horloge (ms) à la mort d'un autre que le joueur
 	// Le geste en cours.
 	// L'intention de mouvement du composant d'actions (+0x2e0) : sa direction (+0, +4, +8) et sa vitesse (+0x1c), que la

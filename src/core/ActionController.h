@@ -198,6 +198,11 @@ public:
 	std::vector<Charge> charges, chargesPosees;
 	struct Croissance { float entree, vie; };
 	std::vector<Croissance> croissances, croissancesActives;
+	// - SetWeaponFlags (SetWeaponFlagsTrack ; lancement FUN_00661d40, lu dans l'index) : avec une arme en main (le modèle +0x10e de
+	//   l'objet arme), le drapeau +0x1c (28) de son entrée d'inventaire et de l'objet arme (+0x26c + 4n) reçoit l'octet +0x18 (24) ;
+	//   sa mise à jour (FUN_006094f0) rend faux. `drapeauxArmeLances`.
+	struct DrapeauArme { float entree; int32 numero, valeur; bool fait; };
+	std::vector<DrapeauArme> drapeauxArme, drapeauxArmeLances;
 	// - PropSetInTransition (PropSetInTransitionTrack 0x935378, lancement FUN_00660840) : l'arme du nom haché +0x18 (24, FUN_0051adb0)
 	//   passe en +0x1574, l'arme en passage, que la PropAttach suivante prend en main (1_03 : PlayerPickupSlingshot).
 	enum { ARME_VOULUE_POSER, ARME_VOULUE_PRENDRE, ARME_ATTACHER, ARME_DETACHER, ARME_PASSAGE };

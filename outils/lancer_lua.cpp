@@ -723,11 +723,18 @@ struct CJugeOutil : CJugeAction {
 		static const uint32 kHudVerrou = ActionHash("WeaponHudLocked"), kModeleDemande = ActionHash("WeaponModelRequest"),
 		                    kArmeHud = ActionHash("WeaponDesiredIsFocusWeapon");
 		if(type == kHudVerrou) return hudArmesVerrouille;
-		// WeaponFlags (0x937c84, FUN_0065bb20) : sans arme en main, faux ; le drapeau +8 de l'entrée d'inventaire de l'arme (FUN_0045cb70,
-		// FUN_0045cb40 : les mots +4 + 4n), sinon de l'objet arme (+0x26c + 4n). Les pistes SetWeaponFlags qui les posent ne sont pas
-		// jouées : 0, donc faux.
+		// WeaponFlags (0x937c84, FUN_0065bb20, lue dans l'index) : sans arme en main (le modèle +0x10e de l'objet arme à -1), faux ; le
+		// drapeau +8 de l'entrée d'inventaire de l'arme (FUN_0045cb70, FUN_0045cb40 : le mot +4 + 4n) s'il y en a une, sinon celui de
+		// l'objet arme (+0x26c + 4n) ; non nul, vrai. SetWeaponFlags et PedSetWeaponFlag les posent.
 		static const uint32 kDrapeauxArme = ActionHash("WeaponFlags");
-		if(type == kDrapeauxArme) return 0;
+		if(type == kDrapeauxArme){
+			if(moi == nil || moi->armeTenue == -1) return 0;
+			int n = (int)mots[1];
+			bool trouve = false;
+			bool v = inventaire.LireDrapeau(ped, moi->armeTenue, n, trouve);
+			if(trouve) return v;
+			return n >= 0 && n < 8 && moi->drapeauxArme[n] != 0;
+		}
 		if(type == kModeleDemande) return 1;
 		if(type == kArmeHud){
 			CScriptPed *q = pietons.Acceder(ped);
@@ -3799,6 +3806,19 @@ PedHideHealthBar(lua_State *L)
 	return 0;
 }
 
+// PedSetWeaponFlag(ped, arme, n, b) (0x5cf090, lue à l'assembleur de 0x5cf090 à 0x5cf100) : le piéton du genre 2 de l'objet script
+// (FUN_005c7220) ; si le modèle de son objet arme (+0x10e de +0x1d0) est l'arme du deuxième argument, le drapeau n (le troisième) de
+// l'objet arme (+0x26c + 4n) reçoit le booléen du quatrième (FUN_005d8f20) ; l'entrée d'inventaire n'est pas touchée. Ne rend rien.
+static int
+PedSetWeaponFlag(lua_State *L)
+{
+	Journal("PedSetWeaponFlag", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	int n = (int)luaL_optnumber(L, 3, 0);
+	if(p && p->armeTenue != -1 && p->armeTenue == (int32)luaL_optnumber(L, 2, -2) && n >= 0 && n < 8) p->drapeauxArme[n] = lua_toboolean(L, 4) ? 1 : 0;
+	return 0;
+}
+
 // PlayerUnequip() (0x5be400 → FUN_0055c780 sur le HUD des armes, DAT_00c674f0 ; lu à l'assembleur de 0x55c780 à 0x55c7db) : l'arme
 // du HUD (+0xc0) à -1 ; FUN_0045cdf0(-1) sur l'inventaire du joueur (+0x1c4 ; son résultat n'est pas lu) ; si le joueur tient une
 // arme (le modèle +0x10e de son objet arme +0x1d0 n'est pas -1), l'arme voulue (+0x18 du composant +0x2e0) passe à -1, les mains
@@ -5877,6 +5897,13 @@ AppliquerTirs(int ped, CActionController &c)
 			p->armeCharge = CChargeArme::Augmenter(p->armeCharge, 1.0f / 30.0f, p->armeTenue != -1 && p->armeTenue == modeles.Index("slingshot"));
 	}
 	c.chargesPosees.clear();
+	// SetWeaponFlags (FUN_00661d40) : l'entrée d'inventaire de l'arme en main et l'objet arme.
+	for(const CActionController::DrapeauArme &d : c.drapeauxArmeLances){
+		if(p == nil || p->armeTenue == -1 || d.numero < 0 || d.numero >= 8) continue;
+		inventaire.PoserDrapeau(ped, p->armeTenue, d.numero, d.valeur);
+		p->drapeauxArme[d.numero] = d.valeur;
+	}
+	c.drapeauxArmeLances.clear();
 	for(const CActionController::Tir &d : c.tirsLances){
 		if(p == nil || p->armeTenue == -1) continue;   // FUN_0065d160 sans arme en main
 		float charge = CChargeArme::AuTir(p->armeCharge, d.facteur);   // FUN_00661f10
@@ -7424,6 +7451,7 @@ main(int argc, char **argv)
 	lua_register(L, "PlayerHasWeapon", PlayerHasWeapon);
 	lua_register(L, "WeaponEquipped", WeaponEquipped);
 	lua_register(L, "PlayerUnequip", PlayerUnequip);
+	lua_register(L, "PedSetWeaponFlag", PedSetWeaponFlag);
 	lua_register(L, "PedShowHealthBar", PedShowHealthBar);
 	lua_register(L, "PedHideHealthBar", PedHideHealthBar);
 	lua_register(L, "PlayerSetPosSimple", PlayerSetPosSimple);

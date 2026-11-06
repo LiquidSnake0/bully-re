@@ -116,6 +116,21 @@ CInventaireArmes::Retirer(const CMondeArmes &m, int ped, int32 arme, int32 n, bo
 }
 
 void
+CInventaireArmes::PoserDrapeau(int ped, int32 arme, int n, int32 valeur)
+{
+	int i = Trouver(ped, arme);
+	if(i >= 0 && n >= 0 && n < 8) entrees[i].drapeaux[n] = valeur;
+}
+
+bool
+CInventaireArmes::LireDrapeau(int ped, int32 arme, int n, bool &trouve) const
+{
+	int i = Trouver(ped, arme);
+	trouve = i >= 0;
+	return trouve && n >= 0 && n < 8 && entrees[i].drapeaux[n] != 0;
+}
+
+void
 CInventaireArmes::Vider(int ped)
 {
 	for(int i = 0; i < kTaille; i++) if(!libre[i] && entrees[i].proprietaire == ped) Liberer(i);

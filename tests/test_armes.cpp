@@ -86,6 +86,16 @@ main(void)
 	VERIF(o.Poser(m, RADIO, -4) == 10 && o.Nombre(RADIO) == 0);   // FUN_00541c10 : borné à 0
 	VERIF(!o.Ajouter(m, BIG_GULP, 1) && o.Nombre(BIG_GULP) == 0);
 
+	// Les drapeaux d'une entrée (FUN_00661d40, FUN_0065bb20) : posés et lus par l'arme, une arme absente n'est pas trouvée.
+	{
+		CInventaireArmes inv; CMonde mm; CTypeArme ta; ta.lu = true; ta.maximum = 10; ta.genre = 1; mm.types[400] = ta;
+		inv.Ajouter(mm, 3, 400, 1);
+		bool t = false;
+		inv.PoserDrapeau(3, 400, 1, 1);
+		VERIF(inv.LireDrapeau(3, 400, 1, t) && t && !inv.LireDrapeau(3, 400, 2, t) && t && !inv.LireDrapeau(3, 401, 1, t) && !t);
+		inv.PoserDrapeau(3, 400, 9, 1);
+		VERIF(!inv.LireDrapeau(3, 400, 9, t));
+	}
 	// La charge (FUN_0065e810, FUN_00661f10) : le lance-pierre charge deux fois moins vite ; au tir, bornée à [0, 1], × le facteur.
 	VERIF(CChargeArme::Augmenter(0.0f, 0.5f, true) == 0.25f && CChargeArme::Augmenter(0.0f, 0.5f, false) == 0.5f);
 	VERIF(CChargeArme::AuTir(CChargeArme::kVide, 1.0f) == 0.0f && CChargeArme::AuTir(0.4f, 2.0f) == 0.8f && CChargeArme::AuTir(0.7f, 2.0f) == 1.0f);
