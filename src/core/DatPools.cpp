@@ -185,3 +185,10 @@ CDatPools::Point(int h, int n) const
 	if(n > (int)l->points.size()) n = (int)l->points.size();
 	return &l->points[n - 1];
 }
+
+const CTriggerPerimeter *
+CDatPools::PerimetreDe(int handle) const
+{
+	const CTriggerZone *z = ZoneParHandle(handle);
+	return z && z->perimetre >= 0 && z->perimetre < (int)perimetres.size() ? &perimetres[z->perimetre] : nil;
+}

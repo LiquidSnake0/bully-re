@@ -40,6 +40,7 @@
 #include "../src/peds/Armes.h"
 #include "../src/peds/Patrouilles.h"
 #include "../src/objects/ObjectData.h"
+#include "../src/objects/ObjetsAnimes.h"
 #include "../src/core/IplFile.h"
 #include "../src/anim/Hxd.h"
 #include "../src/anim/AnimGroups.h"
@@ -188,6 +189,7 @@ PoserMarque(const std::string &nom, const CVector &pos)
 struct CObjetOutil { int32 modele = -1; uint32 nom = 0; CVector pos; int32 sante = 0; bool invulnerable = false, detruit = false;
                      bool parArmeSeule = false, verrouillable = false; int destructeur = -1; };
 static std::vector<CObjetOutil> objets;
+static CObjetsAnimes objetsAnimes;   // les objets animés des déclencheurs : le pool DAT_00c0f608 (src/objects/ObjetsAnimes)
 static int PoigneeObjet(size_t i){ return (int)(i << 8) | 1; }
 static CObjetOutil *ObjetParPoignee(int h){ size_t i = (size_t)h >> 8; return h >= 0 && (h & 0xff) == 1 && i < objets.size() ? &objets[i] : nil; }
 
@@ -1807,6 +1809,10 @@ DATUnload(lua_State *L)
 	int emplacement = (int)luaL_checknumber(L, 1);
 	for(int h = 1; h < donnees.NombreTrajets(); h++)
 		if(donnees.EmplacementTrajet(h) == emplacement) patrouilles.Retirer(donnees.HachageTrajet(h));
+	// Un déclencheur libéré emporte son objet animé (supposé : la libération du déclencheur, FUN_006d6920 en sens inverse, n'est
+	// pas lue).
+	for(int h = 0; h < donnees.NombreZones(); h++)
+		if(donnees.EmplacementZone(h) == emplacement) objetsAnimes.RetirerDuDeclencheur(h);
 	donnees.Decharger(emplacement);
 	return 0;
 }
@@ -2604,6 +2610,98 @@ PAnimDestroyedByPed(lua_State *L)
 		if(const CObjetOutil *o = ObjetParPoignee((int)luaL_optnumber(L, 1, -1))) r = o->destructeur;
 	lua_pushnumber(L, r);
 	return 1;
+}
+
+// --- Les objets animés des déclencheurs (src/objects/ObjetsAnimes) ---
+static std::map<uint32, CFicheObjetAnime> fichesAnimees;   // par HashString du nom du modèle
+
+// FUN_00520460 : la fiche PropButes du modèle, cherchée en profondeur sous Props/Info de PropGlbl.cat (FUN_0072bd60), sinon
+// Props/Info/default. Lue une fois par modèle.
+static const CFicheObjetAnime *
+FicheAnimee(const std::string &modele)
+{
+	uint32 h = ActionHash(modele.c_str()) & 0x7fffffff;
+	auto it = fichesAnimees.find(h);
+	if(it != fichesAnimees.end()) return &it->second;
+	CActionTrack t;
+	std::map<uint16, std::string> ch;
+	static const uint32 kProps = ActionHash("Props"), kInfo = ActionHash("Info"), kButes = ActionHash("PropButes"),
+	                    kDefaut = ActionHash("default");
+	CFicheObjetAnime f;
+	if(CActionBank::ButesCherche("PropGlbl.cat", {kProps, kInfo}, h, kButes, t, &ch) ||
+	   CActionBank::ButesChemin("PropGlbl.cat", {kProps, kInfo, kDefaut}, kButes, t, &ch))
+		f = CFicheObjetAnime::Lire(t, ch);
+	return &(fichesAnimees[h] = f);
+}
+
+// FUN_006d6650 : le nom commence par « DT_ » ou « _DT_ » (plus de trois caractères) : le bit 3 de +0x3f du déclencheur.
+static bool
+NomDePorteDT(const std::string &n)
+{
+	return n.size() > 3 && (n.compare(0, 3, "DT_") == 0 || n.compare(0, 4, "_DT_") == 0);
+}
+
+// Le pool des déclencheurs tel que FUN_00416540 et FUN_00416490 le lisent : le modèle du PLACEMENT de leur périmètre
+// (FUN_006d5450 → FUN_0051c240 : -1 pour un nom vide), l'AREACODE, l'emplacement de DATLoad, ISMISSIONSPECIFIC.
+static std::vector<CObjetsAnimes::Declencheur>
+DeclencheursDuPool(void)
+{
+	std::vector<CObjetsAnimes::Declencheur> ds;
+	for(int h = 0; h < donnees.NombreZones(); h++){
+		const CTriggerZone *z = donnees.ZoneParHandle(h);
+		if(z == nil) continue;
+		CObjetsAnimes::Declencheur d;
+		d.handle = h; d.mission = z->mission; d.zone = z->zone; d.emplacement = donnees.EmplacementZone(h);
+		d.porte = NomDePorteDT(z->nom); d.pos = z->pos; d.lacet = z->lacet;
+		const CTriggerPerimeter *pe = donnees.PerimetreDe(h);
+		if(pe && !pe->placement.empty()){
+			d.modele = modeles.Index(pe->placement.c_str());
+			if(d.modele != -1) d.fiche = FicheAnimee(pe->placement);
+		}
+		ds.push_back(d);
+	}
+	return ds;
+}
+
+// FUN_00416ae0, à l'arrivée d'un changement de zone : FUN_00416490 retire les objets animés des autres zones, puis
+// CStreaming::LoadScene (FUN_005343c0) → FUN_00416c70 → FUN_00416540 crée ceux de la zone visible. La saison
+// (DAT_00a147ec[DAT_00a147e0]) n'est pas lue : 0.
+static void
+PoserObjetsAnimes(int zone)
+{
+	std::vector<CObjetsAnimes::Declencheur> ds = DeclencheursDuPool();
+	std::vector<int> partis = objetsAnimes.RetirerHorsZone(zone, ds);
+	if(!partis.empty()) printf("%6.2f s  objets animés : %zu retirés (FUN_00416490), hors de la zone %d\n", maintenant / 1000.0, partis.size(), zone);
+	std::vector<int> crees = objetsAnimes.CreerPourZone(zone, ds, 0);
+	if(crees.empty()) return;
+	std::string liste;
+	for(int i : crees){
+		const CObjetAnime *o = objetsAnimes.Objet(i);
+		const CTriggerZone *z = o ? donnees.ZoneParHandle(o->declencheur) : nil;
+		if(z) liste += (liste.empty() ? "" : ", ") + z->nom;
+	}
+	printf("%6.2f s  objets animés : %zu créés pour la zone %d (FUN_00416540) : %s\n", maintenant / 1000.0, crees.size(), zone, liste.c_str());
+}
+
+// PAnimExists(déclencheur) (0x5c48c0, lu à l'assembleur de 0x5c48c0 à 0x5c4927) : le déclencheur (FUN_005d8200, rien en dessous
+// de 0), sa case du pool (DAT_020c7c48 : son octet d'état sans le bit 0x80), son objet (+0x1c), le +0x114 de l'objet (sa
+// géométrie) et le +0x94 de celle-ci non nuls ; un booléen (FUN_005d8450). L'outil n'a pas la géométrie : l'objet suffit.
+static int
+PAnimExists(lua_State *L)
+{
+	Journal("PAnimExists", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	lua_pushboolean(L, h >= 0 && donnees.ZoneParHandle(h) && objetsAnimes.ObjetDe(h) >= 0);
+	return 1;
+}
+
+// AreaRegisterAnimProps() (0x5b6d60 → 0x438700) : la table DAT_00bd3e78 jusqu'à son compte DAT_00bd5c54, que rien n'augmente
+// (vérifié à l'assembleur : écrit seulement en 0x416b07, remis à 0) ; elle ne crée rien.
+static int
+AreaRegisterAnimProps(lua_State *L)
+{
+	Journal("AreaRegisterAnimProps", L, 1);
+	return 0;
 }
 
 // GetPointListSize(liste) (0x5bc740) : la liste du pool (CPointPool__GetSlot), 0 sans elle ; sinon FUN_006d5800 compte les points de
@@ -5876,6 +5974,7 @@ AvancerZones(lua_State *L)
 	if(zones.etat == AREA_PRET && ++imagesEnAttenteDuSignal == 150) printf("%6.2f s  zones : %s n'a pas encore appelé AreaSignalAreaTransitionReadyToLoad, la zone %d attend\n", maintenant / 1000.0, attendu, zones.demande.zone);
 	if(e.zoneChangee) printf("%6.2f s  zones : la zone visible passe de %d à %d\n", maintenant / 1000.0, avant, zones.zoneVisible);
 	if(e.joueurPose){
+		PoserObjetsAnimes(zones.zoneVisible);   // FUN_00416ae0, avant FUN_004162f0
 		CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
 		j->pos = zones.demande.pos; j->cap = zones.demande.cap;
 		joueurPose = true;
@@ -6239,6 +6338,8 @@ main(int argc, char **argv)
 	lua_register(L, "ObjectToggleVulnerability", ObjectToggleVulnerability);
 	lua_register(L, "ObjectGetModelIndex", ObjectGetModelIndex);
 	lua_register(L, "PAnimDestroyedByPed", PAnimDestroyedByPed);
+	lua_register(L, "PAnimExists", PAnimExists);
+	lua_register(L, "AreaRegisterAnimProps", AreaRegisterAnimProps);
 	lua_register(L, "PedGetOffsetInWorldCoords", PedGetOffsetInWorldCoords);
 	lua_register(L, "PedSetStationary", PedSetStationary);
 	lua_register(L, "RegisterPedEventHandler", RegisterPedEventHandler);

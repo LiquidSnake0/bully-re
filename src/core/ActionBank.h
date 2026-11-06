@@ -137,6 +137,12 @@ public:
 	// de la piste vont dans `chaines` (position → chaîne). Faux si le fichier, un nœud ou la piste manque.
 	static bool ButesChemin(const char *cat, const std::vector<uint32> &chemin, uint32 type, CActionTrack &piste,
 	                        std::map<uint16, std::string> *chaines = nil);
+	// FUN_0072bd60 : le chemin descendu comme pour ButesChemin, puis FUN_0072ada0 cherche en profondeur, depuis ce nœud et dans
+	// l'ordre de ses enfants, le premier nœud du nom haché `nom` qui porte la piste du type (FUN_00727ed0). FUN_00520460 s'en sert
+	// pour la fiche PropButes d'un modèle animé (Props/Info de PropGlbl.cat). Faux si rien ne la porte.
+	static bool ButesCherche(const char *cat, const std::vector<uint32> &chemin, uint32 nom, uint32 type, CActionTrack &piste,
+	                         std::map<uint16, std::string> *chaines = nil);
+	static const CActionTreeFile *FichierButes(const char *cat);   // le fichier lu par ButesChemin, ou nil
 	// FUN_005f6f20 : au démarrage, les 68 arbres de la liste PTR_s_Act_Globals_act_00b0a4f0 (Globals, Missions,
 	// Player, HitTree, les armes…) chargés sous /Global par FUN_005f6c50. Rend le nombre de fichiers chargés.
 	int ChargerGlobaux(void);
