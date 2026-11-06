@@ -1018,3 +1018,44 @@ en échec plutôt que de les masquer.
   la banque `Weapons/PickUpActions`.
 - **Bilan** : 854 fonctions recréées (5,6 % du code), contre 817 (5,4 %) ; 1 785 comprises (10,4 %) ; 10 commits.
 
+## 06.11.2026, séance 1 (nuit du 05 au 06, de 22 h 12 à 2 h 05)
+
+- **`1_05` lancée seule** : elle bouclait dans `F_SetupWorld` sur `AreaDisablePatrolPath(PATH._SGD_PREFECT2)`, un bouchon qui ne
+  rendait rien. Les rondes des préfets sont recréées (`src/peds/Patrouilles`, `tests/test_patrouilles`) : le gestionnaire
+  `DAT_00c2b034` et ses entrées, que `DATLoad` crée pour chaque trajet dont `PATROLTYPE` n'est pas -1 (`FUN_004720e0`), arrêtées à la
+  naissance ; `AreaDisablePatrolPath`, `AreaEnablePatrolPath`, `AreaInitPatrolPath`, `AreaEnableAllPatrolPaths`,
+  `AreaDisableAllPatrolPaths`, `AreaClearPatrolPaths`, `DATUnload`. Le préfet posé sur une ronde (la population) n'est pas suivi.
+- **`PedIsHit`** (0x5c8a40 : le temps depuis le dernier coup du relevé, au plus le troisième argument en millisecondes).
+- **Le groupe des alliés** (`src/peds/ScriptPedPool`) : le meneur +0x2f4 et le suiveur +0x2f8 de CPed, `FUN_00485fa0` (le recrutement :
+  la laisse de 4 m au premier meneur, l'attitude 4), `FUN_00485880` et `FUN_00485820` (le renvoi, récursif par l'allié lui-même) ;
+  `PedRecruitAlly`, `PedDismissAlly` ; sept conditions (`IsAllyFollower` et `IsAllyLeader`, jusque-là fausses, `IsTargetAlly`,
+  `HasAllyState`, `HasAllyMorale`, `AllyLeaderConditionGroup`, `AllyFollowerConditionGroup`), puis `AllyIsInCombat`. L'IA d'Algie
+  entre dans `/Global/AI/Ally/allyloco`.
+- **La piste `TetherLoco`** (`FUN_00627f10`, `FUN_00627fc0`) : le point de la laisse que `FUN_00499840` refait depuis le piéton tenu,
+  ou la place à côté du premier meneur (`FUN_00485490` : à 1,35 m sur le côté, 1 m devant si l'allié est sorti de sa laisse), la
+  vitesse de la distance au-delà de l'arrivée sur le rayon, moyennée sur trente images ; `DAT_00c1a9a4` est `CTimer::ms_fTimeStep`.
+  Algie suit le joueur (`--courir x,y,z@s`, la manette vers un point fixe).
+- **La première étape** : le premier bully attaque Algie, fuit sous la moitié de sa santé, meurt ; sa fuite lance les deux bullies de
+  droite sur le joueur ; morts tous trois, `F_UnlockStage2` et la minuterie de 180 s (58,01 s).
+- **Les alliés passent les portes** (`FUN_004162f0` → `FUN_0048b970` → `FUN_0048af70`) : Algie entre à l'école avec le joueur
+  (`DT_tschool_SchoolFrontDoorL`, 67,29 s) ; `F_Stage2` démarre (`T_Stage2_Locates`, `T_BathroomAntics`). `PedSetMissionCritical`
+  (0x5cca10) et le rappel du piéton critique tombé à 0 (`FUN_004782a0`) ; `PedFindInAreaXYZ` (0x5d0960) ; la hauteur de l'allié suit
+  celle du point visé (l'outil n'a pas de sol) : Algie monte aux toilettes du second étage derrière le joueur.
+- **L'embuscade et la cabine** : `SoundStopCurrentSpeechEvent`, `PedRestrictToTrigger`, `PedSetInfiniteSprint` (+0x13c8, le champ que
+  le recrutement posait : le sprint sans fin), `PedCanTeleportOnAreaTransition` ; Algie entre dans la cabine (86,69 s), l'embuscade est
+  battue (117,97 et 129,99 s), la chasse d'eau (147,01 s), le lavabo, `F_Stage3` à 154,18 s.
+- **Ce qui bloque encore** : `F_NIS_AlgieLocker` attend qu'Algie joue le `CloseDoor` de l'arbre du casier (`NLockA`), par
+  `Rummage/Locker` (`TargetProp`, `PropInteract`) : il faut les objets animés des déclencheurs (le `PLACEMENT` des périmètres,
+  `FUN_004efe60`, `PAnimExists`…) ; le sol (la commande fait courir le joueur à 5,9 m de haut aux toilettes).
+- **La machine partagée** : un autre agent tenait le verrou commun vingt à trente minutes par mesure ; la séance a compilé et vérifié
+  dans un instantané des sources (`build/instantane`) pour ne pas geler l'arbre de travail, et lancé ses variantes de `1_05` à côté
+  des quatre missions. Six commits de moteur au lieu de huit ou neuf : chaque commit demandait
+  un passage complet sous le verrou (compilation, tests, quatre missions, variantes).
+- **REA amont** : 570 commits en attente (508 au 05.11). Touchent ce que bully-re utilise : les pseudo-codes gardés en résumé et
+  paginés (#5046, fb453f293), le JDK inspecté de Ghidra pour la vérification (#8440), les snapshots Ghidra historiques et leurs
+  profils (#8381, #8536) ; rien fusionné. La séance n'a pas ouvert REA : l'index `export/index.sqlite` et le désassemblage `objdump`
+  de `bully.exe` (déjà dans le dossier de travail de la session, pas regénéré) ont suffi.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 148,04 s), `1_04` à 81,05 s à chaque commit ;
+  journaux identiques hors les lignes des rondes, et dans `1_02` une ligne de plus depuis `SoundStopCurrentSpeechEvent` (la ligne 101 de
+  Russell coupée à 22,87 s).
+- **Bilan** : 917 fonctions recréées (5,8 % du code), contre 854 (5,6 %) ; 1 859 comprises (10,7 %) ; 7 commits.

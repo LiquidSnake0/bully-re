@@ -65,8 +65,26 @@ chantier. Un point fini passe en bas, avec son commit.
    conditions), les projectiles (`WeaponFire`, la bille, la brique, les marques), les objets cassables (les entrées spec des `.ipb`,
    `RegisterHashEventHandler`), les arbres des objets diffusés (`pxTree.cat`), les gestionnaires globaux, les ramassages ; `1_03` finit
    aussi aux briques, Davis touché de loin (148,04 s), et `1_02` par son vrai chemin (`PedGetWhoHitMeLast`, `_1_02_RUSSELTEASE`, 132,92 s).
+   Le 06.11, **`1_05` va jusqu'à sa troisième étape, le casier d'Algie** (docs/missions.md, « 1_05 ») : les rondes des préfets (`src/peds/Patrouilles`,
+   `AreaDisablePatrolPath`), `PedIsHit`, le groupe des alliés (`PedRecruitAlly`, `PedDismissAlly`, huit conditions), la piste `TetherLoco`,
+   les alliés qui passent les portes avec le joueur (`FUN_0048b970`), `PedSetMissionCritical`, `PedFindInAreaXYZ`,
+   `SoundStopCurrentSpeechEvent`, `PedRestrictToTrigger`, `PedSetInfiniteSprint` : la première étape, l'école, la cabine, l'embuscade,
+   la chasse d'eau, le lavabo ; `F_Stage3` à 154,18 s.
    Suite, dans l'ordre :
-   - `1_05` (« Save Algie ») : la lancer seule après `1_04` et voir où elle s'arrête ;
+   - finir `1_05` : `F_NIS_AlgieLocker` (le joueur dans `_1_05B_ALGIELOCKER`) attend qu'Algie joue
+     `/Global/NLockA/PedPropsActions/Interact/NPCGetItem/GetBooks/NPCGetItem/GetItem/CloseDoor` ; il y entre par
+     `/Global/1_05/Anims/Rummage/Locker` (`TargetProp`, `FUN_0065c250`, puis `PropInteract`) sur le casier, un objet animé du
+     déclencheur `NLock02B06`. D'où **les objets animés des déclencheurs** : le `PLACEMENT` du périmètre d'un déclencheur est le modèle
+     de son objet (`FUN_006d5450` : +0x10 du périmètre, par `FUN_0051c240` ; le déclencheur le tient en +0x20) ; `FUN_004efe60` crée
+     l'objet (un PAnim de 0x3b8 octets, `FUN_004ed9d0`) et le range en +0x1c du déclencheur ; trois chemins y mènent : la section `prop`
+     des `.ipb` (`PropLoaderImpl`, `FUN_00438d90` : par le nom, pour un déclencheur à l'octet +0x3f bit 0x10, posé on ne sait encore
+     où), la méthode 8 de `TriggerLoaderImpl` (`FUN_00436e00` : pas de mission, un modèle, la zone visible, les drapeaux de saison) et
+     `AreaRegisterAnimProps` (0x438700, la table `DAT_00bd3e78`) ; `PAnimExists` (0x5c48c0 : +0x1c, son +0x114, son +0x94),
+     `PAnimOpenDoor`, `PAnimCloseDoor`, `PAnimDoorStayOpen`, `PAnimSetActionNode`, `PAnimSetPropFlag`, l'arbre du casier (`NLockA.act`),
+     `TargetProp` et la piste `PropInteract` ; puis la fin de `F_NIS_AlgieLocker` (`PedSetWeapon(…, 405)`, `/Global/Player/Gifts/GetMoney`,
+     `MinigameIsShowingCompletion`) et `MissionSucceed`. Restent dans `1_05` : `PedGetUniqueModelStatus` (0x5cdef0 : le mot +0x5c du
+     modelinfo, que rien ne lit encore dans l'outil), les marqueurs (`AddBlipForChar`, `BlipRemove`), la barre de santé d'Algie, la
+     ronde du préfet (`FUN_00472320`), le sol (Algie s'arrête 2,40 m avant sa place : la commande fait courir le joueur à 5,9 m) ;
    - la suite des armes : la charge (`WeaponSetCharge`, `WeaponIncrementCharge` : l'objet arme +0x128, la portée et les dégâts du tir),
      la visée du joueur (`WeaponPlayerFireAutoTarget`, `FUN_00662a40` en entier, la cible qui bouge : les jocks de `1_04` ne sont touchés
      que pendant leurs sauts), le haut du corps en contrôleur à part (le spawn `UpperBody` du nœud de l'arme, pour ne plus passer par
@@ -124,6 +142,14 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- `1_05` va jusqu'à sa troisième étape (06.11 ; fc7617d, e4918b5, cc43ab6, f1538a0, a147a19, 167fc76) : les rondes des préfets
+  (`src/peds/Patrouilles` : le gestionnaire `DAT_00c2b034`, `FUN_004720e0`, `AreaDisablePatrolPath` et ses voisines, `DATUnload`),
+  `PedIsHit`, le groupe des alliés (le meneur +0x2f4, le suiveur +0x2f8, `FUN_00485fa0`, `FUN_00485880`, `PedRecruitAlly`,
+  `PedDismissAlly`, `IsAllyFollower`, `IsAllyLeader`, `IsTargetAlly`, `HasAllyState`, `HasAllyMorale`, `AllyLeaderConditionGroup`,
+  `AllyFollowerConditionGroup`, `AllyIsInCombat`), la piste `TetherLoco` (`FUN_00627fc0`, la place `FUN_00485490`), les alliés qui passent
+  les portes (`FUN_0048b970`, `FUN_0048af70`), `PedSetMissionCritical` et le rappel critique (`FUN_004782a0`), `PedFindInAreaXYZ`,
+  `SoundStopCurrentSpeechEvent`, `PedRestrictToTrigger`, `PedSetInfiniteSprint`, `PedCanTeleportOnAreaTransition` ; `--courir`.
 
 - `1_04` se termine réussie à 81,05 s (05.11 ; 21d2552, 493e338, 04c5ba0, 40fba0d, 530271b, 082a5d4, 7430472, 61114d6, e0d8e5e) :
   `PedGetOffsetInWorldCoords`, `PedFaceHeading`, `PedSetStationary` ; les types des armes (les fiches ObjectButes de Weapons/Info,

@@ -596,6 +596,50 @@ pieds et touche la vitre visée 0,23 s plus tard), suit Gary au terrain, monte d
 s'en prend au joueur (`F_BurtonPissed`), `MinigameSetCompletion("M_PASS")` et `MissionSucceed` à 81,02 s : **`1_04` se termine
 réussie à 81,05 s**. Les jocks qui font leurs tours ne sont pas touchés : la bille part vers la position du piéton au moment du tir.
 
+## `1_05` (« Save Algie ») (06.11.2026)
+
+`1_05` s'enchaîne après `1_04`. Lancée seule (`build/outils/lancer_lua 90 --mission 1_05 --sans-cinematiques`), elle bouclait
+dans `F_SetupWorld` (« `while not AreaDisablePatrolPath(PATH._SGD_PREFECT2) do Wait(0) end` ») : les rondes des préfets sont
+recréées (`src/peds/Patrouilles`). Lu dans `1_05.lur` (`main`, la fonction 2 : `F_Intro`, puis `F_Stage1`, la boucle des étapes) :
+
+1. `F_Intro` (la fonction 5) : les modèles, `F_SetupWorld`, `F_Stage1_Setup` (le premier bully, le piéton 4, modèle 99, invulnérable ;
+   la bande de droite, 5 et 6, sur `_1_05_SPAWNBULLIESRIGHT` ; celle de gauche, 7 à 9 ; Algie, le piéton 10, modèle 4,
+   `PedSetMissionCritical`, `PedRecruitAlly(gPlayer, Algie)`), l'objectif `1_05_MOBJ_01`.
+2. `F_Stage1Objectives` (la fonction 15, à chaque image) : le joueur dans `_1_05_TRIGGERJOCKSNEARLIBRARY` lance le premier bully sur
+   `_1_05_ROUTEFIRSTBULLY` ; au nœud 2, `F_Stage1FirstBullyAttacking` : il attaque Algie (`1_05_MOBJ_00`). Sous la moitié de
+   `bullyMaxHealth` (sa santé de départ), il fuit sur `_1_05_ROUTEBULLYFLEENEW` ; au nœud 1, `F_routeBullyFleeNew` lance la bande de
+   droite sur le joueur (la bande de gauche part si le joueur entre dans `_1_05_TRIGGERJOCKPACK` ou la frappe). Le premier bully mort,
+   et les bandes lancées mortes : `F_UnlockStage2` (`1_05_MOBJ_02`, la minuterie de 180 s : la manquer, c'est `F_AlgiePissSelf`).
+3. `F_Stage2` quand le joueur est dans l'école (`T_MonitorPlayerLocation` : `AreaGetVisible() == 2`) et la bande battue :
+   `F_SetupInteriorPeds`, `T_Stage2_Locates`, `T_BathroomAntics`. Algie dans `_1_05B_BATHROOMSECONDFLOOR` (ou dans les toilettes du
+   premier étage, où deux jocks attendent) : `F_CutAlgieToStall`, `F_StopTimer`, `F_EncounterBathroomSecondFloor` ; Algie dans la
+   cabine, `F_BathroomSequence` (Eunice et le piéton 11 sortent, deux bullies tendent une embuscade), la salle vide
+   (`PedFindInAreaXYZ`, 12 m) et quinze secondes : la chasse d'eau, Algie au lavabo.
+4. `F_Stage3` : Algie suit le joueur à son casier (`_1_05B_ALGIELOCKER`) ; `F_NIS_AlgieLocker` attend qu'Algie joue
+   `/Global/NLockA/PedPropsActions/Interact/NPCGetItem/GetBooks/…/CloseDoor` (le casier, un objet animé du déclencheur `NLock02B06`,
+   par `/Global/1_05/Anims/Rummage/Locker` : `TargetProp`, `PropInteract`), puis `MissionSucceed`.
+
+Avec l'outil (sous zsh, `${=…}`) :
+
+    LA=/Global/Player/Attacks/Strikes/LightAttacks
+    J1=13.5,14.1,…,24.3 (dix-neuf jabs) ; J2=28,28.6,…,37 (seize) ; J3=39,39.6,…,48 (seize)
+    build/outils/lancer_lua 160 --mission 1_05 --sans-cinematiques --courir 187.3,-132.2,6.1@5 \
+      --suivre 4,0.8@12.5 --viser 4@12.5 --jouer $LA@$J1 --suivre 5,0.8@27 --viser 5@27 --jouer $LA@$J2 \
+      --suivre 6,0.8@38 --viser 6@38 --jouer $LA@$J3 \
+      --courir 209.2,-73.3,6@59 --porte DT_tschool_SchoolFrontDoorL@66 --courir -675.8,-325.4,5.9@70 \
+      --suivre 12,0.8@105 --viser 12@105 --jouer $LA@106,106.6,…,115 --suivre 13,0.8@117 --viser 13@117 --jouer $LA@118,118.6,…,127
+
+(`J1`, `J2`, `J3` et les deux séries de l'embuscade : seize ou dix-neuf instants de 0,6 s en 0,6 s.) Le joueur court à la bibliothèque,
+Algie le suit (`TetherLoco`, 5,51 s) ; le premier bully attaque Algie à 12,08 s ; dix-neuf jabs (six manquent « dans son dos ») : il fuit
+à 47 points (19,04 s), meurt à 27,32 s ; sa fuite lance les bullies 5 et 6 sur le joueur (25,11 s), morts à 40,00 et 50,98 s ;
+`F_UnlockStage2` et `MissionTimerStart(180)` à 58,01 s. La porte de l'école à 66 s : Algie passe avec le joueur (`FUN_0048b970`), posé
+dans le hall à 67,29 s ; `F_Stage2`. L'outil n'a pas de sol : le joueur court aux toilettes du second étage à 5,9 m de haut, pour
+qu'Algie, qui s'arrête à 2,40 m de sa place et monte au même pas que lui, soit dans la hauteur de `_1_05B_BATHROOMSECONDFLOOR` (de 5,23 à
+7,23 m) : `F_CutAlgieToStall` à 86,69 s, Algie dans la cabine à 91,64 s, la minuterie arrêtée ; l'embuscade (les bullies 12 et 13)
+attaque à 104,54 s, morts à 117,97 et 129,99 s ; la chasse d'eau à 147,01 s, Algie au lavabo, puis `F_Stage3` : Algie suit de nouveau le
+joueur, l'objectif `1_05_MOBJ_03` à 154,18 s. La suite (le casier, `F_NIS_AlgieLocker`) attend les objets animés des déclencheurs
+(docs/suite.md).
+
 ## Suite
 
 1. Ce que `1_01` ne joue pas encore pour de vrai : les nœuds d'action (`PedSetActionNode` cherche le nœud dans
