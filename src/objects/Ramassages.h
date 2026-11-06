@@ -54,6 +54,11 @@ public:
 	// (0xfffe repasse à 1) ; la poignée est rendue et notée en +0x34.
 	int32 Creer(const CVector &pos, int32 modele, const std::string &fiche, bool ficheBit, bool collectible, uint32 mot3c,
 	            uint8 octet45, bool neuf, float decalageZ = 0.0f);
+	// FUN_00445640(indice, fictif) (lu à l'assembleur de 0x445640 à 0x44570c) : FUN_00443af0 à la position de l'objet fictif (sa
+	// matrice +0x14, sinon +4), de son modèle (+0x10e), sans fiche, collectible, son haché (+0x124) en +0x3c et son octet +0x110 (le
+	// placement qui l'a posé) en +0x45 ; une poignée valable reçoit l'indice du collectible en +0x42, puis FUN_004453f0 prépare l'objet
+	// visible, qui reçoit +0x3c en +0x228 et +0x45 en +0x110 (FUN_004386f0 le range avec les entités de son placement) : non suivis.
+	int32 CreerDuCollectible(const CVector &pos, int32 modele, int16 indice, uint32 hache, uint8 octet110, float decalageZ);
 	// La poignée vérifiée comme FUN_00443e90 et ses voisines : l'indice sous 300, l'entrée prise (bit 3) et la même génération.
 	CRamassage *Entree(int32 h);
 	int Indice(int32 h) const;

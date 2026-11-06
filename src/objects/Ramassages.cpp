@@ -42,3 +42,11 @@ CRamassages::Entree(int32 h)
 	return i < 0 ? nil : &entrees[i];
 }
 
+int32
+CRamassages::CreerDuCollectible(const CVector &pos, int32 modele, int16 indice, uint32 hache, uint8 octet110, float decalageZ)
+{
+	int32 h = Creer(pos, modele, "", false, true, hache, octet110, false, decalageZ);
+	if(CRamassage *r = Entree(h)) r->collectible = indice;
+	return h;
+}
+

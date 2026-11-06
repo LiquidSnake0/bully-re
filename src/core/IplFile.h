@@ -34,12 +34,12 @@ enum eIplSection {
 struct CIplInst {
 	int32 modelId;                  // +0
 	char name[64];                  // +4
-	float unk68;                    // +68 (22.0 dans ftest.ipb)
+	float unk68;                    // +68 (0x44) : la zone, arrondie dans le +0x111 de l'entité (FUN_00438790) ; 22.0 dans ftest.ipb
 	CVector pos;                    // +72
 	CVector scale;                  // +84
 	float rot[4];                   // +96, quaternion x y z w
-	int32 unk112;
-	uint32 unk116;
+	int32 unk112;                   // +0x70 : posé en +0x11c de l'entité (FUN_00438790)
+	uint32 unk116;                  // +0x74 : le HashString du nom de l'instance (« radio06 ») : FUN_00426270 y cherche un collectible
 };
 
 // Une entrée « spec » (le lecteur 0x433470 : 128 octets passés au chargeur, son emplacement +0x18) : la forme d'une « inst » puis le

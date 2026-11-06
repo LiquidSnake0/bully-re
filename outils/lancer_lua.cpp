@@ -213,6 +213,20 @@ static int objetVise = -1;   // l'objet que le joueur vise (--viser-objet), sa p
 static CRamassages ramassages;
 static CObjetsJoueur objetsJoueur;   // les objets du joueur (DAT_00cf0060, src/peds/Armes)
 static CCollectibles collectibles;   // les collectibles (CCollectiblesMgr, 0xbceb50, src/objects/Collectibles)
+// Supposé aussi : le joueur de l'outil naît en (0, 0, 0), dans FootFieldTrig (le terrain de football, dont main.lua suit
+// l'entrée et la sortie du joueur dans la table 0), quand le jeu le crée au point de la sauvegarde ; il n'est suivi qu'une fois
+// posé par le gestionnaire de zones (les déclencheurs, la population des collectibles).
+static bool joueurPose = false;
+
+// Les collectibles des placements : FUN_00438790 (le gestionnaire des entrées inst des .ipb, lu dans l'index) cherche le haché de
+// l'instance (+0x74) parmi les collectibles (FUN_00426270) ; un collectible pris (FUN_004261f0) ou indisponible (FUN_00426200) n'est
+// pas posé, sinon il devient un objet fictif (CDummyObject de 0x128 octets, FUN_00465250, FUN_004cf0b0) à la position de l'entrée, sa
+// zone (+0x111) arrondie de +0x44, son haché en +0x124 et son placement en +0x110. Ce gestionnaire tourne quand CIplStore charge le
+// placement autour du joueur (FUN_00439220) ; l'outil, qui lit les 85 .ipb une fois au départ sans les diffuser, garde les entrées
+// collectibles et les juge à chaque image comme si leur placement était chargé (supposé).
+struct CCollectiblePose { int32 modele = -1; CVector pos; int8 zone = 0; uint32 hache = 0; uint8 placement = 0; };
+static std::vector<CCollectiblePose> collectiblesPoses;
+static uint8 placementCourant = 0;
 
 // Le nom d'un modèle d'arme ou d'objet (le +4 de son modelinfo est son HashString), nil sinon.
 static const std::string *
@@ -2613,6 +2627,16 @@ NoterObjet(const CIplSpec &e)
 	return 0;
 }
 
+static int32
+NoterInstance(const CIplInst &e)
+{
+	if(collectibles.Indice(e.unk116) < 0) return 0;
+	CCollectiblePose c;
+	c.modele = e.modelId; c.pos = e.pos; c.zone = (int8)lroundf(e.unk68); c.hache = e.unk116; c.placement = placementCourant;
+	collectiblesPoses.push_back(c);
+	return 0;
+}
+
 static void
 ChargerObjets(void)
 {
@@ -2621,6 +2645,7 @@ ChargerObjets(void)
 	if(monde < 0) return;
 	const CdImage &img = CdStream::ms_images[monde];
 	CIplFile::ms_specHandler = NoterObjet;
+	CIplFile::ms_instHandler = NoterInstance;
 	int fichiers = 0;
 	for(int32 i = 0; i < img.m_numEntries; i++){
 		const CDirectoryEntry &d = img.m_entries[i];
@@ -2631,10 +2656,12 @@ ChargerObjets(void)
 		CFileMgr::Seek(fd, d.offset * CDSTREAM_SECTOR_SIZE, 0);
 		bool ok = CFileMgr::ReadExact(fd, buf.data(), (uint32)buf.size());
 		CFileMgr::CloseFile(fd);
-		if(ok){ CIplFile::Load(buf.data(), (uint32)buf.size()); fichiers++; }
+		if(ok){ placementCourant = (uint8)fichiers; CIplFile::Load(buf.data(), (uint32)buf.size()); fichiers++; }
 	}
 	CIplFile::ms_specHandler = nil;
+	CIplFile::ms_instHandler = nil;
 	printf("%d lignes de object.dat ; %zu objets cassables dans les entrées spec de %d .ipb\n", CObjectData::ms_numObjectInfos, objets.size(), fichiers);
+	printf("%zu collectibles posés par les entrées inst des .ipb\n", collectiblesPoses.size());
 }
 
 // ObjectNameToHashID(nom) (0x5c2390) : le HashString du nom, rendu en pointeur léger (thunk_FUN_0073b520 : le type 2).
@@ -3113,6 +3140,35 @@ AppelerRappelCollectible(lua_State *L, const CRappelCollectible &r)
 	lua_pushnumber(L, r.type); lua_pushnumber(L, r.pris); lua_pushnumber(L, r.nombre);
 	lua_pushnumber(L, (double)r.hache); lua_pushnumber(L, r.ramassage); lua_pushnumber(L, r.indice);
 	if(lua_pcall(L, 6, 0, 0) != 0){ printf("        rappel des collectibles : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+}
+
+// La population (FUN_004a0a10 → FUN_004a0130, lu dans l'index et à l'assembleur de 0x4a0130 à 0x4a0200) : à chaque image, un
+// trente-deuxième du pool des objets fictifs (DAT_00c0f600, par le compteur d'images DAT_00c1a99c & 0x1f) ; un objet fictif de la zone
+// visible (+0x111 = DAT_00bd1008), de la zone 1, ou de la zone DAT_00bd09eb quand DAT_00bd09ec est posé (non suivi), à moins de 80 m
+// au plan (_DAT_009051d8) du joueur (FUN_00446890(0) : sa position, ou celle de son véhicule) passe à FUN_0049f2f0 (lu dans l'index) :
+// FUN_0049e390 (non suivi, supposé vrai) ; un collectible (FUN_00426270 sur +0x124) qui n'est ni un nain, ni une citrouille, ni une
+// tombe (FUN_00426210, FUN_00426230, FUN_00426250) devient un ramassage (FUN_00445640), dont la poignée est notée au collectible
+// (FUN_004262c0), et l'objet fictif est retiré (FUN_0045dc20, son destructeur) ; un nain, une citrouille ou une tombe pas pris deviennent
+// un CObject de 0x22c octets (FUN_004d0490 : des objets à casser, non suivis). L'outil passe tous les collectibles posés à chaque image
+// (jusqu'à 31 images plus tôt que le jeu) ; un collectible dont le ramassage existe n'a plus d'objet fictif.
+static void
+PoserLesCollectibles(void)
+{
+	const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	if(j == nil || !joueurPose) return;   // supposé : le joueur de l'outil n'est nulle part avant d'être posé
+	for(const CCollectiblePose &c : collectiblesPoses){
+		int i = collectibles.Indice(c.hache);
+		if(i < 0 || collectibles.Pris(i) || !collectibles.Disponible(i) || collectibles.AuSol(i)) continue;
+		if(ramassages.Entree(collectibles.Ramassage(i))) continue;
+		if(c.zone != zones.zoneVisible && c.zone != 1) continue;
+		float dx = c.pos.x - j->pos.x, dy = c.pos.y - j->pos.y;
+		if(dx * dx + dy * dy >= 80.0f * 80.0f) continue;
+		int32 h = ramassages.CreerDuCollectible(c.pos, c.modele, (int16)i, c.hache, c.placement, armes.Type(c.modele).decalageRamassage);
+		collectibles.PoserRamassage(i, h);
+		const std::string *nom = NomDArme(c.modele);
+		printf("%6.2f s  collectibles : l'entrée %d (modèle %d, %s) devient le ramassage %#x en (%.2f, %.2f, %.2f), à %.1f m du joueur\n",
+		       maintenant / 1000.0, i, c.modele, nom ? nom->c_str() : "?", h, c.pos.x, c.pos.y, c.pos.z, sqrtf(dx * dx + dy * dy));
+	}
 }
 
 // CollectiblesSetTypeAvailable(type[, b]) (0x5bafa0, lu à l'assembleur de 0x5bafa0 à 0x5bafe7) : b vrai par défaut, le second
@@ -5706,10 +5762,7 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 static const char *const kEvenementsDeclencheur[] = {"un piéton entre", "le joueur entre", "un projectile", "un piéton sort",
                                                      "le joueur sort", "dedans"};
 
-// Supposé aussi : le joueur de l'outil naît en (0, 0, 0), dans FootFieldTrig (le terrain de football, dont main.lua suit
-// l'entrée et la sortie du joueur dans la table 0), quand le jeu le crée au point de la sauvegarde ; il n'est suivi qu'une fois
-// posé par le gestionnaire de zones.
-static bool joueurPose = false;
+// (joueurPose : déclaré avec les ramassages.)
 
 static void
 SuivreDeclencheurs(void)
@@ -6929,8 +6982,8 @@ main(int argc, char **argv)
 	if(modeles.Charger()) printf("%zu noms de modèles dans Objects/ide.img\n", modeles.Nombre());
 	else printf("Objects\\ide.img introuvable : MODELENUM répondra -1\n");
 	ChargerArmes();
+	ChargerCollectibles();   // CGame::Initialise : les collectibles avant les placements
 	ChargerObjets();
-	ChargerCollectibles();
 	ChargerPedStats();
 	ChargerMissions();
 	// Le joueur, créé avec le monde (CPlayerPed, modèle 0) : FUN_00484d10 lui pose aussi les arbres de son modèle,
@@ -7291,6 +7344,7 @@ main(int argc, char **argv)
 		MettreAJour(L);
 		AvancerPietons();
 		AvancerObjets();
+		PoserLesCollectibles();
 		ecranDeFin.Avancer(33.0f / 20.0f);   // FUN_007073c0 : le pas du moteur (ms_fTimeStep)
 		PoursuivrePieton();   // --suivre : la manette du joueur
 		AvancerCinematique();

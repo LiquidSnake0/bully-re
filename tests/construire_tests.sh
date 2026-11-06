@@ -36,7 +36,7 @@ g++ $FLAGS tests/test_armes.cpp src/peds/Armes.cpp -o build/tests/test_armes
 g++ $FLAGS tests/test_patrouilles.cpp src/peds/Patrouilles.cpp -o build/tests/test_patrouilles
 g++ $FLAGS tests/test_objetsanimes.cpp src/objects/ObjetsAnimes.cpp -o build/tests/test_objetsanimes
 # Les ramassages (CPickups) : aucun fichier du jeu.
-g++ $FLAGS tests/test_ramassages.cpp src/objects/Ramassages.cpp -o build/tests/test_ramassages
+g++ $FLAGS tests/test_ramassages.cpp src/objects/Ramassages.cpp src/objects/Collectibles.cpp src/core/ActionTree.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_ramassages
 # Le gestionnaire des collectibles (colctbls.dat) : aucun fichier du jeu.
 g++ $FLAGS tests/test_collectibles.cpp src/objects/Collectibles.cpp src/core/ActionTree.cpp src/core/CdStream.cpp tests/hote/FileMgr.cpp tests/hote/Chemins.cpp tests/hote/Alloc.cpp -o build/tests/test_collectibles
 # La frontière moteur / scripts : les noms de docs/api-lua-tables.tsv.
