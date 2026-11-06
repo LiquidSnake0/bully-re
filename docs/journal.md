@@ -1059,3 +1059,49 @@ en échec plutôt que de les masquer.
   journaux identiques hors les lignes des rondes, et dans `1_02` une ligne de plus depuis `SoundStopCurrentSpeechEvent` (la ligne 101 de
   Russell coupée à 22,87 s).
 - **Bilan** : 917 fonctions recréées (5,8 % du code), contre 854 (5,6 %) ; 1 859 comprises (10,7 %) ; 7 commits.
+
+## 06.11.2026, séance 2 (de 2 h 07 à 4 h 20)
+
+- **Les objets animés des déclencheurs** (`src/objects/ObjetsAnimes`, `tests/test_objetsanimes`) : un déclencheur dont le périmètre a
+  un `PLACEMENT` reçoit un objet de 0x3b8 octets ; l'outil suit le chemin de la scène, `FUN_00416ae0` à l'arrivée d'un changement de
+  zone (`FUN_00416490` retire ceux des autres zones, `CStreaming::LoadScene` → `FUN_00416c70` → `FUN_00416540` crée ceux de la zone
+  visible : pas de mission, un modèle, la zone, hors de l'emplacement 5, la saison de la fiche). Les trois autres chemins sont lus :
+  la section prop des `.ipb` (`FUN_00438d90`), les déclencheurs des `.ipb` (`FUN_00436e00`), et `AreaRegisterAnimProps`, dont la table
+  n'a jamais d'entrée (vérifié à l'assembleur). La fiche PropButes d'un modèle (le +0x70 du modelinfo) vient de Props/Info de
+  `PropGlbl.cat`, cherchée en profondeur (`FUN_0072bd60`) : l'arbre, la saison, la portée, qui s'en sert, le genre (LOCKER, door).
+  `PAnimExists` réelle : à l'école, `cbLockerCreated` voit le casier d'Algie (`NLock02B06`).
+- **Le contrôleur de l'objet** : `PAnimSetActionNode` (`FUN_004ef1f0` : le même fichier que l'arbre de l'objet, le nœud joué tel quel
+  par `FUN_004edec0` ; sinon une descente dans le contexte de l'objet, qui n'a pas de piéton), `PAnimSetPropFlag`, `PAnimGetPropFlag`
+  (les mots +0x160 + 4n, `FUN_004ea300`), les pistes `PropFlags` et `PropSetPedAction` (ce que l'objet offre aux piétons, +0x230),
+  quatre conditions des objets ; le contrôleur est figé (son nœud ne finit pas : non suivi, la règle de secours des piétons le ferait
+  changer de nœud).
+- **`TargetProp`** (`FUN_0065c250`) et le relevé des objets proches d'un piéton (`FUN_004991e0`, `FUN_004989f0`, `FUN_00497e90`,
+  `FUN_004979b0`) : les cinq points de synchronisation (FeetSync…), le drapeau 11 qui écarte les piétons d'ambiance, NotUseable, le
+  genre LOCKER ; les objets du piéton (+0x438, +0x444, +0x548). Algie vise le casier à 1,09 m.
+- **Les pistes `Sync` et `PropInteract`** : Algie joue l'action du casier (`NLockA/PedPropsActions/Interact/NPCGetItem`), fouille,
+  prend ses livres et referme la porte (`CloseDoor`, 166,12 s).
+- **L'écran de fin** (`src/hud/EcranDeFin.h` : `MinigameSetCompletion`, `MinigameAddCompletionMsg`, `MinigameIsShowingCompletion`, la
+  minuterie de 2 s que l'affichage compte à rebours) et **les objectifs de mission** (`src/hud/ObjectifsMission.h` : la liste de dix
+  entrées de l'objet 0x20c4420, `MissionObjectiveAdd` rend l'indice). Le bouchon de `MinigameIsShowingCompletion` rendait faux :
+  `1_04` attend maintenant l'écran avant `MissionSucceed` et finit à 82,53 s.
+- **`PlayOnTarget` attend sa cible** (`FUN_006615f0` réessaie à chaque image tant que le piéton n'a pas de cible) ; faute du composant
+  de visée des piétons de l'IA, l'outil prend le partenaire de prise (supposé) : dans `Gifts/GetMoney`, Algie fait jouer `Give/Give`
+  au joueur, l'écran `M_PASS`, **`1_05` se termine réussie à 185,20 s**.
+- **`1_06_01` lancée seule** : le nœud `Run` de la mission au départ de `main` (`FUN_006abf20` → `FUN_006ab510`) et les pistes
+  `Script` à un nombre (`FUN_006851a0`) : `F_SetStage(1)` pose `bStageLoaded` ; puis `MissionObjectiveAdd` réelle : Gary et Pete
+  parlent, `F_RoutingToHobo` attend le joueur dans `_FIGHTINGAREA`.
+- **Les portes animées** : `PAnimOpenDoor`, `PAnimOpenDoorImmediate`, `PAnimCloseDoor`, `PAnimDoorStayOpen`, `PAnimIsOpen`
+  (`FUN_004eebc0`, `FUN_004eed70` : les drapeaux 0, 9, 15, les nœuds Opening et Closing de `Door.act`) ; les portes nommées
+  (`AreaSetDoorLocked` et ses voisines) passent par l'objet de leur déclencheur quand il en a un (`FUN_006d6420` … `FUN_006d64d0`).
+- **Ce qui reste supposé** (docs/suite.md) : le composant de visée des piétons de l'IA, les points de synchronisation des modèles,
+  l'arbre propre d'un objet animé à sa création, la vue du relevé, la tenue de l'écran de fin, le sol.
+- **La machine partagée** : l'autre agent a tenu le verrou par séries (batch1 à batch8) ; la séance a gardé quatre instantanés des
+  sources (`build/instantane`, `instantane2` à `instantane4`) pour vérifier deux commits à la suite sous un seul verrou et écrire le
+  suivant pendant l'attente ; une leçon : ne jamais réécrire un script qu'un `sh` est en train de lire (la vérification du quatrième
+  commit a rejoué ses missions deux fois).
+- **REA amont** : 571 commits en attente (570 à la séance 1) ; rien de neuf qui touche bully-re (le dernier, #8979, concerne Windows) ;
+  rien fusionné. La séance n'a pas ouvert REA : l'index `export/index.sqlite` et `objdump` sur `bully.exe` ont suffi.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 148,04 s) à chaque commit ; `1_04` à 81,05 s
+  jusqu'au quatrième commit, 82,53 s depuis l'écran de fin ; journaux identiques hors les lignes des objets animés, la ligne de l'écran
+  de fin et les indices des objectifs. `1_05` jusqu'à `F_Stage3` (154,18 s), puis le casier (166,12 s), puis réussie à 185,20 s.
+- **Bilan** : 1 002 fonctions recréées (6,4 % du code), contre 917 (5,8 %) ; 1 945 comprises (11,2 %) ; 10 commits.
