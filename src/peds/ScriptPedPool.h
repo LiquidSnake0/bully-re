@@ -346,6 +346,7 @@ struct CScriptPed {
 	// le mettent à 1 ; FUN_0047cee0 ne dépense pas la réserve de sprint (+0x18d0) avec lui, ni quand le meneur est le joueur.
 	bool sprintSansFin = false;
 	bool teleportable = true;    // +0x1c99 : PedCanTeleportOnAreaTransition (0x5cd080) ; 1 depuis le constructeur (0x480465)
+	int32 mot135c = 0;           // +0x135c : PedShowHealthBar le met à 0 en montrant la barre, à 1 avec « non » (non lu ailleurs)
 	int32 groupe14ec = 0;        // +0x14ec : le troisième argument de PedRecruitAlly (FUN_005d8f20), chez les deux ; 0 au renvoi
 	// Le piéton critique pour la mission (PedSetMissionCritical, 0x5cca10) : l'octet +0x141c, le rappel Lua +0x18e8 (une
 	// fonction gardée par lancer_lua) et +0x1420 ; FUN_004782a0 appelle le rappel quand la santé tombe à 0.

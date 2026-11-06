@@ -57,6 +57,7 @@
 #include "../src/hud/ObjectifsMission.h"
 #include "../src/hud/ButtonHistory.h"
 #include "../src/hud/Marqueurs.h"
+#include "../src/hud/BarreSante.h"
 #include "../src/render/CameraMgr.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
@@ -248,6 +249,7 @@ NomDArme(int32 a)
 static CAreaManager zones;
 static CCameraMgr cameras;   // le gestionnaire de caméras (0xc3cc68) : le mode 1 au démarrage (FUN_004f35d0)
 static CHudComponents hud;   // DAT_00c674a0 : les 48 composants du HUD, tous cachés au démarrage (FUN_0053cc70)
+static CBarreSante barreSante;   // le composant 12 (HUDSecondaryHealthBar, DAT_00c674d0), src/hud/BarreSante.h
 // Le fondu de la caméra (CameraFade, 0x4f1980), réduit à ce que la machine des zones et les scripts en
 // attendent : une durée, un sens, et « fini ». Les durées par défaut sont celles d'AreaTransitionButes (DAT_020c8910,
 // lue dans Globals.cat au démarrage) : +0x18 pour le fondu au noir (0,65 s), +0x1c pour le retour (0,5 s) ;
@@ -3760,6 +3762,41 @@ PedHasWeapon(lua_State *L)
 	const CScriptPed *p = PedArg(L, 1);
 	lua_pushboolean(L, p && p->armeTenue == (int32)luaL_optnumber(L, 2, -2));
 	return 1;
+}
+
+// PedShowHealthBar(ped, oui[, texte[, b[, second[, texte2]]]]) (0x5ca5d0, lue à l'assembleur de 0x5ca5d0 à 0x5ca70a) : le piéton du
+// genre 2 de l'objet script (FUN_005c7220), et avec cinq arguments ou plus le second ; sans piéton, rien. Avec `oui` (FUN_005d8f20) :
+// le mot +0x135c du piéton à 0, FUN_00553690(piéton, second) sur la barre (CBarreSante::Poser), la barre montrée (l'emplacement 5 de
+// sa table, +0x14, avec 1), le texte du troisième argument (FUN_00551380, sinon aucun), l'octet +0xba au quatrième (à 0 sans lui, et
+// +0xbb à 0 quand +0xba l'est), le texte du sixième (FUN_005513b0, sinon aucun). Sans `oui` : le mot +0x135c du piéton, et du second,
+// à 1 (la barre n'est pas cachée). Ne rend rien.
+static int
+PedShowHealthBar(lua_State *L)
+{
+	Journal("PedShowHealthBar", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	CScriptPed *s = lua_gettop(L) >= 5 ? PedArg(L, 5) : nil;
+	if(p == nil) return 0;
+	if(!lua_toboolean(L, 2)){ p->mot135c = 1; if(s) s->mot135c = 1; return 0; }
+	p->mot135c = 0;
+	barreSante.Poser((int)lua_tonumber(L, 1), p->sante, p->santeMax, s ? (int)lua_tonumber(L, 5) : -1, s ? s->sante : 0.0f, s ? s->santeMax : 0.0f);
+	hud.PoserVisible(HUD_BARRE_SANTE, true);
+	barreSante.PoserTexte(lua_gettop(L) >= 3 ? lua_tostring(L, 3) : nil);
+	barreSante.octetBA = lua_gettop(L) >= 4 && lua_toboolean(L, 4);
+	if(!barreSante.octetBA) barreSante.octetBB = false;
+	barreSante.PoserTexte2(lua_gettop(L) >= 6 ? lua_tostring(L, 6) : nil);
+	return 0;
+}
+
+// PedHideHealthBar() (0x5c6770, lue à l'assembleur de 0x5c6770 à 0x5c6790) : FUN_00553690(0, 0) sur la barre, puis la barre cachée
+// (l'emplacement 5 avec 0). Ne rend rien.
+static int
+PedHideHealthBar(lua_State *L)
+{
+	Journal("PedHideHealthBar", L, 1);
+	barreSante.Poser(-1, 0, 0, -1, 0, 0);
+	hud.PoserVisible(HUD_BARRE_SANTE, false);
+	return 0;
 }
 
 // PlayerUnequip() (0x5be400 → FUN_0055c780 sur le HUD des armes, DAT_00c674f0 ; lu à l'assembleur de 0x55c780 à 0x55c7db) : l'arme
@@ -7355,6 +7392,8 @@ main(int argc, char **argv)
 	lua_register(L, "PlayerHasWeapon", PlayerHasWeapon);
 	lua_register(L, "WeaponEquipped", WeaponEquipped);
 	lua_register(L, "PlayerUnequip", PlayerUnequip);
+	lua_register(L, "PedShowHealthBar", PedShowHealthBar);
+	lua_register(L, "PedHideHealthBar", PedHideHealthBar);
 	lua_register(L, "PlayerSetPosSimple", PlayerSetPosSimple);
 	lua_register(L, "PlayerFaceHeadingNow", PlayerFaceHeadingNow);
 	lua_register(L, "PlayerWeaponHudLock", PlayerWeaponHudLock);

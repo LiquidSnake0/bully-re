@@ -15,7 +15,7 @@
 #pragma once
 #include "../common.h"
 
-enum { HUD_COMPOSANTS = 0x30, HUD_ARGENT = 13, HUD_SOCIAL = 37 };
+enum { HUD_COMPOSANTS = 0x30, HUD_BARRE_SANTE = 12, HUD_ARGENT = 13, HUD_SOCIAL = 37 };
 
 struct CHudComponent {
 	bool visible = false;        // +8
