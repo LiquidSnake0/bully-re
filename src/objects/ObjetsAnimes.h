@@ -122,7 +122,11 @@ public:
 	// FUN_00416490 : les objets d'un déclencheur hors de `zone`, qui n'est ni propre à une mission ni de l'emplacement 5, sont
 	// retirés (leur déclencheur perd son +0x1c). Rend les déclencheurs touchés.
 	std::vector<int> RetirerHorsZone(int zone, const std::vector<Declencheur> &declencheurs);
-	// Le déclencheur est libéré (DATUnload) : son objet part avec lui.
+	// Le déclencheur est libéré (DATUnload) : son objet part avec lui. C'est aussi PAnimDelete(déclencheur) (0x5c4930, lue à
+	// l'assembleur de 0x5c4930 à 0x5c4990) : la case du pool des déclencheurs (FUN_005d8200, le pool 0x20c7c48 ; rien pour un
+	// indice négatif ou une case libre, l'octet 0x80 de sa table), son objet (+0x1c) retiré du monde (FUN_0045dc20), les références
+	// des autres entités à lui effacées (FUN_0045e540 : chaque pool, FUN_00468c30), détruit (la première méthode de sa vftable, avec
+	// 1), puis +0x1c à 0. Rien n'est rendu.
 	void RetirerDuDeclencheur(int declencheur);
 	// Le +0x1c d'un déclencheur : l'indice de son objet, ou -1.
 	int ObjetDe(int declencheur) const;

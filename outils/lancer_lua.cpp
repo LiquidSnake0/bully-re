@@ -2887,6 +2887,20 @@ PoserObjetsAnimes(int zone)
 	printf("%6.2f s  objets animés : %zu créés pour la zone %d (FUN_00416540) : %s\n", maintenant / 1000.0, crees.size(), zone, liste.c_str());
 }
 
+// PAnimDelete(déclencheur) (0x5c4930, CObjetsAnimes::RetirerDuDeclencheur) : l'objet animé du déclencheur détruit ; son contrôleur
+// part avec lui (AvancerObjets ne garde que les contrôleurs des objets qui existent).
+static int
+PAnimDelete(lua_State *L)
+{
+	Journal("PAnimDelete", L, 1);
+	int d = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	if(objetsAnimes.ObjetDe(d) < 0) return 0;
+	objetsAnimes.RetirerDuDeclencheur(d);
+	const CTriggerZone *z = donnees.ZoneParHandle(d);
+	if(journalRestant > 0) printf("%6.2f s  l'objet animé du déclencheur %s est détruit (PAnimDelete)\n", maintenant / 1000.0, z ? z->nom.c_str() : "?");
+	return 0;
+}
+
 // PAnimCreate(déclencheur[, x, b]) (0x5c4680, CObjetsAnimes::CreerParScript) : l'objet animé du déclencheur, même propre à une
 // mission ; b (le troisième argument, FUN_005d8f20 s'il y en a trois ou plus) va à l'octet +0x3a8, 1 par défaut. Ne rend rien.
 static int
@@ -7373,6 +7387,7 @@ main(int argc, char **argv)
 	lua_register(L, "PickupCreateFromPed", PickupCreateFromPed);
 	lua_register(L, "PAnimRequest", PAnimRequest);
 	lua_register(L, "PAnimCreate", PAnimCreate);
+	lua_register(L, "PAnimDelete", PAnimDelete);
 	lua_register(L, "AddBlipForChar", AddBlipForChar);
 	lua_register(L, "BlipAddPoint", BlipAddPoint);
 	lua_register(L, "BlipRemove", BlipRemove);
