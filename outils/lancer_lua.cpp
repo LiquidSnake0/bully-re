@@ -436,6 +436,42 @@ NomDeModele(int32 m)
 }
 
 static bool ObjetNonUtilisable(int i);   // l'objet animé joue NotUseable (FUN_005f46a0 sur son contrôleur)
+
+// FUN_004991e0 (le relevé des objets proches d'un piéton, depuis TargetProp et PropTargetInteractive ; la branche des piétons de
+// l'IA, CObjetsAnimes::Relever) : rien quand le piéton se sert déjà d'un objet (+0x548) ; sinon la liste des proches (+0x450, leur
+// nombre en +0x4c8) refaite et, s'il y en a un, le repéré (+0x444, son point +0x448, sa distance +0x44c).
+static void
+ReleverObjetsProches(CScriptPed *q, float portee)
+{
+	if(q->objetUtilise >= 0) return;
+	CObjetsAnimes::Releveur r;
+	r.pos = q->pos; r.parScript = q->script >= 0;
+	auto fe = modeles.femme.find(q->modele); r.femme = fe != modeles.femme.end() && fe->second;
+	std::vector<CObjetsAnimes::Repere> proches;
+	CObjetsAnimes::Repere m = objetsAnimes.Relever(r, portee, ObjetNonUtilisable, proches);
+	q->objetsProches.clear();
+	for(const CObjetsAnimes::Repere &e : proches) q->objetsProches.push_back({e.objet, e.sync, e.distance});
+	if(m.objet >= 0){ q->objetRepere = m.objet; q->syncRepere = m.sync; q->distanceRepere = m.distance; }
+}
+
+// FUN_004979b0 sur le repéré et les proches relevés : l'objet choisi devient l'objet visé du piéton (+0x438, son point +0x43c).
+static bool
+ViserObjetChoisi(CScriptPed *q, int ped, uint32 genre, float portee, int32 modele, const char *condition, float t)
+{
+	std::vector<CObjetsAnimes::Repere> proches;
+	for(const CScriptPed::ObjetProche &e : q->objetsProches) proches.push_back({e.objet, e.sync, e.distance});
+	CObjetsAnimes::Repere repere{q->objetRepere, q->syncRepere, q->distanceRepere};
+	CObjetsAnimes::Repere c = objetsAnimes.Choisir(repere, proches, genre, portee, modele, ObjetNonUtilisable);
+	if(c.objet < 0) return false;
+	if(q->objetVise != c.objet && journalRestant > 0){
+		const CObjetAnime *o = objetsAnimes.Objet(c.objet);
+		const CTriggerZone *z = o ? donnees.ZoneParHandle(o->declencheur) : nil;
+		printf("%6.2f s  %s : le piéton %d vise l'objet animé du déclencheur %s, à %.2f m\n", t, condition, ped, z ? z->nom.c_str() : "?", c.distance);
+	}
+	q->objetVise = c.objet; q->syncVise = c.sync;
+	return true;
+}
+
 struct CJugeOutil : CJugeAction {
 	int ped; float t;
 	// Les tirages du contexte qui juge (+0x24 et les dés +0x28 à +0x34, CActionController::tirageContexte et des) : ceux
@@ -517,7 +553,7 @@ struct CJugeOutil : CJugeAction {
 		// l'objet le plus proche du modèle (FUN_00460650, FUN_00467c30, FUN_005eb6f0 : non suivi, faux). Sinon, hors du joueur, le
 		// relevé (FUN_004991e0 : rien quand le piéton se sert déjà d'un objet, +0x548 ; la liste +0x4c8 vidée ; FUN_004989f0), puis
 		// FUN_004979b0(genre, portée, modèle, 1, 0, 0) : l'objet visé (+0x438) et son point (+0x43c).
-		static const uint32 kObjetCible = ActionHash("TargetProp");
+		static const uint32 kObjetCible = ActionHash("TargetProp"), kObjetVise = ActionHash("PropTargetInteractive");
 		if(type == kObjetCible){
 			CScriptPed *q = pietons.Acceder(ped);
 			if(q == nil) return 0;
@@ -533,28 +569,27 @@ struct CJugeOutil : CJugeAction {
 			for(const char *n : kPointsDeSynchro) connu |= (ActionHash(n) & 0x7fffffff) == sync;
 			if(!connu) return 0;
 			float portee; memcpy(&portee, &mots[0], 4);
-			if(q->type != SCRIPT_PED_TYPE_JOUEUR && q->objetUtilise < 0){
-				CObjetsAnimes::Releveur r;
-				r.pos = q->pos; r.parScript = q->script >= 0;
-				auto fe = modeles.femme.find(q->modele); r.femme = fe != modeles.femme.end() && fe->second;
-				std::vector<CObjetsAnimes::Repere> proches;
-				CObjetsAnimes::Repere m = objetsAnimes.Relever(r, portee, ObjetNonUtilisable, proches);
-				q->objetsProches.clear();
-				for(const CObjetsAnimes::Repere &e : proches) q->objetsProches.push_back({e.objet, e.sync, e.distance});
-				if(m.objet >= 0){ q->objetRepere = m.objet; q->syncRepere = m.sync; q->distanceRepere = m.distance; }
-			}
-			std::vector<CObjetsAnimes::Repere> proches;
-			for(const CScriptPed::ObjetProche &e : q->objetsProches) proches.push_back({e.objet, e.sync, e.distance});
-			CObjetsAnimes::Repere repere{q->objetRepere, q->syncRepere, q->distanceRepere};
-			CObjetsAnimes::Repere c = objetsAnimes.Choisir(repere, proches, f.ChampCondition(d, 0x1c), portee, modele, ObjetNonUtilisable);
-			if(c.objet < 0) return 0;
-			if(q->objetVise != c.objet && journalRestant > 0){
-				const CObjetAnime *o = objetsAnimes.Objet(c.objet);
-				const CTriggerZone *z = o ? donnees.ZoneParHandle(o->declencheur) : nil;
-				printf("%6.2f s  TargetProp : le piéton %d vise l'objet animé du déclencheur %s, à %.2f m\n", t, ped, z ? z->nom.c_str() : "?", c.distance);
-			}
-			q->objetVise = c.objet; q->syncVise = c.sync;
-			return 1;
+			if(q->type != SCRIPT_PED_TYPE_JOUEUR) ReleverObjetsProches(q, portee);
+			return ViserObjetChoisi(q, ped, f.ChampCondition(d, 0x1c), portee, modele, "TargetProp", t);
+		}
+		// PropTargetInteractive (ConditionPropTargetInteractive 0x936838, FUN_00655110, lue à l'assembleur de 0x655110 à 0x65519d ;
+		// créateur 0x645470, 0x18 octets, FUN_00654e30 : +4 la portée, 2 par défaut (_DAT_00900bfc), +8 le genre de l'objet (un
+		// HashString, FUN_0066bd40), l'octet +0xc, +0x10 un flottant (la même valeur par défaut) et les octets +0x14 à +0x17, à 0) : sans
+		// piéton (+8 du contexte), faux ; le relevé FUN_004991e0(portée, +0xc, +0x10, +0x14) sur le composant +0x34c du piéton, sauf pour
+		// le joueur (+0x1310 à 0xd) quand +0xc est nul et la portée nulle ; un partenaire de prise (+0x155c) sans l'octet +0x17 rend
+		// faux ; sinon FUN_004979b0(genre, portée, -1, 0, +0x15, +0x16) : l'objet repéré ou l'un des proches, à moins de la portée, de
+		// n'importe quel modèle, et animé (le quatrième argument nul ne laisse passer que les entités de type 6, les 3 bits bas de
+		// +0x108), devient l'objet visé. L'outil ne relève les objets que pour les piétons de l'IA (la branche du joueur, FUN_00497ce0,
+		// n'est pas suivie) ; ses objets sont tous animés ; +0x15 (le genre DAMAGEABLE) et +0x16 (l'objet verrouillé au joueur) ne
+		// sont pas suivis.
+		if(type == kObjetVise){
+			CScriptPed *q = pietons.Acceder(ped);
+			if(q == nil) return 0;
+			float portee; memcpy(&portee, &mots[0], 4);
+			bool sansReleve = q->type == SCRIPT_PED_TYPE_JOUEUR && (f.ChampCondition(d, 0xc) & 0xff) == 0 && portee == 0.0f;
+			if(!sansReleve && q->type != SCRIPT_PED_TYPE_JOUEUR) ReleverObjetsProches(q, portee);
+			if(q->cibleDePrise >= 0 && ((f.ChampCondition(d, 0x14) >> 24) & 0xff) == 0) return 0;
+			return ViserObjetChoisi(q, ped, mots[1], portee, -1, "PropTargetInteractive", t);
 		}
 		const CScriptPed *moi = pietons.Acceder(ped);
 		// WeaponEquiped (ConditionWeaponEquiped 0x9365a4, FUN_0065bd80, lu à l'assembleur de 0x65bde9 à 0x65be1e) : sans piéton,
@@ -666,14 +701,8 @@ struct CJugeOutil : CJugeAction {
 		}
 		// ParametricTime (ConditionParametricTime 0x937ad8, FUN_005fbed0 ; créateur 0x649580) : le flottant que pointe le
 		// +0x38 du contexte (+0x157c du piéton, que seul le vélo pose) comparé à +4 par +8 (FUN_005fb750).
-		// PropTargetInteractive (0x936838, FUN_00655110 ; créateur 0x645470) : sans piéton, faux ; pour le joueur à +4 nul
-		// et octet +0xc nul, sans relevé des objets, sinon FUN_004991e0 (FUN_004989f0 range en +0x450 les objets proches,
-		// leur nombre en +0x4c8) ; un partenaire de prise (+0x155c) sans l'octet +0x17 rend faux ; puis FUN_004979b0 : l'objet
-		// visé (+0x444) ou l'un des objets relevés, à moins de +4 m (+0x44c), du modèle voulu. L'outil n'a pas d'objets dans
-		// le monde : +0x444 est nul et la liste vide, la condition est fausse.
-		static const uint32 kParametrique = ActionHash("ParametricTime"), kObjetVise = ActionHash("PropTargetInteractive");
+		static const uint32 kParametrique = ActionHash("ParametricTime");
 		if(type == kParametrique) return moi ? ComparerCondition(moi->parametrique, seuil, mots[1]) : -1;
-		if(type == kObjetVise) return 0;
 		// WeaponAmmo (FUN_0065b290) : les munitions (FUN_00486130 : 0 pour une arme sous 1) de l'arme tenue (FUN_00474aa0 :
 		// le modèle +0x10e de l'objet arme +0x1d0, sinon 0), ou avec l'octet +0xc celles de l'arme du HUD (HUDWeapons, le
 		// composant 20, +0xc0) pour le joueur seulement, comparées à +4 par +8 (FUN_005fb750). Sans arme : 0.
