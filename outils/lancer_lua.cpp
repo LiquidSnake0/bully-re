@@ -6200,9 +6200,15 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 			if(!TetherLoco(ped, l, !l.lancee)) l.vie = -2.0f;
 			l.lancee = true;
 		}
-		for(const CActionController::Regard &r : k->regardsActifs){   // FUN_00620dc0
-			const CScriptPed *q = pietons.Acceder(r.genre == 0 ? CibleDe(ped) : r.genre == 1 ? p->cibleDePrise : -1);
-			if(q && q != p) p->cap = atan2f(q->pos.y - p->pos.y, q->pos.x - p->pos.x) * 180.0f / 3.14159265f + r.decalage;
+		// FUN_00620dc0 : la cible du genre de la piste par FUN_00477ab0 (CScriptPedPool::CibleDeGenre ; le genre 0, PedGetTargetPed, est
+		// ici la cible de l'IA) : un piéton, ou un objet animé et sa position.
+		for(const CActionController::Regard &r : k->regardsActifs){
+			CVector v; bool vise = false;
+			CScriptPedPool::Cible e = pietons.CibleDeGenre(ped, r.genre);
+			if(r.genre == 0){ e.pieton = CibleDe(ped); e.objet = -1; }
+			if(const CScriptPed *q = pietons.Acceder(e.pieton)){ if(q != p){ v = q->pos; vise = true; } }
+			else if(const CObjetAnime *o = objetsAnimes.Objet(e.objet)){ v = o->pos; vise = true; }
+			if(vise) p->cap = atan2f(v.y - p->pos.y, v.x - p->pos.x) * 180.0f / 3.14159265f + r.decalage;
 		}
 		for(const CActionController::Drapeau &d : k->drapeauxPoses) if(d.numero < SCRIPT_PED_DRAPEAUX) p->drapeaux[d.numero] = d.valeur;
 		k->drapeauxPoses.clear();
