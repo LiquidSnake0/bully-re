@@ -225,7 +225,7 @@ static bool joueurPose = false;
 // zone (+0x111) arrondie de +0x44, son haché en +0x124 et son placement en +0x110. Ce gestionnaire tourne quand CIplStore charge le
 // placement autour du joueur (FUN_00439220) ; l'outil, qui lit les 85 .ipb une fois au départ sans les diffuser, garde les entrées
 // collectibles et les juge à chaque image comme si leur placement était chargé (supposé).
-struct CCollectiblePose { int32 modele = -1; CVector pos; int8 zone = 0; uint32 hache = 0; uint8 placement = 0; };
+struct CCollectiblePose { int32 modele = -1; CVector pos; int8 zone = 0; uint32 hache = 0; uint8 placement = 0; bool converti = false; };
 static std::vector<CCollectiblePose> collectiblesPoses;
 static uint8 placementCourant = 0;
 
@@ -3151,21 +3151,22 @@ AppelerRappelCollectible(lua_State *L, const CRappelCollectible &r)
 // tombe (FUN_00426210, FUN_00426230, FUN_00426250) devient un ramassage (FUN_00445640), dont la poignée est notée au collectible
 // (FUN_004262c0), et l'objet fictif est retiré (FUN_0045dc20, son destructeur) ; un nain, une citrouille ou une tombe pas pris deviennent
 // un CObject de 0x22c octets (FUN_004d0490 : des objets à casser, non suivis). L'outil passe tous les collectibles posés à chaque image
-// (jusqu'à 31 images plus tôt que le jeu) ; un collectible dont le ramassage existe n'a plus d'objet fictif.
+// (jusqu'à 31 images plus tôt que le jeu) ; une entrée changée en ramassage n'a plus d'objet fictif, et l'outil, qui ne
+// rediffuse pas les placements, ne la repose plus (un ramassage retiré, ObjectRemovePickupsInTrigger, ne revient pas).
 static void
 PoserLesCollectibles(void)
 {
 	const CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
 	if(j == nil || !joueurPose) return;   // supposé : le joueur de l'outil n'est nulle part avant d'être posé
-	for(const CCollectiblePose &c : collectiblesPoses){
+	for(CCollectiblePose &c : collectiblesPoses){
 		int i = collectibles.Indice(c.hache);
-		if(i < 0 || collectibles.Pris(i) || !collectibles.Disponible(i) || collectibles.AuSol(i)) continue;
-		if(ramassages.Entree(collectibles.Ramassage(i))) continue;
+		if(c.converti || i < 0 || collectibles.Pris(i) || !collectibles.Disponible(i) || collectibles.AuSol(i)) continue;
 		if(c.zone != zones.zoneVisible && c.zone != 1) continue;
 		float dx = c.pos.x - j->pos.x, dy = c.pos.y - j->pos.y;
 		if(dx * dx + dy * dy >= 80.0f * 80.0f) continue;
 		int32 h = ramassages.CreerDuCollectible(c.pos, c.modele, (int16)i, c.hache, c.placement, armes.Type(c.modele).decalageRamassage);
 		collectibles.PoserRamassage(i, h);
+		c.converti = true;   // FUN_0045dc20 et le destructeur : l'objet fictif n'est plus
 		const std::string *nom = NomDArme(c.modele);
 		printf("%6.2f s  collectibles : l'entrée %d (modèle %d, %s) devient le ramassage %#x en (%.2f, %.2f, %.2f), à %.1f m du joueur\n",
 		       maintenant / 1000.0, i, c.modele, nom ? nom->c_str() : "?", h, c.pos.x, c.pos.y, c.pos.z, sqrtf(dx * dx + dy * dy));
