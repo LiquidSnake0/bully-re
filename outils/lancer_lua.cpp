@@ -2199,6 +2199,20 @@ AreaRegisterAreaScript(lua_State *L)
 	return 0;
 }
 
+// PlayerSetPosSimple(x, y, z) (0x5d2bd0, lue à l'assembleur de 0x5d2bd0 à 0x5d2c5a) : les trois flottants (FUN_005d82a0) ; le joueur
+// (DAT_00c1aea8) sort du monde (la méthode +0xc de sa vftable), reçoit la position (FUN_0041c390, sans toucher au cap), ses objets de
+// rendu suivent (FUN_00443950, FUN_00465610 : le cadre de son modèle) et il rentre dans le monde (la méthode +8). Ni la zone ni le
+// gestionnaire de zones ne changent, contrairement à PlayerSetPosXYZ. Ne rend rien.
+static int
+PlayerSetPosSimple(lua_State *L)
+{
+	Journal("PlayerSetPosSimple", L, 1);
+	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	j->pos = CVector((float)luaL_optnumber(L, 1, 0), (float)luaL_optnumber(L, 2, 0), (float)luaL_optnumber(L, 3, 0));
+	if(journalRestant > 0) printf("%6.2f s  le joueur est posé en (%.2f, %.2f, %.2f) (PlayerSetPosSimple)\n", maintenant / 1000.0, j->pos.x, j->pos.y, j->pos.z);
+	return 0;
+}
+
 // PlayerSetPosXYZ(x, y, z) (0x5d1280 → 0x415fb0) : même chemin, avec le cap du joueur et la zone visible.
 static int
 PlayerSetPosXYZ(lua_State *L)
@@ -3734,6 +3748,23 @@ PedHasWeapon(lua_State *L)
 	return 1;
 }
 
+// PlayerUnequip() (0x5be400 → FUN_0055c780 sur le HUD des armes, DAT_00c674f0 ; lu à l'assembleur de 0x55c780 à 0x55c7db) : l'arme
+// du HUD (+0xc0) à -1 ; FUN_0045cdf0(-1) sur l'inventaire du joueur (+0x1c4 ; son résultat n'est pas lu) ; si le joueur tient une
+// arme (le modèle +0x10e de son objet arme +0x1d0 n'est pas -1), l'arme voulue (+0x18 du composant +0x2e0) passe à -1, les mains
+// nues ; FUN_0055c6f0(-1) (PoserArmeHud : l'arme du HUD, +0xc4 à -1, la recherche de l'arme dans la liste du HUD) ; l'échéance de
+// l'affichage du HUD (+0x140) à l'horloge (DAT_00c1a9b4) plus 4 s, que l'outil ne dessine pas. Ne rend rien. C'est le contrôleur
+// du joueur qui range ensuite l'arme (Weapons/SelectActions, la condition WeaponDesired).
+static int
+PlayerUnequip(lua_State *L)
+{
+	Journal("PlayerUnequip", L, 1);
+	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+	armeHud = -1;
+	if(j && j->armeTenue != -1) j->armeVoulue = -1;
+	PoserArmeHud(-1);
+	return 0;
+}
+
 static int
 PlayerHasWeapon(lua_State *L)
 {
@@ -4577,6 +4608,18 @@ PedFaceHeading(lua_State *L)
 	Journal("PedFaceHeading", L, 1);
 	CScriptPed *p = PedArg(L, 1);
 	if(p && (int)luaL_optnumber(L, 3, 0) == 0) PoserCap(p, (float)luaL_optnumber(L, 2, 0) + 90.0f);
+	return 0;
+}
+
+// PlayerFaceHeadingNow(degrés) (0x5c7360, lue à l'assembleur de 0x5c7360 à 0x5c73b2) : le cap en radians (× π / 180, les doubles
+// 0x900160 et 0x900158) posé au joueur (DAT_00c1aea8) par FUN_004755e0 (CPed::SetHeading : le cap visé +0x1700, la matrice par
+// FUN_00412ad0, +0x10, le vecteur avant aux +0 et +0xc du composant +0x2e0), puis la matrice et le cadre de rendu (FUN_00443950,
+// FUN_006c9990 sur le +0xc de +0x114) : le chemin du mode 0 de PedFaceHeading, sans file d'objectifs. Ne rend rien.
+static int
+PlayerFaceHeadingNow(lua_State *L)
+{
+	Journal("PlayerFaceHeadingNow", L, 1);
+	PoserCap(pietons.Acceder(SCRIPT_PED_JOUEUR), (float)luaL_optnumber(L, 1, 0) + 90.0f);
 	return 0;
 }
 
@@ -7297,6 +7340,9 @@ main(int argc, char **argv)
 	lua_register(L, "PedHasWeapon", PedHasWeapon);
 	lua_register(L, "PlayerHasWeapon", PlayerHasWeapon);
 	lua_register(L, "WeaponEquipped", WeaponEquipped);
+	lua_register(L, "PlayerUnequip", PlayerUnequip);
+	lua_register(L, "PlayerSetPosSimple", PlayerSetPosSimple);
+	lua_register(L, "PlayerFaceHeadingNow", PlayerFaceHeadingNow);
 	lua_register(L, "PlayerWeaponHudLock", PlayerWeaponHudLock);
 	lua_register(L, "ObjectNumProjectileImpacts", ObjectNumProjectileImpacts);
 	lua_register(L, "AreaClearAllProjectiles", AreaClearAllProjectiles);
