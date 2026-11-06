@@ -246,7 +246,9 @@ public:
 	// mission en cours) est appelée (FUN_005d80a0) ; sans l'octet +0x18, sans argument ; avec, l'octet +0x20 passe la poignée du
 	// piéton (FUN_005c60d0) et le nombre +0x1c. L'octet +0x2c (la réponse choisit un enfant du nœud, FUN_005f4490) et l'octet
 	// +0x21 (la poignée du déclencheur d'un objet animé) ne sont pas suivis. `appelsLances` : ceux de cette image.
-	struct AppelScript { float entree; std::string script, fonction; bool avecPieton; float nombre; bool fait; };
+	// avecNombre : l'octet +0x18 (un argument, le nombre +0x1c) ; avecPieton : l'octet +0x20 (la poignée du piéton d'abord) ;
+	// avecDeclencheur : l'octet +0x21 à 1 (la poignée du déclencheur de l'objet du contexte d'abord, FUN_006d7910 sur son +0x23c).
+	struct AppelScript { float entree; std::string script, fonction; bool avecPieton; float nombre; bool fait; bool avecNombre = false, avecDeclencheur = false; };
 	std::vector<AppelScript> appelsScript, appelsLances;
 	struct Droits { float entree; bool prendre, fait, retient; };   // retient : l'octet +8, jusqu'au lancement
 	std::vector<Droits> droits;

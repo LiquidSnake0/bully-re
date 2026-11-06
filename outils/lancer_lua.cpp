@@ -1357,7 +1357,7 @@ SurMission(uint32 hachage)
 // La piste Script (FUN_006851a0) : le même choix de l'espace de noms ; la fonction est appelée par NSCall avec, si la piste le
 // demande, la poignée du piéton et le nombre de la piste (FUN_005d8460, FUN_005d8480). La réponse n'est pas lue.
 static void
-AppelScript(const std::string &script, const std::string &fonction, int ped, float nombre)
+AppelScript(const std::string &script, const std::string &fonction, int ped, float nombre, bool avecNombre = false, int declencheur = -2)
 {
 	int s = -1;
 	if(script == "mission"){
@@ -1381,7 +1381,10 @@ AppelScript(const std::string &script, const std::string &fonction, int ped, flo
 	lua_pushstring(L, fonction.c_str());
 	lua_pushboolean(L, 0);
 	int n = 3;
+	// FUN_006851a0 : la poignée du piéton (l'octet +0x20) ou celle du déclencheur (+0x21, -1 sans), puis le nombre (FUN_005d8480).
 	if(ped >= 0){ lua_pushnumber(L, ped); lua_pushnumber(L, nombre); n = 5; }
+	else if(declencheur != -2){ lua_pushnumber(L, declencheur); lua_pushnumber(L, nombre); n = 5; }
+	else if(avecNombre){ lua_pushnumber(L, nombre); n = 4; }
 	if(lua_pcall(L, n, 0, 0) != 0){ printf("        piste Script : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
 	scriptCourant = avant;
 }
@@ -1802,6 +1805,13 @@ AvancerMission(lua_State *L)
 			printf("%6.2f s  mission %s : MissionSetup fini, main démarre\n", maintenant / 1000.0, mission.nom.c_str());
 			NouveauThread(L, mission.script, "main");
 			mission.etat = DEROULEMENT;
+			// FUN_006abf20, après le thread main : FUN_006ab510(« Run ») joue le nœud Run de la mission (src/core/MissionBank) ;
+			// ses pistes Script se lancent à cette première image (FUN_005f49a0).
+			for(const CMissionData::Appel &a : banque.missions[mission.indice].run){
+				printf("%6.2f s  mission %s : le nœud Run appelle %s dans %s (piste Script)\n", maintenant / 1000.0, mission.nom.c_str(),
+				       a.fonction.c_str(), a.espace.c_str());
+				AppelScript(a.espace, a.fonction, -1, a.nombre, a.avecNombre, a.avecDeclencheur ? -1 : -2);
+			}
 		}
 		break;
 	case DEROULEMENT:
@@ -5406,7 +5416,12 @@ AppliquerDroits(int ped, CActionController &c)
 	appels.swap(c.appelsLances);
 	for(const CActionController::AppelScript &a : appels){
 		printf("%6.2f s  le piéton %d appelle %s dans %s (piste Script)\n", maintenant / 1000.0, ped, a.fonction.c_str(), a.script.c_str());
-		AppelScript(a.script, a.fonction, a.avecPieton ? ped : -1, a.nombre);
+		int declencheur = -2;
+		if(a.avecDeclencheur){
+			const CObjetAnime *o = objetsAnimes.Objet(CJugeOutil(ped, maintenant / 1000.0f).ObjetDuContexte());
+			declencheur = o ? o->declencheur : -1;
+		}
+		AppelScript(a.script, a.fonction, a.avecPieton ? ped : -1, a.nombre, a.avecNombre, declencheur);
 	}
 }
 

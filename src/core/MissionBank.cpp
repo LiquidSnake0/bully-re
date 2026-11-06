@@ -57,6 +57,28 @@ Parcourir(const CActionTreeFile &f, const CActionNode &n, const char *banque, st
 				m.coronaTaille = (int)b.Mot(40);
 				if((a = b.Champ(48)) != nil) m.coronaInvite = f.ChaineCitee(a->decalage);
 			}
+		// FUN_006ab510(« Run ») : le premier nœud de ce nom sous la mission (en profondeur), ses pistes Script.
+		static const uint32 kRun = ActionHash("Run") & 0x7fffffff, kScript = ActionHash("Script") & 0x7fffffff;
+		struct R { static const CActionNode *Chercher(const CActionNode &x, uint32 h){
+			for(const CActionNode &e : x.enfants){
+				if((e.hachage & 0x7fffffff) == h) return &e;
+				if(const CActionNode *r = Chercher(e, h)) return r;
+			}
+			return nil;
+		} };
+		if(const CActionNode *run = R::Chercher(n, kRun))
+			for(int32 de : run->pistes){
+				CActionTrack b;
+				if(!f.Piste(de, b) || (b.type & 0x7fffffff) != kScript) continue;
+				CMissionData::Appel ap;
+				if((a = b.Champ(36)) != nil) ap.espace = f.ChaineCitee(a->decalage);
+				if((a = b.Champ(40)) != nil) ap.fonction = f.ChaineCitee(a->decalage);
+				if((a = b.Champ(24)) != nil) ap.avecNombre = a->valeur[0] != 0;
+				if((a = b.Champ(32)) != nil) ap.avecPieton = a->valeur[0] != 0;
+				if((a = b.Champ(33)) != nil) ap.avecDeclencheur = a->valeur[0] == 1;
+				if((a = b.Champ(28)) != nil && a->taille >= 4) memcpy(&ap.nombre, a->valeur, 4);
+				if(!ap.fonction.empty()) m.run.push_back(ap);
+			}
 		dest.push_back(m);
 	}
 	for(const CActionNode &e : n.enfants) Parcourir(f, e, banque, dest, references);

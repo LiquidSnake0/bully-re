@@ -151,9 +151,16 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			minuteries.push_back({a, Reel(p, 24, 0.0f), false});
 		}else if(p.type == kScript){
 			const CActionAttribut *sc = p.Champ(36), *fn = p.Champ(40);
-			if(fn && !Octet(p, 44) && !(Octet(p, 24) && !Octet(p, 32)))
-				appelsScript.push_back({a, sc ? f->ChaineCitee(sc->decalage) : std::string(), f->ChaineCitee(fn->decalage),
-				                        Octet(p, 24), Reel(p, 28, 0.0f), false});
+			// FUN_006851a0 : avec l'octet +0x18, le nombre +0x1c en dernier argument ; l'octet +0x20 le fait précéder de la poignée
+			// du piéton, l'octet +0x21 (à 1) de celle du déclencheur de l'objet du contexte.
+			if(fn && !Octet(p, 44)){
+				AppelScript as{a, sc ? f->ChaineCitee(sc->decalage) : std::string(), f->ChaineCitee(fn->decalage),
+				               Octet(p, 24) && Octet(p, 32), Reel(p, 28, 0.0f), false};
+				as.avecNombre = Octet(p, 24);
+				const CActionAttribut *d21 = p.Champ(33);
+				as.avecDeclencheur = Octet(p, 24) && !Octet(p, 32) && d21 && d21->valeur[0] == 1;
+				appelsScript.push_back(as);
+			}
 		}else if(p.type == kDe){
 			desPistes.push_back({a, p.Mot(24), false, Octet(p, 8)});
 		}else if(p.type == kPrendreDroits || p.type == kRendreDroits){
