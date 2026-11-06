@@ -5431,6 +5431,21 @@ PedMakeTargetable(lua_State *L)
 	return 0;
 }
 
+// PedMakeMissionChar(ped) (0x5ca890, CScriptPedPool::RendreMission) : un piéton de la population redevient un piéton de mission, que le
+// script courant ramassera. Ne rend rien.
+static int
+PedMakeMissionChar(lua_State *L)
+{
+	Journal("PedMakeMissionChar", L, 1);
+	if(lua_isnumber(L, 1)) pietons.RendreMission((int)lua_tonumber(L, 1), scriptCourant);
+	return 0;
+}
+
+// AreaClearAllPeds() (0x5b7e70, CScriptPedPool::AmbiantsAVider) n'est pas branchée : elle détruirait les trois joueurs de foot que
+// F_FootballFieldThread de gamemain crée puis rend à la population (3,33 s ou 4,03 s), dans 1_04 (10,06 s), 1_05 (3,43 s) et 1_06_01
+// (40,79 s) ; le pool rendrait leurs cases aux piétons créés ensuite, dont les poignées (celles des commandes de docs/missions.md :
+// --suivre 4, --viser 12…) changeraient. Elle reste un bouchon jusqu'à ce que ces commandes soient refaites.
+
 // PedMakeAmbient(ped) (0x5ca850) : rendu à la population ; le script ne le ramasse plus.
 static int
 PedMakeAmbient(lua_State *L)
@@ -7413,6 +7428,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedSetMissionCritical", PedSetMissionCritical);
 	lua_register(L, "PedRecruitAlly", PedRecruitAlly);
 	lua_register(L, "PedHasAlly", PedHasAlly);
+	lua_register(L, "PedMakeMissionChar", PedMakeMissionChar);
 	lua_register(L, "PedIsModel", PedIsModel);
 	lua_register(L, "PedDismissAlly", PedDismissAlly);
 	lua_register(L, "PedCanSeeObject", PedCanSeeObject);

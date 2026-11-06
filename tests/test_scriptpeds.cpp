@@ -605,6 +605,9 @@ main(void)
 		VERIF(g.CibleDeGenre(algie, 4).objet == 7 && g.CibleDeGenre(algie, 4).point == 3 && g.CibleDeGenre(algie, 4).pieton == -1);
 		VERIF(g.CibleDeGenre(algie, 1).pieton == autre && g.CibleDeGenre(algie, 9).pieton == -1 && g.CibleDeGenre(algie, 9).objet == -1);
 		a->objetVise = -1; a->syncVise = 0; a->cibleDePrise = -1;
+		// PedMakeMissionChar et AreaClearAllPeds : un piéton rendu à la population est vidé, sauf s'il redevient de mission.
+		VERIF(g.RendreAmbiant(prefet) && g.AmbiantsAVider().size() == 1 && g.AmbiantsAVider()[0] == prefet);
+		VERIF(g.RendreMission(prefet, 3) && g.Acceder(prefet)->script == 3 && g.AmbiantsAVider().empty() && !g.RendreMission(prefet, 4));
 		// PedHasAlly : le meneur et le suiveur en ont un, pas l'autre ; PedIsModel : le modèle de création.
 		VERIF(g.AUnAllie(SCRIPT_PED_JOUEUR) && g.AUnAllie(algie) && !g.AUnAllie(autre) && !g.AUnAllie(-1));
 		VERIF(g.EstDuModele(algie, 4) && !g.EstDuModele(algie, 5) && !g.EstDuModele(-1, 4));

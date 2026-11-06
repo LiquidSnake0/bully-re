@@ -791,6 +791,27 @@ CScriptPedPool::PoserStat(int h, int n, int32 v)
 }
 
 bool
+CScriptPedPool::RendreMission(int h, int32 script)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil || p->script != -1) return false;
+	p->script = script;
+	return true;
+}
+
+std::vector<int>
+CScriptPedPool::AmbiantsAVider(void) const
+{
+	std::vector<int> v;
+	for(int h = SCRIPT_PED_POOL_SIZE - 1; h >= 0; h--){
+		const CScriptPed *p = Acceder(h);
+		if(p == nil || p->script != -1 || h == SCRIPT_PED_JOUEUR || p->type == SCRIPT_PED_TYPE_JOUEUR) continue;
+		v.push_back(h);
+	}
+	return v;
+}
+
+bool
 CScriptPedPool::RendreAmbiant(int h)
 {
 	CScriptPed *p = Acceder(h);

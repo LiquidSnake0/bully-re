@@ -672,6 +672,17 @@ public:
 	bool sommeilGeneral = false;   // DAT_00c2b108
 	// lua_PedMakeAmbient (0x5ca850) : rendu à la population, plus ramassé par son script.
 	bool RendreAmbiant(int handle);
+	// PedMakeMissionChar(ped) (0x5ca890, lue à l'assembleur de 0x5ca890 à 0x5ca8d9) : FUN_0047b690(2, 1, 1) → FUN_004770a0(2, 10, 1,
+	// 1) (CPed : qui l'a créé, l'octet +0x1570 ; lu dans l'index) : rien si l'octet vaut déjà 2 (un piéton de mission) ; sinon les
+	// comptes de la population (FUN_00476470, FUN_0049fcf0) et l'octet à 2 ; puis le piéton est noté à l'objet script courant
+	// (FUN_005db7e0, FUN_005d94d0), qui le ramasse à la fin de la mission. Dans l'outil, un piéton de mission est un piéton qui a un
+	// script : un piéton rendu à la population (-1) passe au script `script`. Vrai s'il change.
+	bool RendreMission(int handle, int32 script);
+	// AreaClearAllPeds() (0x5b7e70, lue à l'assembleur de 0x5b7e70 à 0x5b7ecb) : le pool des piétons (DAT_00c0f5f0) parcouru depuis
+	// la fin ; chaque piéton qui n'est ni de mission (l'octet +0x1570 à 2), ni le joueur (+0x1310 à 0xd), ni dans la liste de
+	// DAT_00bcd098 (FUN_00424490 : jusqu'à +0x1804 entrées de 0x100 octets, la poignée en tête ; non suivie, vide) est détruit (la
+	// première méthode de sa vftable, avec 1). Rend les poignées à détruire, dans cet ordre.
+	std::vector<int> AmbiantsAVider(void) const;
 	// Une image de dt secondes : marches, poursuites et coups ; pose les drapeaux d'événements. La régénération
 	// (FUN_00472ff0, à chaque image depuis FUN_004812d0) : entre 0 et le maximum, la santé gagne
 	// régénération / 100 × 0,02 × CTimer::ms_fTimeStep, le pas valant 1 pour 20 ms (FUN_0045b810) : régénération / 100
