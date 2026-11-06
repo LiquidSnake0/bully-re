@@ -38,6 +38,7 @@
 #include "../src/core/ActionBank.h"
 #include "../src/core/ActionController.h"
 #include "../src/peds/Armes.h"
+#include "../src/peds/Patrouilles.h"
 #include "../src/objects/ObjectData.h"
 #include "../src/core/IplFile.h"
 #include "../src/anim/Hxd.h"
@@ -101,6 +102,10 @@ static CMissionBank banque;
 // Les données de mission chargées par DATLoad (src/core/DatPools.h) : listes de points, trajets,
 // déclencheurs, retrouvés par nom à travers POINTLIST, PATH et TRIGGER.
 static CDatPools donnees;
+static CPatrouilles patrouilles;        // DAT_00c2b034 : les rondes des trajets dont PATROLTYPE n'est pas -1
+static void AmenerLesAllies(int zone, const CVector &arrivee);   // FUN_0048b970, plus bas
+static bool BooleenArg(lua_State *L, int i);   // FUN_005d8f20, plus bas
+static void Oublier(lua_State *L, int &ref);
 // Les piétons des scripts (src/peds/ScriptPedPool.h) : le joueur en 0, PedCreatePoint & co.
 static CScriptPedPool pietons;
 // Les modèles par nom (src/core/ModelEnum.h) : MODELENUM._Taxicab → 286, ou -1.
@@ -986,6 +991,48 @@ struct CJugeOutil : CJugeAction {
 			if(moi == nil || pietons.Acceder(a) == nil || !f.GroupeDe(d, groupe)) return 0;
 			return arbres.JugerListe(f, groupe, CJugeOutil(a, t)) == 1;
 		}
+		// Le groupe des alliés (src/peds/ScriptPedPool : le meneur +0x2f4, le suiveur +0x2f8). IsAllyFollower (ConditionIsAllyFollower
+		// 0x93762c, FUN_006037b0 → FUN_004851d0) : un meneur ; IsAllyLeader (0x93761c, FUN_00603790 → FUN_004851e0) : un suiveur ;
+		// IsTargetAlly (0x93763c, FUN_006037d0) : la cible (PedGetTargetPed, un piéton : les 3 bits bas de +0x108 à 3) est dans la
+		// chaîne de ses suiveurs (FUN_004853b0). HasAllyState (ConditionAllyState 0x937d4c, FUN_00606450) et HasAllyMorale
+		// (ConditionAllyMorale 0x937d60, FUN_00606470) : +0x318 et +0x31c égaux au mot +4. AllyLeaderConditionGroup (0x93791c,
+		// FUN_00604610) : le groupe +4 jugé pour le premier meneur de la chaîne (FUN_00485410), dans son propre contexte
+		// (l'emplacement 16 de sa table) ; AllyFollowerConditionGroup (0x93793c, FUN_00604660) : pour le suiveur (+0x2f8). Faux
+		// sans eux.
+		static const uint32 kEstSuiveur = ActionHash("IsAllyFollower"), kEstMeneur = ActionHash("IsAllyLeader"),
+		                    kCibleAlliee = ActionHash("IsTargetAlly"), kEtatAllie = ActionHash("HasAllyState"),
+		                    kMoralAllie = ActionHash("HasAllyMorale"), kGroupeMeneur = ActionHash("AllyLeaderConditionGroup"),
+		                    kGroupeSuiveur = ActionHash("AllyFollowerConditionGroup");
+		if(type == kEstSuiveur) return moi && moi->meneur >= 0;
+		if(type == kEstMeneur) return moi && moi->suiveur >= 0;
+		if(type == kCibleAlliee) return moi && pietons.DansSesSuiveurs(ped, CibleDe(ped));
+		if(type == kEtatAllie) return moi && moi->etatAllie == (int32)mots[0];
+		if(type == kMoralAllie) return moi && moi->moralAllie == (int32)mots[0];
+		// AllyIsInCombat (ConditionAllyIsInCombat 0x937d38, FUN_00606360) : un tirage de période 4 (FUN_00465910), un meneur et
+		// l'octet +0x304 ; parmi ses piétons proches (+0x3c0, la liste +0x3c4) vivants, le premier dont la cible (PedGetTargetPed,
+		// un piéton) est dans son groupe (FUN_00485440 : lui, ses meneurs, ses suiveurs) et dont l'objectif courant (FUN_004701f0)
+		// attaque (7 ou 16) devient la cible de son objectif (FUN_0048c330) et sa cible (FUN_004989c0 → FUN_00497d20(q, 0)) ; la
+		// cible de son arme (FUN_004d7890) n'est pas suivie. Vrai alors.
+		static const uint32 kAllieEnCombat = ActionHash("AllyIsInCombat");
+		if(type == kAllieEnCombat){
+			if(moi == nil || !TirageOpportunite(4, (uint16)ped, imageCourante) || moi->meneur < 0 || !moi->groupe304) return 0;
+			for(int q : moi->proches){
+				const CScriptPed *a = pietons.Acceder(q);
+				if(a == nil || a->mort || !pietons.DansSonGroupe(ped, CibleDe(q))) continue;
+				const CObjectifPieton *o = pietons.ObjectifCourant(q);
+				if(o == nil || (o->type != OBJECTIF_ATTAQUER_PIETON && o->type != OBJECTIF_ATTAQUER_16)) continue;
+				moi->cibleObjectif = q;
+				pietons.Verrouiller(ped, q, 0);
+				return 1;
+			}
+			return 0;
+		}
+		if(type == kGroupeMeneur || type == kGroupeSuiveur){
+			int a = moi == nil ? -1 : type == kGroupeMeneur ? pietons.PremierMeneur(ped) : moi->suiveur;
+			std::vector<int32> groupe;
+			if(pietons.Acceder(a) == nil || !f.GroupeDe(d, groupe)) return 0;
+			return arbres.JugerListe(f, groupe, CJugeOutil(a, t)) == 1;
+		}
 		// InAttackCone (FUN_00602200 → FUN_004865a0) : la cible à moins d'AIButes +0x54 (1,5 m) et devant le piéton (le
 		// cosinus de l'angle au moins +0x58, 0,76). Le dernier test (FUN_0048d320, l'un voit l'autre) est supposé vrai.
 		if(type == kCone){
@@ -1029,10 +1076,8 @@ struct CJugeOutil : CJugeAction {
 		//   n'a pas de projectiles : fausses.
 		// - LiquidLevel (0x92e5e0, FUN_005ff7f0) : l'octet +0x16cc (dans l'eau), puis la hauteur de la surface (+0x16d0) sous
 		//   le piéton comparée à +4 par +8 ; hors de l'eau, faux. L'outil n'a pas d'eau.
-		// - IsAllyFollower (0x93762c, FUN_006037b0) et IsAllyLeader (0x93761c, FUN_00603790), lues à l'assembleur : ecx = le
-		//   piéton + 0x2f0, puis FUN_004851d0 (+4 non nul : un chef, +0x2f4) et FUN_004851e0 (+8 : un suiveur, +0x2f8) ;
-		//   IsTandemHelper (0x936b0c, FUN_00606f00) : le complice +0x9b4 (vidé s'il ne le désigne plus, +0x9b8) ; PedRecruitAlly
-		//   et les tandems ne sont appelés par aucun script de 1_01 à 1_03 : fausses.
+		// - IsTandemHelper (0x936b0c, FUN_00606f00) : le complice +0x9b4 (vidé s'il ne le désigne plus, +0x9b8) ; les tandems ne
+		//   sont appelés par aucun script de 1_01 à 1_05 : fausse. (IsAllyFollower et IsAllyLeader : plus haut, le groupe des alliés.)
 		// - Stimulus (0x9370c0, FUN_00600340) et IsStimulusPriority (0x93782c, FUN_00603fe0) : le stimulus courant du piéton
 		//   (+0x1d30), son genre +0 comparé à +4, sa priorité (FUN_004a5ba0) comparée à +4 par +8 ; sans stimulus, fausses.
 		//   L'outil n'a pas de stimuli (les pistes CreateStimulus de AI.act ne sont pas jouées).
@@ -1050,13 +1095,12 @@ struct CJugeOutil : CJugeAction {
 		//   +4 vaut 25. IsWantingToSocialize (0x9376cc, FUN_00603ab0) : le bit 4 de l'octet +0xd68 et le partenaire voulu
 		//   (+0xbb8). L'outil ne joue pas le système social (l'état reste 0, aucun partenaire voulu).
 		static const uint32 kProjectile = ActionHash("DetectProjectile"), kGrenade = ActionHash("DetectGrenade"),
-		                    kEau = ActionHash("LiquidLevel"), kSuiveur = ActionHash("IsAllyFollower"),
-		                    kChef = ActionHash("IsAllyLeader"), kTandem = ActionHash("IsTandemHelper"),
+		                    kEau = ActionHash("LiquidLevel"), kTandem = ActionHash("IsTandemHelper"),
 		                    kStimulus = ActionHash("Stimulus"), kPrioriteStimulus = ActionHash("IsStimulusPriority"),
 		                    kTypeArme = ActionHash("WeaponEquipedType"), kDeclencheurPerso = ActionHash("PedIsTrigger"),
 		                    kMinuterieAction = ActionHash("CheckActionTimer"), kParoleOccupee = ActionHash("IsSpeechBusy"),
 		                    kAnimSociale = ActionHash("SocialAnimIs"), kVeutSocialiser = ActionHash("IsWantingToSocialize");
-		if(type == kProjectile || type == kGrenade || type == kEau || type == kSuiveur || type == kChef || type == kTandem ||
+		if(type == kProjectile || type == kGrenade || type == kEau || type == kTandem ||
 		   type == kStimulus || type == kPrioriteStimulus || type == kDeclencheurPerso || type == kVeutSocialiser)
 			return 0;
 		// WeaponEquipedType (FUN_0065be50) : l'arme en passage avec l'octet +8 (sinon l'arme en main) ; sans elle, faux ; le genre +4 :
@@ -1740,15 +1784,94 @@ DATLoad(lua_State *L)
 	const char *fichier = luaL_checkstring(L, 1);
 	int emplacement = (int)luaL_optnumber(L, 2, 1);
 	Journal("DATLoad", L, 1);
+	int avant = donnees.NombreTrajets();
 	if(!donnees.Charger(fichier, emplacement)) printf("        DATLoad : %s introuvable dans DAT\\Trigger.img\n", fichier);
+	// FUN_006d3b20 → FUN_005ecf00 : chaque trajet lu passe à FUN_004720e0 avec l'objet script qui charge (FUN_005db800) ;
+	// ceux dont PATROLTYPE n'est pas -1 deviennent des rondes, arrêtées (src/peds/Patrouilles). Les cases neuves sont en fin
+	// de pool, ou des cases libérées plus tôt : toutes sont revues, Ajouter écarte un haché déjà tenu.
+	for(int h = 1; h < donnees.NombreTrajets(); h++){
+		if(h < avant && donnees.EmplacementTrajet(h) != emplacement) continue;
+		const CTriggerPath *t = donnees.TrajetParHandle(h);
+		if(t && patrouilles.Ajouter(h, donnees.HachageTrajet(h), t->patrouille, scriptCourant))
+			printf("%6.2f s  rondes : %s (PATROLTYPE %d) devient une ronde, arrêtée\n", maintenant / 1000.0, t->nom.c_str(), t->patrouille);
+	}
 	return 0;
 }
 
+// DATUnload(emplacement) : FUN_005ed010 retire d'abord la ronde de chaque trajet de l'emplacement (FUN_00472750), puis le
+// trajet est libéré.
 static int
 DATUnload(lua_State *L)
 {
 	Journal("DATUnload", L, 1);
-	donnees.Decharger((int)luaL_checknumber(L, 1));
+	int emplacement = (int)luaL_checknumber(L, 1);
+	for(int h = 1; h < donnees.NombreTrajets(); h++)
+		if(donnees.EmplacementTrajet(h) == emplacement) patrouilles.Retirer(donnees.HachageTrajet(h));
+	donnees.Decharger(emplacement);
+	return 0;
+}
+
+// AreaDisablePatrolPath(trajet) (0x5b6050) : le trajet du pool (FUN_005ed240) ; s'il existe, sa ronde s'arrête (FUN_00472250
+// sur DAT_00c2b034). Rend vrai si le trajet existe, qu'il ait une ronde ou non : 1_05 boucle dessus (F_SetupWorld,
+// « while not AreaDisablePatrolPath(PATH._SGD_PREFECT2) do Wait(0) end ») et le bouchon, qui ne rendait rien, l'y gardait.
+static int
+AreaDisablePatrolPath(lua_State *L)
+{
+	Journal("AreaDisablePatrolPath", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	const CTriggerPath *t = h != -1 ? donnees.TrajetParHandle(h) : nil;
+	if(t) patrouilles.Arreter(donnees.HachageTrajet(h));
+	lua_pushboolean(L, t != nil);
+	return 1;
+}
+
+// AreaEnablePatrolPath(trajet) (0x5b60a0) : FUN_00471f80, la ronde repart ; rien n'est rendu.
+static int
+AreaEnablePatrolPath(lua_State *L)
+{
+	Journal("AreaEnablePatrolPath", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	if(donnees.TrajetParHandle(h)) patrouilles.Reprendre(donnees.HachageTrajet(h));
+	return 0;
+}
+
+// AreaInitPatrolPath(trajet, a, b, c[, discret = vrai]) (0x5b6150 → FUN_00471fd0) : la ronde reçoit ses réglages et repart.
+static int
+AreaInitPatrolPath(lua_State *L)
+{
+	Journal("AreaInitPatrolPath", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	if(donnees.TrajetParHandle(h) == nil) return 0;
+	patrouilles.Initialiser(donnees.HachageTrajet(h), (int32)luaL_optnumber(L, 2, 0), (int32)luaL_optnumber(L, 3, 0),
+	                        (int32)luaL_optnumber(L, 4, 0), lua_isnone(L, 5) ? true : lua_toboolean(L, 5) != 0);
+	return 0;
+}
+
+// AreaEnableAllPatrolPaths() (0x5b61e0 → FUN_004721a0), AreaDisableAllPatrolPaths() (0x5b61d0 → FUN_00472710).
+static int
+AreaEnableAllPatrolPaths(lua_State *L)
+{
+	Journal("AreaEnableAllPatrolPaths", L, 1);
+	patrouilles.ReprendreToutes();
+	return 0;
+}
+
+static int
+AreaDisableAllPatrolPaths(lua_State *L)
+{
+	Journal("AreaDisableAllPatrolPaths", L, 1);
+	patrouilles.ArreterToutes();
+	return 0;
+}
+
+// AreaClearPatrolPaths() (0x5b60d0) : l'objet script en cours (FUN_005db7e0 sur 0xd02850) retire ses rondes (FUN_00472880) ;
+// hors d'un script, toutes (FUN_004729a0).
+static int
+AreaClearPatrolPaths(lua_State *L)
+{
+	Journal("AreaClearPatrolPaths", L, 1);
+	if(scriptCourant >= 0) patrouilles.RetirerDe(scriptCourant);
+	else patrouilles.Vider();
 	return 0;
 }
 
@@ -2074,7 +2197,9 @@ AllerAuPoint(const char *cible)
 // est à plus de d mètres (2 par défaut) ; la dernière poursuite commencée l'emporte, elle cesse quand le piéton n'existe plus.
 // Comme le stick dans le jeu, elle ne fait rien quand le script a repris le contrôle (PlayerSetControl(0)) ni quand le joueur
 // suit lui-même un trajet (l'objectif FollowPath de sa file passe devant).
-struct Poursuite { uint32 debut; int ped; float distance; bool annoncee; std::vector<CVector> trace; CVector dernier; };
+// --courir x,y,z@s : la même manette, vers un point fixe (le joueur s'arrête à 0,3 m) ; un allié qui le suit (TetherLoco) le voit
+// bouger, ce que --aller, qui le pose, ne fait pas.
+struct Poursuite { uint32 debut; int ped; float distance; bool annoncee; std::vector<CVector> trace; CVector dernier; bool fixe = false; CVector point; };
 static std::vector<Poursuite> poursuites;
 
 static void
@@ -2084,23 +2209,25 @@ PoursuivrePieton(void)
 	for(Poursuite &q : poursuites) if(maintenant >= q.debut) active = &q;
 	if(active == nil) return;
 	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
-	const CScriptPed *c = pietons.Acceder(active->ped);
-	if(c == nil || c->mort) return;
+	const CScriptPed *c = active->fixe ? nil : pietons.Acceder(active->ped);
+	if(!active->fixe && (c == nil || c->mort)) return;
+	const CVector cible = active->fixe ? active->point : c->pos;
 	// La trace du piéton poursuivi : ses positions, une tous les 0,5 m ; le joueur court dessus, il passe où il est passé.
 	auto ecart = [](const CVector &a, const CVector &b){ return sqrtf((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z)); };
-	if(active->trace.empty() || ecart(active->trace.back(), c->pos) > 0.5f) active->trace.push_back(c->pos);
+	if(active->trace.empty() || ecart(active->trace.back(), cible) > 0.5f) active->trace.push_back(cible);
 	if(controleJoueur != 1) return;
 	const CObjectifPieton *o = pietons.ObjectifCourant(SCRIPT_PED_JOUEUR);
 	if(o && o->type == OBJECTIF_SUIVRE_TRAJET) return;
 	if(!active->annoncee){
 		active->annoncee = true;
-		active->trace.clear(); active->trace.push_back(c->pos);
-		printf("%6.2f s  le joueur poursuit le piéton %d (à %.1f m)\n", maintenant / 1000.0, active->ped, active->distance);
+		active->trace.clear(); active->trace.push_back(cible);
+		if(active->fixe) printf("%6.2f s  le joueur court vers (%.1f, %.1f, %.1f)\n", maintenant / 1000.0, cible.x, cible.y, cible.z);
+		else printf("%6.2f s  le joueur poursuit le piéton %d (à %.1f m)\n", maintenant / 1000.0, active->ped, active->distance);
 	}
-	else if(ecart(j->pos, active->dernier) > 0.01f){ active->trace.clear(); active->trace.push_back(c->pos); }   // posé ailleurs (--entrer, un script)
+	else if(ecart(j->pos, active->dernier) > 0.01f){ active->trace.clear(); active->trace.push_back(cible); }   // posé ailleurs (--entrer, un script)
 	float reste = ScriptPedVitesse(ALLURE_SPRINT) * 0.033f;
 	j->intentionVitesse = 0;
-	while(reste > 0 && sqrtf((c->pos.x - j->pos.x) * (c->pos.x - j->pos.x) + (c->pos.y - j->pos.y) * (c->pos.y - j->pos.y)) > active->distance && !active->trace.empty()){
+	while(reste > 0 && sqrtf((cible.x - j->pos.x) * (cible.x - j->pos.x) + (cible.y - j->pos.y) * (cible.y - j->pos.y)) > active->distance && !active->trace.empty()){
 		CVector v(active->trace.front().x - j->pos.x, active->trace.front().y - j->pos.y, active->trace.front().z - j->pos.z);
 		float d = ecart(active->trace.front(), j->pos);
 		if(d <= reste){ j->pos = active->trace.front(); reste -= d; active->trace.erase(active->trace.begin()); continue; }
@@ -2123,8 +2250,12 @@ EntrerDansDeclencheur(const char *nom)
 	if(z == nil){ printf("%6.2f s  --entrer : le déclencheur %s n'est pas chargé\n", maintenant / 1000.0, nom); return; }
 	CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
 	j->pos = CVector(z->pos.x, z->pos.y, z->pos.z + 0.5f);
+	// La position d'un déclencheur n'est pas toujours dans sa zone (_1_05_TRIGGERJOCKSNEARLIBRARY) : le centre de son périmètre.
+	CVector centre;
+	bool recentre = !donnees.DansDeclencheur(h, j->pos) && donnees.CentreDeclencheur(h, centre) && donnees.DansDeclencheur(h, centre);
+	if(recentre) j->pos = centre;
 	printf("%6.2f s  le joueur entre dans %s (%d) en (%.1f, %.1f, %.1f) : %s\n", maintenant / 1000.0, nom, h, j->pos.x, j->pos.y, j->pos.z,
-	       donnees.DansDeclencheur(h, j->pos) ? "dedans" : "la position du déclencheur est hors de sa propre zone");
+	       recentre ? "dedans, au centre de son périmètre" : donnees.DansDeclencheur(h, j->pos) ? "dedans" : "la position du déclencheur est hors de sa propre zone");
 }
 
 // --- Les piétons : le pool des scripts, PedCreatePoint & co. ---
@@ -2828,6 +2959,118 @@ PedGetWhoHitMeLast(lua_State *L)
 	return 1;
 }
 
+// PedIsHit(ped, genre, ms) (0x5c8a40, lu à l'assembleur de 0x5c8a40 à 0x5c8ae4) : rien de vrai sans piéton (FUN_005c7220) ;
+// le deuxième argument est lu (FUN_005d8200) et jeté ; le troisième, un mot (movzx), divisé par 1000 (le double 0x900138) ;
+// l'emplacement 16 de CPed (FUN_00474a80 : le composant d'actions +0x2e0, +0x300), son relevé +0x10 et le temps depuis le
+// dernier coup (+0x2c, -1 sans coup : le flottant 0x9009ac) : vrai s'il ne vaut pas -1 et ne dépasse pas les secondes données.
+// Rend toujours un booléen (FUN_005d8450). 1_05 le juge à chaque image sur ses bullies (F_HitByPlayer, la fonction 51 de
+// 1_05.lur, puis PedGetWhoHitMeLast).
+static int
+PedIsHit(lua_State *L)
+{
+	Journal("PedIsHit", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	float limite = (float)((uint16)(int)luaL_optnumber(L, 3, 0)) / 1000.0f;
+	auto r = coups.find(h);
+	bool touche = false;
+	if(pietons.Acceder(h) && r != coups.end() && r->second.instant >= 0.0f){
+		float depuis = maintenant / 1000.0f - r->second.instant;
+		touche = depuis <= limite;
+	}
+	lua_pushboolean(L, touche);
+	return 1;
+}
+
+// PedRecruitAlly(meneur, allié[, b]) (0x5cd550, lu à l'assembleur de 0x5cd550 à 0x5cd5cb) : les deux piétons (FUN_005c7220 ;
+// le meneur peut manquer), FUN_00485fa0(meneur + 0x2f0, allié, 1) (CScriptPedPool::RecruterAllie) ; avec un troisième argument
+// nombre (lua_type 3, FUN_0073ad50), son booléen (FUN_005d8f20) dans +0x14ec des deux. Ne rend rien.
+static int
+PedRecruitAlly(lua_State *L)
+{
+	Journal("PedRecruitAlly", L, 1);
+	CScriptPed *m = PedArg(L, 1), *a = PedArg(L, 2);
+	if(m == nil) return 0;
+	pietons.RecruterAllie((int)lua_tonumber(L, 1), a ? (int)lua_tonumber(L, 2) : -1, true);
+	if(lua_type(L, 3) == LUA_TNUMBER && a){ int32 b = (int)lua_tonumber(L, 3) != 0; m->groupe14ec = b; a->groupe14ec = b; }   // FUN_005d8f20
+	return 0;
+}
+
+// PedDismissAlly(meneur, allié[, b]) (0x5cd5d0, lu à l'assembleur de 0x5cd5d0 à 0x5cd670) : les deux piétons, et s'ils sont là
+// FUN_00485880(meneur + 0x2f0, allié) (CScriptPedPool::RenvoyerAllie) ; puis +0x14ec de chacun des deux qui existe : le booléen
+// du troisième argument s'il est un nombre (FUN_005d8f20), 0 sinon.
+static int
+PedDismissAlly(lua_State *L)
+{
+	Journal("PedDismissAlly", L, 1);
+	CScriptPed *m = PedArg(L, 1), *a = PedArg(L, 2);
+	if(m && a) pietons.RenvoyerAllie((int)lua_tonumber(L, 1), (int)lua_tonumber(L, 2));
+	int32 b = lua_type(L, 3) == LUA_TNUMBER && (int)lua_tonumber(L, 3) != 0;   // FUN_005d8f20 : un nombre tronqué non nul
+	if(m) m->groupe14ec = b;
+	if(a) a->groupe14ec = b;
+	return 0;
+}
+
+// PedSetMissionCritical(ped, b[, rappel[, b2]]) (0x5cca10, lu à l'assembleur de 0x5cca10 à 0x5cca85) : rien sans piéton
+// (FUN_005c7220) ; l'octet +0x141c reçoit le booléen du deuxième argument (FUN_005d8f20), le rappel du troisième est rangé en
+// +0x18e8 (FUN_005d9f00, une fonction ou rien), +0x1420 le quatrième (FUN_005d8fa0, faux par défaut) ; non critique, le rappel est
+// lâché (FUN_005d9af0). Ne rend rien.
+static std::map<int, int> rappelsCritiques;   // le +0x18e8 de chaque piéton : une référence du registre Lua
+static int
+PedSetMissionCritical(lua_State *L)
+{
+	Journal("PedSetMissionCritical", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p == nil) return 0;
+	int h = (int)lua_tonumber(L, 1);
+	p->critique = BooleenArg(L, 2);
+	int &ref = rappelsCritiques.emplace(h, LUA_NOREF).first->second;
+	Oublier(L, ref);
+	if(lua_isfunction(L, 3)){ lua_pushvalue(L, 3); ref = luaL_ref(L, LUA_REGISTRYINDEX); }
+	p->rappelCritique = ref != LUA_NOREF;
+	p->critique1420 = lua_isnone(L, 4) || lua_isnil(L, 4) ? false : BooleenArg(L, 4);
+	if(!p->critique){ Oublier(L, ref); p->rappelCritique = false; }
+	return 0;
+}
+
+// Les rappels des piétons critiques tombés à 0 (CScriptPedPool::critiquesAZero, FUN_004782a0) : appelés avec la poignée du
+// piéton, d'un bloc (lua_pcall) dans le script qui les a posés, puis lâchés.
+static void
+AppelerCritiques(lua_State *L)
+{
+	std::vector<int> v;
+	v.swap(pietons.critiquesAZero);
+	for(int h : v){
+		auto it = rappelsCritiques.find(h);
+		if(it == rappelsCritiques.end() || it->second == LUA_NOREF) continue;
+		printf("%6.2f s  le piéton critique %d tombe à 0 point : son rappel est appelé\n", maintenant / 1000.0, h);
+		lua_rawgeti(L, LUA_REGISTRYINDEX, it->second);
+		lua_pushnumber(L, h);
+		if(lua_pcall(L, 1, 0, 0) != 0){ printf("        rappel du piéton critique : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+		Oublier(L, it->second);
+	}
+}
+
+// PedFindInAreaXYZ(x, y, z, r) (0x5d0960, lu à l'assembleur de 0x5d0960 à 0x5d0a2b) : FUN_005cf850(liste, x, y, z, r, r, r) parcourt
+// le pool des piétons dans l'ordre de ses cases ; un piéton sans l'octet +0x78 ni +0x1338 (non suivis : supposés nuls) dont la
+// position est dans le carré [x − r, x + r] × [y − r, y + r] (FUN_0046d880, supposé sur la position) est gardé ; le test de la
+// hauteur est écrit « z − r <= pz ou pz <= z + r », toujours vrai. Rend le booléen « au moins un », puis la poignée de chacun
+// (l'emplacement 43, +0xac) ; la liste est libérée (FUN_005ee940). T_BathroomAntics (la fonction 63 de 1_05.lur) en tire
+// bBathroomClear : personne d'autre que le joueur, Algie ou un mort.
+static int
+PedFindInAreaXYZ(lua_State *L)
+{
+	Journal("PedFindInAreaXYZ", L, 1);
+	float x = (float)luaL_optnumber(L, 1, 0), y = (float)luaL_optnumber(L, 2, 0), r = (float)luaL_optnumber(L, 4, 0);
+	std::vector<int> trouves;
+	for(int h = 0; h < SCRIPT_PED_POOL_SIZE; h++){
+		const CScriptPed *p = pietons.Acceder(h);
+		if(p && fabsf(p->pos.x - x) <= r && fabsf(p->pos.y - y) <= r) trouves.push_back(h);
+	}
+	lua_pushboolean(L, !trouves.empty());
+	for(int h : trouves) lua_pushnumber(L, h);
+	return (int)trouves.size() + 1;
+}
+
 // PlayerWeaponHudLock(b) (0x5d1b80 → PlayerWeaponHudLock 0x55bb20) : l'octet +0x13c du HUD des armes, que lit WeaponHudLocked.
 static int
 PlayerWeaponHudLock(lua_State *L)
@@ -3317,6 +3560,40 @@ PedSetTetherToPoint(lua_State *L)
 	p->laisse = 1;
 	p->laisseRayon = (float)luaL_optnumber(L, arguments == 4 ? 4 : 3, 0);
 	p->laissePoint = pt->pos;
+	return 0;
+}
+
+// PedRestrictToTrigger(ped, déclencheur) (0x5c99e0, lu à l'assembleur de 0x5c99e0 à 0x5c9a2b) : rien sans piéton ; le déclencheur
+// est un mot (movzx) ; FUN_004999e0 (ecx = le piéton + 0x358) pose le rayon +0x364 à 0, le genre 3 (+0x360), le déclencheur
+// (+0x384), les octets +0x3b4 à 1 et +0x3b5 à 0, puis deux fois FUN_00499840 (le genre 3 : le point devient la position du
+// piéton, ramenée dans le déclencheur par FUN_004995c0, non suivi). Dans la laisse, FUN_00499530 juge alors la position dans la zone
+// du déclencheur (FUN_006d6ed0) ; l'outil ne tire pas le piéton vers elle (TetherLoco n'est pas sur ces piétons).
+static int
+PedRestrictToTrigger(lua_State *L)
+{
+	Journal("PedRestrictToTrigger", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p == nil) return 0;
+	p->laisse = 3; p->laisseRayon = 0; p->laisseDeclencheur = (uint16)(int)luaL_optnumber(L, 2, 0);
+	p->laissePieton = -1; p->laisse3b4 = true; p->laisse3b5 = false; p->laissePoint = p->pos;
+	return 0;
+}
+
+// PedSetInfiniteSprint(ped, b) (0x5cde60, lu à l'assembleur de 0x5cde60 à 0x5cdea1) : +0x13c8 au booléen (FUN_005d8f20) ;
+// PedCanTeleportOnAreaTransition(ped, b) (0x5cd080) : l'octet +0x1c99, que FUN_0048b970 lit pour les poursuivants du joueur.
+static int
+PedSetInfiniteSprint(lua_State *L)
+{
+	Journal("PedSetInfiniteSprint", L, 1);
+	if(CScriptPed *p = PedArg(L, 1)) p->sprintSansFin = BooleenArg(L, 2);
+	return 0;
+}
+
+static int
+PedCanTeleportOnAreaTransition(lua_State *L)
+{
+	Journal("PedCanTeleportOnAreaTransition", L, 1);
+	if(CScriptPed *p = PedArg(L, 1)) p->teleportable = BooleenArg(L, 2);
 	return 0;
 }
 
@@ -4311,6 +4588,132 @@ CombatLoco(int ped, bool joueur, bool premiere)
 	else if(d2Cible > 0) p->cap = atan2f(q->pos.y - p->pos.y, q->pos.x - p->pos.x) * 180.0f / 3.14159265f;
 }
 
+// La laisse vers un piéton (le genre 2) : FUN_00499840 refait son point depuis le piéton tenu (+0x374) et le décalage +0x378
+// (FUN_004994e0 : dans le repère du piéton tenu, la droite (sin cap, −cos cap) puis l'avant (cos cap, sin cap), supposé) ; sans
+// piéton, la laisse tombe (genre 0). Le moteur l'appelle à chaque image depuis la mise à jour du piéton (l'appelant n'est pas
+// lu) ; l'outil, depuis TetherLoco.
+static void
+RefaireLaisse(CScriptPed &p)
+{
+	if(p.laisse == 3){ p.laissePoint = p.pos; return; }   // le genre 3 : la position du piéton (FUN_004995c0 non suivi)
+	if(p.laisse != 2) return;
+	const CScriptPed *q = pietons.Acceder(p.laissePieton);
+	if(q == nil){ p.laisse = 0; return; }
+	float c = cosf(q->cap * 3.14159265f / 180.0f), s = sinf(q->cap * 3.14159265f / 180.0f);
+	p.laissePoint = CVector(q->pos.x + p.laisseDecalage.x * s + p.laisseDecalage.y * c,
+	                        q->pos.y - p.laisseDecalage.x * c + p.laisseDecalage.y * s, q->pos.z + p.laisseDecalage.z);
+}
+
+// FUN_00485490 (ecx = l'allié + 0x2f0, lu à l'assembleur de 0x485490 à 0x4857a0) : la place de l'allié à côté du premier meneur
+// de sa chaîne ; rien avec +0x14ec. Le côté : le produit scalaire de la droite du premier meneur (FUN_004735a0, la première
+// colonne de sa matrice, à plat, normée) et de la direction de son meneur direct vers lui (FUN_00414a20, normée), changé de
+// signe : négatif, à droite de 1 + 0,35 m (le rayon des piétons, DAT_00cf311c, que 0x571500 pose depuis 0x90d0a8), sinon à
+// gauche ; un allié tenu en laisse qui en est sorti (FUN_004997a0 : la distance au point de la laisse au-delà de son rayon)
+// ajoute 1 m devant (DAT_00c2b1d8 … : (0, 1, 0)). Le point, dans le repère du premier meneur (FUN_0046dbd0), doit être sur
+// le maillage de navigation (FUN_00485190, FUN_005e9df0), sinon la position du premier meneur : l'outil n'a pas le
+// maillage, la place est gardée (supposé).
+static bool
+PlaceAupresDuMeneur(int ped, CVector &place)
+{
+	const CScriptPed *p = pietons.Acceder(ped);
+	int r = pietons.PremierMeneur(ped);
+	const CScriptPed *racine = pietons.Acceder(r), *direct = p ? pietons.Acceder(p->meneur) : nil;
+	if(p == nil || racine == nil || direct == nil || p->groupe14ec != 0) return false;
+	float c = cosf(racine->cap * 3.14159265f / 180.0f), s = sinf(racine->cap * 3.14159265f / 180.0f);
+	float dx = racine->pos.x - direct->pos.x, dy = racine->pos.y - direct->pos.y, n = sqrtf(dx * dx + dy * dy);
+	float produit = n > 0 ? -(s * dx / n - c * dy / n) : -0.0f;
+	float cote = produit < 0.0f ? 1.35f : -1.35f, avant = 0;
+	if(p->laisse != 0){
+		float ex = p->pos.x - p->laissePoint.x, ey = p->pos.y - p->laissePoint.y, ez = p->pos.z - p->laissePoint.z;
+		if(ex * ex + ey * ey + ez * ez > p->laisseRayon * p->laisseRayon) avant = 1.0f;
+	}
+	place = CVector(racine->pos.x + cote * s + avant * c, racine->pos.y - cote * c + avant * s, racine->pos.z);
+	return true;
+}
+
+// La mise à jour d'une piste TetherLoco (FUN_00627fc0, lue à l'assembleur ; le lancement FUN_00627f10, lu de 0x627f10 à
+// 0x627fb2) : sans laisse, rien (la piste rend faux). Le point visé : la cible si l'octet +0x18 et l'octet +0x3b4 du piéton,
+// sinon le point de la laisse (FUN_00499460) ou, si le piéton tenu est le premier meneur de sa chaîne, la place à côté de lui
+// (FUN_00485490). La vitesse : la distance au-delà de l'arrivée (+0x28) sur le rayon de la laisse (+0x364), plus, avec l'octet
+// +0x2f et au-delà du seuil +0x34, si le piéton va vers le point (le produit scalaire de son avant et de l'écart au-dessus de
+// 0,45, le double 0x900e48), le gain +0x30 fois le chemin du point depuis l'image d'avant sur 0,02 × le pas de l'image
+// (0xb0c0b0 fois CTimer::ms_fTimeStep, DAT_00c1a9a4, en cinquantièmes de seconde : 33 / 20 à 30 images par seconde, soit le pas en
+// secondes) ; bornée à 1,5 (0x90fb9c) ; moyennée sur les trente dernières images positives (+0x44 …
+// +0xb8) sauf avec l'octet +0x2e, tant que le piéton tenu bouge (FUN_00424560, sa vitesse : l'intention de l'outil) ; la
+// moyenne est vidée sinon. La navigation (FUN_004a4eb0, l'arrivée +0x28 ; les drapeaux 0x20014, 0x1c avec +0x14ec) le mène
+// (+0x40) ; sous 0,1 (0x900128) il s'arrête. Arrêté, avec l'octet +0x2c, il se tourne vers le premier meneur (FUN_004a4750).
+// L'arrêt de la piste sur un meneur occupé (FUN_00487990(meneur, 5, 1), ou +0x548 du meneur dans la laisse) n'est pas lu :
+// supposé faux. Le maillage de navigation, la recherche de chemin et l'octet +0x38 ne sont pas suivis.
+static bool
+TetherLoco(int ped, CActionController::Laisse &l, bool premiere)
+{
+	CScriptPed *p = pietons.Acceder(ped);
+	if(p == nil || p->mort) return false;
+	if(premiere){
+		l.enMarche = false;
+		if(p->laisse != 0){
+			p->laisseDecalage = CVector(l.dx, l.dy, 0);
+			if(l.rayon > 0){ l.rayonAvant = p->laisseRayon; p->laisseRayon = l.rayon; }
+			RefaireLaisse(*p);
+			l.px = p->laissePoint.x; l.py = p->laissePoint.y; l.pz = p->laissePoint.z;
+		}
+	}
+	RefaireLaisse(*p);
+	if(p->laisse == 0) return false;
+	const CScriptPed *tenu = p->laisse == 2 ? pietons.Acceder(p->laissePieton) : nil;
+	CVector vise = p->laissePoint;
+	const CScriptPed *cible = l.versCible && p->laisse3b4 ? pietons.Acceder(CibleDe(ped)) : nil;
+	if(cible) vise = cible->pos;
+	else if(tenu && p->laissePieton == pietons.PremierMeneur(ped)) PlaceAupresDuMeneur(ped, vise);
+	float dx = vise.x - p->pos.x, dy = vise.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
+	float exces = d - l.arrivee > 0 ? d - l.arrivee : 0;
+	float vit = p->laisseRayon > 0 ? exces / p->laisseRayon : 0;
+	if(l.suitVitesse && d > l.seuil){
+		float c = cosf(p->cap * 3.14159265f / 180.0f), s = sinf(p->cap * 3.14159265f / 180.0f);
+		if(c * dx + s * dy > 0.45f){
+			float mx = vise.x - l.px, my = vise.y - l.py, mz = vise.z - l.pz;
+			vit += l.gain * sqrtf(mx * mx + my * my + mz * mz) / (0.02f * (33.0f / 20.0f));
+		}
+	}
+	if(vit > 1.5f) vit = 1.5f;
+	bool bouge = tenu == nil || tenu->intentionVitesse > 0;
+	if(vit > 0 && bouge && !l.sansMoyenne){
+		l.moyenne[l.indice] = vit;
+		if(++l.indice > 29) l.indice = 0;
+		int n = 0; float somme = 0;
+		for(float m : l.moyenne) if(m > 0){ n++; somme += m; }
+		if(n > 0) vit = somme / n;
+	}else if(!(vit > 0 && bouge)){
+		for(float &m : l.moyenne) m = 0;
+		l.indice = 0;
+	}
+	float ecart = remainderf(atan2f(dy, dx) - p->cap * 3.14159265f / 180.0f, 2.0f * 3.14159265f);
+	float v = ScriptPedVitesseDuTrajet(vit, d * d, ecart, l.arrivee, p->immobile);   // FUN_004a4eb0 → FUN_005e4a60
+	bool avant = l.enMarche;
+	l.enMarche = v > 0 && vit >= 0.1f;
+	static int journalLaisses = 400;   // les départs et arrêts journalisés (les premiers)
+	if(l.enMarche != avant && journalLaisses > 0){
+		journalLaisses--;
+		printf("%6.2f s  TetherLoco de %d, en (%.2f, %.2f, %.2f) : %s (%.2f, %.2f, %.2f), à %.2f m, vitesse %.2f\n", maintenant / 1000.0,
+		       ped, p->pos.x, p->pos.y, p->pos.z, l.enMarche ? "en marche vers" : "arrêté près de", vise.x, vise.y, vise.z, d, v);
+	}
+	p->intentionVitesse = l.enMarche ? v : 0;
+	if(l.enMarche){
+		p->intention = CVector(dx / d, dy / d, 0);
+		float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f * v / 1.5f;
+		float k = d - l.arrivee < pas ? (d - l.arrivee) / d : pas / d;
+		// L'outil n'a ni sol ni escaliers : la hauteur suit celle du point visé au même pas (supposé ; dans le moteur, la
+		// navigation et la physique le portent sur le sol, ce qui fait monter Algie à l'étage derrière le joueur).
+		p->pos.x += dx * k; p->pos.y += dy * k; p->pos.z += (vise.z - p->pos.z) * k;
+		p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
+	}else if(l.b2c && tenu && p->laissePieton == pietons.PremierMeneur(ped)){
+		float fx = tenu->pos.x - p->pos.x, fy = tenu->pos.y - p->pos.y;
+		if(fx * fx + fy * fy > 0) p->cap = atan2f(fy, fx) * 180.0f / 3.14159265f;
+	}
+	l.px = vise.x; l.py = vise.y; l.pz = vise.z;
+	return true;
+}
+
 // Les pistes Death qui se lancent (FUN_0060fdc0 → l'emplacement 42 de CPed, FUN_00479110) : le piéton meurt
 // (CScriptPedPool::Mourir), sauf déjà mort ou immortel.
 static void
@@ -4685,6 +5088,11 @@ AvancerIA(int ped, CActionController &c, uint32 images)
 		for(uint32 n : k->intentions) intentionsPietons[ped] = n;
 		for(const CActionController::Gestion &g : k->gestionsActives) GererCibles(ped, g.joueur);
 		for(const CActionController::Gestion &g : k->combatsActifs) CombatLoco(ped, g.joueur, k->Temps(t) <= g.entree + 0.034f);
+		for(CActionController::Laisse &l : k->laisses){   // FUN_00627fc0 à chaque image
+			if(k->Temps(t) < l.entree || l.vie == -2.0f) continue;
+			if(!TetherLoco(ped, l, !l.lancee)) l.vie = -2.0f;
+			l.lancee = true;
+		}
 		for(const CActionController::Regard &r : k->regardsActifs){   // FUN_00620dc0
 			const CScriptPed *q = pietons.Acceder(r.genre == 0 ? CibleDe(ped) : r.genre == 1 ? p->cibleDePrise : -1);
 			if(q && q != p) p->cap = atan2f(q->pos.y - p->pos.y, q->pos.x - p->pos.x) * 180.0f / 3.14159265f + r.decalage;
@@ -4798,6 +5206,7 @@ AvancerPietons(void)
 			printf("%6.2f s  piéton %d : cible %d → %d (style %d)\n", maintenant / 1000.0, i, avant[i], p->verrou, p->verrouMode);
 	}
 	AvancerProjectiles(33.0f / 20.0f);   // le pas du moteur (ms_fTimeStep) compte des cinquantièmes de seconde
+	if(etatLua) AppelerCritiques(etatLua);
 	// FUN_004812d0, 0x481c45 : les déclencheurs suivis (FUN_006d6f60), piéton par piéton, après le reste de son image.
 	SuivreDeclencheurs();
 	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
@@ -5113,6 +5522,22 @@ SoundPlayPreloadedSpeech(lua_State *L)
 {
 	Journal("SoundPlayPreloadedSpeech", L, 1);
 	prechargement.jouer = true;
+	return 0;
+}
+
+// SoundStopCurrentSpeechEvent([ped]) (0x5d3a00, lu à l'assembleur de 0x5d3a00 à 0x5d3a48) : avec un argument (lua_gettop positif),
+// le piéton (FUN_005c7220) et FUN_005a5880(DAT_00cf4378, piéton, 0, 0x19) : sa ligne en cours s'arrête ; sans argument,
+// FUN_005a5c60 arrête toutes les lignes. L'outil n'a qu'une ligne à la fois : elle finit à cette image. F_Stage1Objectives
+// (la fonction 15 de 1_05.lur) coupe ainsi Algie quand une bande est battue.
+static int
+SoundStopCurrentSpeechEvent(lua_State *L)
+{
+	Journal("SoundStopCurrentSpeechEvent", L, 1);
+	if(lua_gettop(L) > 0){
+		CScriptPed *p = PedArg(L, 1);
+		if(p == nil || !parole.enCours || parole.ped != (int)lua_tonumber(L, 1)) return 0;
+	}
+	if(parole.enCours) parole.fin = maintenant;
 	return 0;
 }
 
@@ -5455,8 +5880,36 @@ AvancerZones(lua_State *L)
 		j->pos = zones.demande.pos; j->cap = zones.demande.cap;
 		joueurPose = true;
 		printf("%6.2f s  zones : le joueur est posé en (%.1f, %.1f, %.1f), cap %.0f, zone %d\n", maintenant / 1000.0, j->pos.x, j->pos.y, j->pos.z, j->cap, zones.zoneVisible);
+		AmenerLesAllies(zones.zoneVisible, j->pos);
 	}
 	if(e.fonduRetour) LancerFondu(fonduRetourMs, false);
+}
+
+// FUN_004162f0 (le joueur posé au bout d'un changement de zone) → FUN_0048b970 (lu à l'assembleur), pour chaque piéton du pool
+// du dernier au premier : hors d'une mission de classe (MissionInClass), un allié du joueur (FUN_004853e0 : lui-même n'est pas
+// le joueur, et un de ses meneurs l'est) passe avec lui si la zone d'arrivée (DAT_00bd1008) est 0, 2, 9 ou 13, s'il a un rappel
+// (+0x141c), ou si FUN_0044e2b0 et l'octet +0x50 du sexe sont faux : FUN_0048af70 le pose, son partenaire de prise lâché
+// (FUN_00477320), FUN_00473d10, sa file d'objectifs vidée (FUN_00470200) et son état d'allié à 1 (+0x318). FUN_0048af70 (lu de
+// 0x48af70 à 0x48b2b8) : avec +0x153c et le joueur pour premier meneur, 1,5 m à la droite du joueur (0x8ffa08), sinon jusqu'à
+// deux cents tirages autour du point d'arrivée (+0x8c4 de 0x9e4f4c), x et y décalés de rand() / 32767 × 6 − 3 (0x900978,
+// 0x900988), gardés s'ils sont au sol (FUN_00463560), à vue (FUN_0049e170), hors des zones interdites (FUN_0046ee60) et sur le
+// maillage (FUN_005eb670) ; l'outil n'a ni sol ni maillage : le premier tirage est gardé, à la hauteur du joueur (supposé).
+// Les autres piétons (les poursuivants, ceux qu'on efface) ne sont pas suivis.
+static void
+AmenerLesAllies(int zone, const CVector &arrivee)
+{
+	bool zoneSure = zone == 0 || zone == 2 || zone == 9 || zone == 13;
+	for(int h = SCRIPT_PED_POOL_SIZE - 1; h > SCRIPT_PED_JOUEUR; h--){
+		CScriptPed *p = pietons.Acceder(h);
+		if(p == nil || p->type == SCRIPT_PED_TYPE_JOUEUR || pietons.PremierMeneur(h) != SCRIPT_PED_JOUEUR) continue;
+		if(!zoneSure) continue;
+		float dx = (float)RandCrt(graineIA) / 32767.0f * 6.0f - 3.0f, dy = (float)RandCrt(graineIA) / 32767.0f * 6.0f - 3.0f;
+		p->pos = CVector(arrivee.x + dx, arrivee.y + dy, arrivee.z);
+		p->cibleDePrise = -1;
+		p->nombreObjectifs = 0;
+		p->etatAllie = 1;
+		printf("%6.2f s  zones : l'allié %d passe avec le joueur, posé en (%.1f, %.1f, %.1f)\n", maintenant / 1000.0, h, p->pos.x, p->pos.y, p->pos.z);
+	}
 }
 
 // FUN_006ad130, réduit : à chaque image, ce que le gestionnaire fait des missions de la banque.
@@ -5602,6 +6055,13 @@ main(int argc, char **argv)
 			q.annoncee = false;
 			poursuites.push_back(q);
 		}
+		else if(strcmp(argv[i], "--courir") == 0 && i + 1 < argc){
+			std::string e = argv[++i]; size_t at = e.find('@');
+			Poursuite q;
+			q.debut = (uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000);
+			q.ped = -1; q.distance = 0.3f; q.annoncee = false; q.fixe = true;
+			if(sscanf(e.c_str(), "%f,%f,%f", &q.point.x, &q.point.y, &q.point.z) == 3) poursuites.push_back(q);
+		}
 		else if(strcmp(argv[i], "--aller") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@');
 			allers.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), e.substr(0, at)});
@@ -5609,6 +6069,7 @@ main(int argc, char **argv)
 		else pos.push_back(argv[i]);
 	}
 	if(getenv("LANCER_JOURNAL")) journalRestant = atoi(getenv("LANCER_JOURNAL"));   // lignes de journal (400)
+	if(getenv("LANCER_JOURNAL_IA")) journalIA = atoi(getenv("LANCER_JOURNAL_IA"));   // passages de l'IA journalisés (80)
 	// LANCER_CONTROLEURS=1 : journalise aussi les passages des contrôleurs des piétons de script (le bully, Russell).
 	tousLesControleurs = getenv("LANCER_CONTROLEURS") != nil;
 	double secondes = pos.size() > 0 ? atof(pos[0]) : 10.0;
@@ -5695,6 +6156,12 @@ main(int argc, char **argv)
 	lua_register(L, "AreaGetVisible", AreaGetVisible);
 	lua_register(L, "PlayerGetPosXYZ", PlayerGetPosXYZ);
 	lua_register(L, "PedCreatePoint", PedCreatePoint);
+	lua_register(L, "AreaDisablePatrolPath", AreaDisablePatrolPath);
+	lua_register(L, "AreaEnablePatrolPath", AreaEnablePatrolPath);
+	lua_register(L, "AreaInitPatrolPath", AreaInitPatrolPath);
+	lua_register(L, "AreaEnableAllPatrolPaths", AreaEnableAllPatrolPaths);
+	lua_register(L, "AreaDisableAllPatrolPaths", AreaDisableAllPatrolPaths);
+	lua_register(L, "AreaClearPatrolPaths", AreaClearPatrolPaths);
 	lua_register(L, "PedSetInvulnerable", PedSetInvulnerable);
 	lua_register(L, "PedSetInvulnerableToPlayer", PedSetInvulnerableToPlayer);
 	lua_register(L, "PlayerSetInvulnerable", PlayerSetInvulnerable);
@@ -5750,6 +6217,15 @@ main(int argc, char **argv)
 	lua_register(L, "RegisterGlobalEventHandler", RegisterGlobalEventHandler);
 	lua_register(L, "PedGetLastHitWeapon", PedGetLastHitWeapon);
 	lua_register(L, "PedGetWhoHitMeLast", PedGetWhoHitMeLast);
+	lua_register(L, "PedIsHit", PedIsHit);
+	lua_register(L, "SoundStopCurrentSpeechEvent", SoundStopCurrentSpeechEvent);
+	lua_register(L, "PedRestrictToTrigger", PedRestrictToTrigger);
+	lua_register(L, "PedSetInfiniteSprint", PedSetInfiniteSprint);
+	lua_register(L, "PedCanTeleportOnAreaTransition", PedCanTeleportOnAreaTransition);
+	lua_register(L, "PedFindInAreaXYZ", PedFindInAreaXYZ);
+	lua_register(L, "PedSetMissionCritical", PedSetMissionCritical);
+	lua_register(L, "PedRecruitAlly", PedRecruitAlly);
+	lua_register(L, "PedDismissAlly", PedDismissAlly);
 	lua_register(L, "PedCanSeeObject", PedCanSeeObject);
 	lua_register(L, "MissionTimerStart", MissionTimerStart);
 	lua_register(L, "MissionTimerStop", MissionTimerStop);

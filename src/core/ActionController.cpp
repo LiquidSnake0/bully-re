@@ -77,6 +77,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kDepart = ActionHash("SpeechStartTrack"), kRegard = ActionHash("FaceTarget"),
 	                    kPoursuite = ActionHash("SeekEntityPosition"), kSpawn = ActionHash("spawn"),
 	                    kGestion = ActionHash("ManageTargets"), kCombatLoco = ActionHash("CombatLoco"),
+	                    kLaisse = ActionHash("TetherLoco"),
 	                    kDemandeNoeud = ActionHash("ActionNodeRequest"), kEffacer = ActionHash("ClearCurrentObjective"),
 	                    kFuite = ActionHash("FleeObjective"), kRepos = ActionHash("IDLE"), kBouton = ActionHash("ActionRequest"),
 	                    kInfoArme = ActionHash("SetWeaponInfo"), kMort = ActionHash("Death"),
@@ -175,6 +176,10 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 		}else if(sousControleurs && (p.type == kGestion || p.type == kCombatLoco)){
 			Gestion g{a, Reel(p, 16, -1.0f), Octet(p, 24), Octet(p, 8)};
 			(p.type == kGestion ? gestions : combats).push_back(g);
+		}else if(sousControleurs && p.type == kLaisse){
+			Laisse l{a, -1.0f, Octet(p, 24), Reel(p, 28, 0), Reel(p, 32, 0), Reel(p, 36, -1), Reel(p, 40, 0), Octet(p, 44), Octet(p, 45),
+			         Octet(p, 46), Octet(p, 47), Reel(p, 48, 0), Reel(p, 52, 0), Octet(p, 56), Octet(p, 8)};
+			laisses.push_back(l);
 		}else if(sousControleurs && p.type == kDemandeNoeud){
 			demandesNoeud.push_back({a, p.Mot(24) & 0x7fffffff, Octet(p, 28), Octet(p, 29), Octet(p, 30), Octet(p, 8), false, true});
 		}else if(sousControleurs && p.type == kSpawn){
@@ -265,7 +270,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	suitesExecutees.clear();
 	santes.clear();
 	prisesCible.clear();
-	gestions.clear(); combats.clear(); demandesNoeud.clear();
+	gestions.clear(); combats.clear(); demandesNoeud.clear(); laisses.clear();
 	for(const DemandeBouton &d : demandesBouton)   // FUN_00626160 : l'arrêt d'une piste au mode 2 lâche son bouton
 		if(!d.morte && d.lancee && d.mode == 2) laches.push_back(d.bouton);
 	demandesBouton.clear();
@@ -316,6 +321,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	if(fin < 0.0f){
 		for(const Gestion &g : gestions) finParRetenues |= g.retient;
 		for(const Gestion &g : combats) finParRetenues |= g.retient;
+		for(const Laisse &g : laisses) finParRetenues |= g.retient;
 		for(const DemandeNoeud &g : demandesNoeud) finParRetenues |= g.retient;
 		for(const DemandeBouton &g : demandesBouton) finParRetenues |= g.retient;
 		if(sousControleurs) for(const COpportunite &o : occasions) finParRetenues |= o.retient;
@@ -584,6 +590,7 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		bool retenu = false;
 		for(const Gestion &g : gestions) retenu |= g.retient && g.vie != -2.0f;
 		for(const Gestion &g : combats) retenu |= g.retient && g.vie != -2.0f;
+		for(const Laisse &g : laisses) retenu |= g.retient && g.vie != -2.0f;
 		for(const DemandeNoeud &g : demandesNoeud) retenu |= g.retient && g.vivante;
 		for(const DemandeBouton &g : demandesBouton) retenu |= g.retient && !g.morte;
 		if(sousControleurs) for(const COpportunite &o : occasions) retenu |= o.retient && !o.arretee;

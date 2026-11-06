@@ -1,4 +1,5 @@
 #include "DatPools.h"
+#include <cmath>
 #include "ActionTree.h"
 #include "CdStream.h"
 #include "FileMgr.h"
@@ -158,6 +159,20 @@ CDatPools::DansDeclencheur(int h, const CVector &pos) const
 {
 	const CTriggerZone *z = ZoneParHandle(h);
 	return z != nil && z->Contient(perimetres, pos.x, pos.y, pos.z);
+}
+
+bool
+CDatPools::CentreDeclencheur(int h, CVector &centre) const
+{
+	const CTriggerZone *z = ZoneParHandle(h);
+	if(z == nil || z->perimetre < 0 || z->perimetre >= (int32)perimetres.size() || perimetres[z->perimetre].x.empty()) return false;
+	const CTriggerPerimeter &p = perimetres[z->perimetre];
+	float mx = 0, my = 0;
+	for(size_t i = 0; i < p.x.size(); i++){ mx += p.x[i]; my += p.y[i]; }
+	mx /= p.x.size(); my /= p.x.size();
+	float a = z->lacet * 3.14159265f / 180, c = cosf(a), s = sinf(a);
+	centre = CVector(z->pos.x + mx * c - my * s, z->pos.y + mx * s + my * c, z->pos.z + (z->zHauteur < 1.0f ? z->zHauteur / 2 : 0.5f));
+	return true;
 }
 
 const CTriggerPointPoint *

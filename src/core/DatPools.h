@@ -50,11 +50,19 @@ public:
 	const CTriggerPoi *PoiGroupe(int handle) const;     // le groupe du point
 	const CTriggerPointList *Liste(int handle) const;
 	const CTriggerPath *TrajetParHandle(int handle) const;
+	// Les trajets par case (libres comprises, la case 0 réservée) : le nom haché (+8 du trajet) et l'emplacement de DATLoad
+	// (+6), 0 et -1 pour une case libre. FUN_005ecf00 et FUN_005ed010 les parcourent pour les rondes (src/peds/Patrouilles).
+	int NombreTrajets(void) const { return (int)trajets.size(); }
+	uint32 HachageTrajet(int handle) const { return handle >= 1 && handle < (int)trajets.size() && !trajets[handle].libre ? trajets[handle].hachage : 0; }
+	int EmplacementTrajet(int handle) const { return handle >= 1 && handle < (int)trajets.size() && !trajets[handle].libre ? trajets[handle].emplacement : -1; }
 	const CTriggerZone *ZoneParHandle(int handle) const;
 	// Le n-ième point (à partir de 1) d'une liste, ou nil.
 	const CTriggerPointPoint *Point(int handle, int n) const;
 	// PlayerIsInTrigger / PedIsInTrigger (FUN_006d6e50) : la position est dans la zone du déclencheur.
 	bool DansDeclencheur(int handle, const CVector &pos) const;
+	// Un point dans la zone d'un déclencheur (pour l'outil, qui y pose le joueur) : la moyenne des sommets de son périmètre, dans
+	// le repère du monde (le lacet, puis la position), à mi-hauteur sans dépasser 0,5 m. Faux sans déclencheur ni périmètre.
+	bool CentreDeclencheur(int handle, CVector &centre) const;
 
 	int fichiersCharges = 0;
 private:

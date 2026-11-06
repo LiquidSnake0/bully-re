@@ -227,6 +227,22 @@ public:
 	std::vector<Fuite> fuites, fuitesLancees;
 	struct Gestion { float entree, vie; bool joueur, retient; };
 	std::vector<Gestion> gestions, gestionsActives, combats, combatsActifs;
+	// TetherLoco (TetherLocoTrack 0x9354d0 ; lancement FUN_00627f10, mise à jour FUN_00627fc0, arrêt FUN_006286b0) : le piéton
+	// va vers le point de sa laisse (+0x35c du piéton), la place à côté de son meneur s'il est tenu par le premier meneur de sa
+	// chaîne (FUN_00485490). Les champs : l'octet +0x18 (aller vers la cible plutôt que vers la laisse, avec l'octet +0x3b4 du
+	// piéton), le décalage +0x1c, +0x20 (posé dans +0x378, +0x37c de la laisse au lancement), le rayon +0x24 (s'il est positif,
+	// il remplace celui de la laisse, l'ancien gardé en +0xcc), l'arrivée +0x28, les octets +0x2c à +0x2f, le gain +0x30 et son
+	// seuil +0x34 (la vitesse du point quand l'octet +0x2f), l'octet +0x38. `vie` : -2 quand la mise à jour a rendu faux.
+	struct Laisse {
+		float entree, vie;
+		bool versCible; float dx, dy, rayon, arrivee; bool b2c, b2d, sansMoyenne, suitVitesse; float gain, seuil; bool b38, retient;
+		bool lancee = false, enMarche = false;   // +0x40 : la navigation avance
+		float rayonAvant = 0;                    // +0xcc
+		float moyenne[30] = {};                  // +0x44 … +0xb8, l'indice en +0xbc
+		int indice = 0;
+		float px = 0, py = 0, pz = 0;            // +0xc0 … +0xc8 : le point visé à l'image d'avant
+	};
+	std::vector<Laisse> laisses;
 	struct DemandeNoeud { float entree; uint32 nom; bool tenir, suivre, rendre, retient, vu, vivante; };
 	// - ActionRequest (ActionRequestTrack 0x9348a0 ; lancement FUN_0061ba70, mise à jour FUN_006260d0, arrêt FUN_00626160) :
 	//   à chaque image, appuie sur le bouton brut +0x18 (24) du composant d'actions dans le mode +0x1c (28) (FUN_005f3930 :

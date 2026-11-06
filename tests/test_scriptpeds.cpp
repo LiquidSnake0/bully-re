@@ -584,6 +584,37 @@ main(void)
 		dedans = true; joueurSeul = true;
 		VERIF(g.Suivre(4, false, dans, seul).empty() && g.Suivre(SCRIPT_PED_JOUEUR, true, dans, seul).size() == 1);
 	}
+	{
+		// Le groupe des alliés : PedRecruitAlly (FUN_00485fa0), la chaîne des suiveurs, PedDismissAlly (FUN_00485880).
+		CScriptPedPool g;
+		int algie = g.Creer(4, CVector(1, 0, 0), 0, 1), autre = g.Creer(5, CVector(2, 0, 0), 0, 1), prefet = g.Creer(6, CVector(), 0, 1);
+		g.Acceder(prefet)->type = 0;
+		CScriptPed *j = g.Acceder(SCRIPT_PED_JOUEUR);
+		j->pos = CVector(10, 0, 0); j->type = SCRIPT_PED_TYPE_JOUEUR;
+		VERIF(g.RecruterAllie(SCRIPT_PED_JOUEUR, algie, true));
+		CScriptPed *a = g.Acceder(algie);
+		VERIF(j->suiveur == algie && a->meneur == SCRIPT_PED_JOUEUR && a->etatAllie == 1 && a->moralAllie == 0 && a->groupe304);
+		// La laisse de 4 m au premier meneur, posée à sa position ; l'attitude envers son type à 4 ; l'octet +0xc du meneur.
+		VERIF(a->laisse == 2 && a->laissePieton == SCRIPT_PED_JOUEUR && a->laisseRayon == 4.0f && a->laissePoint.x == 10.0f);
+		VERIF(a->attitudes.Lire(SCRIPT_PED_TYPE_JOUEUR) == 4 && j->groupeTenu && a->laisse3b4 && a->laisse3b5);
+		VERIF(g.PremierMeneur(algie) == SCRIPT_PED_JOUEUR && g.PremierMeneur(SCRIPT_PED_JOUEUR) == -1);
+		VERIF(g.DansSesSuiveurs(SCRIPT_PED_JOUEUR, algie) && g.DansSonGroupe(algie, SCRIPT_PED_JOUEUR) && !g.DansSonGroupe(autre, algie));
+		// Déjà suiveur : rien ne change. Un suiveur qui mène à son tour : la laisse va au premier meneur.
+		a->etatAllie = 3;
+		VERIF(g.RecruterAllie(SCRIPT_PED_JOUEUR, algie, true) && a->etatAllie == 3);
+		VERIF(g.RecruterAllie(algie, autre, true) && g.PremierMeneur(autre) == SCRIPT_PED_JOUEUR);
+		VERIF(g.Acceder(autre)->laissePieton == SCRIPT_PED_JOUEUR && g.DansSesSuiveurs(SCRIPT_PED_JOUEUR, autre));
+		// Sans forcer : ni préfet, ni attitude autre que 4.
+		VERIF(!g.RecruterAllie(SCRIPT_PED_JOUEUR, prefet, false));
+		// Renvoyer le premier suiveur lui fait d'abord renvoyer le sien ; les champs de FUN_00485820, la laisse lâchée.
+		VERIF(g.RenvoyerAllie(SCRIPT_PED_JOUEUR, algie));
+		VERIF(j->suiveur == -1 && a->meneur == -1 && a->suiveur == -1 && a->laisse == 0 && a->etatAllie == 1 && a->sprintSansFin);
+		VERIF(g.Acceder(autre)->meneur == -1 && g.Acceder(autre)->laisse == 0);
+		// Un nouveau suiveur remplace l'ancien ; le piéton supprimé n'est plus tenu par personne.
+		VERIF(g.RecruterAllie(SCRIPT_PED_JOUEUR, algie, true) && g.RecruterAllie(SCRIPT_PED_JOUEUR, autre, true));
+		VERIF(j->suiveur == autre && a->meneur == -1);
+		VERIF(g.Supprimer(autre) && j->suiveur == -1);
+	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;
 }
