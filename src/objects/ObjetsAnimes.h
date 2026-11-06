@@ -132,6 +132,19 @@ public:
 	// FUN_004ea300 et PAnimGetPropFlag (0x5c5610 : le mot +0x160 + 4n non nul).
 	void PoserDrapeau(int i, int n, bool v);
 	bool Drapeau(int i, int n) const;
+	// Les portes animées, sans piéton (les scripts : PAnimOpenDoor, PAnimCloseDoor, AreaSetDoorOpen ; lus dans l'index le 06.11.2026).
+	// FUN_004eebc0(octet, piéton, immédiat) : rien (faux) si la porte est déjà ouverte (le drapeau 9, +0x184) ; les droits du piéton
+	// (les drapeaux 7 pour le joueur, 8 pour les autres, l'octet +0x1d du contexte, les modèles DAT_00bf42cc … DAT_00bf42dc, son
+	// objectif) ne comptent pas sans piéton ; puis, si elle ne joue pas déjà Opening (FUN_005f46a0(&DAT_01b652d0, 1, 1)) et que le
+	// nœud /Global/Door/DoorFunctions/Opening/ (ou, immédiat, /Global/Door/NotUseable/Opened/Immediate/ : la chaîne de 0xa76b58 ou
+	// 0xa76b5c) existe (`noeud`) : les drapeaux 0 et 15 (+0x160, +0x19c) à l'octet, le drapeau 9 à 1, puis FUN_005b2df0 et la porte
+	// joue le nœud (FUN_004edec0, que l'appelant fait) ; immédiat, +0x3b0 à 1 et l'emplacement +0x4c ; sans genre à la fiche (+0x80
+	// nul), +0x20 et +0x3c à 0 (non suivis, ni FUN_005b2df0). Rend vrai sauf pour une porte déjà ouverte.
+	bool OuvrirPorte(int i, uint8 octet, bool noeud, bool ouvreDeja);
+	// FUN_004eed70(piéton) : rien (faux) si la porte est fermée (le drapeau 9 nul) ; puis, si elle ne joue pas Closing
+	// (DAT_01b652d4) et que /Global/Door/DoorFunctions/Closing/ (0xa76b60) existe : les drapeaux 0, 15 et 9 à 0, FUN_005b3030 et le
+	// nœud joué (sans genre, +0x20 et +0x3c à 1 et FUN_004ee540 : non suivis). Rend vrai sauf pour une porte fermée.
+	bool FermerPorte(int i, bool noeud, bool fermeDeja);
 	void Vider(void) { objets.clear(); }
 	// La fiche PropButes d'un modèle (le +0x70 de son modelinfo, FUN_00520080), que l'appelant fournit ; nil sans fiche.
 	std::function<const CFicheObjetAnime *(int32)> fiche;

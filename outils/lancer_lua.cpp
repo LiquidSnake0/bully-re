@@ -3892,11 +3892,51 @@ NomDePorte(lua_State *L, uint32 &nom)
 	return true;
 }
 
+// La porte animée i ouverte ou fermée sans piéton (CObjetsAnimes::OuvrirPorte, FermerPorte : FUN_004eebc0, FUN_004eed70) : le nœud de
+// l'arbre des portes (Act/Props/Door.act, diffusé avec l'objet : supposé chargé), joué par le contrôleur de l'objet (FUN_004edec0).
+static bool
+PorteAnimee(int i, bool ouvrir, bool immediat)
+{
+	CObjetAnime *o = objetsAnimes.Objet(i);
+	if(o == nil) return false;
+	const char *chemin = !ouvrir ? "/Global/Door/DoorFunctions/Closing" : immediat ? "/Global/Door/NotUseable/Opened/Immediate" : "/Global/Door/DoorFunctions/Opening";
+	const CActionNode *n = arbres.TrouverOuCharger(chemin, "Act/Props/Door.act") ? arbres.Trouver(chemin) : nil;
+	auto it = controleursObjets.find(i);
+	bool deja = it != controleursObjets.end() && it->second.joue && arbres.JoueHachage(it->second.joue, ActionHash(ouvrir ? "Opening" : "Closing") & 0x7fffffff);
+	bool r = ouvrir ? objetsAnimes.OuvrirPorte(i, 0, n != nil, deja) : objetsAnimes.FermerPorte(i, n != nil, deja);
+	if(r && n && !deja){
+		CActionController &c = controleursObjets[i];
+		c.fige = true;
+		c.Jouer(arbres, n, maintenant / 1000.0f);
+		if(journalRestant > 0) printf("%6.2f s  objet animé du déclencheur %d : %s (%s)\n", maintenant / 1000.0, o->declencheur, ouvrir ? "ouvert" : "fermé", chemin);
+	}
+	return r;
+}
+
+// Le déclencheur d'une porte nommée : une chaîne cherchée parmi les déclencheurs (FUN_006d78c0), ou un nombre ; -1 sinon.
+static int
+DeclencheurDePorte(lua_State *L)
+{
+	if(lua_type(L, 1) == LUA_TSTRING) return donnees.Declencheur(lua_tostring(L, 1));
+	if(lua_type(L, 1) == LUA_TNUMBER){ int t = (int)lua_tonumber(L, 1); return t >= 0 && donnees.ZoneParHandle(t) ? t : -1; }
+	return -1;
+}
+
+// Un déclencheur qui a un objet animé passe par lui (FUN_006d6420 : le drapeau 7, +0x17c, par FUN_004ea260 ; FUN_006d6480 : le
+// drapeau 8, +0x180, et le chemin des piétons FUN_005eaf00, non suivi ; FUN_006d6500 : FUN_004eebc0(0, 0, 0) ou FUN_004eed70(0) ;
+// FUN_006d6450 : le drapeau 8 ; FUN_006d64d0 : le drapeau 9, +0x184) ; sans objet, par la table de CEtatPortes.
 static int
 PoserPorte(lua_State *L, const char *quoi, int bit)
 {
 	Journal(quoi, L, 1);
 	bool v = lua_toboolean(L, 2) != 0;   // FUN_005d8f20, lu avant la porte
+	int i = objetsAnimes.ObjetDe(DeclencheurDePorte(L));
+	if(i >= 0){
+		if(bit == CEtatPortes::VERROUILLEE) objetsAnimes.PoserDrapeau(i, 7, v);
+		else if(bit == CEtatPortes::VERROUILLEE_PIETONS) objetsAnimes.PoserDrapeau(i, 8, v);
+		else PorteAnimee(i, v, false);
+		return 0;
+	}
 	uint32 nom;
 	if(NomDePorte(L, nom)) etatPortes.Poser(nom, bit, v);
 	return 0;
@@ -3906,8 +3946,30 @@ static int
 LirePorte(lua_State *L, const char *quoi, int bit)
 {
 	appels[quoi]++;
+	int i = objetsAnimes.ObjetDe(DeclencheurDePorte(L));
+	if(i >= 0){
+		lua_pushboolean(L, objetsAnimes.Drapeau(i, bit == CEtatPortes::OUVERTE ? 9 : 8));
+		return 1;
+	}
 	uint32 nom;
 	lua_pushboolean(L, NomDePorte(L, nom) && etatPortes.Lire(nom, bit));
+	return 1;
+}
+
+// PAnimOpenDoor(objet) (0x5c4b20 : FUN_005c4410(L, 0), puis FUN_004eebc0(0, 0, 0)), PAnimOpenDoorImmediate (0x5c4b50 :
+// FUN_004eebc0(0, 0, 1)), PAnimCloseDoor (0x5c4b80 : FUN_004eed70(0)), PAnimDoorStayOpen (0x5c4bb0 : FUN_004ea300(0x10, 1)), lues à
+// l'assembleur de 0x5c4b20 à 0x5c4bd6 ; PAnimIsOpen(déclencheur) (0x5c38b0, lue de 0x5c38b0 à 0x5c38fc : FUN_006d79c0, le +0x184
+// de l'objet non nul). Rien n'est rendu, sauf par PAnimIsOpen.
+static int PAnimOpenDoor(lua_State *L){ Journal("PAnimOpenDoor", L, 1); PorteAnimee(ObjetAnimeArg(L, 0), true, false); return 0; }
+static int PAnimOpenDoorImmediate(lua_State *L){ Journal("PAnimOpenDoorImmediate", L, 1); PorteAnimee(ObjetAnimeArg(L, 0), true, true); return 0; }
+static int PAnimCloseDoor(lua_State *L){ Journal("PAnimCloseDoor", L, 1); PorteAnimee(ObjetAnimeArg(L, 0), false, false); return 0; }
+static int PAnimDoorStayOpen(lua_State *L){ Journal("PAnimDoorStayOpen", L, 1); objetsAnimes.PoserDrapeau(ObjetAnimeArg(L, 0), 16, true); return 0; }
+static int
+PAnimIsOpen(lua_State *L)
+{
+	Journal("PAnimIsOpen", L, 1);
+	int i = lua_isnumber(L, 1) ? objetsAnimes.ObjetDe((int)lua_tonumber(L, 1)) : -1;
+	lua_pushboolean(L, objetsAnimes.Drapeau(i, 9));
 	return 1;
 }
 
@@ -6647,6 +6709,11 @@ main(int argc, char **argv)
 	lua_register(L, "ObjectGetModelIndex", ObjectGetModelIndex);
 	lua_register(L, "PAnimDestroyedByPed", PAnimDestroyedByPed);
 	lua_register(L, "PAnimExists", PAnimExists);
+	lua_register(L, "PAnimOpenDoor", PAnimOpenDoor);
+	lua_register(L, "PAnimOpenDoorImmediate", PAnimOpenDoorImmediate);
+	lua_register(L, "PAnimCloseDoor", PAnimCloseDoor);
+	lua_register(L, "PAnimDoorStayOpen", PAnimDoorStayOpen);
+	lua_register(L, "PAnimIsOpen", PAnimIsOpen);
 	lua_register(L, "MissionObjectiveAdd", MissionObjectiveAdd);
 	lua_register(L, "MissionObjectiveComplete", MissionObjectiveComplete);
 	lua_register(L, "MissionObjectiveRemove", MissionObjectiveRemove);

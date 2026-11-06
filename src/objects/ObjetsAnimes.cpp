@@ -178,3 +178,29 @@ CObjetsAnimes::Choisir(const Repere &repere, const std::vector<Repere> &proches,
 		}
 	return Repere();
 }
+
+bool
+CObjetsAnimes::OuvrirPorte(int i, uint8 octet, bool noeud, bool ouvreDeja)
+{
+	CObjetAnime *o = Objet(i);
+	if(o == nil || o->drapeaux[9] != 0) return false;
+	if(!ouvreDeja && noeud){
+		o->drapeaux[0] = octet;
+		o->drapeaux[15] = octet;
+		o->drapeaux[9] = 1;
+	}
+	return true;
+}
+
+bool
+CObjetsAnimes::FermerPorte(int i, bool noeud, bool fermeDeja)
+{
+	CObjetAnime *o = Objet(i);
+	if(o == nil || o->drapeaux[9] == 0) return false;
+	if(!fermeDeja && noeud){
+		o->drapeaux[0] = 0;
+		o->drapeaux[15] = 0;
+		o->drapeaux[9] = 0;
+	}
+	return true;
+}

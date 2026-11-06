@@ -73,6 +73,16 @@ main(void)
 	CFicheObjetAnime f = CFicheObjetAnime::Lire(t, ch);
 	VERIF(f.lue && f.racine == "/Global/NLockA" && f.fichier == "/Act/Props/NLockA.act" && f.depart == "/Global/NLockA/RandomLockState");
 	VERIF(f.saisons[0] && !f.saisons[1] && f.saisons[2] && f.distance == 1.0f && f.pnj && f.garcons && !f.filles && f.genre == 0xbeef);
+	// Les portes (FUN_004eebc0, FUN_004eed70) : ouverte, les drapeaux 0, 15 et 9 ; fermée, remis à 0 ; une porte déjà ouverte ne
+	// se rouvre pas, une porte fermée ne se referme pas ; sans nœud, rien ne change.
+	CObjetsAnimes q;
+	std::vector<CObjetsAnimes::Declencheur> ps = { D(1, 999, 2) };
+	int k = q.CreerPourZone(2, ps, 0)[0];
+	VERIF(!q.FermerPorte(k, true, false));
+	VERIF(q.OuvrirPorte(k, 0, false, false) && !q.Drapeau(k, 9));
+	VERIF(q.OuvrirPorte(k, 1, true, false) && q.Drapeau(k, 9) && q.Drapeau(k, 0) && q.Drapeau(k, 15));
+	VERIF(!q.OuvrirPorte(k, 0, true, false));
+	VERIF(q.FermerPorte(k, true, false) && !q.Drapeau(k, 9) && !q.Drapeau(k, 0) && !q.Drapeau(k, 15));
 	printf("test_objetsanimes : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;
 }
