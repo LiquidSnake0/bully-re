@@ -52,6 +52,7 @@
 #include "../src/peds/Clothing.h"
 #include "../src/hud/HudComponents.h"
 #include "../src/hud/EcranDeFin.h"
+#include "../src/hud/ObjectifsMission.h"
 #include "../src/render/CameraMgr.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
@@ -2962,6 +2963,39 @@ MinigameIsShowingCompletion(lua_State *L)
 	Journal("MinigameIsShowingCompletion", L, 1);
 	lua_pushboolean(L, ecranDeFin.Montre());
 	return 1;
+}
+
+// Les objectifs de mission (src/hud/ObjectifsMission.h, l'objet 0x20c4420). MissionObjectiveAdd(texte[, octet[, rappel]])
+// (0x5c1de0, lue à l'assembleur de 0x5c1de0 à 0x5c1e5b) : la chaîne (FUN_005d82e0), avec deux arguments l'octet (FUN_005d8200),
+// FUN_006ae110 ; avec trois, le délai du rappel (FUN_005d82a0 → FUN_006ae420, non suivi) ; rend l'indice de l'objectif
+// (FUN_005d8460 ; -1 quand l'écran de fin se montre ou que dix sont pris). MissionObjectiveComplete(i) (0x5c1f30 → FUN_006ae2f0(i, 1))
+// et MissionObjectiveRemove(i) (0x5c1f60 → FUN_006ae320(i)). Le bouchon ne rendait rien : 1_06_01 passe ce résultat à table.insert.
+static CObjectifsMission objectifsMission;
+
+static int
+MissionObjectiveAdd(lua_State *L)
+{
+	Journal("MissionObjectiveAdd", L, 1);
+	uint8 octet = lua_gettop(L) >= 2 ? (uint8)(int)luaL_optnumber(L, 2, 0) : 0;
+	int i = objectifsMission.Ajouter(lua_isstring(L, 1) ? lua_tostring(L, 1) : nil, octet, ecranDeFin.Montre(), (uint32)maintenant);
+	lua_pushnumber(L, i);
+	return 1;
+}
+
+static int
+MissionObjectiveComplete(lua_State *L)
+{
+	Journal("MissionObjectiveComplete", L, 1);
+	if(lua_isnumber(L, 1)) objectifsMission.Terminer((uint8)(int)lua_tonumber(L, 1), true, (uint32)maintenant);
+	return 0;
+}
+
+static int
+MissionObjectiveRemove(lua_State *L)
+{
+	Journal("MissionObjectiveRemove", L, 1);
+	if(lua_isnumber(L, 1)) objectifsMission.Retirer((uint8)(int)lua_tonumber(L, 1), (uint32)maintenant);
+	return 0;
 }
 
 // AreaRegisterAnimProps() (0x5b6d60 → 0x438700) : la table DAT_00bd3e78 jusqu'à son compte DAT_00bd5c54, que rien n'augmente
@@ -6613,6 +6647,9 @@ main(int argc, char **argv)
 	lua_register(L, "ObjectGetModelIndex", ObjectGetModelIndex);
 	lua_register(L, "PAnimDestroyedByPed", PAnimDestroyedByPed);
 	lua_register(L, "PAnimExists", PAnimExists);
+	lua_register(L, "MissionObjectiveAdd", MissionObjectiveAdd);
+	lua_register(L, "MissionObjectiveComplete", MissionObjectiveComplete);
+	lua_register(L, "MissionObjectiveRemove", MissionObjectiveRemove);
 	lua_register(L, "MinigameSetCompletion", MinigameSetCompletion);
 	lua_register(L, "MinigameAddCompletionMsg", MinigameAddCompletionMsg);
 	lua_register(L, "MinigameIsShowingCompletion", MinigameIsShowingCompletion);
