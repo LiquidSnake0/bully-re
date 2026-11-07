@@ -144,8 +144,10 @@ static void LacherArme(int h);
 // défaut DAT_020c88c8, la ProjectileButes de Globals) : +0x48 (72) la vie (ms, un entier), +0x4c (76) et +0x50 (80) les dégâts sans et
 // avec la charge, +0x54 (84) le nom de sa marque d'impact (« Decal_SlingShot »), +0x60 (96) et +0x64 (100) la vitesse sans et avec la
 // charge (m par pas de 0,02 s), +0x80 (128) le facteur de la gravité ; des réels.
+// DetectProjectile et DetectGrenade lisent aussi les octets +0x8c (140), +0x8d (141) et +0xe4 (228, la menace se voit), le rayon +0x94
+// (148) et le flottant +0xa0 (160).
 struct CTypeProjectile { bool lu = false; int32 vie = 0; float degatsMin = 0, degatsMax = 0, vitesseMin = 0.4f, vitesseMax = 0.4f, gravite = 1.0f;
-                         std::string marque; };
+                         std::string marque; bool o8c = false, o8d = false, menace = false; float rayon = 0, a0 = 0; };
 static std::map<int32, CTypeProjectile> typesProjectiles;   // par modèle d'arme (le +0x80 de son type)
 static CTypeProjectile projectileDefaut;
 static const CTypeProjectile &
@@ -164,6 +166,9 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 	a.vitesseMin = CActionBank::ButesReel(t, 96); a.vitesseMax = CActionBank::ButesReel(t, 100);
 	a.gravite = CActionBank::ButesReel(t, 128);
 	auto it = chaines.find(84); if(it != chaines.end()) a.marque = it->second;
+	const CActionAttribut *o1 = t.Champ(140), *o2 = t.Champ(141), *o3 = t.Champ(228);
+	a.o8c = o1 && o1->valeur[0]; a.o8d = o2 && o2->valeur[0]; a.menace = o3 && o3->valeur[0];
+	a.rayon = CActionBank::ButesReel(t, 148); a.a0 = CActionBank::ButesReel(t, 160);
 	return a;
 }
 
@@ -1241,8 +1246,8 @@ struct CJugeOutil : CJugeAction {
 		// Les dernières classes de AI.act jugées dans 1_01 à 1_03 (lues le 03.11.2026) :
 		// - DetectProjectile (0x9378ec, FUN_00604410 → FUN_0048a300) et DetectGrenade (0x9378dc, FUN_00604380 → FUN_0048a130) :
 		//   les projectiles en vol de la table 0xc3a068 (l'octet actif en -0x1c de chaque entrée, FUN_004d3c80), un qui menace
-		//   le piéton (sa trajectoire, FUN_0041a380 sous +4 m) ; rien sans projectile, et rien pour un piéton à +0x1360. L'outil
-		//   n'a pas de projectiles : fausses.
+		//   le piéton (sa trajectoire à plat à moins de 3 m, FUN_0041a380) ; rien sans projectile, et rien pour un piéton au drapeau
+		//   19 (+0x1360). Plus bas, avec les projectiles de l'outil.
 		// - LiquidLevel (0x92e5e0, FUN_005ff7f0) : l'octet +0x16cc (dans l'eau), puis la hauteur de la surface (+0x16d0) sous
 		//   le piéton comparée à +4 par +8 ; hors de l'eau, faux. L'outil n'a pas d'eau.
 		// - IsTandemHelper (0x936b0c, FUN_00606f00) : le complice +0x9b4 (vidé s'il ne le désigne plus, +0x9b8) ; les tandems ne
@@ -1269,7 +1274,23 @@ struct CJugeOutil : CJugeAction {
 		                    kTypeArme = ActionHash("WeaponEquipedType"), kDeclencheurPerso = ActionHash("PedIsTrigger"),
 		                    kMinuterieAction = ActionHash("CheckActionTimer"), kParoleOccupee = ActionHash("IsSpeechBusy"),
 		                    kAnimSociale = ActionHash("SocialAnimIs"), kVeutSocialiser = ActionHash("IsWantingToSocialize");
-		if(type == kProjectile || type == kGrenade || type == kEau || type == kTandem ||
+		// DetectProjectile (FUN_00604410 → FUN_0048a300) et DetectGrenade (FUN_00604380 → FUN_0048a130) : les projectiles en vol de
+		// l'outil (CScriptPedPool::DetecterProjectile, GrenadeAPortee). La bille et la brique n'ont pas l'octet +0xe4 de leur fiche, ni
+		// de +0xa0 : aucun piéton ne les voit venir (FUN_0048a130 rend vrai à leur tireur, une fois sa bille à plus de 0,501 m, mais son
+		// juge le reprend : la menace retenue reste à l'origine du monde).
+		if(type == kProjectile || type == kGrenade){
+			std::vector<CScriptPedPool::ProjectileVu> vus;
+			for(const CProjectileOutil &q : projectiles){
+				if(!q.actif) continue;
+				const CTypeProjectile &tp = TypeProjectile(q.modele);
+				CScriptPedPool::ProjectileVu v;
+				v.pos = q.pos; v.vitesse = q.vitesse; v.tireur = q.tireur; v.fiche = true;   // la fiche par défaut tient lieu
+				v.menace = tp.menace; v.o8c = tp.o8c; v.o8d = tp.o8d; v.rayon = tp.rayon; v.a0 = tp.a0; v.vie = tp.vie;
+				vus.push_back(v);
+			}
+			return type == kProjectile ? pietons.DetecterProjectile(ped, vus) : pietons.GrenadeAPortee(ped, vus);
+		}
+		if(type == kEau || type == kTandem ||
 		   type == kStimulus || type == kPrioriteStimulus || type == kDeclencheurPerso || type == kVeutSocialiser)
 			return 0;
 		// WeaponEquipedType (FUN_0065be50) : l'arme en passage avec l'octet +8 (sinon l'arme en main) ; sans elle, faux ; le genre +4 :

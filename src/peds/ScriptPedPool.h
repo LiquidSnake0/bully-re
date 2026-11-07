@@ -691,6 +691,38 @@ public:
 	// demi-angle), puis la ligne de vue (FUN_00461d50, un rayon dans le monde) : l'outil n'a pas de monde, elle est dégagée.
 	// Les cas du joueur (l'octet +0x1e91, la hauteur d'un piéton discret +0x1398) ne sont pas suivis. `tirer` : le rand().
 	bool Voit(int handle, int cible, int (*tirer)(void *), void *ctx);
+	// FUN_0048cf50 (le composant de vue, son +8 la portée) : le point est à portée, à plat (le carré de l'écart en x et y moins celui
+	// de la portée n'est pas positif), puis dans le cône du devant (le produit scalaire du devant et de la direction à plat
+	// strictement au-dessus du cosinus du demi-angle). Sans ligne de vue (FUN_0048d0e0 la cherche après).
+	bool VoitPoint(int handle, const CVector &point) const;
+	// Un projectile en vol de la table 0xc3a068 (32 entrées de 0x34 octets ; FUN_004d3c80 rend l'objet, DAT_00c3a6b8) tel que le
+	// voient DetectProjectile et DetectGrenade : l'octet actif (-0x1c), le tireur (-0x2c), sa fiche ProjectileButes (+0, nulle
+	// possible), et de la fiche : l'octet +0xe4 (228, la menace se voit), le rayon +0x94 (148), le flottant +0xa0 (160), les octets
+	// +0x8c et +0x8d (140, 141), la vie +0x48 (72) ; de l'objet : sa position et sa vitesse (+0x124 … +0x12c, en m par pas).
+	struct ProjectileVu {
+		CVector pos, vitesse; int tireur = -1; bool fiche = true, menace = false, o8c = false, o8d = false;
+		float rayon = 0.0f, a0 = 0.0f; int32 vie = 0;
+	};
+	// FUN_0048a300 (DetectProjectile, FUN_00604410 ; sur le composant +0x668 du piéton) : rien si le drapeau 19 du piéton (+0x1360) est
+	// posé ; sinon, de chaque projectile actif qui n'est pas le sien, sans fiche ou d'une fiche à l'octet +0xe4, assez rapide (le carré
+	// de sa vitesse moins 0,0004, le double 0x90fad8, n'est pas négatif), que le piéton voit (FUN_0048cf50), plus proche (le carré de la
+	// distance, FUN_00472bb0) que le meilleur (1 000 au départ, 0x900f40), qui vient vers lui (le produit scalaire de (piéton −
+	// projectile) et de la vitesse est positif) et dont la trajectoire à plat (la vitesse sans z normée, FUN_0041a3d0 ; le point le plus
+	// proche du piéton sur elle) passe à moins de 3 m de lui à plat (FUN_0041a380 et le flottant 0x900c14) : vrai pour le plus proche.
+	// Lu dans l'index le 06.11.2026.
+	bool DetecterProjectile(int handle, const std::vector<ProjectileVu> &vus) const;
+	// FUN_0048a130 (DetectGrenade, FUN_00604380) : rien avec le drapeau 19 ; sinon, de chaque projectile actif à fiche : le sien, de
+	// rayon positif (+0x94) et plus loin que le rayon plus 0,5 (le carré de la distance au-dessus du carré de rayon + 0,5, le double
+	// 0x8ff1f8) : vrai tout de suite ; sinon, d'une fiche à l'octet +0xe4, de rayon positif, de +0xa0 positif, avec l'octet +0x8c, le
+	// +0x8d ou une vie positive, à une distance dont le carré ne dépasse pas le meilleur (_DAT_00900490 au départ) : vrai.
+	// `pos` et `rayon` reçoivent la position et le rayon (+0x94) de la menace retenue ; le cas du tireur ne les touche pas.
+	bool DetecterGrenade(int handle, const std::vector<ProjectileVu> &vus, float meilleurDepart, CVector *pos = nil, float *rayon = nil) const;
+	// Le juge de DetectGrenade (FUN_00604380, lu à l'assembleur de 0x604380 à 0x604404) : la position et le rayon à 0 (fldz), puis
+	// FUN_0048a130 avec le meilleur à 100 (_DAT_00900490) ; s'il rend vrai, vrai seulement si le piéton est à plat à moins du rayon
+	// plus 1 (le double 0x8ff1d8) de la menace retenue (FUN_0041a380 ≤ 0). Quand FUN_0048a130 rend vrai pour le projectile du tireur,
+	// la position reste (0, 0, 0) et le rayon est le mot de l'argument (le pointeur du contexte, un flottant minuscule ; l'outil prend
+	// 0) : vrai seulement à moins de 1 m de l'origine du monde, faux en pratique.
+	bool GrenadeAPortee(int handle, const std::vector<ProjectileVu> &vus) const;
 	// L'image de la vue et du dernier agresseur : FUN_0048ccf0 (le cache vieillit d'une image) et FUN_00499340 (+0x1dc0
 	// avance du pas, en secondes, s'il y a un agresseur, sinon 0).
 	void AvancerVue(float dt);
