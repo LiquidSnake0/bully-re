@@ -4083,14 +4083,17 @@ ObjectNumProjectileImpacts(lua_State *L)
 	return 1;
 }
 
-// AreaClearAllProjectiles([genre]) (0x5b7100) : sans argument, les 32 projectiles détruits (FUN_004d4940 → FUN_004d3dc0) ; avec
-// un, FUN_004d48a0 (non lu) : l'outil les détruit tous aussi.
+// AreaClearAllProjectiles([modèle]) (0x5b7100, lu à l'assembleur de 0x5b7100 à 0x5b712f) : sans argument (lua_gettop nul), les 32
+// projectiles détruits (FUN_004d4940 → FUN_004d3dc0) ; avec un, FUN_004d48a0 (lu dans l'index) : ceux dont l'objet (DAT_00c3a6b8)
+// existe et a ce modèle (+0x10e : celui de la munition, la bille 304), détruits (FUN_004d3dc0(i, 0)).
 static int
 AreaClearAllProjectiles(lua_State *L)
 {
 	Journal("AreaClearAllProjectiles", L, 1);
-	placesProjectiles.Vider();
-	for(CProjectileOutil &q : projectiles) q.actif = false;
+	bool tous = lua_gettop(L) <= 0;
+	int32 m = tous ? -1 : (int32)luaL_optnumber(L, 1, 0);
+	for(int i = 0; i < CPlacesProjectiles::kTaille; i++)
+		if(tous || (projectiles[i].actif && projectiles[i].modele == m)){ projectiles[i].actif = false; placesProjectiles.Liberer(i); }
 	return 0;
 }
 
@@ -6126,7 +6129,10 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	q.actif = true; q.modele = munition; q.tireur = ped; q.pos = depart; q.gravite = g;
 	q.vitesse = CVector(dx / T, dy / T, (dz - 0.5f * g * T * T) / T);
 	q.degats = CChargeArme::Degats(true, tp.degatsMin, tp.degatsMax, charge, degatsPiste, pietons.StatLue(ped, 0x1f, 100));
-	q.naissance = maintenant; q.vie = tp.vie > 0 ? (uint32)tp.vie : 5000;
+	// La vie (FUN_004d4c40 : son quatorzième argument, ou s'il est nul la vie +0x48 de la fiche, moins le treizième ; 1 si cela fait 0 ;
+	// gardée en +0xc de l'entrée ; ce que FUN_00664710 y passe, dont une mèche tirée du +0x1cc0 du tireur, n'est pas démêlé) : l'outil
+	// prend la vie de la fiche ; 0, un projectile sans fin (FUN_004d45e0).
+	q.naissance = maintenant; q.vie = tp.vie > 0 ? (uint32)tp.vie : 0;
 	int evincee = -1, place = placesProjectiles.Prendre(maintenant, &evincee);   // FUN_004d4c40 → FUN_004d4590
 	if(evincee >= 0) printf("%6.2f s  la table des projectiles est pleine : le plus vieux (place %d) cède sa place\n", maintenant / 1000.0, evincee);
 	if(place < 0){ reglagesTir.Remettre(); return; }   // FUN_004d4c40 rend 0 : pas de projectile
@@ -6263,7 +6269,12 @@ AvancerProjectiles(float pas)
 	for(int place = 0; place < CPlacesProjectiles::kTaille; place++){
 		CProjectileOutil &q = projectiles[place];
 		if(!q.actif) continue;
-		if(maintenant - q.naissance > q.vie){ q.actif = false; placesProjectiles.Liberer(place); continue; }
+		// FUN_004d45e0 (à chaque image, lu dans l'index) : un tireur piéton qui n'est plus valable (FUN_0047b650) est oublié (le +4 de
+		// l'entrée, FUN_00465690) ; le projectile vit tant que l'octet +0x12 est nul (non suivi) et que maintenant ne dépasse pas sa
+		// création plus sa vie (+8 et +0xc, non signés), ou que sa vie est nulle ; sinon FUN_004d3dc0(i, 1). Le test d'eau
+		// (FUN_006d48d0) et le fondu de la fin de vie (+0x88 de la fiche) ne sont pas suivis.
+		if(q.tireur >= 0 && pietons.Acceder(q.tireur) == nil) q.tireur = -1;
+		if(q.vie != 0 && maintenant > q.naissance + q.vie){ q.actif = false; placesProjectiles.Liberer(place); continue; }
 		CVector avant = q.pos;
 		q.pos.x += q.vitesse.x * pas; q.pos.y += q.vitesse.y * pas; q.pos.z += q.vitesse.z * pas;
 		q.vitesse.z += q.gravite * pas;
