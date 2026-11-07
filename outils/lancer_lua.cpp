@@ -6160,7 +6160,7 @@ VitessePieton(int h)
 	return CVector((q->pos.x - it->second.x) / kPasTimer, (q->pos.y - it->second.y) / kPasTimer, (q->pos.z - it->second.z) / kPasTimer);
 }
 static void
-Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.0f)
+Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.0f, const float *decalages = nil)
 {
 	CScriptPed *p = pietons.Acceder(ped);
 	if(p == nil) return;
@@ -6184,6 +6184,13 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	// de ses pieds et, pour sa hauteur (les sphères de FUN_00474750), 1,8 m (supposé, comme TargetRelativeHeight).
 	else if(c && c != p){
 		cible = reglagesTir.Viser(CVector(c->pos.x, c->pos.y, c->pos.z + 1.0f), 1.8f, avant);
+		// FUN_00662760 : les décalages de visée de la piste (CViseeTir::DecalageVisee ; l'avant de la cible, le +0x10 de sa matrice : son
+		// cap dans l'outil).
+		if(decalages){
+			float ac2 = c->cap * 3.14159265f / 180.0f;
+			cible = CViseeTir::DecalageVisee(depart, cible, CVector(cosf(ac2), sinf(ac2), 0.0f), decalages[0], decalages[1], decalages[2],
+			                                 decalages[3]);
+		}
 		// FUN_00662760 → FUN_0065ecb0 : l'avance sur la cible qui bouge, avec la vitesse de la fiche sans borne (+0x60 + charge ×
 		// (+0x64 − +0x60)) et le facteur +0x28 de la piste. La vitesse d'un piéton à pied est son +0x1714 / ms_fTimeStep : l'outil
 		// prend son déplacement de la dernière image (VitessePieton ; supposé : le +0x1714 n'est pas lu). Les décalages +0x18 …
@@ -6258,7 +6265,7 @@ AppliquerTirs(int ped, CActionController &c)
 	for(const CActionController::Tir &d : c.tirsLances){
 		if(p == nil || p->armeTenue == -1){ reglagesTir.Remettre(); continue; }   // FUN_00661f10 sans arme en main : FUN_0065d160
 		float charge = CChargeArme::AuTir(p->armeCharge, d.facteur);   // FUN_00661f10
-		Tirer(ped, charge, d.degats, d.avance);
+		Tirer(ped, charge, d.degats, d.avance, d.decalages);
 		p->armeCharge = CChargeArme::kVide;   // FUN_00664710, après le tir
 		if(p->drapeaux[24] == 0) inventaire.Retirer(armes, ped, p->armeMunition, 1, p->type == SCRIPT_PED_TYPE_JOUEUR, modeles.Index("RBandBall"));
 		if(d.lacher && p->armeTenue == p->armeMunition && inventaire.Munitions(armes, ped, p->armeMunition) == 0) LacherArme(ped);
