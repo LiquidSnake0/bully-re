@@ -265,6 +265,10 @@ struct CScriptPed {
 	bool arbreIA = false;        // +0x4b4 du composant +0x2e0 : un arbre de l'IA posé (PedSetAITree) ; l'outil ne joue
 	                             // alors plus le geste de PedAttack, c'est l'arbre qui mène le piéton
 	int zoneCombat = -1;
+	// +0x42c : la distance d'engagement minimale d'un piéton armé à distance (PedSetMinEngage, 0x5cb790, lu à l'assembleur de
+	// 0x5cb790 à 0x5cb7cd : le flottant du deuxième argument, FUN_005d82a0, sur le piéton du genre 2, FUN_005c7220) ; 0 au départ
+	// (supposé), que la condition EngageDistance (FUN_00602070) remplace alors par le +0x120 de l'objet arme.
+	float engagementMin = 0.0f;
 	// Les droits d'attaque sur ce piéton, dans son composant de combat (+0x668) : l'octet +0x344 (+0x9ac du piéton, pris),
 	// le piéton qui les tient +0x340 (+0x9a8) et leur échéance +0x348 (+0x9b0, en ms du jeu). Un seul attaquant à la fois
 	// les prend (FUN_00486c40) ; la condition IsTargetAttackRightsTaken lit l'octet sur la cible de l'attaquant.

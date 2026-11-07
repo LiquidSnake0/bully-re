@@ -1315,6 +1315,35 @@ struct CJugeOutil : CJugeAction {
 			const CTypeArme &t = armes.Type(a);
 			return mots[0] == 0 ? t.tir68 : mots[0] == 1 ? t.tir68 && t.tir69 : mots[0] == 2 ? t.tir69 : 0;
 		}
+		// EngageDistance (ConditionEngageDistance, table 0x936abc, son emplacement 1 vaut 0x602070 ; FUN_00602070, lu dans l'index) :
+		// le piéton du contexte (+8) ; faux dans la zone de combat 4 (+0x66c). La distance d'engagement : sans l'octet +5 de la condition,
+		// selon la zone 0, 1 ou 2, AIButes +0x2c, +0x30 ou +0x34 plus 1 (le double 0x8ff1d8) sans l'octet +4, ou avec lui la moitié de
+		// +0x2c + +0x28, la moitié de +0x30 + +0x2c, ou +0x34, sans plus ; une autre zone (-1, 3), faux ; avec l'octet +5, +0x34 plus 1.
+		// Une arme tenue à distance (FUN_00474aa0, l'octet +0x68 de son type par FUN_004d9560) la remplace par le +0x42c du piéton
+		// (PedSetMinEngage) s'il n'est pas nul, sinon par le +0x120 de son objet arme. Vrai si la cible (PedGetTargetPed ; l'outil :
+		// CibleDe) est strictement plus près (la distance en 3D, FUN_00414a20 et la racine). Aucun arbre des sept missions ne la cite.
+		static const uint32 kEngagement = ActionHash("EngageDistance");
+		if(type == kEngagement){
+			if(moi == nil || moi->zoneCombat == 4) return 0;
+			bool o4 = (mots[0] & 0xff) != 0, o5 = ((mots[0] >> 8) & 0xff) != 0;
+			float d;
+			int z = moi->zoneCombat;
+			if(o5) d = ButeIA(0x34, 0.0f) + (float)1.0;
+			else if(!o4){
+				if(z < 0 || z > 2) return 0;
+				d = ButeIA((uint16)(0x2c + 4 * z), 0.0f) + (float)1.0;
+			}else{
+				if(z == 0) d = (ButeIA(0x2c, 0.0f) + ButeIA(0x28, 0.0f)) * (float)0.5;
+				else if(z == 1) d = (ButeIA(0x30, 0.0f) + ButeIA(0x2c, 0.0f)) * (float)0.5;
+				else if(z == 2) d = ButeIA(0x34, 0.0f);
+				else return 0;
+			}
+			if(moi->armeTenue != -1 && armes.Type(moi->armeTenue).tir68) d = moi->engagementMin != 0.0f ? moi->engagementMin : moi->armeInit;
+			const CScriptPed *c = pietons.Acceder(CibleDe(ped));
+			if(c == nil) return 0;
+			float dx = c->pos.x - moi->pos.x, dy = c->pos.y - moi->pos.y, dz = c->pos.z - moi->pos.z;
+			return d > sqrtf(dx * dx + dy * dy + dz * dz);
+		}
 		// HasRangedWeapon (ConditionHasRangedWeapon, table 0x92e874, créateur 0x649640 ; FUN_00605a80 → FUN_00486ae0) : l'arme tenue,
 		// ou une arme de son inventaire, à distance (l'octet +0x68 de son type, sans le +0x69 pour l'inventaire) et qui a des munitions
 		// (CInventaireArmes::ArmeADistance). Jugée -1 jusqu'ici, elle rendait inconnus les nœuds qui la citent, jamais pris.
@@ -5705,6 +5734,18 @@ PedMakeMissionChar(lua_State *L)
 	return 0;
 }
 
+// PedSetMinEngage(ped, distance) (0x5cb790, lu à l'assembleur de 0x5cb790 à 0x5cb7cd) : le piéton du genre 2 (FUN_005c7220) ; s'il
+// existe, son +0x42c reçoit le flottant du deuxième argument (FUN_005d82a0 ; fstp) : la distance d'engagement d'un piéton armé à
+// distance (EngageDistance). Rien n'est rendu.
+static int
+PedSetMinEngage(lua_State *L)
+{
+	Journal("PedSetMinEngage", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p) p->engagementMin = (float)luaL_optnumber(L, 2, 0);
+	return 0;
+}
+
 // AreaClearAllPeds() (0x5b7e70, lue à l'assembleur de 0x5b7e70 à 0x5b7ecb ; CScriptPedPool::AmbiantsAVider) : le pool des piétons
 // (DAT_00c0f5f0) parcouru depuis la fin ; chaque piéton qui n'est ni de mission (l'octet +0x1570 à 2), ni le joueur (+0x1310 à 0xd),
 // ni dans la liste de DAT_00bcd098 (FUN_00424490 : ses entrées de 0x100 octets, la poignée en tête, leur nombre en +0x1804 ; non
@@ -7788,6 +7829,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedGetFlag", PedGetFlag);
 	lua_register(L, "PedCreateXYZ", PedCreateXYZ);
 	lua_register(L, "PedDelete", PedDelete);
+	lua_register(L, "PedSetMinEngage", PedSetMinEngage);
 	lua_register(L, "PedClearHitRecord", PedClearHitRecord);
 	lua_register(L, "AreaClearAllPeds", AreaClearAllPeds);
 	lua_register(L, "PedIsValid", PedIsValid);

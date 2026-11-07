@@ -25,7 +25,7 @@ posséder le jeu (Steam ou disque).
 
 ## Avancement
 
-**7,6 % du code de `bully.exe` recréé** (1194 fonctions sur 20 819), 12,1 % compris
+**7,6 % du code de `bully.exe` recréé** (1197 fonctions sur 20 819), 12,1 % compris
 (code, documentation, noms). Le détail par sous-système est dans
 [docs/avancement.md](docs/avancement.md), régénéré à chaque commit par
 `tools/avancement.py`.
