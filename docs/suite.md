@@ -103,11 +103,14 @@ chantier. Un point fini passe en bas, avec son commit.
    leur vie, `AreaClearAllProjectiles` par modèle) et **les entités qui suivent un trajet** : le PathReference, le gestionnaire
    0xd13730, `PAnimFollowPath`, `PAnimStopFollowPath`, `PAnimSetPathFollowSpeed`, `PAnimGetPathFollowSpeed`, `PAnimFollowPathReset` et
    le rappel des nœuds atteints ; la grille fermée du magasin (`SCStoreGte_Closed`) est posée au départ de son trajet dans `1_01`, `1_02` et `1_05`, et sa vitesse de -1,2 ne la fait pas bouger ; les sept missions restent réussies.
+   Le 07.11 (séance 3), **`AreaClearAllPeds` est branchée** : elle détruit les trois joueurs de foot rendus à la population dans
+   `1_04`, `1_05`, `1_06_01` et `1_07`, les poignées des piétons créés ensuite baissent de 3, et les commandes de `1_04` et `1_05`
+   sont refaites (`1_05` finit à 194,30 s) ; avec elle `PedClearHitRecord`, `PedSetMinEngage` et la condition `EngageDistance`, la
+   visée automatique du joueur (`WeaponPlayerFireAutoTarget`) et les décalages de visée de `WeaponFire` (`FUN_00662760`).
    Suite, dans l'ordre :
-   - la suite des armes : la visée du joueur (`WeaponPlayerFireAutoTarget` pose l'octet +0x1ec0 du joueur, que `FUN_00662a40` lit
-     avec la manette, le bouton 10 de `FUN_007386f0` ; `FUN_00662a40` en entier ; le +0x1714 du piéton que l'avance sur la cible
-     prend pour sa vitesse, que l'outil remplace par le déplacement de la dernière image ; les décalages +0x18 … +0x24 de `WeaponFire`,
-     `FUN_00662760`), le haut du corps qui s'arrête après `AimOut` (le spawn `./UpperBody` de
+   - la suite des armes : la visée du joueur (`FUN_00662a40` en entier : le bouton 10 de la manette, `FUN_007386f0`, la cible du
+     +0x54c et celle du composant de visée, `FUN_004d5980` et `FUN_004d7630`, l'octet +0x31 de la piste et le +0x438 du piéton ; le +0x1714 du piéton que l'avance sur la cible
+     prend pour sa vitesse, que l'outil remplace par le déplacement de la dernière image), le haut du corps qui s'arrête après `AimOut` (le spawn `./UpperBody` de
      `Controller` a l'octet +0x29 à 0 : que le bouton suivant le relance, pour ne plus passer par `--jouer` ni `--tirer`), la
      physique des `CProjectile` (`FUN_004d4c40`, le sol, les rebonds ; le choc, `FUN_004d3860` ; la mèche que `FUN_00664710` passe
      à la vie ; le test d'eau `FUN_006d48d0`),
@@ -117,13 +120,12 @@ chantier. Un point fini passe en bas, avec son commit.
      +0x1c … +0x28 que `FUN_005ec0a0` fait tourner, les angles du segment avec l'octet +0xc, `FUN_005ed570` et `FUN_00433340` ;
      l'outil ne garde que la position de ses CObject), `PAnimFollowPathSoundLoop` (0x5c3e70, la boucle de son +4), l'octet +0xd
      qui arrête l'entité quand sa rotation atteint sa cible, le genre 6 du rappel ;
-   - brancher `AreaClearAllPeds` (0x5b7e70, recréée : `CScriptPedPool::AmbiantsAVider`) : elle détruit les trois joueurs de foot que
-     `F_FootballFieldThread` rend à la population, et les piétons créés ensuite prennent leurs cases : dans `1_04`, `1_05` et `1_06_01`,
-     les poignées des commandes de docs/missions.md changent (branchée, `1_04` n'allait plus au bout et `1_05` échouait à 57,88 s) ;
-     refaire ces commandes avec elle, et lire la liste DAT_00bcd098 qu'elle épargne (`FUN_00424490`) ;
    - ce qui reste de `1_07` : le dessin de la barre de santé
-     et sa mise à jour, `PedSetEmotionTowardsPed`, `PedSetMinEngage`, `PedSetUniqueModelStatus`, `PedClearHitRecord`,
-     `DoublePedShadowDistance`, l'échange social que `FUN_004906e0` arrête, les genres de `FUN_00477ab0` que l'outil ne suit pas (2, 3, 6 à 0xf) ;
+     et sa mise à jour, `PedSetEmotionTowardsPed` (`FUN_0048f080`, la table 11 × 11 de 0xa349e0, `PedGetEmotionTowardsPed`
+     0x48ea70), `PedSetUniqueModelStatus` et `PedGetUniqueModelStatus` (le mot +0x5c du modelinfo : la colonne UNIQUE des .idb à la
+     lecture, `FUN_004370d0`, puis le +0x5e recopié par `FUN_00522030` à chaque remise du jeu, `FUN_0042fa40` → `FUN_0051b6b0` ;
+     d'où vient +0x5e n'est pas trouvé ; `F_FootballFieldThread` les juge des dizaines de fois par mission), `DoublePedShadowDistance`
+     (0x5bb7e0 : l'octet DAT_00c93768), la liste de DAT_00bcd098 qu'épargne `AreaClearAllPeds` (`FUN_00424490`), l'échange social que `FUN_004906e0` arrête, les genres de `FUN_00477ab0` que l'outil ne suit pas (2, 3, 6 à 0xf) ;
    - ce qui reste de `1_06_01` : l'échelle (`/Global/Ladder/Ladder_Actions` et les marqueurs de `_LOWCORONA` et `_HIGHGROUND` : l'outil
      monte au transistor en ligne droite), les marqueurs du radar (`AddBlipForChar`, `BlipAddPoint`, `BlipRemove` : le pool de
      `CRadar`, `FUN_0054a460`, `FUN_0054a2c0`, `FUN_0054a7f0`, `FUN_0054a740`), la diffusion des placements (`CIplStore`, `FUN_00439220`)
@@ -188,6 +190,11 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- `AreaClearAllPeds` branchée et la suite de 1_07 et des armes (07.11, séance 3 ; c60757f, 2a54c45, f5a14d7, 68ecb38, 9caccfa) : `AreaClearAllPeds`
+  (0x5b7e70, `CScriptPedPool::AmbiantsAVider`, les commandes de `1_04` et `1_05` refaites), `PedClearHitRecord` (0x5cfde0),
+  `PedSetMinEngage` (0x5cb790) et `EngageDistance` (`FUN_00602070`), `WeaponPlayerFireAutoTarget` (`FUN_00661ee0`, l'octet +0x1ec0
+  du joueur), les décalages de visée de `WeaponFire` (`CViseeTir::DecalageVisee`, `FUN_00662760`).
 
 - Les entités qui suivent un trajet, la visée et la table des projectiles (07.11, séance 2 ; d841781, a9e14ca, d9cc993, c07c7e0, 9944415, d06b095, 2f4706b, 74a7b18, 99dbfab) :
   `IsPlayerFatigued` (`FUN_005fc3a0`), l'avance sur une cible qui bouge (`CViseeTir::AvanceSurCible`, `FUN_0065ecb0`), la table des

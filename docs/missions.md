@@ -601,6 +601,10 @@ pieds 0,04 s après le lâcher du bouton et touche la vitre visée 0,16 s plus t
 s'en prend au joueur (`F_BurtonPissed`), `MinigameSetCompletion("M_PASS")` à 80,49 s et `MissionSucceed` à 82,50 s : **`1_04` se
 termine réussie à 82,53 s** (81,05 s le 05.11). Les jocks qui font leurs tours ne sont pas touchés : la bille part vers la position du piéton au moment du tir.
 
+**Les poignées** (07.11, séance 3) : `AreaClearAllPeds` (10,06 s) détruit les trois joueurs de foot que `F_FootballFieldThread` a
+rendus à la population ; les piétons créés ensuite prennent leurs cases et leurs poignées baissent de 3 : les jocks sont les piétons 5 à
+10 (8 à 13 plus haut et le 05.11), Burton le 11. La commande ci-dessus est refaite avec elles.
+
 **La charge du lance-pierre** (06.11, séances 6 et 7) : la feuille `Charge` de SlingShotActions.cat (`SLNG_CHARGE_T`) pose la charge
 de l'objet arme à 0 (`WeaponSetCharge`) et la fait monter à chaque image (`WeaponIncrementCharge` : la moitié du pas pour le
 lance-pierre, 0,0165 par image) ; `WeaponFire` la lit, bornée à [0, 1], et la remet à -100. La commande ci-dessus joue la feuille
@@ -666,6 +670,11 @@ sur `_1_05B_ALGIEFLEE`, et le joueur joue `/Global/Player/Gifts/GetMoney` (168,5
 `ReceiveWait`, qui passe dix secondes plus tard à `Give/Receive` ; son `PlayOnTarget` fait jouer `Give/Give` au joueur (178,60 s ; l'outil
 prend le partenaire de prise, faute du composant de visée des piétons de l'IA) ; l'écran `M_PASS` (182,62 s), les messages de respect,
 le fondu et **`MissionSucceed` : `1_05` se termine réussie à 185,20 s**.
+
+**Les poignées** (07.11, séance 3) : `AreaClearAllPeds` (3,43 s) détruit les trois joueurs de foot que `F_FootballFieldThread` a
+rendus à la population ; les piétons créés ensuite prennent leurs cases et leurs poignées baissent de 3 : les bullies de `F_Stage1_Setup`
+sont 1, 2 et 3 (4, 5 et 6 plus haut), Algie le 7 (10), l'embuscade 9 et 10 (12 et 13). La commande ci-dessus est refaite avec elles ;
+l'objectif de la fin (`1_05_MOBJ_03`) passe à 133,95 s au lieu de 154,18 s, et `1_05` se termine réussie à 194,30 s.
 
 ## `1_06_01` (« Get Help - Mission 1 ») (06.11.2026, séance 2)
 

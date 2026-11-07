@@ -1287,3 +1287,26 @@ en échec plutôt que de les masquer.
   `1_06_01` à 61,81 s et `1_07` à 151,47 s à chaque commit.
 - **Bilan** : 1 194 fonctions recréées (7,6 % du code), contre 1 157 (7,3 %) ; 2 133 comprises (12,1 %) ; dix commits (neuf de
   moteur et la documentation).
+
+## 07.11.2026, séance 3 (de 23 h 39 à 0 h 27)
+
+- **`AreaClearAllPeds` branchée** (`CScriptPedPool::AmbiantsAVider`, lue à l'assembleur de 0x5b7e70 à 0x5b7ecb) : toutes les missions
+  l'appellent ; dans `1_04` (10,06 s), `1_05` (3,43 s), `1_06_01` (40,79 s) et `1_07` (133,95 s), elle détruit les trois joueurs de
+  foot rendus à la population, et les poignées des piétons créés ensuite baissent de 3 (le script `remap.py` du scratchpad aligne les
+  créations des deux journaux). Les anciennes commandes échouent (`1_04` ne va plus au bout, `1_05` s'arrête à 57,88 s) ; refaites
+  (`1_04` : les jocks 5 à 10 ; `1_05` : les bullies 1, 2, 3, puis 9 et 10), elles réussissent. `1_05` finit à 194,30 s : l'objectif
+  de la fin passe à 133,95 s au lieu de 154,18 s, et le joueur, que la commande fait courir à 155 s, arrive au bout plus tard.
+- **`PedClearHitRecord`** (0x5cfde0, lue à l'assembleur) : le drapeau et l'attaquant du relevé du dernier coup oubliés ; six appels
+  sur Bucky dans `1_07`, sans effet visible.
+- **`PedSetMinEngage`** (0x5cb790 : le +0x42c du piéton) et la condition **`EngageDistance`** (`FUN_00602070` : la distance
+  d'engagement par la zone de combat et AIButes, ou le +0x42c et la portée de l'arme pour un piéton armé à distance) ; aucun arbre des
+  sept missions ne la cite.
+- **La visée automatique du joueur** (`WeaponPlayerFireAutoTarget`, `FUN_00661ee0` : l'octet +0x1ec0, que `FUN_00662a40` lit avec le
+  bouton 10 de la manette) : posée par le nœud `Controller` du lance-pierre ; sans autre cible que le verrou de `--viser`, l'outil
+  tire comme avant.
+- **Les décalages de visée de `WeaponFire`** (`CViseeTir::DecalageVisee`, `FUN_00662760` lu à l'assembleur) : le côté × la distance,
+  l'avant × l'écart, la hauteur en z, et l'avant de la cible ; nuls pour la bille.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 148,04 s), `1_04` à 82,53 s, `1_05` à 194,30 s
+  (185,20 s avant `AreaClearAllPeds`), `1_06_01` à 61,81 s et `1_07` à 151,47 s.
+- **Bilan** : 1 199 fonctions recréées (7,6 % du code), contre 1 194 (7,6 %) ; 2 139 comprises (12,1 %) ; six commits (cinq de moteur et la documentation). Sur la nuit : vingt commits nouveaux en trois séances
+  (PR #24, #25 et celle-ci), plus les six de la veille au soir documentés.
