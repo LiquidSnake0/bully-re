@@ -587,11 +587,11 @@ Avec l'outil :
     V="$V --viser-objet tschool_BusWindow02@18 --jouer $C@18.6 --tenir 8,0.7@18.6"
     V="$V --viser-objet tschool_BusWindow03@20 --jouer $C@20.6 --tenir 8,0.7@20.6 --viser-objet -@22"
     A="--entrer _1_04_FIELDTRIG@26 --entrer _1_04_TREE2_TRIG@33 --jouer /Global/TreeClimb/Actions/ON_BOT:Act/Props/pxTree.act@34"
-    T="--viser 13@73.28 --tirer @73.35 --viser 12@74.00 --tirer @74.07 --viser 13@74.14 --tirer @74.21 --viser 11@74.47 --tirer @74.54"
-    T="$T --viser 12@74.80 --tirer @74.87 --viser 13@74.94 --tirer @75.01 --viser 10@75.08 --tirer @75.15 --viser 11@75.27 --tirer @75.34"
-    T="$T --viser 9@75.41 --tirer @75.48 --viser 12@75.60 --tirer @75.67 --viser 10@75.74 --tirer @75.81 --viser 11@76.07 --tirer @76.14"
-    T="$T --viser 9@76.21 --tirer @76.28 --viser 8@76.35 --tirer @76.42 --viser 10@76.49 --tirer @76.56 --viser 9@76.96 --tirer @77.03"
-    T="$T --viser 8@77.10 --tirer @77.17 --tirer @77.83"
+    T="--viser 10@73.28 --tirer @73.35 --viser 9@74.00 --tirer @74.07 --viser 10@74.14 --tirer @74.21 --viser 8@74.47 --tirer @74.54"
+    T="$T --viser 9@74.80 --tirer @74.87 --viser 10@74.94 --tirer @75.01 --viser 7@75.08 --tirer @75.15 --viser 8@75.27 --tirer @75.34"
+    T="$T --viser 6@75.41 --tirer @75.48 --viser 9@75.60 --tirer @75.67 --viser 7@75.74 --tirer @75.81 --viser 8@76.07 --tirer @76.14"
+    T="$T --viser 6@76.21 --tirer @76.28 --viser 5@76.35 --tirer @76.42 --viser 7@76.49 --tirer @76.56 --viser 6@76.96 --tirer @77.03"
+    T="$T --viser 5@77.10 --tirer @77.17 --tirer @77.83"
     build/outils/lancer_lua 90 --mission 1_04 --sans-cinematiques --entrer _1_04_PARKING@10 $V $A $T
 
 (sous zsh, `${=V}`…) Le joueur prend le lance-pierre au HUD (`--arme`, 15,05 s : `Weapons/SelectActions`, `PropGetDesired`,
@@ -643,10 +643,10 @@ Avec l'outil (sous zsh, `${=…}`) :
     LA=/Global/Player/Attacks/Strikes/LightAttacks
     J1=13.5,14.1,…,24.3 (dix-neuf jabs) ; J2=28,28.6,…,37 (seize) ; J3=39,39.6,…,48 (seize)
     build/outils/lancer_lua 200 --mission 1_05 --sans-cinematiques --courir 187.3,-132.2,6.1@5 \
-      --suivre 4,0.8@12.5 --viser 4@12.5 --jouer $LA@$J1 --suivre 5,0.8@27 --viser 5@27 --jouer $LA@$J2 \
-      --suivre 6,0.8@38 --viser 6@38 --jouer $LA@$J3 \
+      --suivre 1,0.8@12.5 --viser 1@12.5 --jouer $LA@$J1 --suivre 2,0.8@27 --viser 2@27 --jouer $LA@$J2 \
+      --suivre 3,0.8@38 --viser 3@38 --jouer $LA@$J3 \
       --courir 209.2,-73.3,6@59 --porte DT_tschool_SchoolFrontDoorL@66 --courir -675.8,-325.4,5.9@70 \
-      --suivre 12,0.8@105 --viser 12@105 --jouer $LA@106,106.6,…,115 --suivre 13,0.8@117 --viser 13@117 --jouer $LA@118,118.6,…,127 \
+      --suivre 9,0.8@105 --viser 9@105 --jouer $LA@106,106.6,…,115 --suivre 10,0.8@117 --viser 10@117 --jouer $LA@118,118.6,…,127 \
       --courir -657.2,-293.5,5.9@155
 
 (`J1`, `J2`, `J3` et les deux séries de l'embuscade : seize ou dix-neuf instants de 0,6 s en 0,6 s.) Le joueur court à la bibliothèque,

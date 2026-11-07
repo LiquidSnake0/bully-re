@@ -5686,10 +5686,27 @@ PedMakeMissionChar(lua_State *L)
 	return 0;
 }
 
-// AreaClearAllPeds() (0x5b7e70, CScriptPedPool::AmbiantsAVider) n'est pas branchée : elle détruirait les trois joueurs de foot que
-// F_FootballFieldThread de gamemain crée puis rend à la population (3,33 s ou 4,03 s), dans 1_04 (10,06 s), 1_05 (3,43 s) et 1_06_01
-// (40,79 s) ; le pool rendrait leurs cases aux piétons créés ensuite, dont les poignées (celles des commandes de docs/missions.md :
-// --suivre 4, --viser 12…) changeraient. Elle reste un bouchon jusqu'à ce que ces commandes soient refaites.
+// AreaClearAllPeds() (0x5b7e70, lue à l'assembleur de 0x5b7e70 à 0x5b7ecb ; CScriptPedPool::AmbiantsAVider) : le pool des piétons
+// (DAT_00c0f5f0) parcouru depuis la fin ; chaque piéton qui n'est ni de mission (l'octet +0x1570 à 2), ni le joueur (+0x1310 à 0xd),
+// ni dans la liste de DAT_00bcd098 (FUN_00424490 : ses entrées de 0x100 octets, la poignée en tête, leur nombre en +0x1804 ; non
+// suivie, vide dans l'outil) est détruit (la première méthode de sa vftable, avec 1). Les cases libérées sont reprises par les
+// piétons créés ensuite (CScriptPedPool::Creer prend la première libre) : les poignées des commandes de docs/missions.md en dépendent.
+static int
+AreaClearAllPeds(lua_State *L)
+{
+	Journal("AreaClearAllPeds", L, 1);
+	std::string liste;
+	for(int h : pietons.AmbiantsAVider()){
+		const CScriptPed *p = pietons.Acceder(h);
+		int32 m = p ? p->modele : -1;
+		if(!pietons.Supprimer(h)) continue;
+		OublierControleurs(h);
+		char b[48]; snprintf(b, sizeof b, "%s%d (modèle %d)", liste.empty() ? "" : ", ", h, m);
+		liste += b;
+	}
+	printf("%6.2f s  AreaClearAllPeds : %s\n", maintenant / 1000.0, liste.empty() ? "aucun piéton de la population" : ("détruits " + liste).c_str());
+	return 0;
+}
 
 // PedMakeAmbient(ped) (0x5ca850) : rendu à la population ; le script ne le ramasse plus.
 static int
@@ -7752,6 +7769,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedGetFlag", PedGetFlag);
 	lua_register(L, "PedCreateXYZ", PedCreateXYZ);
 	lua_register(L, "PedDelete", PedDelete);
+	lua_register(L, "AreaClearAllPeds", AreaClearAllPeds);
 	lua_register(L, "PedIsValid", PedIsValid);
 	lua_register(L, "PedIsPlayer", PedIsPlayer);
 	lua_register(L, "PlayerGetPedIndex", PlayerGetPedIndex);
