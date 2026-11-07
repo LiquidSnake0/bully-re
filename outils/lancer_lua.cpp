@@ -3118,6 +3118,47 @@ PAnimStopFollowPath(lua_State *L)
 	return 0;
 }
 
+// PAnimSetPathFollowSpeed(entité[, genre], vitesse) (0x5c3c60, hors de l'index, lu à l'assembleur de 0x5c3c60 à 0x5c3cd4) : trois
+// arguments, FUN_0044a510(premier, deuxième) et la vitesse en troisième ; sinon FUN_006d79c0(premier) et la vitesse en deuxième
+// (FUN_005d82a0) ; avec une entité, FUN_005ebbf0 sur le gestionnaire : la vitesse de sa référence (FUN_005ed400, en m par seconde,
+// signée), si son trajet a au moins deux nœuds.
+static int
+PAnimSetPathFollowSpeed(lua_State *L)
+{
+	Journal("PAnimSetPathFollowSpeed", L, 1);
+	bool trois = lua_gettop(L) == 3;
+	int32 e = EntiteSuivie(L, trois);
+	if(e != 0) suiveurs.PoserVitesse(e, (float)luaL_optnumber(L, trois ? 3 : 2, 0));
+	return 0;
+}
+
+// PAnimGetPathFollowSpeed(entité[, genre]) (0x5c3ce0, lu à l'assembleur de 0x5c3ce0 à 0x5c3d4c) : deux arguments, FUN_0044a510 ;
+// sinon FUN_006d79c0, et rien de rendu sans entité ; FUN_005ebba0 : la vitesse (+0x14) de la référence de son entrée, 0 sans entrée
+// (le moteur lit la référence sans la vérifier ; l'outil rend 0 sans elle). Le nombre est rendu (FUN_005d8480).
+static int
+PAnimGetPathFollowSpeed(lua_State *L)
+{
+	appels["PAnimGetPathFollowSpeed"]++;
+	bool deux = lua_gettop(L) == 2;
+	int32 e = EntiteSuivie(L, deux);
+	if(e == 0 && !deux) return 0;
+	const CSuiveurTrajet *s = e != 0 ? suiveurs.Trouver(e) : nil;
+	lua_pushnumber(L, s && s->aReference ? s->reference.vitesse : 0.0f);
+	return 1;
+}
+
+// PAnimFollowPathReset(entité[, genre]) (0x5c3c00, lu à l'assembleur de 0x5c3c00 à 0x5c3c5e) : deux arguments, FUN_0044a510 ; sinon
+// FUN_006d79c0 ; FUN_005ebb50 : la référence de son entrée remise au départ (FUN_005ed6f0 : le segment 1, la distance et la vitesse à
+// 0), sans replacer l'entité tout de suite (la prochaine mise à jour le fait).
+static int
+PAnimFollowPathReset(lua_State *L)
+{
+	Journal("PAnimFollowPathReset", L, 1);
+	int32 e = EntiteSuivie(L, lua_gettop(L) == 2);
+	if(e != 0) suiveurs.Remettre(e);
+	return 0;
+}
+
 // FUN_005ec3a0 (appelée par FUN_0045f960, à chaque image) : les entités suivies avancent sur leur trajet et sont replacées.
 static void
 AvancerSuiveurs(lua_State *L)
@@ -7744,6 +7785,9 @@ main(int argc, char **argv)
 	lua_register(L, "PAnimDelete", PAnimDelete);
 	lua_register(L, "PAnimFollowPath", PAnimFollowPath);
 	lua_register(L, "PAnimStopFollowPath", PAnimStopFollowPath);
+	lua_register(L, "PAnimSetPathFollowSpeed", PAnimSetPathFollowSpeed);
+	lua_register(L, "PAnimGetPathFollowSpeed", PAnimGetPathFollowSpeed);
+	lua_register(L, "PAnimFollowPathReset", PAnimFollowPathReset);
 	lua_register(L, "AddBlipForChar", AddBlipForChar);
 	lua_register(L, "BlipAddPoint", BlipAddPoint);
 	lua_register(L, "BlipRemove", BlipRemove);
