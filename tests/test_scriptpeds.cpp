@@ -139,6 +139,31 @@ main(void)
 		VERIF(pa->sante == 100 && pa->santeMax == 100);        // le constructeur de CPed : 100 et 100
 		int32 col[64] = {};
 		col[4] = 120; col[5] = 50; col[63] = 20;               // F santé maximale, G régénération, BM seuil d'humiliation
+		// Le pas du contrôleur d'actions (FUN_004812d0) : 0,02 × le pas de CTimer × la colonne V (0x14) / 100 ; sans entrée (le joueur
+		// de l'outil), la colonne vaut 100.
+		VERIF(fabsf(q.PasDuControleur(a, 1.65f) - 0.033f) < 1e-6f);
+		VERIF(q.PasDuControleur(-1, 1.65f) == 0.0f);
+		col[0x14] = 50;
+		VERIF(q.PoserStats(a, col) && fabsf(q.PasDuControleur(a, 1.0f) - 0.01f) < 1e-7f);
+		VERIF(q.PasDuControleur(a, 1.0f) == CScriptPedPool::PasDuControleur(1.0f, 50));
+		VERIF(fabsf(q.PasDuControleur(SCRIPT_PED_JOUEUR, 1.65f) - 0.033f) < 1e-6f);
+		col[0x14] = 0;
+		VERIF(q.PoserStats(a, col) && q.PasDuControleur(a, 1.65f) == 0.0f);
+		// La colonne d'un piéton qui a son entrée ; la valeur donnée pour un piéton sans entrée ; 0 hors du pool ou des colonnes.
+		col[0x1f] = 80;
+		VERIF(q.PoserStats(a, col) && q.StatLue(a, 0x1f, 100) == 80 && q.StatLue(SCRIPT_PED_JOUEUR, 0x1f, 100) == 100);
+		VERIF(q.StatLue(-1, 0x1f, 100) == 0 && q.StatLue(a, 64, 100) == 0);
+		// L'objet arme (FUN_004da610, FUN_004d92c0, FUN_004da6f0) : la charge à 0 au départ ; PropAttach la remet à 0 avec les
+		// drapeaux, +0x120 et +0x124 à -1 et la munition au modèle ; la remise ôte le modèle et garde la charge.
+		VERIF(pa->armeCharge == 0.0f && pa->armeTenue == -1 && pa->armeInit == -1.0f && pa->armePortee == -1.0f);
+		pa->armeCharge = -100.0f; pa->drapeauxArme[7] = 1; pa->armeInit = 2.0f; pa->armePortee = 30.0f; pa->armeMunition = 304;
+		q.PrendreArme(a, 303);
+		VERIF(pa->armeTenue == 303 && pa->armeCharge == 0.0f && pa->drapeauxArme[7] == 0 && pa->armeMunition == 303);
+		VERIF(pa->armeInit == -1.0f && pa->armePortee == -1.0f);
+		pa->armeCharge = 0.4f; pa->armeInit = 2.0f; pa->armeMunition = 304;
+		q.RemettreArme(a);
+		VERIF(pa->armeTenue == -1 && pa->armeInit == -1.0f && pa->armePortee == -1.0f && pa->armeCharge == 0.4f && pa->armeMunition == 304);
+		q.RemettreArme(-1);
 		VERIF(q.PoserStats(a, col) && pa->sante == 120 && pa->santeMax == 120 && pa->santeMin == 0 && q.Stat(a, 63) == 20);
 		VERIF(q.Blesser(a, 20, -1) && pa->sante == 100);
 		for(int i = 0; i < 30; i++) q.Avancer(1.0f / 30);    // une seconde : + 50 / 100 point
@@ -629,6 +654,64 @@ main(void)
 		VERIF(g.RecruterAllie(SCRIPT_PED_JOUEUR, algie, true) && g.RecruterAllie(SCRIPT_PED_JOUEUR, autre, true));
 		VERIF(j->suiveur == autre && a->meneur == -1);
 		VERIF(g.Supprimer(autre) && j->suiveur == -1);
+	}
+	// FUN_0048cf50, FUN_0048a300 (DetectProjectile) et FUN_0048a130 (DetectGrenade).
+	{
+		CScriptPedPool q;
+		int a = q.Creer(146, CVector(0, 0, 0), 0, 1);            // cap 0 : il regarde vers +x
+		CScriptPed *pa = q.Acceder(a);
+		pa->visionPortee = 20.0f; pa->visionAngle = 3.14159265f / 2.0f;   // 90 degrés
+		VERIF(q.VoitPoint(a, CVector(10, 0, 0)) && q.VoitPoint(a, CVector(10, 9, 5)) && !q.VoitPoint(a, CVector(10, 11, 0)));
+		VERIF(!q.VoitPoint(a, CVector(-5, 0, 0)) && !q.VoitPoint(a, CVector(21, 0, 0)) && !q.VoitPoint(-1, CVector()));
+		CScriptPedPool::ProjectileVu v;
+		v.pos = CVector(10, 1, 1); v.vitesse = CVector(-0.6f, 0, 0); v.tireur = SCRIPT_PED_JOUEUR; v.menace = true;
+		std::vector<CScriptPedPool::ProjectileVu> vus{v};
+		VERIF(q.DetecterProjectile(a, vus));
+		vus[0].menace = false;                                   // la bille : pas d'octet +0xe4
+		VERIF(!q.DetecterProjectile(a, vus));
+		vus[0].fiche = false;                                    // sans fiche, il se voit
+		VERIF(q.DetecterProjectile(a, vus));
+		vus[0].pos = CVector(10, 4, 1);                          // passe à 4 m : non
+		VERIF(!q.DetecterProjectile(a, vus));
+		vus[0].pos = CVector(10, 1, 1); vus[0].vitesse = CVector(0.6f, 0, 0);   // s'éloigne
+		VERIF(!q.DetecterProjectile(a, vus));
+		vus[0].vitesse = CVector(-0.01f, 0, 0);                  // trop lent
+		VERIF(!q.DetecterProjectile(a, vus));
+		vus[0].vitesse = CVector(-0.6f, 0, 0); vus[0].tireur = a;   // le sien
+		VERIF(!q.DetecterProjectile(a, vus));
+		vus[0].tireur = SCRIPT_PED_JOUEUR; vus[0].pos = CVector(-10, 1, 1); vus[0].vitesse = CVector(0.6f, 0, 0);   // dans son dos
+		VERIF(!q.DetecterProjectile(a, vus));
+		vus[0].pos = CVector(10, 1, 1); vus[0].vitesse = CVector(-0.6f, 0, 0);
+		pa->drapeaux[19] = 1;
+		VERIF(!q.DetecterProjectile(a, vus));
+		pa->drapeaux[19] = 0;
+		// DetectGrenade : une fiche de rayon et de +0xa0 positifs, à moins de 10 m (100 au carré) ; sa propre bille au-delà de 0,501 m.
+		CScriptPedPool::ProjectileVu g;
+		g.pos = CVector(3, 4, 0); g.tireur = SCRIPT_PED_JOUEUR; g.menace = true; g.rayon = 3.0f; g.a0 = 100.0f; g.vie = 3000;
+		VERIF(q.DetecterGrenade(a, {g}, 100.0f));
+		g.pos = CVector(30, 0, 0);
+		VERIF(!q.DetecterGrenade(a, {g}, 100.0f));
+		g.pos = CVector(3, 4, 0); g.a0 = 0.0f;                   // la bille, la brique
+		VERIF(!q.DetecterGrenade(a, {g}, 100.0f));
+		g.tireur = a; g.rayon = 0.001f; g.menace = false; g.pos = CVector(0.4f, 0, 0);
+		VERIF(!q.DetecterGrenade(a, {g}, 100.0f));
+		g.pos = CVector(0.6f, 0, 0);
+		VERIF(q.DetecterGrenade(a, {g}, 100.0f));
+		g.fiche = false;
+		VERIF(!q.DetecterGrenade(a, {g}, 100.0f));
+		// Le juge (FUN_00604380) : la menace retenue, à plat à moins de son rayon plus 1 m ; le cas du tireur ne rend rien.
+		g = CScriptPedPool::ProjectileVu();
+		g.pos = CVector(3, 0, 8); g.tireur = SCRIPT_PED_JOUEUR; g.menace = true; g.rayon = 2.5f; g.a0 = 100.0f; g.o8c = true;
+		CVector ou; float r = -1.0f;
+		VERIF(q.DetecterGrenade(a, {g}, 100.0f, &ou, &r) && ou.x == 3.0f && ou.z == 8.0f && r == 2.5f);
+		VERIF(q.GrenadeAPortee(a, {g}));                         // 3 m à plat, sous 3,5 m (la hauteur ne compte pas)
+		g.pos = CVector(3, 0, 0); g.rayon = 1.5f;
+		VERIF(q.DetecterGrenade(a, {g}, 100.0f) && !q.GrenadeAPortee(a, {g}));   // 3 m, au-delà de 2,5 m
+		g.tireur = a; g.menace = false; g.rayon = 0.001f; g.pos = CVector(0.6f, 0, 0);
+		VERIF(q.DetecterGrenade(a, {g}, 100.0f) && q.GrenadeAPortee(a, {g}));    // le piéton est à l'origine du monde
+		pa->pos = CVector(50, 50, 0); g.pos = CVector(50.6f, 50, 0);
+		VERIF(q.DetecterGrenade(a, {g}, 100.0f) && !q.GrenadeAPortee(a, {g}));   // ailleurs : la menace reste à (0, 0, 0)
+		pa->pos = CVector(0, 0, 0);
 	}
 	printf("test_scriptpeds : %s\n", echecs == 0 ? "OK" : "ECHEC");
 	return echecs != 0;

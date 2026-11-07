@@ -759,6 +759,7 @@ CScriptPedPool::PoserStats(int h, const int32 colonnes[64])
 	CScriptPed *p = Acceder(h);
 	if(p == nil) return false;
 	for(int i = 0; i < 64; i++) p->stats[i] = colonnes[i];
+	p->statsLues = true;
 	p->santeMax = (float)colonnes[4];
 	p->santeMin = 0;
 	p->regeneration = (float)colonnes[5];
@@ -775,6 +776,46 @@ CScriptPedPool::Stat(int h, int n) const
 {
 	const CScriptPed *p = Acceder(h);
 	return p && n >= 0 && n < 64 ? p->stats[n] : 0;
+}
+
+void
+CScriptPedPool::RemettreArme(int h)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return;
+	p->armeInit = -1.0f;
+	p->armePortee = -1.0f;
+	if(p->armeTenue != -1) p->armeTenue = -1;   // FUN_004da790(0)
+}
+
+void
+CScriptPedPool::PrendreArme(int h, int32 modele)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return;
+	RemettreArme(h);
+	p->armeCharge = 0.0f;
+	p->armeMunition = modele;
+	p->armeInit = -1.0f;
+	p->armePortee = -1.0f;
+	for(int32 &d : p->drapeauxArme) d = 0;
+	p->armeTenue = modele;
+}
+
+int32
+CScriptPedPool::StatLue(int h, int n, int32 sansEntree) const
+{
+	const CScriptPed *p = Acceder(h);
+	if(p == nil || n < 0 || n >= 64) return 0;
+	return p->statsLues ? p->stats[n] : sansEntree;
+}
+
+float
+CScriptPedPool::PasDuControleur(int h, float pasTimer) const
+{
+	const CScriptPed *p = Acceder(h);
+	if(p == nil) return 0.0f;
+	return PasDuControleur(pasTimer, p->statsLues ? p->stats[0x14] : 100);
 }
 
 bool
@@ -1139,16 +1180,88 @@ CScriptPedPool::Voit(int h, int cible, int (*tirer)(void *), void *ctx)
 	for(const CScriptPed::Vu &v : p->vus)
 		if(v.ped == cible) return v.vu;
 	// FUN_0048cf50 : à portée, à plat (z mis à 0) ; puis dans le cône du devant.
-	bool vu = false;
-	if(dx * dx + dy * dy - p->visionPortee * p->visionPortee <= 0.0f){
-		float n = sqrtf(dx * dx + dy * dy), a = p->cap * 3.14159265f / 180.0f;
-		float produit = n > 0.0f ? (cosf(a) * dx + sinf(a) * dy) / n : 1.0f;
-		vu = produit > cosf(p->visionAngle * 0.5f);
-	}
+	bool vu = VoitPoint(h, c->pos);
 	// FUN_0048d0e0 : la ligne de vue (FUN_00461d50) n'a rien à traverser dans l'outil.
 	for(CScriptPed::Vu &v : p->vus)
 		if(v.ped < 0){ v.ped = cible; v.vu = vu; v.images = tirer(ctx) * 5 / 0x7fff + 4; break; }
 	return vu;
+}
+
+bool
+CScriptPedPool::VoitPoint(int h, const CVector &point) const
+{
+	const CScriptPed *p = Acceder(h);
+	if(p == nil) return false;
+	float dx = point.x - p->pos.x, dy = point.y - p->pos.y;
+	if(dx * dx + dy * dy - p->visionPortee * p->visionPortee > 0.0f) return false;
+	float n = sqrtf(dx * dx + dy * dy), a = p->cap * 3.14159265f / 180.0f;
+	float produit = n > 0.0f ? (cosf(a) * dx + sinf(a) * dy) / n : 1.0f;
+	return produit > cosf(p->visionAngle * 0.5f);
+}
+
+bool
+CScriptPedPool::DetecterProjectile(int h, const std::vector<ProjectileVu> &vus) const
+{
+	const CScriptPed *p = Acceder(h);
+	if(p == nil || p->drapeaux[19] != 0) return false;
+	float meilleur = 1000.0f;
+	bool trouve = false;
+	for(const ProjectileVu &q : vus){
+		if(q.tireur == h || (q.fiche && !q.menace)) continue;
+		const CVector &v = q.vitesse;
+		if(!(0.0f <= v.z * v.z + v.x * v.x + v.y * v.y - (float)0.00039999998211860677)) continue;
+		if(!VoitPoint(h, q.pos)) continue;
+		float ex = q.pos.x - p->pos.x, ey = q.pos.y - p->pos.y, ez = q.pos.z - p->pos.z;
+		float d2 = ez * ez + ex * ex + ey * ey;   // FUN_00472bb0
+		if(!(d2 <= meilleur)) continue;
+		float dx = p->pos.x - q.pos.x, dy = p->pos.y - q.pos.y, dz = p->pos.z - q.pos.z;
+		if(!(dz * v.z + dx * v.x + dy * v.y > 0.0f)) continue;   // FUN_004144f0 : il vient vers le piéton
+		float n = sqrtf(v.x * v.x + v.y * v.y);                   // FUN_0041a3d0 : la vitesse à plat, normée (FUN_00414cc0)
+		if(n <= 0.0f) continue;
+		float ux = v.x / n, uy = v.y / n;
+		float t = dz * 0.0f + dx * ux + dy * uy;
+		float px = q.pos.x + ux * t, py = q.pos.y + uy * t;      // FUN_00412200, FUN_00412850
+		float fx = p->pos.x - px, fy = p->pos.y - py;
+		if(fy * fy + fx * fx + 0.0f - 3.0f * 3.0f <= 0.0f){ trouve = true; meilleur = d2; }   // FUN_0041a380(…, 3)
+	}
+	return trouve;
+}
+
+bool
+CScriptPedPool::DetecterGrenade(int h, const std::vector<ProjectileVu> &vus, float meilleur, CVector *pos, float *rayon) const
+{
+	const CScriptPed *p = Acceder(h);
+	if(p == nil || p->drapeaux[19] != 0) return false;
+	bool trouve = false;
+	for(const ProjectileVu &q : vus){
+		if(!q.fiche) continue;
+		float ex = q.pos.x - p->pos.x, ey = q.pos.y - p->pos.y, ez = q.pos.z - p->pos.z;
+		float d2 = ez * ez + ex * ex + ey * ey;
+		if(q.tireur == h && 0.0f < q.rayon){
+			float r = q.rayon + (float)0.5;
+			if(r * r < d2) return true;   // sans rien rendre
+		}
+		if(!q.menace || !(0.0f < q.rayon)) continue;
+		if(0.0f < q.a0 && (q.o8c || q.o8d || 0 < q.vie) && d2 <= meilleur){
+			trouve = true; meilleur = d2;
+			if(pos) *pos = q.pos;
+			if(rayon) *rayon = q.rayon;
+		}
+	}
+	return trouve;
+}
+
+bool
+CScriptPedPool::GrenadeAPortee(int h, const std::vector<ProjectileVu> &vus) const
+{
+	const CScriptPed *p = Acceder(h);
+	if(p == nil) return false;
+	CVector g(0.0f, 0.0f, 0.0f);
+	float r = 0.0f;
+	if(!DetecterGrenade(h, vus, 100.0f, &g, &r)) return false;   // 0x900490
+	float d = r + (float)1.0;                                     // le double 0x8ff1d8
+	float dx = g.x - p->pos.x, dy = g.y - p->pos.y;
+	return dy * dy + dx * dx + 0.0f - d * d <= 0.0f;              // FUN_0041a380
 }
 
 void

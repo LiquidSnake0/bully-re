@@ -59,6 +59,65 @@ struct CChargeArme {
 		if(!(0.0f <= charge)) return 0.0f;
 		return 1.0f < charge ? 1.0f : charge;
 	}
+	// FUN_00664710 (le tir), les dégâts passés au projectile (FUN_004d4c40, son dixième argument ; lu dans l'index) : sans fiche de
+	// projectile (+0x48 de la piste), 0 ; sinon ceux de la fiche, (+0x50 − +0x4c) × la charge + +0x4c ; si le flottant +0x2c (44) de
+	// la piste WeaponFire n'est pas -1 (_DAT_009009ac), la charge × lui ; puis × la statistique 0x1f du tireur (FUN_00476f10 : la
+	// colonne AG de pedstats.dat, « Damage_Scale », 100 dans les 75 entrées) / (float)100 (le double 0x900130).
+	static float Degats(bool fiche, float sansCharge, float avecCharge, float charge, float degatsPiste, int32 echelle) {
+		float d = fiche ? (avecCharge - sansCharge) * charge + sansCharge : 0.0f;
+		if(degatsPiste != -1.0f) d = charge * degatsPiste;
+		return ((float)echelle / 100.0f) * d;
+	}
+};
+
+// Les réglages du prochain tir : des globales que les pistes de l'arme posent avant WeaponFire, que le tir (FUN_00664710) lit et
+// que FUN_0065d160 remet à zéro (à la fin de chaque tir, quand le lancement de WeaponFire, FUN_00661f10, ne trouve pas d'arme en
+// main, et dans FUN_00662d30, WeaponFireSpecificOrientation). Lu dans l'index le 06.11.2026 ; les lancements gardent le contexte
+// de la piste en +0x24 et rendent vrai, leur mise à jour (FUN_006094f0) rend faux.
+struct CReglagesTir {
+	// DAT_01b65c30 … DAT_01b65c38 : WeaponFireOffset (WeaponFireOffsetTrack, table 0x935cbc, créateur 0x643070 ; lancement
+	// FUN_0065d3f0 : les flottants +0x18, +0x1c et +0x20 de la piste, 24, 28 et 32 dans le fichier). Le point visé sur une cible
+	// (FUN_00662380) : de côté (× le vecteur droit du tireur), devant (× son vecteur avant) et en hauteur (× la hauteur de la cible).
+	float decalage[3] = {0.0f, 0.0f, 0.0f};
+	// DAT_01b65c3c … DAT_01b65c44 : WeaponFireStartOffset (table 0x935cd4, créateur 0x6430b0 ; lancement FUN_0065d430, les mêmes
+	// champs). Le départ du projectile (FUN_0065e880) : ce vecteur tourné par la matrice du tireur (FUN_0046dbd0, FUN_0041a850) et
+	// ajouté à la douille ou à l'os de l'arme.
+	float depart[3] = {0.0f, 0.0f, 0.0f};
+	// DAT_01b65c48 … DAT_01b65c50 : WeaponFireRotation (table 0x935ca4, créateur 0x643030 ; lancement FUN_0065d350) : trois angles
+	// en degrés, rangés en radians (× (float)π, le double 0x900160, / 180, le double 0x900158), que le tir passe au projectile
+	// (FUN_004d4c40, ses 18e à 20e arguments).
+	float rotation[3] = {0.0f, 0.0f, 0.0f};
+	// DAT_00b31c9c : la munition tirée, -1 pour celle de l'objet arme (+0x12c) ; DAT_01b65c14 et DAT_01b65c24 … DAT_01b65c2c : remis
+	// aussi, posés par d'autres pistes (non suivies).
+	int32 munition = -1;
+	void PoserDecalage(float cote, float devant, float haut) { decalage[0] = cote; decalage[1] = devant; decalage[2] = haut; }
+	void PoserDepart(float x, float y, float z) { depart[0] = x; depart[1] = y; depart[2] = z; }
+	void PoserRotation(float x, float y, float z) {
+		float pi = 3.1415927f;   // (float) du double 0x900160
+		rotation[0] = x * pi / 180.0f; rotation[1] = y * pi / 180.0f; rotation[2] = pi * z / 180.0f;
+	}
+	void Remettre(void) { *this = CReglagesTir(); }   // FUN_0065d160
+	// FUN_00662380, la part du décalage (lue à l'assembleur de 0x66244b à 0x66252a) : le point de la cible (FUN_004d5eb0, le composant de
+	// visée du tireur) monte de la hauteur de la cible (l'emplacement +0x6c de sa vftable) × decalage[2], avance de decalage[1] × le
+	// vecteur avant du tireur (FUN_00415350 : la deuxième ligne de sa matrice, +0x10 ; sans matrice (-sin cap, cos cap, 0)) et se
+	// décale de decalage[0] sur le côté : x + decalage[0] × avant.y, y − decalage[0] × avant.x, z + decalage[0] × 0 (le double
+	// 0x9009a0) ; FUN_0065eb40 ajoute ensuite son terme (non suivi).
+	CVector Viser(const CVector &point, float hauteurCible, const CVector &avant) const {
+		CVector v = point;
+		v.z = hauteurCible * decalage[2] + v.z;
+		v.x += avant.x * decalage[1]; v.y += avant.y * decalage[1]; v.z += avant.z * decalage[1];
+		v.x = v.x + decalage[0] * avant.y;
+		v.y = -avant.x * decalage[0] + v.y;
+		v.z = v.z + decalage[0] * 0.0f;
+		return v;
+	}
+	// FUN_0065e880, la part du départ (lue de 0x65e9aa à 0x65ea4b) : le décalage de départ tourné par la matrice du tireur (droite,
+	// avant, haut) et ajouté au point de départ.
+	CVector Partir(const CVector &point, const CVector &droite, const CVector &avant, const CVector &haut) const {
+		return CVector(point.x + droite.x * depart[0] + avant.x * depart[1] + haut.x * depart[2],
+		               point.y + droite.y * depart[0] + avant.y * depart[1] + haut.y * depart[2],
+		               point.z + droite.z * depart[0] + avant.z * depart[1] + haut.z * depart[2]);
+	}
 };
 
 struct CEntreeInventaire {
@@ -110,6 +169,17 @@ public:
 	int PoserMunitions(const CMondeArmes &m, int ped, int32 arme, int32 n);
 	// Les entrées d'un piéton, libérées (le piéton supprimé, ou PedClearAllWeapons).
 	void Vider(int ped);
+	// FUN_00486130 (ecx = le composant +0x668 du piéton, son +0 le piéton) : les munitions d'une arme pour le piéton ; 0 sous 1 ; le
+	// type (WeaponGetType ; 0 sans type) et sa munition (+0x84 ; FUN_00728150 résout avant la fiche du projectile) : s'il en a une
+	// (positive), les munitions de celle-ci (FUN_0045cdf0) ; sinon celles de l'arme, et 1 si elle n'en a plus mais que le piéton la
+	// tient (`tenue`, le +0x10e de son objet arme). Lu dans l'index.
+	int32 MunitionsPour(const CMondeArmes &m, int ped, int32 arme, int32 tenue) const;
+	// FUN_00486ae0 (la condition HasRangedWeapon, FUN_00605a80, sur le composant +0x668 du piéton du contexte) : vrai si l'arme tenue
+	// (FUN_00474aa0 : le +0x10e de l'objet arme n'est pas -1) a l'octet +0x68 de son type (FUN_004d9560 : le type +0x264 de l'objet arme)
+	// et des munitions (FUN_00486130) ; sinon, en parcourant les entrées du piéton dans l'ordre du pool (FUN_007db5a0, FUN_0045cc60 :
+	// l'octet 0x80 libre et l'inventaire +0x24), la première arme d'au moins 1 dont le type a l'octet +0x68 sans le +0x69 et qui a des
+	// munitions ; faux sinon. Lu dans l'index et à l'assembleur (0x605a80 : ecx = +0x668 du piéton +8 du contexte).
+	bool ArmeADistance(const CMondeArmes &m, int ped, int32 tenue) const;
 	// Le drapeau n de l'entrée de cette arme (FUN_0045cb70 la trouve, FUN_0045cb40 la rend : son mot +4 + 4n). PoserDrapeau : la part
 	// de SetWeaponFlags (FUN_00661d40) sur l'inventaire, rien si l'arme manque. LireDrapeau : la part de WeaponFlags (FUN_0065bb20) ;
 	// faux dans `trouve` si l'arme manque (la condition lit alors l'objet arme). n hors de [0, 7] : rien, faux.

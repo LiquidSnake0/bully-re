@@ -65,6 +65,13 @@ public:
 	// Collision pose (FUN_005f8240 → FUN_0048c040(0) : maintenant moins 0), comme PlayerRecordAttackTime (0x5d2910) ;
 	// 0 au départ. La condition AttackTimer le lit et peut le reposer.
 	uint32 minuterieAttaque = 0;
+	// Ses pistes AttackTimerReset (AttackTimerResetTrack, table 0x931628, créateur 0x644980 ; lancement FUN_006121d0, lu dans l'index)
+	// : avec un piéton au contexte (+8), FUN_0048c040(la durée +0x18 (24) × 1000 (le double 0x900138), arrondie) sur son composant de
+	// visée : la minuterie (+0x550 du piéton) reçoit maintenant moins cette durée, 0 si elle n'est pas sous l'horloge. Le lancement
+	// rend vrai, la mise à jour (FUN_006094f0) faux. Une entrée négative (-1) se lance à l'arrêt du nœud (FUN_005f3fb0) : l'arrêt du
+	// contrôleur du lance-pierre et l'accueil (Player.act, Social_Actions/…/GREET) la remettent à maintenant.
+	struct RemiseAttaque { float entree, duree; bool fait; };
+	std::vector<RemiseAttaque> remisesAttaque;
 	uint32 maintenantMs = 0;         // l'horloge du jeu (DAT_00c1a9b4) à la dernière image des pistes
 	std::vector<Contact> touches;                 // les coups qui portent à cette image, rendus par Avancer
 	// Ses pistes DamageHandle (HandleDamageTrack, table 0x9313e4 ; lancement FUN_0060fc70), y compris celles des nœuds
@@ -187,7 +194,7 @@ public:
 	//   FUN_00664710) : il faut une arme en main ; la charge (+0x128 de l'objet arme, × +0x34 (52) s'il est positif) bornée à
 	//   [0, 1] ; puis le tir (le projectile des munitions de l'objet arme, +0x12c) et, sans le drapeau 24 du piéton (+0x1374), une
 	//   munition retirée (FUN_0045cf70) ; avec l'octet +0x32 (50), l'arme est lâchée quand il n'en reste plus. `tirsLances`.
-	struct Tir { float entree, facteur; bool lacher, fait; };
+	struct Tir { float entree, facteur; bool lacher, fait; float degats = -1.0f; };   // degats : le flottant +0x2c (44), -1 sans lui
 	std::vector<Tir> tirs, tirsLances;
 	// - WeaponSetCharge (WeaponSetChargeTrack 0x935c74 ; lancement FUN_0065e7c0, lu dans l'index) : la charge de l'objet arme du
 	//   piéton (+0x128 de +0x1d0) reçoit le flottant +0x18 (24) ; sa mise à jour (FUN_006094f0) rend faux. `chargesPosees`.
@@ -196,6 +203,11 @@ public:
 	//   `croissancesActives`.
 	struct Charge { float entree, valeur; bool fait; };
 	std::vector<Charge> charges, chargesPosees;
+	// - WeaponFireOffset, WeaponFireStartOffset et WeaponFireRotation (tables 0x935cbc, 0x935cd4 et 0x935ca4 ; lancements FUN_0065d3f0,
+	//   FUN_0065d430 et FUN_0065d350) : les réglages du prochain tir (CReglagesTir, src/peds/Armes.h) reçoivent les flottants +0x18,
+	//   +0x1c et +0x20 (24, 28, 32). `reglagesTirLances`, dans l'ordre des pistes, que l'appelant applique avant les tirs de l'image.
+	struct ReglageTir { float entree; int genre; float v[3]; bool fait; };   // genre 0 décalage, 1 départ, 2 rotation
+	std::vector<ReglageTir> reglagesTir, reglagesTirLances;
 	struct Croissance { float entree, vie; };
 	std::vector<Croissance> croissances, croissancesActives;
 	// - SetWeaponFlags (SetWeaponFlagsTrack ; lancement FUN_00661d40, lu dans l'index) : avec une arme en main (le modèle +0x10e de
@@ -325,8 +337,13 @@ public:
 	struct Lance { float entree, vie; const CActionNode *vise; bool boucle, lancee, morte; std::shared_ptr<CActionController> c; };
 	std::vector<Lance> lances;
 	bool sousControleurs = false;
+	// Hors des arbres de l'IA, les pistes spawn dont le nœud visé est sous cet arbre ont aussi leur contrôleur (l'outil le pose à
+	// l'arbre de l'arme quand PropAttach le donne au contexte : le haut du corps du lance-pierre, Default_KEY → ../Actions →
+	// Controller → ./UpperBody) ; leurs contrôleurs le gardent et suivent les règles de l'IA (sousControleurs).
+	const CActionNode *arbreDesLances = nil;
 	// Ce contrôleur et ceux de ses pistes spawn vivantes, en profondeur : l'appelant en traite les sorties.
 	void Recueillir(std::vector<CActionController *> &tous);
+	bool SpawnSous(const CActionBank &b, const CActionNode &n, const CActionTreeFile &f, const CActionTrack &p) const;
 	float finExecutees = -1.0f;   // la fin la plus tardive des pistes venues des nœuds exécutés (-1 : aucune)
 	struct Prise { const CActionNode *soi, *cible; bool executerSoi, executerCible; };
 	std::vector<Prise> prises;                    // celles qui se lancent à cette image, rendues par Avancer
@@ -385,3 +402,6 @@ bool ConditionAttackPhase(const CActionController &c, int32 phase, float delai, 
 // frappé (+0x550 nul) et que l'horloge n'a pas passé 2 000 ms ; sinon maintenant comparé à +0x550 + 1000 × (+4) par le
 // comparateur +0xc (FUN_005fb750) ; vrai et l'octet +8 posé, la minuterie repart (FUN_0048c040(0)).
 bool ConditionAttackTimer(CActionController &c, float delai, bool relancer, uint32 comparateur, uint32 maintenantMs);
+// La minuterie d'attaque que pose une piste AttackTimerReset (FUN_006121d0 → FUN_0048c040) : maintenant moins la durée (s) en ms
+// arrondie, 0 si ce n'est pas sous l'horloge.
+uint32 MinuterieAttaqueRemise(uint32 maintenantMs, float duree);

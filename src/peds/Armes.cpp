@@ -93,6 +93,32 @@ CInventaireArmes::Munitions(const CMondeArmes &m, int ped, int32 arme) const
 	return i == -1 ? 0 : entrees[i].munitions;
 }
 
+int32
+CInventaireArmes::MunitionsPour(const CMondeArmes &m, int ped, int32 arme, int32 tenue) const
+{
+	if(arme < 1) return 0;
+	const CTypeArme &t = m.Type(arme);
+	if(0 < t.munition) return Munitions(m, ped, t.munition);
+	int32 n = Munitions(m, ped, arme);
+	if(n == 0 && tenue == arme) n = 1;
+	return n;
+}
+
+bool
+CInventaireArmes::ArmeADistance(const CMondeArmes &m, int ped, int32 tenue) const
+{
+	if(tenue != -1 && m.Type(tenue).tir68 && 0 < MunitionsPour(m, ped, tenue, tenue)) return true;
+	for(int i = 0; i < kTaille; i++){
+		if(libre[i] || entrees[i].proprietaire != ped) continue;
+		int32 a = entrees[i].arme;
+		if(a < 1) continue;
+		const CTypeArme &t = m.Type(a);
+		if(!t.tir68 || t.tir69 || MunitionsPour(m, ped, a, tenue) < 1) continue;
+		return true;
+	}
+	return false;
+}
+
 void
 CInventaireArmes::Changer(const CMondeArmes &m, int ped, int32 arme, int32 n)
 {

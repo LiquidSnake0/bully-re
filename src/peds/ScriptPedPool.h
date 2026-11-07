@@ -214,6 +214,7 @@ struct CScriptPed {
 	float santeMin = 0;          // +0x1ca8, PedSetMinHealth (0x5c8ef0)
 	float regeneration = 0;      // +0x1cac : la colonne G de pedstats.dat (taux de régénération, n/100)
 	int32 stats[64] = {};        // +0x1900 : les 64 colonnes B à BM de son entrée de pedstats.dat (GameGetPedStat)
+	bool statsLues = false;      // l'outil : une entrée de pedstats.dat posée (PoserStats)
 	// +0x1310 : le type du piéton (PREFECT 0 … COP 7, TEACHER 8, BULLY 11, DEFAULT 12, PLAYER1 13 ; CModelEnum::typesDePietons),
 	// recopié du modelinfo (+0x4c) par le constructeur de CPed (FUN_0047ffe0), changé par PedSetFaction (0x5cb570, jamais en
 	// 13), lu par PedGetFaction (0x5cb5c0), IsPlayer (FUN_005ffe40 : 13), IsAuthority (FUN_005ffb20) et PedType (FUN_005ffac0).
@@ -384,9 +385,9 @@ struct CScriptPed {
 	// la pose, la piste PropGetDesired la prend), celle en main (+0x10e, le modèle de l'objet arme +0x1d0 : -1 sans arme ; la piste
 	// PropAttach la pose) et celle en passage de l'une à l'autre (+0x1574, -1 à la construction : 0x480835).
 	int32 armeVoulue = 0, armeTenue = -1, armePassage = -1;
-	// La charge de l'objet arme (+0x128 de +0x1d0, CChargeArme) : vide (-100) au départ (supposé : le constructeur de l'objet arme
-	// n'est pas lu), posée par WeaponSetCharge, augmentée par WeaponIncrementCharge, lue puis vidée par WeaponFire.
-	float armeCharge = -100.0f;
+	// La charge de l'objet arme (+0x128 de +0x1d0, CChargeArme) : 0 depuis son constructeur (FUN_004da610) et à chaque changement de
+	// modèle (FUN_004da6f0), posée par WeaponSetCharge, augmentée par WeaponIncrementCharge, lue puis vidée (-100) par WeaponFire.
+	float armeCharge = 0.0f;
 	// Les drapeaux de l'objet arme (+0x26c + 4n de +0x1d0) : SetWeaponFlags et PedSetWeaponFlag les posent, WeaponFlags les lit quand
 	// l'arme tenue n'a pas d'entrée d'inventaire.
 	int32 drapeauxArme[8] = {};
@@ -401,7 +402,8 @@ struct CScriptPed {
 	float intentionVitesse = 0;
 	float armeInit = -1.0f;      // +0x120 de l'objet arme (+0x1d0, CWeapon) : -1 depuis son constructeur (FUN_004da610),
 	                             // posé par une piste SetWeaponInfo (FUN_00660f50) ; WeaponNeedInit (FUN_0065b7b0) attend -1
-	float armePortee = -1.0f;    // +0x124 : le +0x40 (64) de SetWeaponInfo ; la portée d'un tir sans cible va de lui à +0x120
+	float armePortee = -1.0f;    // +0x124 : le +0x40 (64) de SetWeaponInfo ; la portée d'un tir sans cible va de lui à +0x120 ; -1 au
+	                             // constructeur, à la remise (FUN_004d92c0) et au changement de modèle (FUN_004da6f0), comme +0x120
 	int32 armeMunition = -1;     // +0x12c : l'arme du nom +0x44 (68) de SetWeaponInfo (FUN_0051ad50), le projectile des tirs
 	bool endormi = false;        // +0x1358 : PedSetAsleep (0x5caa30) ; endormi, son arbre de l'IA n'avance plus (FUN_00484490)
 	bool enMarche = false;       // va vers `cible` à `vitesse`
@@ -504,6 +506,36 @@ public:
 	bool PoserStats(int handle, const int32 colonnes[64]);
 	// GameGetPedStat (FUN_00476f10) : la colonne n ; le cas des modèles uniques de la colonne 6 n'est pas suivi.
 	int32 Stat(int handle, int n) const;
+	// La colonne n d'un piéton qui a reçu son entrée de pedstats.dat, `sansEntree` sinon (dans l'outil, le joueur, qui ne reçoit pas
+	// encore STAT_PLAYER de son modèle 0 ; 0 pour une poignée invalide).
+	int32 StatLue(int handle, int n, int32 sansEntree) const;
+	// L'objet arme du piéton (+0x1d0, un CWeapon de 0x2d0 octets ; lu dans l'index le 06.11.2026). Son constructeur (FUN_004da610 :
+	// la charge +0x128 à 0, les huit drapeaux +0x26c à 0 par FUN_004e8c20, +0x120 et +0x124 à -1, +0x140 et +0x264 à 0) donne les
+	// valeurs de départ de CScriptPed.
+	// RemettreArme : FUN_004d92c0 (avant chaque PropAttach, dans PropDetach, quand le tir vide l'arme, PedClearAllWeapons…) : +0x120
+	// et +0x124 à -1 (_DAT_009009ac) ; s'il a un modèle (+0x10e), FUN_004da790(0) : plus de modèle (l'emplacement +0x20 de sa vftable
+	// avec -1, FUN_004da340, FUN_004d9fa0 ; le modèle d'avant relâché, FUN_004da530) ; la charge, les drapeaux et +0x12c restent.
+	void RemettreArme(int handle);
+	// PrendreArme : FUN_004d92c0 puis FUN_004da6f0(modèle, 0) (PropAttach, FUN_0065fad0) : le modèle (WeaponRequestModel, toujours là
+	// dans l'outil), +0x128 (la charge) à 0, +0x12c (la munition) au modèle, +0x140 à 0, +0x120 et +0x124 à -1, les huit drapeaux à 0
+	// (FUN_004e8c20 sur +0x26c), +0x268 au second argument, +0x264 au type (WeaponGetType), puis le modèle posé (+0x20 de la
+	// vftable). WeaponNeedInit (+0x120 à -1) fait ensuite jouer SetWeaponInfo, qui donne la vraie munition.
+	void PrendreArme(int handle, int32 modele);
+	// Le pas que CPed::ProcessControl (FUN_004812d0) passe au composant d'actions du piéton (+0x2e0) à chaque image, lu à
+	// l'assembleur de 0x48192d à 0x481969 : (float)(0,02 (le flottant 0xa3396c) × CTimer::ms_fTimeStep (0xc1a9a4)) ×
+	// (float)(la colonne 0x14 de ses stats (FUN_00476f10) / 100,0 (le double 0x900130)), des secondes. La colonne 0x14 est la V de
+	// pedstats.dat, « Animation Speed factor (100 = 100% speed) » : 100 dans les 75 entrées. FUN_004850b0 le reçoit (rien si le pas
+	// est nul et DAT_00c2b1cc vaut 1) et le passe à FUN_00485050, qui le donne à chaque contrôleur du composant, dont celui des actions
+	// (FUN_00484040 → FUN_005f49a0 : le temps du nœud joué, +8, avance du pas ; FUN_005f4230 passe le pas à la mise à jour de chaque
+	// piste vivante, l'emplacement +0xc de sa vftable : WeaponIncrementCharge, FUN_0065e810, l'ajoute à la charge).
+	static float PasDuControleur(float pasTimer, int32 vitesseAnimation) {
+		float a = 0.02f * pasTimer;
+		float b = (float)((double)vitesseAnimation / 100.0);
+		return a * b;
+	}
+	// Le même pour un piéton du pool : sa colonne V. Un piéton sans entrée de pedstats.dat (dans l'outil, le joueur, qui ne reçoit pas
+	// encore STAT_PLAYER de son modèle 0) prend 100, la valeur de toutes les entrées, STAT_PLAYER compris.
+	float PasDuControleur(int handle, float pasTimer) const;
 	// GameSetPedStat (FUN_00476fa0) : la colonne n ; 4 (santé maximale) ramène la santé sous le nouveau maximum,
 	// 5 pose la régénération. Les autres cas (2, 3, 0x10, 0x16, 0x17 : vision, vitesse) ne sont pas suivis.
 	bool PoserStat(int handle, int n, int32 valeur);
@@ -659,6 +691,38 @@ public:
 	// demi-angle), puis la ligne de vue (FUN_00461d50, un rayon dans le monde) : l'outil n'a pas de monde, elle est dégagée.
 	// Les cas du joueur (l'octet +0x1e91, la hauteur d'un piéton discret +0x1398) ne sont pas suivis. `tirer` : le rand().
 	bool Voit(int handle, int cible, int (*tirer)(void *), void *ctx);
+	// FUN_0048cf50 (le composant de vue, son +8 la portée) : le point est à portée, à plat (le carré de l'écart en x et y moins celui
+	// de la portée n'est pas positif), puis dans le cône du devant (le produit scalaire du devant et de la direction à plat
+	// strictement au-dessus du cosinus du demi-angle). Sans ligne de vue (FUN_0048d0e0 la cherche après).
+	bool VoitPoint(int handle, const CVector &point) const;
+	// Un projectile en vol de la table 0xc3a068 (32 entrées de 0x34 octets ; FUN_004d3c80 rend l'objet, DAT_00c3a6b8) tel que le
+	// voient DetectProjectile et DetectGrenade : l'octet actif (-0x1c), le tireur (-0x2c), sa fiche ProjectileButes (+0, nulle
+	// possible), et de la fiche : l'octet +0xe4 (228, la menace se voit), le rayon +0x94 (148), le flottant +0xa0 (160), les octets
+	// +0x8c et +0x8d (140, 141), la vie +0x48 (72) ; de l'objet : sa position et sa vitesse (+0x124 … +0x12c, en m par pas).
+	struct ProjectileVu {
+		CVector pos, vitesse; int tireur = -1; bool fiche = true, menace = false, o8c = false, o8d = false;
+		float rayon = 0.0f, a0 = 0.0f; int32 vie = 0;
+	};
+	// FUN_0048a300 (DetectProjectile, FUN_00604410 ; sur le composant +0x668 du piéton) : rien si le drapeau 19 du piéton (+0x1360) est
+	// posé ; sinon, de chaque projectile actif qui n'est pas le sien, sans fiche ou d'une fiche à l'octet +0xe4, assez rapide (le carré
+	// de sa vitesse moins 0,0004, le double 0x90fad8, n'est pas négatif), que le piéton voit (FUN_0048cf50), plus proche (le carré de la
+	// distance, FUN_00472bb0) que le meilleur (1 000 au départ, 0x900f40), qui vient vers lui (le produit scalaire de (piéton −
+	// projectile) et de la vitesse est positif) et dont la trajectoire à plat (la vitesse sans z normée, FUN_0041a3d0 ; le point le plus
+	// proche du piéton sur elle) passe à moins de 3 m de lui à plat (FUN_0041a380 et le flottant 0x900c14) : vrai pour le plus proche.
+	// Lu dans l'index le 06.11.2026.
+	bool DetecterProjectile(int handle, const std::vector<ProjectileVu> &vus) const;
+	// FUN_0048a130 (DetectGrenade, FUN_00604380) : rien avec le drapeau 19 ; sinon, de chaque projectile actif à fiche : le sien, de
+	// rayon positif (+0x94) et plus loin que le rayon plus 0,5 (le carré de la distance au-dessus du carré de rayon + 0,5, le double
+	// 0x8ff1f8) : vrai tout de suite ; sinon, d'une fiche à l'octet +0xe4, de rayon positif, de +0xa0 positif, avec l'octet +0x8c, le
+	// +0x8d ou une vie positive, à une distance dont le carré ne dépasse pas le meilleur (_DAT_00900490 au départ) : vrai.
+	// `pos` et `rayon` reçoivent la position et le rayon (+0x94) de la menace retenue ; le cas du tireur ne les touche pas.
+	bool DetecterGrenade(int handle, const std::vector<ProjectileVu> &vus, float meilleurDepart, CVector *pos = nil, float *rayon = nil) const;
+	// Le juge de DetectGrenade (FUN_00604380, lu à l'assembleur de 0x604380 à 0x604404) : la position et le rayon à 0 (fldz), puis
+	// FUN_0048a130 avec le meilleur à 100 (_DAT_00900490) ; s'il rend vrai, vrai seulement si le piéton est à plat à moins du rayon
+	// plus 1 (le double 0x8ff1d8) de la menace retenue (FUN_0041a380 ≤ 0). Quand FUN_0048a130 rend vrai pour le projectile du tireur,
+	// la position reste (0, 0, 0) et le rayon est le mot de l'argument (le pointeur du contexte, un flottant minuscule ; l'outil prend
+	// 0) : vrai seulement à moins de 1 m de l'origine du monde, faux en pratique.
+	bool GrenadeAPortee(int handle, const std::vector<ProjectileVu> &vus) const;
 	// L'image de la vue et du dernier agresseur : FUN_0048ccf0 (le cache vieillit d'une image) et FUN_00499340 (+0x1dc0
 	// avance du pas, en secondes, s'il y a un agresseur, sinon 0).
 	void AvancerVue(float dt);
