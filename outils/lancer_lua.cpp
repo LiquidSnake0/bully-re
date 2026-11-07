@@ -1281,6 +1281,11 @@ struct CJugeOutil : CJugeAction {
 			const CTypeArme &t = armes.Type(a);
 			return mots[0] == 0 ? t.tir68 : mots[0] == 1 ? t.tir68 && t.tir69 : mots[0] == 2 ? t.tir69 : 0;
 		}
+		// HasRangedWeapon (ConditionHasRangedWeapon, table 0x92e874, créateur 0x649640 ; FUN_00605a80 → FUN_00486ae0) : l'arme tenue,
+		// ou une arme de son inventaire, à distance (l'octet +0x68 de son type, sans le +0x69 pour l'inventaire) et qui a des munitions
+		// (CInventaireArmes::ArmeADistance). Jugée -1 jusqu'ici, elle rendait inconnus les nœuds qui la citent, jamais pris.
+		static const uint32 kADistance = ActionHash("HasRangedWeapon");
+		if(type == kADistance) return moi ? inventaire.ArmeADistance(armes, ped, moi->armeTenue) : 0;
 		if(type == kMinuterieAction) return moi ? !(moi->minuterieAction > (float)maintenant * 0.001f) : -1;
 		if(type == kParoleOccupee) return ParoleEnCours((mots[0] & 0xff) ? ped : -1);
 		if(type == kAnimSociale){

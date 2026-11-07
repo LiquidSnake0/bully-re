@@ -102,6 +102,28 @@ main(void)
 	VERIF(CChargeArme::AuTir(CChargeArme::kVide, 1.0f) == 0.0f && CChargeArme::AuTir(0.4f, 2.0f) == 0.8f && CChargeArme::AuTir(0.7f, 2.0f) == 1.0f);
 	VERIF(CChargeArme::AuTir(0.3f, 0.0f) == 0.3f && CChargeArme::AuTir(1.5f, -1.0f) == 1.0f);
 
+	// HasRangedWeapon (FUN_00486ae0, FUN_00486130) : le lance-pierre (+0x68) et ses billes sans fin ; une arme de contact ne compte
+	// pas ; une arme de l'inventaire avec l'octet +0x69 non plus ; une arme tenue sans munitions compte pour 1.
+	{
+		CMonde w;
+		CTypeArme a; a.lu = true; a.maximum = 1; a.inventaire = 1; a.munition = BILLE; a.tir68 = true; w.types[LANCE_PIERRE] = a;
+		a = CTypeArme(); a.lu = true; a.maximum = 1; w.types[BILLE] = a;
+		a = CTypeArme(); a.lu = true; a.maximum = 5; a.inventaire = 1; a.tir68 = true; a.tir69 = true; w.types[BRIQUE] = a;
+		a = CTypeArme(); a.lu = true; a.maximum = 5; a.inventaire = 1; a.tir68 = true; w.types[PETARD] = a;
+		w.sansFin[0] = BILLE;
+		CInventaireArmes v;
+		VERIF(!v.ArmeADistance(w, 0, -1) && v.MunitionsPour(w, 0, -1, -1) == 0 && v.MunitionsPour(w, 0, 0, -1) == 0);
+		v.Donner(w, 0, LANCE_PIERRE);
+		VERIF(v.MunitionsPour(w, 0, LANCE_PIERRE, -1) == 1 && v.ArmeADistance(w, 0, -1) && v.ArmeADistance(w, 0, LANCE_PIERRE));
+		VERIF(!v.ArmeADistance(w, 1, -1));                       // l'inventaire d'un autre piéton
+		v.Vider(0);
+		v.Ajouter(w, 0, BRIQUE, 3);                              // +0x69 : pas dans l'inventaire
+		VERIF(!v.ArmeADistance(w, 0, -1) && v.ArmeADistance(w, 0, BRIQUE));   // tenue, elle compte (FUN_004d9560 ne lit que +0x68)
+		v.Ajouter(w, 0, PETARD, 0);
+		VERIF(v.MunitionsPour(w, 0, PETARD, -1) == 0 && !v.ArmeADistance(w, 0, -1));
+		VERIF(v.MunitionsPour(w, 0, PETARD, PETARD) == 1 && v.ArmeADistance(w, 0, PETARD));   // tenue sans munitions : 1
+	}
+
 	// Les dégâts du tir (FUN_00664710) : la bille (9 sans charge, la fiche) ; la piste qui impose les siens ; l'échelle du tireur.
 	VERIF(CChargeArme::Degats(true, 9.0f, 25.0f, 0.0f, -1.0f, 100) == 9.0f && CChargeArme::Degats(true, 9.0f, 25.0f, 0.5f, -1.0f, 100) == 17.0f);
 	VERIF(CChargeArme::Degats(true, 9.0f, 25.0f, 0.5f, 40.0f, 100) == 20.0f && CChargeArme::Degats(true, 9.0f, 25.0f, 1.0f, -1.0f, 50) == 12.5f);

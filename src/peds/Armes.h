@@ -169,6 +169,17 @@ public:
 	int PoserMunitions(const CMondeArmes &m, int ped, int32 arme, int32 n);
 	// Les entrées d'un piéton, libérées (le piéton supprimé, ou PedClearAllWeapons).
 	void Vider(int ped);
+	// FUN_00486130 (ecx = le composant +0x668 du piéton, son +0 le piéton) : les munitions d'une arme pour le piéton ; 0 sous 1 ; le
+	// type (WeaponGetType ; 0 sans type) et sa munition (+0x84 ; FUN_00728150 résout avant la fiche du projectile) : s'il en a une
+	// (positive), les munitions de celle-ci (FUN_0045cdf0) ; sinon celles de l'arme, et 1 si elle n'en a plus mais que le piéton la
+	// tient (`tenue`, le +0x10e de son objet arme). Lu dans l'index.
+	int32 MunitionsPour(const CMondeArmes &m, int ped, int32 arme, int32 tenue) const;
+	// FUN_00486ae0 (la condition HasRangedWeapon, FUN_00605a80, sur le composant +0x668 du piéton du contexte) : vrai si l'arme tenue
+	// (FUN_00474aa0 : le +0x10e de l'objet arme n'est pas -1) a l'octet +0x68 de son type (FUN_004d9560 : le type +0x264 de l'objet arme)
+	// et des munitions (FUN_00486130) ; sinon, en parcourant les entrées du piéton dans l'ordre du pool (FUN_007db5a0, FUN_0045cc60 :
+	// l'octet 0x80 libre et l'inventaire +0x24), la première arme d'au moins 1 dont le type a l'octet +0x68 sans le +0x69 et qui a des
+	// munitions ; faux sinon. Lu dans l'index et à l'assembleur (0x605a80 : ecx = +0x668 du piéton +8 du contexte).
+	bool ArmeADistance(const CMondeArmes &m, int ped, int32 tenue) const;
 	// Le drapeau n de l'entrée de cette arme (FUN_0045cb70 la trouve, FUN_0045cb40 la rend : son mot +4 + 4n). PoserDrapeau : la part
 	// de SetWeaponFlags (FUN_00661d40) sur l'inventaire, rien si l'arme manque. LireDrapeau : la part de WeaponFlags (FUN_0065bb20) ;
 	// faux dans `trouve` si l'arme manque (la condition lit alors l'objet arme). n hors de [0, 7] : rien, faux.
