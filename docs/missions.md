@@ -577,10 +577,10 @@ chaque image l'étape en cours, son upvalue 7) :
 
 Avec l'outil :
 
-    F=/Global/SlingShot/SlingShot/Actions/controller/Upperbody/#3da01ef7/Charge/Release/Release
-    V="--arme 303@15"
-    V="$V --viser-objet tschool_BusWindow01@16 --jouer $F@17 --viser-objet tschool_BusWindow02@18 --jouer $F@19"
-    V="$V --viser-objet tschool_BusWindow03@20 --jouer $F@21 --viser-objet -@22"
+    C=/Global/SlingShot/SlingShot/Actions/controller/Upperbody/#3da01ef7/Charge
+    V="--arme 303@15 --viser-objet tschool_BusWindow01@16 --jouer $C@16.6 --tenir 8,0.7@16.6"
+    V="$V --viser-objet tschool_BusWindow02@18 --jouer $C@18.6 --tenir 8,0.7@18.6"
+    V="$V --viser-objet tschool_BusWindow03@20 --jouer $C@20.6 --tenir 8,0.7@20.6 --viser-objet -@22"
     A="--entrer _1_04_FIELDTRIG@26 --entrer _1_04_TREE2_TRIG@33 --jouer /Global/TreeClimb/Actions/ON_BOT:Act/Props/pxTree.act@34"
     T="--viser 13@73.28 --tirer @73.35 --viser 12@74.00 --tirer @74.07 --viser 13@74.14 --tirer @74.21 --viser 11@74.47 --tirer @74.54"
     T="$T --viser 12@74.80 --tirer @74.87 --viser 13@74.94 --tirer @75.01 --viser 10@75.08 --tirer @75.15 --viser 11@75.27 --tirer @75.34"
@@ -590,16 +590,25 @@ Avec l'outil :
     build/outils/lancer_lua 90 --mission 1_04 --sans-cinematiques --entrer _1_04_PARKING@10 $V $A $T
 
 (sous zsh, `${=V}`…) Le joueur prend le lance-pierre au HUD (`--arme`, 15,05 s : `Weapons/SelectActions`, `PropGetDesired`,
-`PropAttach`, son contexte `/Global/SlingShot`), casse les trois vitres (17,29, 19,27 et 21,29 s : la bille part 1 m au-dessus de ses
-pieds et touche la vitre visée 0,23 s plus tard), suit Gary au terrain, monte dans l'arbre et tire depuis lui, pendant leurs sauts
+`PropAttach`, son contexte `/Global/SlingShot`), casse les trois vitres (17,52, 19,50 et 21,52 s : la bille part 1 m au-dessus de ses
+pieds 0,04 s après le lâcher du bouton et touche la vitre visée 0,16 s plus tard), suit Gary au terrain, monte dans l'arbre et tire depuis lui, pendant leurs sauts
 (73,23 à 79,13 s : trois secondes chacun), trois billes de 9 points sur chacun des six jocks ; le sixième tombe à 0 à 78,14 s, Burton
-s'en prend au joueur (`F_BurtonPissed`), `MinigameSetCompletion("M_PASS")` et `MissionSucceed` à 81,02 s : **`1_04` se termine
-réussie à 81,05 s**. Les jocks qui font leurs tours ne sont pas touchés : la bille part vers la position du piéton au moment du tir.
+s'en prend au joueur (`F_BurtonPissed`), `MinigameSetCompletion("M_PASS")` à 80,49 s et `MissionSucceed` à 82,50 s : **`1_04` se
+termine réussie à 82,53 s** (81,05 s le 05.11). Les jocks qui font leurs tours ne sont pas touchés : la bille part vers la position du piéton au moment du tir.
 
-**La charge du lance-pierre** (06.11, séance 6) : la feuille `Charge` de SlingShotActions.cat (`SLNG_CHARGE_T`) pose la charge de l'objet
-arme à 0 (`WeaponSetCharge`) et la fait monter à chaque image (`WeaponIncrementCharge` : la moitié du pas pour le lance-pierre) ;
-`WeaponFire` la lit, bornée à [0, 1], et la remet à -100. La commande ci-dessus joue directement `…/Charge/Release/Release` : la charge
-reste vide, chaque bille garde ses 9 points, et `1_04` finit toujours à 82,53 s.
+**La charge du lance-pierre** (06.11, séances 6 et 7) : la feuille `Charge` de SlingShotActions.cat (`SLNG_CHARGE_T`) pose la charge
+de l'objet arme à 0 (`WeaponSetCharge`) et la fait monter à chaque image (`WeaponIncrementCharge` : la moitié du pas pour le
+lance-pierre, 0,0165 par image) ; `WeaponFire` la lit, bornée à [0, 1], et la remet à -100. La commande ci-dessus joue la feuille
+`Charge` en tenant le bouton 8 pendant 0,7 s (`--tenir 8,0.7`) : le joueur le lâche à 17,32, 19,30 et 21,32 s, la branche `Release`
+passe aussitôt, et chaque bille part avec une charge de 0,37 (0,87 m par pas, 28 points) ; elles cassent les vitres à 17,52, 19,50 et
+21,52 s, et `1_04` finit toujours à 82,53 s.
+
+**Le haut du corps** (07.11, séance 1) : `Default_KEY` de `/Global/SlingShot` lance ses spawn `../Locomotion` et `../Actions`, qui ont
+maintenant leur contrôleur (`CActionController::arbreDesLances`) ; celui des Actions joue `WAIT` dès 15,08 s. Avec le bouton 8 tenu seul
+(`--tenir 8,1.0@16.3`, sans `--jouer`), `WAIT` passe à `Controller`, `UpperBody` entre dans `Aim` puis dans la feuille `Charge`, et la
+première bille part à 17,36 s (27 points) et casse la vitre à 17,52 s ; mais le contrôleur d'`UpperBody` s'arrête après `AimOut`
+(17,79 s : son spawn a l'octet +0x29 à 0) et les appuis suivants ne tirent plus. La commande garde donc `--jouer` (et `--tirer` pour les
+jocks).
 
 ## `1_05` (« Save Algie ») (06.11.2026)
 

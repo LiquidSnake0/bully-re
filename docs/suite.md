@@ -95,16 +95,21 @@ chantier. Un point fini passe en bas, avec son commit.
    la charge lue par `WeaponFire` et vidée après le tir), les drapeaux des armes (`SetWeaponFlags`, `WeaponFlags`, `PedSetWeaponFlag`), la
    minuterie de mission dans src (`src/hud/MinuterieMission.h` : `MissionTimerStartFixed`, `MissionTimerPause`) et `FaceTarget` des
    contrôleurs de l'IA par `FUN_00477ab0` ; les sept missions restent réussies.
+   Le 07.11 (séance 1), avec les six commits de la veille au soir, elle continue : le pas du contrôleur d'actions, la manette qui
+   tient un bouton (`--tenir`, la feuille `Charge` jouée pour de vrai dans `1_04`), les réglages et les dégâts du tir, l'objet arme,
+   `AttackTimerReset`, `HasRangedWeapon`, `DetectProjectile` et `DetectGrenade` sur les projectiles de l'outil, et le haut du corps du
+   joueur en contrôleurs à part (le bouton 8 tenu seul fait partir la première bille de `1_04`) ; les sept missions restent réussies.
    Suite, dans l'ordre :
-   - la suite des armes : la feuille `Charge` du lance-pierre jouée pour de vrai (la commande de `1_04` joue `Release` sans elle : la
-     charge reste vide) et le pas que le contrôleur passe aux mises à jour des pistes (l'outil prend 1/30 s pour `WeaponIncrementCharge`),
-     la visée du joueur (`WeaponPlayerFireAutoTarget`, `FUN_00662a40` en entier, la cible qui bouge : les jocks de `1_04` ne sont touchés
-     que pendant leurs sauts), le haut du corps en contrôleur à part (le spawn `UpperBody` du nœud de l'arme, pour ne plus passer par
-     `--tirer`), le départ du tir (la douille « Muzzle », l'os d'une arme lancée : `FUN_0065e880`), `WeaponFireOffset` (`FUN_0065d3f0` pose
-     DAT_01b65c30 … DAT_01b65c38, `FUN_00662380` les applique dans le repère du piéton : de côté × +0x30, devant × +0x34, en hauteur × +0x38
-     et la méthode +0x6c de l'entité ; `FUN_0065d160` les remet à 0 ; le lance-pierre pose 0,2 puis 0 à la même date), la physique des
-     `CProjectile` (`FUN_004d4c40`, le sol, les rebonds, `DetectProjectile`), le genre d'un coup de projectile (+0x468), les drapeaux de
-     l'objet arme à son changement (le +0x26c que garde l'outil n'est jamais remis) ;
+   - la suite des armes : la visée du joueur (`WeaponPlayerFireAutoTarget` pose l'octet +0x1ec0 du joueur, que `FUN_00662a40` lit
+     avec la manette, le bouton 10 de `FUN_007386f0` ; `FUN_00662a40` en entier ; la cible qui bouge, `FUN_0065ecb0`, lu à
+     l'assembleur : la durée du vol à plat, la vitesse de la cible (+0x1714 / ms_fTimeStep pour un piéton à pied, celle de son
+     véhicule +0x1554, ou +0x124 pour le genre 2) et la part de cette vitesse le long du tir, × +0x84 de la fiche ; les décalages
+     +0x18 … +0x24 de `WeaponFire`, `FUN_00662760`), le haut du corps qui s'arrête après `AimOut` (le spawn `./UpperBody` de
+     `Controller` a l'octet +0x29 à 0 : que le bouton suivant le relance, pour ne plus passer par `--jouer` ni `--tirer`), la
+     physique des `CProjectile` (les 32 places de la table 0xc3a068, `FUN_004d4c40`, le sol, les rebonds ; le choc, `FUN_004d3860`),
+     le départ du tir (la douille « Muzzle », `FUN_0065e880`), le genre d'un coup de projectile (+0x468), le contrôleur de
+     `Locomotion` du lance-pierre qui va et vient entre `Idle` et son enfant #5ab79a15 à chaque image (`1_03`, après 138,04 s),
+     `IsPlayerFatigued` (#0f957574, jugée -1 2 153 fois dans `1_07`) ;
    - les entités qui suivent un trajet : `PAnimFollowPath` (0x5c3b30), `PAnimSetPathFollowSpeed` (0x5c3c60), `PAnimStopFollowPath`
      (0x5c3d50), le gestionnaire 0xd13730 (32 entrées de 0x2c octets, le nombre en +0x580 : `FUN_005eb880`, `FUN_005ebfd0`,
      `FUN_005ebd60` et son objet PathReference, `FUN_005eb910`, `FUN_005ebbf0` → `FUN_005ed400` pour la vitesse, `FUN_005ebb50` →
@@ -142,7 +147,7 @@ chantier. Un point fini passe en bas, avec son commit.
      jouée pour de vrai (PropPickup) au lieu de `--ramasser` ;
    - les classes de `AI.act` jugées derrière : `CheckWeather` (`#51223f18`, nommée par sa chaîne), `FactionScan` (`FUN_00600bb0`),
      `TargetFriendsAttacker` (`FUN_00601010`), `SpecialPoints` (`#66349158`, de `/Global/PlayerAI`), `PedVelocity` (`#53408a0c`),
-     `AcquirePunishableTarget` (`FUN_00601780`), `HasRangedWeapon` (`FUN_00605a80`), `InTriggerVolume` (`FUN_005ff8d0`), `TargetProp`
+     `AcquirePunishableTarget` (`FUN_00601780`), `InTriggerVolume` (`FUN_005ff8d0`), `TargetProp`
      (`FUN_0065c250`), `HitByPed` (`FUN_005fdae0`), `HasNodeCooldown` (`FUN_006064c0`), `PedSphereHit` (`FUN_00605af0`), `HitFlagClear`
      (`FUN_005fbfa0`), `AcquirePOI` (`FUN_00448a40`), `IsPlayerFatigued`, `WeaponEquipedSocket`, `TargetProjectile` ;
    - le composant de visée du joueur (+0x1c8, `FUN_004d88f0` à chaque image : la cible +0xa0, lâchée quand elle meurt par
@@ -184,6 +189,16 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- La suite des armes, deuxième partie (06.11, séance 7, et 07.11, séance 1 ; ca12e67, fa5abcb, 228e02d, 83e971c, 4542548, f6d6093,
+  c408a7f, d24e491, 939d868) : le pas du contrôleur d'actions (`CScriptPedPool::PasDuControleur`, `FUN_004812d0`), la manette qui tient
+  un bouton (`lancer_lua --tenir`, `FUN_005f3930`, `FUN_005f3720`), les réglages du tir (`CReglagesTir` : `FUN_0065d3f0`, `FUN_0065d430`,
+  `FUN_0065d350`, `FUN_0065d160`), les dégâts du tir (`CChargeArme::Degats`, `FUN_00664710`), l'objet arme (`FUN_004da610`,
+  `FUN_004d92c0`, `FUN_004da6f0`), `AttackTimerReset` (`FUN_006121d0`), `HasRangedWeapon` (`CInventaireArmes::ArmeADistance` et
+  `MunitionsPour` : `FUN_00605a80`, `FUN_00486ae0`, `FUN_00486130`), `DetectProjectile` et `DetectGrenade`
+  (`CScriptPedPool::VoitPoint`, `DetecterProjectile`, `DetecterGrenade`, `GrenadeAPortee` : `FUN_0048cf50`, `FUN_0048a300`,
+  `FUN_0048a130`, les juges `FUN_00604410` et `FUN_00604380`), le haut du corps du joueur en contrôleurs à part
+  (`CActionController::arbreDesLances`, `AppliquerLances`, la référence montée descendue à l'entrée, `FUN_005f5470`).
 
 - La suite des armes, première partie (06.11, séance 6 ; a464efb, 3391c9f, 8fe559d, 671ceda) : la charge de l'arme (`CChargeArme` dans `src/peds/Armes.h` :
   `FUN_0065e7c0`, `FUN_0065e810`, la charge de `FUN_00661f10` et sa remise par `FUN_00664710`), les drapeaux des armes

@@ -1229,3 +1229,35 @@ en échec plutôt que de les masquer.
 - **Bilan** : 1 121 fonctions recréées (7,1 % du code), contre 1 105 (7,1 %) ; 2 086 comprises (11,8 %) ; 5 commits (quatre de moteur et la
   documentation : la séance s'arrête là, le contexte de l'agent étant chargé).
 
+## 07.11.2026, séance 1 (de 21 h 34 à 22 h 12)
+
+- **La branche de la veille au soir** (`seance-2026-11-06f`, six commits de 22 h 49 à 23 h 42 le 06.11, vérifiés et poussés sans
+  documentation ni PR : ca12e67, fa5abcb, 228e02d, 83e971c, 4542548, f6d6093) : le pas du contrôleur d'actions (`FUN_004812d0` →
+  `FUN_004850b0` : 0,02 × ms_fTimeStep × la colonne V de pedstats.dat / 100, 0,033 s par image, que reçoit `WeaponIncrementCharge`) ;
+  la manette qui tient un bouton (`--tenir N,durée@s` : les octets 3, 2, 8 puis 0 de `FUN_005f3930` et `FUN_005f3720`) et la feuille
+  `Charge` du lance-pierre jouée pour de vrai dans `1_04` (une charge de 0,37 : 0,87 m par pas et 28 points par bille) ; les réglages
+  du tir (`WeaponFireOffset` `FUN_0065d3f0`, `WeaponFireStartOffset` `FUN_0065d430`, `WeaponFireRotation` `FUN_0065d350`, remis par
+  `FUN_0065d160`) ; les dégâts du tir (`FUN_00664710` : le +0x2c de la piste et la colonne Damage_Scale du tireur) ; l'objet arme
+  (le constructeur `FUN_004da610`, la remise `FUN_004d92c0`, le changement de modèle `FUN_004da6f0`) ; `AttackTimerReset`
+  (`FUN_006121d0`, `FUN_0048c040`).
+- **`HasRangedWeapon`** (`CInventaireArmes::ArmeADistance` et `MunitionsPour`) : la table 0x92e874 et son juge `FUN_00605a80` (lu à
+  l'assembleur), `FUN_00486ae0` et `FUN_00486130` ; jugée -1 jusqu'ici (36 fois dans `1_01`, 451 dans `1_03`, 254 dans `1_05`, 49 dans
+  `1_06_01`, 211 dans `1_07`), elle rend faux : aucun piéton de l'IA de ces missions n'a d'arme à distance.
+- **`DetectProjectile` et `DetectGrenade`** sur les projectiles de l'outil (`CScriptPedPool::VoitPoint`, `DetecterProjectile`,
+  `DetecterGrenade`, `GrenadeAPortee`) : la table 0xc3a068, `FUN_0048a300` (la trajectoire à plat à moins de 3 m), `FUN_0048a130` ; le
+  juge de `DetectGrenade` (`FUN_00604380`, lu à l'assembleur) refait un test de portée, le rayon plus 1 m à plat, que le travail mis de
+  côté oubliait. La bille et la brique (relues dans Global_Weapons.cat) n'ont pas l'octet +0xe4 : rien ne change.
+- **Le haut du corps du joueur** en contrôleurs à part (`CActionController::arbreDesLances`, `AppliquerLances`) : les spawn de l'arbre
+  de l'arme, et la référence montée descendue à l'entrée (`FUN_005f5470`). Le bouton 8 tenu seul fait partir la première bille de
+  `1_04` (17,36 s, la vitre à 17,52 s) ; les suivantes non, le contrôleur d'`UpperBody` s'arrêtant après `AimOut`.
+- **Le travail mis de côté** (`git stash` sur main, de la séance d'hier soir) : comparé à f6d6093, repris en trois commits vérifiés (le
+  juge de `DetectGrenade` corrigé, deux commentaires précisés), puis supprimé ; les instantanés `build/k7`, `build/k8`, `build/l1` et
+  `build/l2` aussi.
+- **REA amont** : 714 commits en attente (653 la veille), des corrections de l'outil Ghidra et des tests (#8811, #8382, #8376…) ;
+  rien qui touche bully-re, rien fusionné.
+- **La machine** : seul sur le portable ; une vérification par commit (construction, tests, sept missions) en 8 minutes sous le verrou,
+  dans le worktree `build/wt`.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 148,04 s), `1_04` à 82,53 s, `1_05` à 185,20 s,
+  `1_06_01` à 61,81 s et `1_07` à 151,47 s à chaque commit.
+- **Bilan** : 1 157 fonctions recréées (7,3 % du code), contre 1 121 (7,1 %) au départ de la branche ; 2 107 comprises (11,9 %) ;
+  quatre commits ce soir (trois de moteur et la documentation), dix sur la branche.
