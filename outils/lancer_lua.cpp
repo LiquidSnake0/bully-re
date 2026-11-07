@@ -4122,6 +4122,25 @@ PedGetWhoHitMeLast(lua_State *L)
 	return 1;
 }
 
+// PedClearHitRecord(ped) (0x5cfde0, lue à l'assembleur de 0x5cfde0 à 0x5cfe4b) : le piéton (FUN_005c7220(h, 2)) ; l'emplacement 16 de
+// sa vftable (+0x40 : FUN_00474a80, le contexte +0x300 du composant d'actions) et son relevé (+0x10) : l'octet +0x68, le mot +0x64 (le
+// drapeau haché du dernier coup) et l'octet +0x34 à 0 ; puis l'attaquant (+4), s'il y en a un, lâché (FUN_00465690) et mis à 0. Le
+// temps depuis le coup (+0x2c, que PedIsHit lit), les dégâts (+0x38) et l'arme (+0x5e) restent. Dans l'outil : le drapeau du coup
+// (ConditionFlag, HitLocation) et l'attaquant (PedGetWhoHitMeLast, la riposte) oubliés.
+static int
+PedClearHitRecord(lua_State *L)
+{
+	Journal("PedClearHitRecord", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	if(pietons.Acceder(h) == nil) return 0;
+	auto r = coups.find(h);
+	if(r == coups.end()) return 0;
+	r->second.drapeau = 0;
+	r->second.jusqua = -1.0f;
+	r->second.attaquant = -1;
+	return 0;
+}
+
 // PedIsHit(ped, genre, ms) (0x5c8a40, lu à l'assembleur de 0x5c8a40 à 0x5c8ae4) : rien de vrai sans piéton (FUN_005c7220) ;
 // le deuxième argument est lu (FUN_005d8200) et jeté ; le troisième, un mot (movzx), divisé par 1000 (le double 0x900138) ;
 // l'emplacement 16 de CPed (FUN_00474a80 : le composant d'actions +0x2e0, +0x300), son relevé +0x10 et le temps depuis le
@@ -7769,6 +7788,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedGetFlag", PedGetFlag);
 	lua_register(L, "PedCreateXYZ", PedCreateXYZ);
 	lua_register(L, "PedDelete", PedDelete);
+	lua_register(L, "PedClearHitRecord", PedClearHitRecord);
 	lua_register(L, "AreaClearAllPeds", AreaClearAllPeds);
 	lua_register(L, "PedIsValid", PedIsValid);
 	lua_register(L, "PedIsPlayer", PedIsPlayer);
