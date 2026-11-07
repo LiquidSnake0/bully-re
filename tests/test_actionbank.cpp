@@ -712,6 +712,32 @@ main(void)
 				VERIF(c.infosArmeLancees.size() == 1);
 			}
 		}
+		// Les spawn de l'arbre de l'arme (CActionController::arbreDesLances) : /Global/SlingShot/SlingShot/Default_KEY lance ../Locomotion
+		// et ../Actions (SlingShotActions.act) ; hors de l'IA, leurs contrôleurs n'existent que sous l'arbre que PropAttach donne au
+		// contexte. Sans le bouton de tir, le contrôleur des Actions joue « wait » (Controller demande ActionRequest[8,2]).
+		{
+			const CActionNode *arme = g.Trouver("/Global/SlingShot");
+			if(arme == nil && g.TrouverOuCharger("/Global/SlingShot", "Act/Weapons/SlingShot.act")) arme = g.Trouver("/Global/SlingShot");
+			const CActionNode *defaut = g.Trouver("/Global/SlingShot/SlingShot/Default_KEY");
+			VERIF(arme && defaut);
+			if(arme && defaut){
+				CActionController c;
+				c.Jouer(g, defaut, 0.0f);
+				VERIF(c.lances.empty());
+				CActionController d;
+				d.arbreDesLances = arme;
+				d.Jouer(g, defaut, 0.0f);
+				VERIF(d.lances.size() == 2);
+				struct : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return 0; } } faux;
+				d.Avancer(g, nil, faux, 0.033f);
+				VERIF(d.lances.size() == 2 && d.lances[1].lancee && d.lances[1].c && d.lances[1].c->arbreDesLances == arme);
+				const CActionNode *attente = d.lances.size() == 2 && d.lances[1].c ? d.lances[1].c->joue : nil;
+				VERIF(attente && (attente->hachage & 0x7fffffff) == ActionHash("wait"));
+				std::vector<CActionController *> tous;
+				d.Recueillir(tous);
+				VERIF(tous.size() >= 2);
+			}
+		}
 		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());
 		// Les références montées (FUN_005f6bb0 → FUN_005f6960) : Locomotion.act, référencé par B_Striker_A (un des arbres
 		// globaux) et par Fight_Tutorial, n'est lu qu'une fois, sous /Global/Locomotion.act ; chaque référence le prend pour

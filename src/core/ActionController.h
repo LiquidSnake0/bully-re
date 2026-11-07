@@ -337,8 +337,13 @@ public:
 	struct Lance { float entree, vie; const CActionNode *vise; bool boucle, lancee, morte; std::shared_ptr<CActionController> c; };
 	std::vector<Lance> lances;
 	bool sousControleurs = false;
+	// Hors des arbres de l'IA, les pistes spawn dont le nœud visé est sous cet arbre ont aussi leur contrôleur (l'outil le pose à
+	// l'arbre de l'arme quand PropAttach le donne au contexte : le haut du corps du lance-pierre, Default_KEY → ../Actions →
+	// Controller → ./UpperBody) ; leurs contrôleurs le gardent et suivent les règles de l'IA (sousControleurs).
+	const CActionNode *arbreDesLances = nil;
 	// Ce contrôleur et ceux de ses pistes spawn vivantes, en profondeur : l'appelant en traite les sorties.
 	void Recueillir(std::vector<CActionController *> &tous);
+	bool SpawnSous(const CActionBank &b, const CActionNode &n, const CActionTreeFile &f, const CActionTrack &p) const;
 	float finExecutees = -1.0f;   // la fin la plus tardive des pistes venues des nœuds exécutés (-1 : aucune)
 	struct Prise { const CActionNode *soi, *cible; bool executerSoi, executerCible; };
 	std::vector<Prise> prises;                    // celles qui se lancent à cette image, rendues par Avancer

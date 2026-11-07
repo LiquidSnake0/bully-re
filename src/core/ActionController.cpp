@@ -69,6 +69,15 @@ CActionController::Duree(const CActionBank &b, const CActionNode &n)
 // celles des nœuds que ses pistes Execute font jouer (FUN_005f7070 : la descente +0x4c du nœud visé, FUN_005f3e20 :
 // ses pistes rejoignent la liste du contrôleur). entree : l'instant où le nœud a rejoint le nœud joué ; une piste
 // ajoutée se lance quand le temps du nœud atteint son entrée (+12, FUN_005f3fb0), donc au plus tôt à `entree`.
+// Le nœud visé d'une piste spawn est-il sous l'arbre des lances (arbreDesLances) ?
+bool
+CActionController::SpawnSous(const CActionBank &b, const CActionNode &n, const CActionTreeFile &f, const CActionTrack &p) const
+{
+	const CActionAttribut *at = p.Champ(32);
+	const CActionNode *v = at ? b.Relatif(&n, f.ChaineCitee(at->decalage).c_str()) : nil;
+	return v && b.Sous(arbreDesLances, v);
+}
+
 void
 CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entree, int prof, const CJugeAction *juge)
 {
@@ -221,7 +230,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			laisses.push_back(l);
 		}else if(sousControleurs && p.type == kDemandeNoeud){
 			demandesNoeud.push_back({a, p.Mot(24) & 0x7fffffff, Octet(p, 28), Octet(p, 29), Octet(p, 30), Octet(p, 8), false, true});
-		}else if(sousControleurs && p.type == kSpawn){
+		}else if(p.type == kSpawn && (sousControleurs || (arbreDesLances && SpawnSous(b, n, *f, p)))){
 			// FUN_005f8860 : le nœud visé (+0x6c), résolu d'avance depuis le nœud qui porte la piste (FUN_005f4e30).
 			const CActionAttribut *at = p.Champ(32);
 			const CActionNode *v = at ? b.Relatif(&n, f->ChaineCitee(at->decalage).c_str()) : nil;
@@ -422,7 +431,9 @@ CActionController::Entrer(const CActionBank &b, const CActionNode *n, const CJug
 	if(n == nil) return false;
 	CGardeControleur garde(juge, this);
 	CGardeCle gardeCle(b, Cle());
-	const CActionNode *r = n->genre == 'b' ? b.Choisir(n, juge) : n;
+	// Une banque, ou une référence montée (le nœud visé d'un spawn : ../Actions, SlingShotActions.act), se descend (l'emplacement +0x4c
+	// du nœud ; FUN_005f5470 suit la cible d'une référence) ; un nœud jouable se joue.
+	const CActionNode *r = n->genre == 'b' || n->monte ? b.Choisir(n, juge) : n;
 	if(r == nil) return false;
 	Jouer(b, r, t, &juge);
 	return true;
@@ -541,6 +552,7 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 			l.lancee = true;
 			l.c = std::make_shared<CActionController>();
 			l.c->sousControleurs = true;
+			l.c->arbreDesLances = arbreDesLances;
 			l.c->arbre = l.boucle ? l.vise : nil;   // +0x29 : redescendre depuis le nœud visé quand le nœud finit
 			l.c->Racine(b, l.vise);                 // FUN_005f8860 : la racine du contexte de la piste (+0x40)
 			l.c->image = image; l.c->graine = graine; l.c->hasard = hasard;

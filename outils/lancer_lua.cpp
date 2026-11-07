@@ -6113,10 +6113,50 @@ RendreArbreAvantArme(int ped)
 	const CActionNode *arme = c.arbre;
 	c.arbre = it->second;
 	c.Racine(arbres, it->second);
+	c.arbreDesLances = nil;   // les spawn de l'arbre de l'arme n'ont plus leur contrôleur
 	arbresAvantArme.erase(it);
 	float t = maintenant / 1000.0f;   // comme à la prise : revenu dans l'arbre de l'arme, il redescend depuis celui du piéton
 	if(arme && c.joue && c.arbre && arbres.Sous(arme, c.joue) && c.Poser(arbres, c.arbre, CJugeOutil(ped, t), t))
 		printf("%6.2f s  contrôleur de %d : %s\n", maintenant / 1000.0, ped, arbres.CheminDe(c.joue).c_str());
+}
+
+// Les contrôleurs des pistes spawn d'un contrôleur d'actions (l'arbre de l'arme : CActionController::arbreDesLances) : leurs
+// sorties s'appliquent au piéton comme celles du contrôleur (SetPedFlags, Death, les pistes des armes, SetWeaponInfo, les tirs, et
+// FaceTarget, que l'outil ne gardait que du premier nœud des spawn) ; pour le joueur, leurs passages sont journalisés.
+static void AppliquerArmes(int ped, CActionController &c);
+static void AppliquerTirs(int ped, CActionController &c);
+static void PoserInfoArme(CScriptPed &p, const CActionController::InfoArme &d);
+static void AppliquerMorts(int ped, CActionController &c);
+static void
+AppliquerLances(int ped, CActionController &c)
+{
+	std::vector<CActionController *> tous;
+	c.Recueillir(tous);
+	CScriptPed *p = pietons.Acceder(ped);
+	static std::map<const CActionController *, const CActionNode *> vus;
+	for(size_t i = 1; i < tous.size(); i++){
+		CActionController *k = tous[i];
+		if(ped == SCRIPT_PED_JOUEUR && vus[k] != k->joue){
+			vus[k] = k->joue;
+			printf("%6.2f s  contrôleur du joueur, spawn : %s\n", maintenant / 1000.0, k->joue ? CheminVu(*k, k->joue).c_str() : "rien");
+		}
+		if(p){
+			for(const CActionController::Drapeau &d : k->drapeauxPoses) if(d.numero < SCRIPT_PED_DRAPEAUX) p->drapeaux[d.numero] = d.valeur;
+			for(const CActionController::Regard &r : k->regardsActifs){   // FUN_00620dc0, la cible de FUN_00477ab0
+				CScriptPedPool::Cible e = pietons.CibleDeGenre(ped, r.genre);
+				CVector v; bool vise = false;
+				if(const CScriptPed *q = pietons.Acceder(e.pieton)){ if(q != p){ v = q->pos; vise = true; } }
+				else if(const CObjetAnime *o = objetsAnimes.Objet(e.objet)){ v = o->pos; vise = true; }
+				if(vise) p->cap = atan2f(v.y - p->pos.y, v.x - p->pos.x) * 180.0f / 3.14159265f + r.decalage;
+			}
+		}
+		k->drapeauxPoses.clear();
+		k->laches.clear();
+		AppliquerMorts(ped, *k);
+		AppliquerArmes(ped, *k);
+		if(p) for(const CActionController::InfoArme &d : k->infosArmeLancees) PoserInfoArme(*p, d);
+		AppliquerTirs(ped, *k);
+	}
 }
 
 // FUN_0051adb0 : l'arme d'un nom haché parmi les armes (ms_weaponModelStore, le +4 de chacune) ; -1 pour 0, « unarmed » ou un
@@ -6169,6 +6209,7 @@ AppliquerArmes(int ped, CActionController &c)
 					if(!arbresAvantArme.count(ped)) arbresAvantArme[ped] = avant;
 					k.arbre = n;
 					k.Racine(arbres, n);
+					k.arbreDesLances = n;   // ses pistes spawn ont leur contrôleur (le haut du corps de l'arme)
 					printf("%6.2f s  contexte des actions de %d : %s\n", maintenant / 1000.0, ped, t.arbre.c_str());
 					// L'outil lance les pistes d'un nœud à l'image qui suit son entrée : un nœud court (Weapons/SelectActions/
 					// WeaponSelect/select/default, 0,067 s) a déjà rendu la main à l'arbre d'avant, d'où le moteur le ferait
@@ -7927,6 +7968,7 @@ main(int argc, char **argv)
 			if(CScriptPed *p = pietons.Acceder(c.first))
 				for(const CActionController::InfoArme &d : c.second.infosArmeLancees) PoserInfoArme(*p, d);
 			AppliquerTirs(c.first, c.second);
+			AppliquerLances(c.first, c.second);
 			// SpeechTrack (FUN_006195a0) : une ligne à tenir est retenue ; les autres ne sont pas jouées par l'outil (une
 			// seule ligne à la fois, que les scripts attendent). SpeechStartTrack (FUN_00619950) lâche les lignes du piéton.
 			for(const CActionController::Parole &e : c.second.parolesLancees){
