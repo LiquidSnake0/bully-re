@@ -686,10 +686,13 @@ struct CJugeOutil : CJugeAction {
 		}
 		// Sprint (FUN_005fda70) : la réserve de sprint (+0x18d0) comparée à +4 par +8 (FUN_005fb750). IsPlayerTired
 		// (FUN_005fc3b0) : l'état physique du joueur (DAT_00c1af4c, que PlayerGetPhysicalState rend) vaut 2 ; l'outil le
-		// laisse à 0.
-		static const uint32 kSprint = ActionHash("Sprint"), kFatigue = ActionHash("IsPlayerTired");
+		// laisse à 0. IsPlayerFatigued (ConditionIsPlayerFatigued, table 0x937a28 ; FUN_005fc3a0, lu à l'assembleur de 0x5fc3a0 à
+		// 0x5fc3ae : cmp byte [0xc1af4c], 1 ; sete al) : l'état vaut 1. Sans argument ni négation, pour tout piéton.
+		static const uint32 kSprint = ActionHash("Sprint"), kFatigue = ActionHash("IsPlayerTired"),
+		                    kFatigueLegere = ActionHash("IsPlayerFatigued");
 		if(type == kSprint) return moi ? ComparerCondition(moi->sprint, seuil, mots[1]) : -1;
 		if(type == kFatigue) return etatPhysiqueJoueur == 2;
+		if(type == kFatigueLegere) return etatPhysiqueJoueur == 1;
 		// WeaponDesired (ConditionWeaponDesired, FUN_0065b4b0) : sans arme voulue (+0x18 du composant +0x2e0 à 0), la négation de
 		// l'octet +8 ; avec un nom +4 qui n'est pas « any », son arme (FUN_0051ad50, gardée en +0xc) doit être la voulue, sinon la
 		// négation de +8 ; puis l'octet +8. WeaponIsInventory (FUN_0065b7e0 → FUN_0055ba80) : une arme en main dont le type a +0x64.
