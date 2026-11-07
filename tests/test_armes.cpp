@@ -4,6 +4,7 @@
 // les fiches ObjectButes de Global_Weapons.cat (SLINGSHOT, marble, MarbBag, BRICK). Aucun fichier du jeu.
 //   build/tests/test_armes
 #include "../src/peds/Armes.h"
+#include "../src/objects/Projectiles.h"
 #include <cmath>
 #include <cstdio>
 #include <map>
@@ -168,6 +169,20 @@ main(void)
 		VERIF(pres(r.x, 100.0f + 0.1f * t * ((100.0f / (0.65f - 0.1f)) / t)));
 		r = CViseeTir::AvanceSurCible(o, CVector(0, 0, 5), CVector(0.1f, 0, 0), 0.65f, 1.0f, false, 1.0f, 1.0f);
 		VERIF(r.x == 0.0f && r.z == 5.0f);                        // à la verticale : la cible gardée
+	}
+	// La table des projectiles (src/objects/Projectiles.h : FUN_004d4590, FUN_004d3f60) : la première place libre ; pleine, la plus
+	// vieille cède la sienne (la première à égalité).
+	{
+		CPlacesProjectiles t;
+		int ev = 0;
+		VERIF(t.Prendre(100, &ev) == 0 && ev == -1 && t.Prendre(100) == 1 && t.Prendre(150) == 2);
+		t.Liberer(1);
+		VERIF(t.Prendre(200) == 1 && t.creation[1] == 200);       // la place libérée d'abord
+		for(int i = 3; i < 32; i++) VERIF(t.Prendre(300 + i) == i);
+		VERIF(t.Prendre(1000, &ev) == 0 && ev == 0 && t.creation[0] == 1000);   // pleine : la 0 (100) cède sa place
+		VERIF(t.Prendre(1001, &ev) == 2 && ev == 2);              // puis la 2 (150)
+		t.Vider();
+		VERIF(t.Prendre(5, &ev) == 0 && ev == -1);
 	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;

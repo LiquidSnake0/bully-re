@@ -41,6 +41,7 @@
 #include "../src/peds/Patrouilles.h"
 #include "../src/objects/ObjectData.h"
 #include "../src/objects/ObjetsAnimes.h"
+#include "../src/objects/Projectiles.h"
 #include "../src/objects/Collectibles.h"
 #include "../src/objects/Ramassages.h"
 #include "../src/core/IplFile.h"
@@ -180,10 +181,12 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 
 // Un projectile en vol (le moteur crée un CProjectile, un CPhysical de 0x24c octets : FUN_004d4c40 → FUN_004d24f0, FUN_004d2160 ;
 // sa table, 0xc3a068, est celle que lit DetectProjectile). L'outil n'en joue pas la physique : un point qui suit sa vitesse et la
-// gravité à chaque pas (ms_fTimeStep, 0,02 s), jusqu'à la fin de sa vie (+0x48) ou un contact.
+// gravité à chaque pas (ms_fTimeStep, 0,02 s), jusqu'à la fin de sa vie (+0x48) ou un contact. Les 32 places de la table
+// (src/objects/Projectiles.h : FUN_004d4590, FUN_004d3f60) : l'indice d'un projectile de l'outil est celui de son entrée.
 struct CProjectileOutil { bool actif = false; int32 modele = -1; int tireur = -1; CVector pos, vitesse; float gravite = 0, degats = 0;
                           uint32 naissance = 0, vie = 0; };
-static std::vector<CProjectileOutil> projectiles;
+static CProjectileOutil projectiles[CPlacesProjectiles::kTaille];
+static CPlacesProjectiles placesProjectiles;
 // Les marques d'impact (les decals : FUN_00560f10 compte celles d'un genre dans un déclencheur, ObjectNumProjectileImpacts) :
 // le nom de la marque de la fiche du projectile et le point du contact.
 // La table des marques a 32 places de 16 octets (la position, le genre en mot +0xc) : l'outil la tient en anneau, la plus vieille
@@ -3931,7 +3934,8 @@ static int
 AreaClearAllProjectiles(lua_State *L)
 {
 	Journal("AreaClearAllProjectiles", L, 1);
-	projectiles.clear();
+	placesProjectiles.Vider();
+	for(CProjectileOutil &q : projectiles) q.actif = false;
 	return 0;
 }
 
@@ -5968,7 +5972,10 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	q.vitesse = CVector(dx / T, dy / T, (dz - 0.5f * g * T * T) / T);
 	q.degats = CChargeArme::Degats(true, tp.degatsMin, tp.degatsMax, charge, degatsPiste, pietons.StatLue(ped, 0x1f, 100));
 	q.naissance = maintenant; q.vie = tp.vie > 0 ? (uint32)tp.vie : 5000;
-	projectiles.push_back(q);
+	int evincee = -1, place = placesProjectiles.Prendre(maintenant, &evincee);   // FUN_004d4c40 → FUN_004d4590
+	if(evincee >= 0) printf("%6.2f s  la table des projectiles est pleine : le plus vieux (place %d) cède sa place\n", maintenant / 1000.0, evincee);
+	if(place < 0){ reglagesTir.Remettre(); return; }   // FUN_004d4c40 rend 0 : pas de projectile
+	projectiles[place] = q;
 	printf("%6.2f s  le piéton %d tire : projectile %d (%s) de (%.2f, %.2f, %.2f) vers (%.2f, %.2f, %.2f), %.2f m par pas, %.0f points\n",
 	       maintenant / 1000.0, ped, munition, NomDArme(munition) ? NomDArme(munition)->c_str() : "?", depart.x, depart.y, depart.z,
 	       cible.x, cible.y, cible.z, vitesse, q.degats);
@@ -6098,9 +6105,10 @@ FrapperObjet(size_t i, int auteur, float degats)
 static void
 AvancerProjectiles(float pas)
 {
-	for(CProjectileOutil &q : projectiles){
+	for(int place = 0; place < CPlacesProjectiles::kTaille; place++){
+		CProjectileOutil &q = projectiles[place];
 		if(!q.actif) continue;
-		if(maintenant - q.naissance > q.vie){ q.actif = false; continue; }
+		if(maintenant - q.naissance > q.vie){ q.actif = false; placesProjectiles.Liberer(place); continue; }
 		CVector avant = q.pos;
 		q.pos.x += q.vitesse.x * pas; q.pos.y += q.vitesse.y * pas; q.pos.z += q.vitesse.z * pas;
 		q.vitesse.z += q.gravite * pas;
@@ -6120,18 +6128,15 @@ AvancerProjectiles(float pas)
 			if(!objets[i].detruit && SegmentDansSphere(avant, q.pos, objets[i].pos, 0.5f, &u) && u < mieux){ mieux = u; objet = (int)i; touche = -1; }
 		}
 		if(objet >= 0){
-			q.actif = false;
+			q.actif = false; placesProjectiles.Liberer(place);
 			CVector a(avant.x + (q.pos.x - avant.x) * mieux, avant.y + (q.pos.y - avant.y) * mieux, avant.z + (q.pos.z - avant.z) * mieux);
 			PoserMarque(TypeProjectile(q.modele).marque, a);   // la marque de l'impact (FUN_00560f10 la comptera)
 			FrapperObjet((size_t)objet, q.tireur, q.degats);
 		}else if(touche >= 0){
-			q.actif = false;
+			q.actif = false; placesProjectiles.Liberer(place);
 			RecevoirProjectile(touche, q.tireur, q.degats, q.modele);
 		}
 	}
-	size_t n = 0;
-	for(const CProjectileOutil &q : projectiles) if(q.actif) projectiles[n++] = q;
-	projectiles.resize(n);
 }
 
 // L'arbre du piéton (+0x4b0 du composant +0x2e0) que PropDetach, PedClearAllWeapons et PedDestroyWeapon rendent au contexte
