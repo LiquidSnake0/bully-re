@@ -41,6 +41,7 @@
 #include "../src/peds/Patrouilles.h"
 #include "../src/objects/ObjectData.h"
 #include "../src/objects/ObjetsAnimes.h"
+#include "../src/objects/Projectiles.h"
 #include "../src/objects/Collectibles.h"
 #include "../src/objects/Ramassages.h"
 #include "../src/core/IplFile.h"
@@ -62,6 +63,7 @@
 #include "../src/render/CameraMgr.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
+#include "../src/entities/SuiviTrajet.h"
 #include "../tests/hote/Chemins.h"
 #include <algorithm>
 #include <cstdio>
@@ -146,8 +148,11 @@ static void LacherArme(int h);
 // charge (m par pas de 0,02 s), +0x80 (128) le facteur de la gravité ; des réels.
 // DetectProjectile et DetectGrenade lisent aussi les octets +0x8c (140), +0x8d (141) et +0xe4 (228, la menace se voit), le rayon +0x94
 // (148) et le flottant +0xa0 (160).
+// L'avance sur une cible qui bouge (FUN_0065ecb0) lit l'octet +0x124 (292, la durée refaite), le flottant +0x128 (296, son diviseur)
+// et le flottant +0x84 (132, le facteur de l'avance) : 0, 1 et 1 pour la bille et la brique.
 struct CTypeProjectile { bool lu = false; int32 vie = 0; float degatsMin = 0, degatsMax = 0, vitesseMin = 0.4f, vitesseMax = 0.4f, gravite = 1.0f;
-                         std::string marque; bool o8c = false, o8d = false, menace = false; float rayon = 0, a0 = 0; };
+                         std::string marque; bool o8c = false, o8d = false, menace = false; float rayon = 0, a0 = 0;
+                         bool dureeRefaite = false; float diviseur = 1.0f, facteurAvance = 1.0f; };
 static std::map<int32, CTypeProjectile> typesProjectiles;   // par modèle d'arme (le +0x80 de son type)
 static CTypeProjectile projectileDefaut;
 static const CTypeProjectile &
@@ -169,15 +174,20 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 	const CActionAttribut *o1 = t.Champ(140), *o2 = t.Champ(141), *o3 = t.Champ(228);
 	a.o8c = o1 && o1->valeur[0]; a.o8d = o2 && o2->valeur[0]; a.menace = o3 && o3->valeur[0];
 	a.rayon = CActionBank::ButesReel(t, 148); a.a0 = CActionBank::ButesReel(t, 160);
+	const CActionAttribut *o4 = t.Champ(292);   // l'avance sur une cible qui bouge (FUN_0065ecb0) : +0x124, +0x128 et +0x84
+	a.dureeRefaite = o4 && o4->valeur[0]; a.diviseur = CActionBank::ButesReel(t, 296);
+	a.facteurAvance = t.Champ(132) ? CActionBank::ButesReel(t, 132) : 1.0f;
 	return a;
 }
 
 // Un projectile en vol (le moteur crée un CProjectile, un CPhysical de 0x24c octets : FUN_004d4c40 → FUN_004d24f0, FUN_004d2160 ;
 // sa table, 0xc3a068, est celle que lit DetectProjectile). L'outil n'en joue pas la physique : un point qui suit sa vitesse et la
-// gravité à chaque pas (ms_fTimeStep, 0,02 s), jusqu'à la fin de sa vie (+0x48) ou un contact.
+// gravité à chaque pas (ms_fTimeStep, 0,02 s), jusqu'à la fin de sa vie (+0x48) ou un contact. Les 32 places de la table
+// (src/objects/Projectiles.h : FUN_004d4590, FUN_004d3f60) : l'indice d'un projectile de l'outil est celui de son entrée.
 struct CProjectileOutil { bool actif = false; int32 modele = -1; int tireur = -1; CVector pos, vitesse; float gravite = 0, degats = 0;
                           uint32 naissance = 0, vie = 0; };
-static std::vector<CProjectileOutil> projectiles;
+static CProjectileOutil projectiles[CPlacesProjectiles::kTaille];
+static CPlacesProjectiles placesProjectiles;
 // Les marques d'impact (les decals : FUN_00560f10 compte celles d'un genre dans un déclencheur, ObjectNumProjectileImpacts) :
 // le nom de la marque de la fiche du projectile et le point du contact.
 // La table des marques a 32 places de 16 octets (la position, le genre en mot +0xc) : l'outil la tient en anneau, la plus vieille
@@ -686,10 +696,13 @@ struct CJugeOutil : CJugeAction {
 		}
 		// Sprint (FUN_005fda70) : la réserve de sprint (+0x18d0) comparée à +4 par +8 (FUN_005fb750). IsPlayerTired
 		// (FUN_005fc3b0) : l'état physique du joueur (DAT_00c1af4c, que PlayerGetPhysicalState rend) vaut 2 ; l'outil le
-		// laisse à 0.
-		static const uint32 kSprint = ActionHash("Sprint"), kFatigue = ActionHash("IsPlayerTired");
+		// laisse à 0. IsPlayerFatigued (ConditionIsPlayerFatigued, table 0x937a28 ; FUN_005fc3a0, lu à l'assembleur de 0x5fc3a0 à
+		// 0x5fc3ae : cmp byte [0xc1af4c], 1 ; sete al) : l'état vaut 1. Sans argument ni négation, pour tout piéton.
+		static const uint32 kSprint = ActionHash("Sprint"), kFatigue = ActionHash("IsPlayerTired"),
+		                    kFatigueLegere = ActionHash("IsPlayerFatigued");
 		if(type == kSprint) return moi ? ComparerCondition(moi->sprint, seuil, mots[1]) : -1;
 		if(type == kFatigue) return etatPhysiqueJoueur == 2;
+		if(type == kFatigueLegere) return etatPhysiqueJoueur == 1;
 		// WeaponDesired (ConditionWeaponDesired, FUN_0065b4b0) : sans arme voulue (+0x18 du composant +0x2e0 à 0), la négation de
 		// l'octet +8 ; avec un nom +4 qui n'est pas « any », son arme (FUN_0051ad50, gardée en +0xc) doit être la voulue, sinon la
 		// négation de +8 ; puis l'octet +8. WeaponIsInventory (FUN_0065b7e0 → FUN_0055ba80) : une arme en main dont le type a +0x64.
@@ -3029,6 +3042,160 @@ DeletePersistentEntity(lua_State *L)
 	return 0;
 }
 
+// --- Les entités qui suivent un trajet (src/entities/SuiviTrajet.h : le gestionnaire 0xd13730, ses PathReference) ---
+// L'entité d'une fonction PAnim* : avec deux nombres en tête (FUN_005d81c0, lua_isnumber, sur le troisième argument pour
+// PAnimFollowPath ; deux arguments pour PAnimStopFollowPath), une case de pool et son genre (FUN_0044a510 : le genre 0, un CObject,
+// l'outil n'a que ses CObject persistants ; le genre 5, un objet animé) ; sinon un déclencheur (FUN_006d79c0 sur 0x20c7e98 : son
+// objet animé). L'outil nomme l'entité par une clé : genre × 0x1000000 + poignée, ou 0x7f000000 + le déclencheur ; 0 sans entité.
+static CSuiveursTrajet suiveurs;
+static int32
+EntiteSuivie(lua_State *L, bool deuxNombres)
+{
+	if(deuxNombres){
+		int h = (int)lua_tonumber(L, 1), g = (int)lua_tonumber(L, 2);
+		if(g == 0) return (h & 0xff) == 2 && (size_t)(h >> 8) < persistants.size() && !persistants[(size_t)(h >> 8)].detruit ? h : 0;
+		if(g == 5) return objetsAnimes.Objet(h >> 8) ? 5 * 0x1000000 + h : 0;
+		return 0;
+	}
+	int d = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	return objetsAnimes.ObjetDe(d) >= 0 ? 0x7f000000 + d : 0;
+}
+// La position d'une entité suivie (nil si elle n'existe plus).
+static CVector *
+PositionSuivie(int32 e)
+{
+	if(e >= 0x7f000000){ CObjetAnime *o = objetsAnimes.Objet(objetsAnimes.ObjetDe(e - 0x7f000000)); return o ? &o->pos : nil; }
+	int g = e >> 24, h = e & 0xffffff;
+	if(g == 0) return (size_t)(h >> 8) < persistants.size() ? &persistants[(size_t)(h >> 8)].pos : nil;
+	if(g == 5){ CObjetAnime *o = objetsAnimes.Objet(h >> 8); return o ? &o->pos : nil; }
+	return nil;
+}
+// FUN_005eb910 : la matrice de l'entité ; avec une référence valable, sa position est le point du trajet (FUN_005ed470), sinon elle
+// garde la sienne. L'orientation (le cap et le tangage gardés, la rotation +0x1c … +0x28, les angles du segment avec l'octet +0xc)
+// n'est pas suivie : l'outil ne garde que la position des entités.
+static void
+PlacerSuiveur(const CSuiveurTrajet &s)
+{
+	CVector *pos = PositionSuivie(s.entite);
+	if(pos && s.aReference && s.reference.Valable()) *pos = s.reference.Position();
+}
+
+// PAnimFollowPath(entité[, genre], trajet, orienter[, rappel]) (0x5c3b30, hors de l'index, lu à l'assembleur de 0x5c3b30 à 0x5c3bfe) :
+// l'entité ; si elle existe, la PathReference du trajet (FUN_005ed390 sur DAT_00d13cb4 : le pool des trajets DAT_020c7c50, nulle pour
+// une poignée hors du pool ou libre ; GameMalloc(0x34), le constructeur FUN_005ed8d0 et sa remise FUN_005ed6f0), le booléen orienter
+// (FUN_005d8f20) et FUN_005ebfd0 sur le gestionnaire 0xd13730, qui place aussitôt l'entité au départ du trajet (FUN_005ebd60 →
+// FUN_005eb910, FUN_0046dd40). Un argument de plus est le rappel des nœuds atteints (FUN_005eb8d0, FUN_005d9e70).
+static int
+PAnimFollowPath(lua_State *L)
+{
+	Journal("PAnimFollowPath", L, 1);
+	bool deux = lua_isnumber(L, 3) != 0;
+	int32 e = EntiteSuivie(L, deux);
+	if(e == 0) return 0;
+	int k = deux ? 3 : 2;
+	int t = lua_isnumber(L, k) ? (int)lua_tonumber(L, k) : -1;
+	const CTriggerPath *tr = donnees.TrajetParHandle(t);
+	CReferenceTrajet r;
+	if(tr) for(const CTriggerPathPoint &n : tr->points) r.noeuds.push_back(n.pos);
+	r.trajet = t;
+	r.Remettre();
+	CSuiveurTrajet *s = suiveurs.Suivre(e, tr ? &r : nil, lua_toboolean(L, k + 1) != 0);
+	if(s == nil){ printf("%6.2f s  les 32 entités qui suivent un trajet sont prises : PAnimFollowPath sans effet\n", maintenant / 1000.0); return 0; }
+	// Le rappel (0x5c3bc5 à 0x5c3bf5) : un argument au-delà du booléen, l'entrée de l'entité (FUN_005ebb10), son emplacement +0x10
+	// (FUN_005eb8d0) et FUN_005d9e70, qui met la fonction au registre (luaL_ref), lâche l'ancien rappel s'il vivait (FUN_005d9a60) et le
+	// lie au script et au thread courants (FUN_005d8830). Sans lui, l'ancien rappel de l'entrée reste (FUN_005ebd60 ne touche pas +0x10).
+	if(lua_gettop(L) > k + 1){
+		if(s->rappel >= 0) luaL_unref(L, LUA_REGISTRYINDEX, s->rappel);
+		lua_pushvalue(L, k + 2);
+		s->rappel = luaL_ref(L, LUA_REGISTRYINDEX);
+	}
+	PlacerSuiveur(*s);
+	const CVector *pos = PositionSuivie(e);
+	printf("%6.2f s  l'entité %08x suit le trajet %d (%zu nœuds) : placée en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, (uint32)e, t,
+	       r.noeuds.size(), pos ? pos->x : 0.0f, pos ? pos->y : 0.0f, pos ? pos->z : 0.0f);
+	return 0;
+}
+
+// PAnimStopFollowPath(entité[, genre]) (0x5c3d50, lu dans l'index) : l'entité (deux arguments : FUN_0044a510, sinon FUN_006d79c0),
+// puis FUN_005ebf80 : FUN_005ebee0(1) sur son entrée (la référence détruite, son cap et son tangage rendus, l'entrée vidée).
+static int
+PAnimStopFollowPath(lua_State *L)
+{
+	Journal("PAnimStopFollowPath", L, 1);
+	int32 e = EntiteSuivie(L, lua_gettop(L) == 2);
+	if(e != 0 && suiveurs.Trouver(e)){ suiveurs.Arreter(e); printf("%6.2f s  l'entité %08x ne suit plus son trajet\n", maintenant / 1000.0, (uint32)e); }
+	return 0;
+}
+
+// PAnimSetPathFollowSpeed(entité[, genre], vitesse) (0x5c3c60, hors de l'index, lu à l'assembleur de 0x5c3c60 à 0x5c3cd4) : trois
+// arguments, FUN_0044a510(premier, deuxième) et la vitesse en troisième ; sinon FUN_006d79c0(premier) et la vitesse en deuxième
+// (FUN_005d82a0) ; avec une entité, FUN_005ebbf0 sur le gestionnaire : la vitesse de sa référence (FUN_005ed400, en m par seconde,
+// signée), si son trajet a au moins deux nœuds.
+static int
+PAnimSetPathFollowSpeed(lua_State *L)
+{
+	Journal("PAnimSetPathFollowSpeed", L, 1);
+	bool trois = lua_gettop(L) == 3;
+	int32 e = EntiteSuivie(L, trois);
+	if(e != 0) suiveurs.PoserVitesse(e, (float)luaL_optnumber(L, trois ? 3 : 2, 0));
+	return 0;
+}
+
+// PAnimGetPathFollowSpeed(entité[, genre]) (0x5c3ce0, lu à l'assembleur de 0x5c3ce0 à 0x5c3d4c) : deux arguments, FUN_0044a510 ;
+// sinon FUN_006d79c0, et rien de rendu sans entité ; FUN_005ebba0 : la vitesse (+0x14) de la référence de son entrée, 0 sans entrée
+// (le moteur lit la référence sans la vérifier ; l'outil rend 0 sans elle). Le nombre est rendu (FUN_005d8480).
+static int
+PAnimGetPathFollowSpeed(lua_State *L)
+{
+	appels["PAnimGetPathFollowSpeed"]++;
+	bool deux = lua_gettop(L) == 2;
+	int32 e = EntiteSuivie(L, deux);
+	if(e == 0 && !deux) return 0;
+	const CSuiveurTrajet *s = e != 0 ? suiveurs.Trouver(e) : nil;
+	lua_pushnumber(L, s && s->aReference ? s->reference.vitesse : 0.0f);
+	return 1;
+}
+
+// PAnimFollowPathReset(entité[, genre]) (0x5c3c00, lu à l'assembleur de 0x5c3c00 à 0x5c3c5e) : deux arguments, FUN_0044a510 ; sinon
+// FUN_006d79c0 ; FUN_005ebb50 : la référence de son entrée remise au départ (FUN_005ed6f0 : le segment 1, la distance et la vitesse à
+// 0), sans replacer l'entité tout de suite (la prochaine mise à jour le fait).
+static int
+PAnimFollowPathReset(lua_State *L)
+{
+	Journal("PAnimFollowPathReset", L, 1);
+	int32 e = EntiteSuivie(L, lua_gettop(L) == 2);
+	if(e != 0) suiveurs.Remettre(e);
+	return 0;
+}
+
+// FUN_005ec3a0 (appelée par FUN_0045f960, à chaque image) : les entités suivies avancent sur leur trajet et sont replacées. Un nœud
+// atteint appelle le rappel de l'entrée, s'il vit (FUN_005d7f80), dans le script qui l'a posé (FUN_005db800, FUN_005db790,
+// FUN_005dbc40 ; l'outil l'appelle dans l'état principal), avec trois nombres (FUN_005d8460, puis FUN_005d8140(3, 0)) : le déclencheur
+// de l'entité si elle est du genre 6 (+0x108 & 7 ; FUN_00773c60, son +0x23c, FUN_006d7870 sur son +0x2c ; supposé : le genre des objets
+// animés), -1 sinon ; la poignée du trajet (FUN_005ed430 → FUN_005ed270, par son nom haché) ; le nœud (FUN_005ed450 : le dernier si
+// la référence est finie, sinon le segment moins 1). Lu dans l'index (la fin de FUN_005ec0a0).
+static void
+AvancerSuiveurs(lua_State *L)
+{
+	suiveurs.Avancer(kPasTimer, [&](CSuiveurTrajet &s, bool atteint){
+		PlacerSuiveur(s);
+		if(!atteint) return;
+		int noeud = s.reference.fini ? (int)s.reference.noeuds.size() - 1 : s.reference.segment - 1;
+		if(journalRestant > 0){
+			journalRestant--;
+			printf("%6.2f s  l'entité %08x atteint le nœud %d de son trajet%s\n", maintenant / 1000.0, (uint32)s.entite, noeud,
+			       s.rappel >= 0 ? " : son rappel est appelé" : "");
+		}
+		if(s.rappel < 0 || L == nil) return;
+		int declencheur = -1;
+		if(s.entite >= 0x7f000000) declencheur = s.entite - 0x7f000000;
+		else if((s.entite >> 24) == 5){ const CObjetAnime *o = objetsAnimes.Objet((s.entite & 0xffffff) >> 8); if(o) declencheur = o->declencheur; }
+		lua_rawgeti(L, LUA_REGISTRYINDEX, s.rappel);
+		lua_pushnumber(L, declencheur); lua_pushnumber(L, s.reference.trajet); lua_pushnumber(L, noeud);
+		if(lua_pcall(L, 3, 0, 0) != 0){ printf("        rappel du trajet : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
+	});
+}
+
 // --- Les marqueurs du radar (src/hud/Marqueurs : les 300 traces de CRadar, DAT_00c674cc + 0x210) ---
 // FUN_005d9220 note chaque marqueur à l'objet script qui le pose (avec ses trois derniers arguments) : l'outil le retire avec la
 // mission, comme ses ramassages (supposé : le même retrait que FUN_005d9760).
@@ -3916,13 +4083,17 @@ ObjectNumProjectileImpacts(lua_State *L)
 	return 1;
 }
 
-// AreaClearAllProjectiles([genre]) (0x5b7100) : sans argument, les 32 projectiles détruits (FUN_004d4940 → FUN_004d3dc0) ; avec
-// un, FUN_004d48a0 (non lu) : l'outil les détruit tous aussi.
+// AreaClearAllProjectiles([modèle]) (0x5b7100, lu à l'assembleur de 0x5b7100 à 0x5b712f) : sans argument (lua_gettop nul), les 32
+// projectiles détruits (FUN_004d4940 → FUN_004d3dc0) ; avec un, FUN_004d48a0 (lu dans l'index) : ceux dont l'objet (DAT_00c3a6b8)
+// existe et a ce modèle (+0x10e : celui de la munition, la bille 304), détruits (FUN_004d3dc0(i, 0)).
 static int
 AreaClearAllProjectiles(lua_State *L)
 {
 	Journal("AreaClearAllProjectiles", L, 1);
-	projectiles.clear();
+	bool tous = lua_gettop(L) <= 0;
+	int32 m = tous ? -1 : (int32)luaL_optnumber(L, 1, 0);
+	for(int i = 0; i < CPlacesProjectiles::kTaille; i++)
+		if(tous || (projectiles[i].actif && projectiles[i].modele == m)){ projectiles[i].actif = false; placesProjectiles.Liberer(i); }
 	return 0;
 }
 
@@ -5900,8 +6071,19 @@ PoserInfoArme(CScriptPed &p, const CActionController::InfoArme &d)
 // Les réglages du prochain tir (src/peds/Armes.h : WeaponFireOffset, WeaponFireStartOffset, WeaponFireRotation), des globales du
 // moteur que FUN_0065d160 remet à zéro après chaque tir.
 static CReglagesTir reglagesTir;
+// La position de chaque piéton au début de sa dernière image (AvancerPietons) : son déplacement depuis, divisé par le pas du moteur
+// (ms_fTimeStep, 1,65 pour 33 ms), tient lieu de sa vitesse en m par pas.
+static std::map<int, CVector> positionsImage;
+static CVector
+VitessePieton(int h)
+{
+	const CScriptPed *q = pietons.Acceder(h);
+	auto it = positionsImage.find(h);
+	if(q == nil || it == positionsImage.end()) return CVector(0.0f, 0.0f, 0.0f);
+	return CVector((q->pos.x - it->second.x) / kPasTimer, (q->pos.y - it->second.y) / kPasTimer, (q->pos.z - it->second.z) / kPasTimer);
+}
 static void
-Tirer(int ped, float charge, float degatsPiste = -1.0f)
+Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.0f)
 {
 	CScriptPed *p = pietons.Acceder(ped);
 	if(p == nil) return;
@@ -5917,7 +6099,20 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f)
 	if(o && !o->detruit) cible = o->pos;
 	// Une cible piéton : le point visé de FUN_00662580 → FUN_00662380, décalé par WeaponFireOffset ; l'outil prend 1 m au-dessus
 	// de ses pieds et, pour sa hauteur (les sphères de FUN_00474750), 1,8 m (supposé, comme TargetRelativeHeight).
-	else if(c && c != p) cible = reglagesTir.Viser(CVector(c->pos.x, c->pos.y, c->pos.z + 1.0f), 1.8f, avant);
+	else if(c && c != p){
+		cible = reglagesTir.Viser(CVector(c->pos.x, c->pos.y, c->pos.z + 1.0f), 1.8f, avant);
+		// FUN_00662760 → FUN_0065ecb0 : l'avance sur la cible qui bouge, avec la vitesse de la fiche sans borne (+0x60 + charge ×
+		// (+0x64 − +0x60)) et le facteur +0x28 de la piste. La vitesse d'un piéton à pied est son +0x1714 / ms_fTimeStep : l'outil
+		// prend son déplacement de la dernière image (VitessePieton ; supposé : le +0x1714 n'est pas lu). Les décalages +0x18 …
+		// +0x24 de la piste (FUN_00662760, nuls pour le lance-pierre) ne sont pas suivis.
+		float vt = tp.vitesseMin + charge * (tp.vitesseMax - tp.vitesseMin);
+		CVector avance = CViseeTir::AvanceSurCible(depart, cible, VitessePieton(p->verrou), vt, facteurAvance, tp.dureeRefaite, tp.diviseur,
+		                                           tp.facteurAvance);
+		if(avance.x != cible.x || avance.y != cible.y || avance.z != cible.z)
+			printf("%6.2f s  le piéton %d vise devant %d : (%.2f, %.2f, %.2f) au lieu de (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, ped, p->verrou,
+			       avance.x, avance.y, avance.z, cible.x, cible.y, cible.z);
+		cible = avance;
+	}
 	else{
 		float portee = p->armePortee + charge * (p->armeInit - p->armePortee);
 		if(portee < 0.01f) portee = 0.01f;
@@ -5934,8 +6129,14 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f)
 	q.actif = true; q.modele = munition; q.tireur = ped; q.pos = depart; q.gravite = g;
 	q.vitesse = CVector(dx / T, dy / T, (dz - 0.5f * g * T * T) / T);
 	q.degats = CChargeArme::Degats(true, tp.degatsMin, tp.degatsMax, charge, degatsPiste, pietons.StatLue(ped, 0x1f, 100));
-	q.naissance = maintenant; q.vie = tp.vie > 0 ? (uint32)tp.vie : 5000;
-	projectiles.push_back(q);
+	// La vie (FUN_004d4c40 : son quatorzième argument, ou s'il est nul la vie +0x48 de la fiche, moins le treizième ; 1 si cela fait 0 ;
+	// gardée en +0xc de l'entrée ; ce que FUN_00664710 y passe, dont une mèche tirée du +0x1cc0 du tireur, n'est pas démêlé) : l'outil
+	// prend la vie de la fiche ; 0, un projectile sans fin (FUN_004d45e0).
+	q.naissance = maintenant; q.vie = tp.vie > 0 ? (uint32)tp.vie : 0;
+	int evincee = -1, place = placesProjectiles.Prendre(maintenant, &evincee);   // FUN_004d4c40 → FUN_004d4590
+	if(evincee >= 0) printf("%6.2f s  la table des projectiles est pleine : le plus vieux (place %d) cède sa place\n", maintenant / 1000.0, evincee);
+	if(place < 0){ reglagesTir.Remettre(); return; }   // FUN_004d4c40 rend 0 : pas de projectile
+	projectiles[place] = q;
 	printf("%6.2f s  le piéton %d tire : projectile %d (%s) de (%.2f, %.2f, %.2f) vers (%.2f, %.2f, %.2f), %.2f m par pas, %.0f points\n",
 	       maintenant / 1000.0, ped, munition, NomDArme(munition) ? NomDArme(munition)->c_str() : "?", depart.x, depart.y, depart.z,
 	       cible.x, cible.y, cible.z, vitesse, q.degats);
@@ -5974,7 +6175,7 @@ AppliquerTirs(int ped, CActionController &c)
 	for(const CActionController::Tir &d : c.tirsLances){
 		if(p == nil || p->armeTenue == -1){ reglagesTir.Remettre(); continue; }   // FUN_00661f10 sans arme en main : FUN_0065d160
 		float charge = CChargeArme::AuTir(p->armeCharge, d.facteur);   // FUN_00661f10
-		Tirer(ped, charge, d.degats);
+		Tirer(ped, charge, d.degats, d.avance);
 		p->armeCharge = CChargeArme::kVide;   // FUN_00664710, après le tir
 		if(p->drapeaux[24] == 0) inventaire.Retirer(armes, ped, p->armeMunition, 1, p->type == SCRIPT_PED_TYPE_JOUEUR, modeles.Index("RBandBall"));
 		if(d.lacher && p->armeTenue == p->armeMunition && inventaire.Munitions(armes, ped, p->armeMunition) == 0) LacherArme(ped);
@@ -6065,9 +6266,15 @@ FrapperObjet(size_t i, int auteur, float degats)
 static void
 AvancerProjectiles(float pas)
 {
-	for(CProjectileOutil &q : projectiles){
+	for(int place = 0; place < CPlacesProjectiles::kTaille; place++){
+		CProjectileOutil &q = projectiles[place];
 		if(!q.actif) continue;
-		if(maintenant - q.naissance > q.vie){ q.actif = false; continue; }
+		// FUN_004d45e0 (à chaque image, lu dans l'index) : un tireur piéton qui n'est plus valable (FUN_0047b650) est oublié (le +4 de
+		// l'entrée, FUN_00465690) ; le projectile vit tant que l'octet +0x12 est nul (non suivi) et que maintenant ne dépasse pas sa
+		// création plus sa vie (+8 et +0xc, non signés), ou que sa vie est nulle ; sinon FUN_004d3dc0(i, 1). Le test d'eau
+		// (FUN_006d48d0) et le fondu de la fin de vie (+0x88 de la fiche) ne sont pas suivis.
+		if(q.tireur >= 0 && pietons.Acceder(q.tireur) == nil) q.tireur = -1;
+		if(q.vie != 0 && maintenant > q.naissance + q.vie){ q.actif = false; placesProjectiles.Liberer(place); continue; }
 		CVector avant = q.pos;
 		q.pos.x += q.vitesse.x * pas; q.pos.y += q.vitesse.y * pas; q.pos.z += q.vitesse.z * pas;
 		q.vitesse.z += q.gravite * pas;
@@ -6087,18 +6294,15 @@ AvancerProjectiles(float pas)
 			if(!objets[i].detruit && SegmentDansSphere(avant, q.pos, objets[i].pos, 0.5f, &u) && u < mieux){ mieux = u; objet = (int)i; touche = -1; }
 		}
 		if(objet >= 0){
-			q.actif = false;
+			q.actif = false; placesProjectiles.Liberer(place);
 			CVector a(avant.x + (q.pos.x - avant.x) * mieux, avant.y + (q.pos.y - avant.y) * mieux, avant.z + (q.pos.z - avant.z) * mieux);
 			PoserMarque(TypeProjectile(q.modele).marque, a);   // la marque de l'impact (FUN_00560f10 la comptera)
 			FrapperObjet((size_t)objet, q.tireur, q.degats);
 		}else if(touche >= 0){
-			q.actif = false;
+			q.actif = false; placesProjectiles.Liberer(place);
 			RecevoirProjectile(touche, q.tireur, q.degats, q.modele);
 		}
 	}
-	size_t n = 0;
-	for(const CProjectileOutil &q : projectiles) if(q.actif) projectiles[n++] = q;
-	projectiles.resize(n);
 }
 
 // L'arbre du piéton (+0x4b0 du composant +0x2e0) que PropDetach, PedClearAllWeapons et PedDestroyWeapon rendent au contexte
@@ -6373,6 +6577,7 @@ static int TirerVue(void *);
 static void
 AvancerPietons(void)
 {
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++) if(const CScriptPed *q = pietons.Acceder(i)) positionsImage[i] = q->pos;
 	pietons.Avancer(0.033f);
 	if(etatLua) AvancerSuivis(etatLua);   // les pistes FollowPath
 	// CPed (FUN_004812d0), pour chaque piéton : les proches (FUN_0047d1d0, refaits au tirage de l'image FUN_00465910(16)), puis
@@ -7612,6 +7817,11 @@ main(int argc, char **argv)
 	lua_register(L, "PAnimRequest", PAnimRequest);
 	lua_register(L, "PAnimCreate", PAnimCreate);
 	lua_register(L, "PAnimDelete", PAnimDelete);
+	lua_register(L, "PAnimFollowPath", PAnimFollowPath);
+	lua_register(L, "PAnimStopFollowPath", PAnimStopFollowPath);
+	lua_register(L, "PAnimSetPathFollowSpeed", PAnimSetPathFollowSpeed);
+	lua_register(L, "PAnimGetPathFollowSpeed", PAnimGetPathFollowSpeed);
+	lua_register(L, "PAnimFollowPathReset", PAnimFollowPathReset);
 	lua_register(L, "AddBlipForChar", AddBlipForChar);
 	lua_register(L, "BlipAddPoint", BlipAddPoint);
 	lua_register(L, "BlipRemove", BlipRemove);
@@ -8113,6 +8323,7 @@ main(int argc, char **argv)
 		MettreAJour(L);
 		AvancerPietons();
 		AvancerObjets();
+		AvancerSuiveurs(L);
 		PoserLesCollectibles();
 		AvancerRamassages();
 		ecranDeFin.Avancer(33.0f / 20.0f);   // FUN_007073c0 : le pas du moteur (ms_fTimeStep)

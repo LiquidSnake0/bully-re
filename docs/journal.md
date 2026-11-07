@@ -1261,3 +1261,29 @@ en échec plutôt que de les masquer.
   `1_06_01` à 61,81 s et `1_07` à 151,47 s à chaque commit.
 - **Bilan** : 1 157 fonctions recréées (7,3 % du code), contre 1 121 (7,1 %) au départ de la branche ; 2 107 comprises (11,9 %) ;
   quatre commits ce soir (trois de moteur et la documentation), dix sur la branche.
+
+## 07.11.2026, séance 2 (de 22 h 16 à 23 h 35)
+
+- **`IsPlayerFatigued`** (`FUN_005fc3a0`, lu à l'assembleur : l'état physique du joueur, `DAT_00c1af4c`, vaut 1) : jugée -1 depuis les
+  contrôleurs du lance-pierre (257 fois dans `1_03`, 2 153 dans `1_07`), elle rend faux.
+- **L'avance sur une cible qui bouge** (`CViseeTir::AvanceSurCible`, `FUN_0065ecb0` lu à l'assembleur : la durée du vol à plat, la
+  vitesse de la cible et sa part le long du tir, × +0x84 de la fiche) : les cibles des sept missions sont immobiles au tir, rien ne
+  change.
+- **La table des projectiles** (`CPlacesProjectiles`, `src/objects/Projectiles.h` : 32 places, `FUN_004d4590`, la plus vieille cédée
+  par `FUN_004d3f60`), puis **leur vie** (`FUN_004d45e0` : une vie nulle est sans fin, le tireur disparu oublié) et
+  `AreaClearAllProjectiles` par modèle (`FUN_004d48a0`).
+- **Les entités qui suivent un trajet** (`src/entities/SuiviTrajet.h`) : le PathReference (`CReferenceTrajet` : `FUN_005ed750`,
+  `FUN_005ed620`, `FUN_005ed6f0`, `FUN_005ed400`, `FUN_005ed470`), le gestionnaire 0xd13730 (`CSuiveursTrajet` : `FUN_005eb880`,
+  `FUN_005ebfd0`, `FUN_005ebd60`, `FUN_005ebee0`, `FUN_005ec3a0`), et dans l'outil `PAnimFollowPath`, `PAnimStopFollowPath`,
+  `PAnimSetPathFollowSpeed`, `PAnimGetPathFollowSpeed`, `PAnimFollowPathReset` (lues à l'assembleur, hors de l'index pour trois
+  d'entre elles) et le rappel des nœuds atteints.
+- **La grille du magasin** : dans `1_01` (7,36 s), `1_02` (1,95 s) et `1_05` (67,35 s), la grille fermée du magasin
+  (`SCStoreGte_Closed`) est posée au départ de son trajet, en (-611,65, -314,69, 1,93), à 0,79 m de sa création ; sa vitesse de -1,2
+  ne la fait pas bouger (une distance nulle ne recule pas).
+- **La machine** : une vérification par commit, sous le verrou, dans le worktree `build/wt` ; les commits suivants préparés en
+  patchs pendant ce temps (une vérification lancée par erreur avec `&` au lieu de l'arrière-plan de l'outil, attendue jusqu'au
+  bout).
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 148,04 s), `1_04` à 82,53 s, `1_05` à 185,20 s,
+  `1_06_01` à 61,81 s et `1_07` à 151,47 s à chaque commit.
+- **Bilan** : 1 194 fonctions recréées (7,6 % du code), contre 1 157 (7,3 %) ; 2 133 comprises (12,1 %) ; dix commits (neuf de
+  moteur et la documentation).

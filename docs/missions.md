@@ -305,6 +305,11 @@ et ce que `util.lua` pose ; tout autre nom vaut nil. `src/core/LuaApi` lit
 (`tests/test_luaapi`). Sur cette partie, trois globales de script sont lues avant
 d'être posées, et valent nil comme il faut : `gMissionSuccess`, `misObj`, `F_StoreSweep`.
 
+**La grille du magasin** (07.11, séance 2) : `main` crée la grille fermée du magasin de l'école (`CreatePersistentEntity
+("SCStoreGte_Closed", -611.652, -313.9, 2.00164)`, le CObject persistant 32) et la fait suivre son trajet (`PAnimFollowPath(8194,
+0, 66, false)`, puis `PAnimSetPathFollowSpeed(8194, 0, -1.2)`), comme `1_02` (le CObject 3, le trajet 28) et `1_05` (le trajet 67).
+La grille fermée du magasin (`SCStoreGte_Closed`) est posée au départ de son trajet dans `1_01`, `1_02` et `1_05`, et sa vitesse de -1,2 ne la fait pas bouger.
+
 ## `1_02` après `1_02_FightMsg` (23.10.2026)
 
 Lu dans `1_02.lur` (`tools/lur.py`) : quand la leçon des coups au sol réussit, `F_MonitorTraining1` (stade 7) affiche

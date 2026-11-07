@@ -3,7 +3,9 @@
 // (FUN_00729b70, FUN_00520460). Aucun fichier du jeu.
 //   build/tests/test_objetsanimes
 #include "../src/objects/ObjetsAnimes.h"
+#include "../src/entities/SuiviTrajet.h"
 #include "../src/core/ActionTree.h"
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -97,6 +99,65 @@ main(void)
 	VERIF(s2.RetirerHorsZone(2, ds2).empty() && s2.Objet(a) && s2.Objet(b));   // la mission et la case 0 restent
 	s2.Liberer(b);
 	VERIF(s2.Objet(b) == nil);
+	// Le PathReference (src/entities/SuiviTrajet.h : FUN_005ed6f0, FUN_005ed620, FUN_005ed400, FUN_005ed750, FUN_005ed470).
+	{
+		CReferenceTrajet r;
+		r.Remettre();
+		VERIF(r.segment == 0 && r.longueur == 0.0f && !r.PoserVitesse(1.0f) && !r.Avancer(1.0f));   // sans trajet valable
+		r.noeuds = { CVector(0, 0, 0), CVector(4, 0, 0), CVector(4, 3, 0) };
+		r.Remettre();
+		VERIF(r.segment == 1 && r.longueur == 4.0f && r.direction.x == 1.0f && r.distance == 0.0f && !r.fini);
+		VERIF(r.Avancer(1.0f) == false && r.distance == 0.0f);    // vitesse nulle : rien
+		VERIF(r.PoserVitesse(2.0f) && !r.Avancer(1.0f) && r.distance == 2.0f);
+		CVector p = r.Position();
+		VERIF(p.x == 2.0f && p.y == 0.0f);
+		VERIF(r.Avancer(1.5f) && r.segment == 2 && r.distance == 1.0f && r.longueur == 3.0f && r.direction.y == 1.0f);   // 5 − 4
+		p = r.Position();
+		VERIF(p.x == 4.0f && p.y == 1.0f);
+		VERIF(r.Avancer(2.0f) && r.fini && r.vitesse == 0.0f && r.distance == 3.0f && r.segment == 2);   // au bout : fini
+		VERIF(!r.Avancer(1.0f));                                  // fini et arrêté : rien
+		VERIF(r.PoserVitesse(-1.2f) && !r.Avancer(1.0f) && fabsf(r.distance - 1.8f) < 1e-5f);
+		VERIF(r.Avancer(2.0f) && r.segment == 1 && !r.fini && fabsf(r.distance - 3.4f) < 1e-5f);   // 4 + (1,8 − 2,4) : le segment d'avant
+		VERIF(r.Avancer(10.0f) && r.fini && r.vitesse == 0.0f && r.distance == 0.0f && r.segment == 1);   // au départ
+		r.distance = 5.0f; r.vitesse = 1.0f; r.fini = false;      // au-delà de la longueur : plus rien (lu tel quel)
+		VERIF(!r.Avancer(1.0f) && r.distance == 5.0f);
+		VERIF(r.Noeud(-1).y == 3.0f && r.Noeud(7).y == 3.0f);    // FUN_005ec760 : le dernier nœud
+	}
+	// Le gestionnaire 0xd13730 (FUN_005eb880, FUN_005ebfd0, FUN_005ebf80, FUN_005ebbf0, FUN_005ebb50, FUN_005ec3a0).
+	{
+		CSuiveursTrajet g;
+		CReferenceTrajet r;
+		r.noeuds = { CVector(0, 0, 0), CVector(0, 10, 0) };
+		r.Remettre();
+		CSuiveurTrajet *s = g.Suivre(0x2002, &r, false);
+		VERIF(s && g.nombre == 1 && s->entite == 0x2002 && s->aReference && !s->orienter);
+		VERIF(g.Suivre(0x2002, &r, true) == s && g.nombre == 1 && s->orienter);   // la même entrée reprise
+		g.PoserVitesse(0x2002, -1.2f);
+		VERIF(s->reference.vitesse == -1.2f);
+		g.PoserVitesse(0x2002, 2.0f);
+		int bouges = 0, atteints = 0;
+		auto apres = [&](CSuiveurTrajet &e, bool a){ bouges++; if(a) atteints++; };
+		g.Avancer(1.65f, apres);                                  // 2 m/s × 0,033 s
+		VERIF(bouges == 1 && atteints == 0 && s->reference.distance > 0.0659f && s->reference.distance < 0.0661f);
+		g.Remettre(0x2002);
+		VERIF(s->reference.distance == 0.0f && s->reference.vitesse == 0.0f);
+		g.PoserVitesse(0x2002, 100.0f);
+		g.Avancer(1.65f, apres);                                  // 3,3 m : pas encore au bout
+		g.Avancer(5.0f, apres);                                   // 10 m de plus : le dernier nœud, atteint
+		VERIF(atteints == 1 && s->reference.fini);
+		VERIF(g.Suivre(0x3002, nil, false) && g.nombre == 2);
+		s->rappel = 7;
+		g.Arreter(0x2002);
+		VERIF(g.nombre == 2 && g.entrees[0].entite == 0 && !g.entrees[0].aReference);
+		VERIF(g.entrees[0].rappel == 7 && g.entrees[0].orienter);   // FUN_005ebee0 ne touche ni +0x10 ni +0xc
+		VERIF(g.Suivre(0x4002, &r, false) == &g.entrees[0]);      // la place libre d'abord
+		g.Arreter(0x4002); g.Arreter(0x3002);
+		bouges = 0;
+		g.Avancer(1.65f, apres);                                  // plus personne : tout est vidé
+		VERIF(bouges == 0 && g.nombre == 0);
+		for(int i = 0; i < 32; i++) VERIF(g.Suivre(0x100 * (i + 1) + 2, nil, false));
+		VERIF(g.nombre == 32 && g.Suivre(0x7f02, nil, false) == nil);   // les 32 servent
+	}
 	printf("test_objetsanimes : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;
 }
