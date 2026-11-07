@@ -99,25 +99,24 @@ chantier. Un point fini passe en bas, avec son commit.
    tient un bouton (`--tenir`, la feuille `Charge` jouée pour de vrai dans `1_04`), les réglages et les dégâts du tir, l'objet arme,
    `AttackTimerReset`, `HasRangedWeapon`, `DetectProjectile` et `DetectGrenade` sur les projectiles de l'outil, et le haut du corps du
    joueur en contrôleurs à part (le bouton 8 tenu seul fait partir la première bille de `1_04`) ; les sept missions restent réussies.
+   Le 07.11 (séance 2) : `IsPlayerFatigued`, l'avance sur une cible qui bouge (`FUN_0065ecb0`), la table des projectiles (32 places,
+   leur vie, `AreaClearAllProjectiles` par modèle) et **les entités qui suivent un trajet** : le PathReference, le gestionnaire
+   0xd13730, `PAnimFollowPath`, `PAnimStopFollowPath`, `PAnimSetPathFollowSpeed`, `PAnimGetPathFollowSpeed`, `PAnimFollowPathReset` et
+   le rappel des nœuds atteints ; la grille fermée du magasin (`SCStoreGte_Closed`) est posée au départ de son trajet dans `1_01`, `1_02` et `1_05`, et sa vitesse de -1,2 ne la fait pas bouger ; les sept missions restent réussies.
    Suite, dans l'ordre :
    - la suite des armes : la visée du joueur (`WeaponPlayerFireAutoTarget` pose l'octet +0x1ec0 du joueur, que `FUN_00662a40` lit
-     avec la manette, le bouton 10 de `FUN_007386f0` ; `FUN_00662a40` en entier ; la cible qui bouge, `FUN_0065ecb0`, lu à
-     l'assembleur : la durée du vol à plat, la vitesse de la cible (+0x1714 / ms_fTimeStep pour un piéton à pied, celle de son
-     véhicule +0x1554, ou +0x124 pour le genre 2) et la part de cette vitesse le long du tir, × +0x84 de la fiche ; les décalages
-     +0x18 … +0x24 de `WeaponFire`, `FUN_00662760`), le haut du corps qui s'arrête après `AimOut` (le spawn `./UpperBody` de
+     avec la manette, le bouton 10 de `FUN_007386f0` ; `FUN_00662a40` en entier ; le +0x1714 du piéton que l'avance sur la cible
+     prend pour sa vitesse, que l'outil remplace par le déplacement de la dernière image ; les décalages +0x18 … +0x24 de `WeaponFire`,
+     `FUN_00662760`), le haut du corps qui s'arrête après `AimOut` (le spawn `./UpperBody` de
      `Controller` a l'octet +0x29 à 0 : que le bouton suivant le relance, pour ne plus passer par `--jouer` ni `--tirer`), la
-     physique des `CProjectile` (les 32 places de la table 0xc3a068, `FUN_004d4c40`, le sol, les rebonds ; le choc, `FUN_004d3860`),
+     physique des `CProjectile` (`FUN_004d4c40`, le sol, les rebonds ; le choc, `FUN_004d3860` ; la mèche que `FUN_00664710` passe
+     à la vie ; le test d'eau `FUN_006d48d0`),
      le départ du tir (la douille « Muzzle », `FUN_0065e880`), le genre d'un coup de projectile (+0x468), le contrôleur de
-     `Locomotion` du lance-pierre qui va et vient entre `Idle` et son enfant #5ab79a15 à chaque image (`1_03`, après 138,04 s),
-     `IsPlayerFatigued` (#0f957574, jugée -1 2 153 fois dans `1_07`) ;
-   - les entités qui suivent un trajet : `PAnimFollowPath` (0x5c3b30), `PAnimSetPathFollowSpeed` (0x5c3c60), `PAnimStopFollowPath`
-     (0x5c3d50), le gestionnaire 0xd13730 (32 entrées de 0x2c octets, le nombre en +0x580 : `FUN_005eb880`, `FUN_005ebfd0`,
-     `FUN_005ebd60` et son objet PathReference, `FUN_005eb910`, `FUN_005ebbf0` → `FUN_005ed400` pour la vitesse, `FUN_005ebb50` →
-     `FUN_005ed6f0` pour l'arrêt, `FUN_005ebb10` et `FUN_005eb8d0` pour le rappel, la mise à jour `FUN_005ec0a0` à lire) : la grille du
-     magasin de l'école (`SCStoreGte_Closed`, une entité persistante) qui roule dans `1_01` et `1_02` à la vitesse -1,2 ; l'avancée de
-     l'objet PathReference est lue (`FUN_005ed750` : +0x10 le segment, +0x14 la vitesse signée, +0x18 la distance sur le segment, +0x30 sa
-     longueur, +0xc fini, `FUN_005ed620` au changement de segment, le drapeau du nœud atteint) ; la mise à jour `FUN_005ec0a0` l'appelle
-     avec le pas × _DAT_00aeb94c, fait tourner l'entité (+0x1c … +0x28 de l'entrée) et appelle le rappel du nœud atteint (trois poignées) ;
+     `Locomotion` du lance-pierre qui va et vient entre `Idle` et son enfant #5ab79a15 à chaque image (`1_03`, après 138,04 s) ;
+   - ce qui reste des entités qui suivent un trajet : leur orientation (`FUN_005eb910` : le cap et le tangage gardés, la rotation
+     +0x1c … +0x28 que `FUN_005ec0a0` fait tourner, les angles du segment avec l'octet +0xc, `FUN_005ed570` et `FUN_00433340` ;
+     l'outil ne garde que la position de ses CObject), `PAnimFollowPathSoundLoop` (0x5c3e70, la boucle de son +4), l'octet +0xd
+     qui arrête l'entité quand sa rotation atteint sa cible, le genre 6 du rappel ;
    - brancher `AreaClearAllPeds` (0x5b7e70, recréée : `CScriptPedPool::AmbiantsAVider`) : elle détruit les trois joueurs de foot que
      `F_FootballFieldThread` rend à la population, et les piétons créés ensuite prennent leurs cases : dans `1_04`, `1_05` et `1_06_01`,
      les poignées des commandes de docs/missions.md changent (branchée, `1_04` n'allait plus au bout et `1_05` échouait à 57,88 s) ;
@@ -189,6 +188,16 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- Les entités qui suivent un trajet, la visée et la table des projectiles (07.11, séance 2 ; d841781, a9e14ca, d9cc993, c07c7e0, 9944415, d06b095, 2f4706b, 74a7b18, 99dbfab) :
+  `IsPlayerFatigued` (`FUN_005fc3a0`), l'avance sur une cible qui bouge (`CViseeTir::AvanceSurCible`, `FUN_0065ecb0`), la table des
+  projectiles (`CPlacesProjectiles`, `src/objects/Projectiles.h` : `FUN_004d4590`, `FUN_004d3f60`, `FUN_004d3dc0`) et leur vie
+  (`FUN_004d45e0`, `FUN_004d48a0`), le PathReference (`CReferenceTrajet`, `src/entities/SuiviTrajet.h` : `FUN_005ed750`,
+  `FUN_005ed620`, `FUN_005ed6f0`, `FUN_005ed400`, `FUN_005ed470`, `FUN_005ec510`, `FUN_005ec760`), le gestionnaire 0xd13730
+  (`CSuiveursTrajet` : `FUN_005eb880`, `FUN_005ebfd0`, `FUN_005ebd60`, `FUN_005ebee0`, `FUN_005ebf80`, `FUN_005ebbf0`, `FUN_005ebb50`,
+  `FUN_005ebba0`, `FUN_005ec3a0`, `FUN_005ec0a0`), `PAnimFollowPath` (0x5c3b30), `PAnimStopFollowPath` (0x5c3d50),
+  `PAnimSetPathFollowSpeed` (0x5c3c60), `PAnimGetPathFollowSpeed` (0x5c3ce0), `PAnimFollowPathReset` (0x5c3c00), le rappel des nœuds
+  atteints (`FUN_005d9e70`).
 
 - La suite des armes, deuxième partie (06.11, séance 7, et 07.11, séance 1 ; ca12e67, fa5abcb, 228e02d, 83e971c, 4542548, f6d6093,
   c408a7f, d24e491, 939d868) : le pas du contrôleur d'actions (`CScriptPedPool::PasDuControleur`, `FUN_004812d0`), la manette qui tient
