@@ -6171,7 +6171,13 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	float ac = p->cap * 3.14159265f / 180.0f;
 	CVector avant(cosf(ac), sinf(ac), 0.0f), droite(sinf(ac), -cosf(ac), 0.0f), haut(0.0f, 0.0f, 1.0f);
 	CVector depart = reglagesTir.Partir(CVector(p->pos.x, p->pos.y, p->pos.z + 1.0f), droite, avant, haut), cible;
-	const CScriptPed *c = pietons.Acceder(p->verrou);
+	// FUN_00662a40 : pour le joueur (le type 0xd), une cible n'est prise que si la visée automatique (+0x1ec0) est posée, que le bouton
+	// 10 de la manette est tenu (FUN_007386f0(10, 0), FUN_0050c730 : l'outil le tient pour tenu quand --viser a verrouillé une cible ;
+	// supposé), que FUN_00856820 rend 2, ou dans deux modes de DAT_00c3ccf8 (2 et 0xd, non suivis) ; sinon le tir part devant lui. La
+	// cible est alors celle du +0x54c (prise une fois, puis vidée : FUN_00465690), sinon celle du composant de visée (FUN_004d5980, puis
+	// FUN_004d7630) ; l'outil n'a que le verrou de --viser, et la visée automatique ne change donc rien à ses tirs.
+	bool prendCible = p->type != SCRIPT_PED_TYPE_JOUEUR || p->viseeAuto != 0 || p->verrou >= 0;
+	const CScriptPed *c = prendCible ? pietons.Acceder(p->verrou) : nil;
 	const CObjetOutil *o = ped == SCRIPT_PED_JOUEUR ? ObjetParPoignee(objetVise) : nil;
 	if(o && !o->detruit) cible = o->pos;
 	// Une cible piéton : le point visé de FUN_00662580 → FUN_00662380, décalé par WeaponFireOffset ; l'outil prend 1 m au-dessus
@@ -6466,6 +6472,13 @@ static void
 AppliquerArmes(int ped, CActionController &c)
 {
 	CScriptPed *p = pietons.Acceder(ped);
+	// WeaponPlayerFireAutoTarget (FUN_00661ee0) : l'octet +0x1ec0 du joueur (le type 0xd du +0x1310).
+	for(const CActionController::ViseeAuto &d : c.viseesAutoLancees)
+		if(p && p->type == SCRIPT_PED_TYPE_JOUEUR && p->viseeAuto != d.valeur){
+			p->viseeAuto = d.valeur;
+			printf("%6.2f s  visée automatique du joueur : %d\n", maintenant / 1000.0, d.valeur);
+		}
+	c.viseesAutoLancees.clear();
 	if(p == nil){ c.pistesArmeLancees.clear(); return; }
 	for(const CActionController::PisteArme &d : c.pistesArmeLancees){
 		if(d.genre == CActionController::ARME_VOULUE_POSER){   // FUN_00660770

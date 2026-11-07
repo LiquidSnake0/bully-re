@@ -233,6 +233,12 @@ public:
 	//   jour (FUN_00609b30) rend vrai ; rien à suivre.
 	// `drapeauxObjetPoses` et `actionsObjetPosees` : celles lancées à cette image, que l'appelant applique à l'objet du contexte.
 	struct DrapeauObjet { float entree; int32 numero; bool valeur, fait; };
+	// - WeaponPlayerFireAutoTarget (WeaponPlayerFireAutoTargetTrack, table 0x936494 ; lancement FUN_00661ee0, lu dans l'index) : le
+	//   contexte gardé en +0x1c ; si le piéton du contexte (+8) est le joueur (son type +0x1310 vaut 0xd), son octet +0x1ec0 (la visée
+	//   automatique, que FUN_00662a40 lit) reçoit l'octet +0x18 (24) de la piste ; rend vrai. Sa mise à jour (FUN_00609b30) rend
+	//   toujours vrai : elle vit avec le nœud. Une entrée négative (-1) se lance à l'arrêt du nœud (FUN_005f3fb0). `viseesAutoLancees`.
+	struct ViseeAuto { float entree; uint8 valeur; bool fait; };
+	std::vector<ViseeAuto> viseesAuto, viseesAutoLancees;
 	std::vector<DrapeauObjet> drapeauxObjet, drapeauxObjetPoses;
 	struct ActionObjet { float entree; const CActionNode *noeud; bool fait; };
 	// ActionRegisterButtonHistory (0x9358c0 ; lancement FUN_0061bab0, lu dans l'index) : le bouton (+0x20, 32) et l'état (+0x24, 36 :
