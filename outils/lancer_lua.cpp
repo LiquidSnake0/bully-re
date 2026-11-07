@@ -1315,6 +1315,35 @@ struct CJugeOutil : CJugeAction {
 			const CTypeArme &t = armes.Type(a);
 			return mots[0] == 0 ? t.tir68 : mots[0] == 1 ? t.tir68 && t.tir69 : mots[0] == 2 ? t.tir69 : 0;
 		}
+		// EngageDistance (ConditionEngageDistance, table 0x936abc, son emplacement 1 vaut 0x602070 ; FUN_00602070, lu dans l'index) :
+		// le piéton du contexte (+8) ; faux dans la zone de combat 4 (+0x66c). La distance d'engagement : sans l'octet +5 de la condition,
+		// selon la zone 0, 1 ou 2, AIButes +0x2c, +0x30 ou +0x34 plus 1 (le double 0x8ff1d8) sans l'octet +4, ou avec lui la moitié de
+		// +0x2c + +0x28, la moitié de +0x30 + +0x2c, ou +0x34, sans plus ; une autre zone (-1, 3), faux ; avec l'octet +5, +0x34 plus 1.
+		// Une arme tenue à distance (FUN_00474aa0, l'octet +0x68 de son type par FUN_004d9560) la remplace par le +0x42c du piéton
+		// (PedSetMinEngage) s'il n'est pas nul, sinon par le +0x120 de son objet arme. Vrai si la cible (PedGetTargetPed ; l'outil :
+		// CibleDe) est strictement plus près (la distance en 3D, FUN_00414a20 et la racine). Aucun arbre des sept missions ne la cite.
+		static const uint32 kEngagement = ActionHash("EngageDistance");
+		if(type == kEngagement){
+			if(moi == nil || moi->zoneCombat == 4) return 0;
+			bool o4 = (mots[0] & 0xff) != 0, o5 = ((mots[0] >> 8) & 0xff) != 0;
+			float d;
+			int z = moi->zoneCombat;
+			if(o5) d = ButeIA(0x34, 0.0f) + (float)1.0;
+			else if(!o4){
+				if(z < 0 || z > 2) return 0;
+				d = ButeIA((uint16)(0x2c + 4 * z), 0.0f) + (float)1.0;
+			}else{
+				if(z == 0) d = (ButeIA(0x2c, 0.0f) + ButeIA(0x28, 0.0f)) * (float)0.5;
+				else if(z == 1) d = (ButeIA(0x30, 0.0f) + ButeIA(0x2c, 0.0f)) * (float)0.5;
+				else if(z == 2) d = ButeIA(0x34, 0.0f);
+				else return 0;
+			}
+			if(moi->armeTenue != -1 && armes.Type(moi->armeTenue).tir68) d = moi->engagementMin != 0.0f ? moi->engagementMin : moi->armeInit;
+			const CScriptPed *c = pietons.Acceder(CibleDe(ped));
+			if(c == nil) return 0;
+			float dx = c->pos.x - moi->pos.x, dy = c->pos.y - moi->pos.y, dz = c->pos.z - moi->pos.z;
+			return d > sqrtf(dx * dx + dy * dy + dz * dz);
+		}
 		// HasRangedWeapon (ConditionHasRangedWeapon, table 0x92e874, créateur 0x649640 ; FUN_00605a80 → FUN_00486ae0) : l'arme tenue,
 		// ou une arme de son inventaire, à distance (l'octet +0x68 de son type, sans le +0x69 pour l'inventaire) et qui a des munitions
 		// (CInventaireArmes::ArmeADistance). Jugée -1 jusqu'ici, elle rendait inconnus les nœuds qui la citent, jamais pris.
@@ -4122,6 +4151,25 @@ PedGetWhoHitMeLast(lua_State *L)
 	return 1;
 }
 
+// PedClearHitRecord(ped) (0x5cfde0, lue à l'assembleur de 0x5cfde0 à 0x5cfe4b) : le piéton (FUN_005c7220(h, 2)) ; l'emplacement 16 de
+// sa vftable (+0x40 : FUN_00474a80, le contexte +0x300 du composant d'actions) et son relevé (+0x10) : l'octet +0x68, le mot +0x64 (le
+// drapeau haché du dernier coup) et l'octet +0x34 à 0 ; puis l'attaquant (+4), s'il y en a un, lâché (FUN_00465690) et mis à 0. Le
+// temps depuis le coup (+0x2c, que PedIsHit lit), les dégâts (+0x38) et l'arme (+0x5e) restent. Dans l'outil : le drapeau du coup
+// (ConditionFlag, HitLocation) et l'attaquant (PedGetWhoHitMeLast, la riposte) oubliés.
+static int
+PedClearHitRecord(lua_State *L)
+{
+	Journal("PedClearHitRecord", L, 1);
+	int h = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	if(pietons.Acceder(h) == nil) return 0;
+	auto r = coups.find(h);
+	if(r == coups.end()) return 0;
+	r->second.drapeau = 0;
+	r->second.jusqua = -1.0f;
+	r->second.attaquant = -1;
+	return 0;
+}
+
 // PedIsHit(ped, genre, ms) (0x5c8a40, lu à l'assembleur de 0x5c8a40 à 0x5c8ae4) : rien de vrai sans piéton (FUN_005c7220) ;
 // le deuxième argument est lu (FUN_005d8200) et jeté ; le troisième, un mot (movzx), divisé par 1000 (le double 0x900138) ;
 // l'emplacement 16 de CPed (FUN_00474a80 : le composant d'actions +0x2e0, +0x300), son relevé +0x10 et le temps depuis le
@@ -5686,10 +5734,39 @@ PedMakeMissionChar(lua_State *L)
 	return 0;
 }
 
-// AreaClearAllPeds() (0x5b7e70, CScriptPedPool::AmbiantsAVider) n'est pas branchée : elle détruirait les trois joueurs de foot que
-// F_FootballFieldThread de gamemain crée puis rend à la population (3,33 s ou 4,03 s), dans 1_04 (10,06 s), 1_05 (3,43 s) et 1_06_01
-// (40,79 s) ; le pool rendrait leurs cases aux piétons créés ensuite, dont les poignées (celles des commandes de docs/missions.md :
-// --suivre 4, --viser 12…) changeraient. Elle reste un bouchon jusqu'à ce que ces commandes soient refaites.
+// PedSetMinEngage(ped, distance) (0x5cb790, lu à l'assembleur de 0x5cb790 à 0x5cb7cd) : le piéton du genre 2 (FUN_005c7220) ; s'il
+// existe, son +0x42c reçoit le flottant du deuxième argument (FUN_005d82a0 ; fstp) : la distance d'engagement d'un piéton armé à
+// distance (EngageDistance). Rien n'est rendu.
+static int
+PedSetMinEngage(lua_State *L)
+{
+	Journal("PedSetMinEngage", L, 1);
+	CScriptPed *p = PedArg(L, 1);
+	if(p) p->engagementMin = (float)luaL_optnumber(L, 2, 0);
+	return 0;
+}
+
+// AreaClearAllPeds() (0x5b7e70, lue à l'assembleur de 0x5b7e70 à 0x5b7ecb ; CScriptPedPool::AmbiantsAVider) : le pool des piétons
+// (DAT_00c0f5f0) parcouru depuis la fin ; chaque piéton qui n'est ni de mission (l'octet +0x1570 à 2), ni le joueur (+0x1310 à 0xd),
+// ni dans la liste de DAT_00bcd098 (FUN_00424490 : ses entrées de 0x100 octets, la poignée en tête, leur nombre en +0x1804 ; non
+// suivie, vide dans l'outil) est détruit (la première méthode de sa vftable, avec 1). Les cases libérées sont reprises par les
+// piétons créés ensuite (CScriptPedPool::Creer prend la première libre) : les poignées des commandes de docs/missions.md en dépendent.
+static int
+AreaClearAllPeds(lua_State *L)
+{
+	Journal("AreaClearAllPeds", L, 1);
+	std::string liste;
+	for(int h : pietons.AmbiantsAVider()){
+		const CScriptPed *p = pietons.Acceder(h);
+		int32 m = p ? p->modele : -1;
+		if(!pietons.Supprimer(h)) continue;
+		OublierControleurs(h);
+		char b[48]; snprintf(b, sizeof b, "%s%d (modèle %d)", liste.empty() ? "" : ", ", h, m);
+		liste += b;
+	}
+	printf("%6.2f s  AreaClearAllPeds : %s\n", maintenant / 1000.0, liste.empty() ? "aucun piéton de la population" : ("détruits " + liste).c_str());
+	return 0;
+}
 
 // PedMakeAmbient(ped) (0x5ca850) : rendu à la population ; le script ne le ramasse plus.
 static int
@@ -6083,7 +6160,7 @@ VitessePieton(int h)
 	return CVector((q->pos.x - it->second.x) / kPasTimer, (q->pos.y - it->second.y) / kPasTimer, (q->pos.z - it->second.z) / kPasTimer);
 }
 static void
-Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.0f)
+Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.0f, const float *decalages = nil)
 {
 	CScriptPed *p = pietons.Acceder(ped);
 	if(p == nil) return;
@@ -6094,13 +6171,26 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	float ac = p->cap * 3.14159265f / 180.0f;
 	CVector avant(cosf(ac), sinf(ac), 0.0f), droite(sinf(ac), -cosf(ac), 0.0f), haut(0.0f, 0.0f, 1.0f);
 	CVector depart = reglagesTir.Partir(CVector(p->pos.x, p->pos.y, p->pos.z + 1.0f), droite, avant, haut), cible;
-	const CScriptPed *c = pietons.Acceder(p->verrou);
+	// FUN_00662a40 : pour le joueur (le type 0xd), une cible n'est prise que si la visée automatique (+0x1ec0) est posée, que le bouton
+	// 10 de la manette est tenu (FUN_007386f0(10, 0), FUN_0050c730 : l'outil le tient pour tenu quand --viser a verrouillé une cible ;
+	// supposé), que FUN_00856820 rend 2, ou dans deux modes de DAT_00c3ccf8 (2 et 0xd, non suivis) ; sinon le tir part devant lui. La
+	// cible est alors celle du +0x54c (prise une fois, puis vidée : FUN_00465690), sinon celle du composant de visée (FUN_004d5980, puis
+	// FUN_004d7630) ; l'outil n'a que le verrou de --viser, et la visée automatique ne change donc rien à ses tirs.
+	bool prendCible = p->type != SCRIPT_PED_TYPE_JOUEUR || p->viseeAuto != 0 || p->verrou >= 0;
+	const CScriptPed *c = prendCible ? pietons.Acceder(p->verrou) : nil;
 	const CObjetOutil *o = ped == SCRIPT_PED_JOUEUR ? ObjetParPoignee(objetVise) : nil;
 	if(o && !o->detruit) cible = o->pos;
 	// Une cible piéton : le point visé de FUN_00662580 → FUN_00662380, décalé par WeaponFireOffset ; l'outil prend 1 m au-dessus
 	// de ses pieds et, pour sa hauteur (les sphères de FUN_00474750), 1,8 m (supposé, comme TargetRelativeHeight).
 	else if(c && c != p){
 		cible = reglagesTir.Viser(CVector(c->pos.x, c->pos.y, c->pos.z + 1.0f), 1.8f, avant);
+		// FUN_00662760 : les décalages de visée de la piste (CViseeTir::DecalageVisee ; l'avant de la cible, le +0x10 de sa matrice : son
+		// cap dans l'outil).
+		if(decalages){
+			float ac2 = c->cap * 3.14159265f / 180.0f;
+			cible = CViseeTir::DecalageVisee(depart, cible, CVector(cosf(ac2), sinf(ac2), 0.0f), decalages[0], decalages[1], decalages[2],
+			                                 decalages[3]);
+		}
 		// FUN_00662760 → FUN_0065ecb0 : l'avance sur la cible qui bouge, avec la vitesse de la fiche sans borne (+0x60 + charge ×
 		// (+0x64 − +0x60)) et le facteur +0x28 de la piste. La vitesse d'un piéton à pied est son +0x1714 / ms_fTimeStep : l'outil
 		// prend son déplacement de la dernière image (VitessePieton ; supposé : le +0x1714 n'est pas lu). Les décalages +0x18 …
@@ -6175,7 +6265,7 @@ AppliquerTirs(int ped, CActionController &c)
 	for(const CActionController::Tir &d : c.tirsLances){
 		if(p == nil || p->armeTenue == -1){ reglagesTir.Remettre(); continue; }   // FUN_00661f10 sans arme en main : FUN_0065d160
 		float charge = CChargeArme::AuTir(p->armeCharge, d.facteur);   // FUN_00661f10
-		Tirer(ped, charge, d.degats, d.avance);
+		Tirer(ped, charge, d.degats, d.avance, d.decalages);
 		p->armeCharge = CChargeArme::kVide;   // FUN_00664710, après le tir
 		if(p->drapeaux[24] == 0) inventaire.Retirer(armes, ped, p->armeMunition, 1, p->type == SCRIPT_PED_TYPE_JOUEUR, modeles.Index("RBandBall"));
 		if(d.lacher && p->armeTenue == p->armeMunition && inventaire.Munitions(armes, ped, p->armeMunition) == 0) LacherArme(ped);
@@ -6389,6 +6479,13 @@ static void
 AppliquerArmes(int ped, CActionController &c)
 {
 	CScriptPed *p = pietons.Acceder(ped);
+	// WeaponPlayerFireAutoTarget (FUN_00661ee0) : l'octet +0x1ec0 du joueur (le type 0xd du +0x1310).
+	for(const CActionController::ViseeAuto &d : c.viseesAutoLancees)
+		if(p && p->type == SCRIPT_PED_TYPE_JOUEUR && p->viseeAuto != d.valeur){
+			p->viseeAuto = d.valeur;
+			printf("%6.2f s  visée automatique du joueur : %d\n", maintenant / 1000.0, d.valeur);
+		}
+	c.viseesAutoLancees.clear();
 	if(p == nil){ c.pistesArmeLancees.clear(); return; }
 	for(const CActionController::PisteArme &d : c.pistesArmeLancees){
 		if(d.genre == CActionController::ARME_VOULUE_POSER){   // FUN_00660770
@@ -7752,6 +7849,9 @@ main(int argc, char **argv)
 	lua_register(L, "PedGetFlag", PedGetFlag);
 	lua_register(L, "PedCreateXYZ", PedCreateXYZ);
 	lua_register(L, "PedDelete", PedDelete);
+	lua_register(L, "PedSetMinEngage", PedSetMinEngage);
+	lua_register(L, "PedClearHitRecord", PedClearHitRecord);
+	lua_register(L, "AreaClearAllPeds", AreaClearAllPeds);
 	lua_register(L, "PedIsValid", PedIsValid);
 	lua_register(L, "PedIsPlayer", PedIsPlayer);
 	lua_register(L, "PlayerGetPedIndex", PlayerGetPedIndex);

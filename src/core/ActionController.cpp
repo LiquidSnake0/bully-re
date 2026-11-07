@@ -100,7 +100,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kChargePoser = ActionHash("WeaponSetCharge"), kChargeAugmenter = ActionHash("WeaponIncrementCharge"),
 	                    kDrapeauArme = ActionHash("SetWeaponFlags"), kDecalageTir = ActionHash("WeaponFireOffset"),
 	                    kDepartTir = ActionHash("WeaponFireStartOffset"), kRotationTir = ActionHash("WeaponFireRotation"),
-	                    kPassage = ActionHash("PropSetInTransition"), kDrapeauObjet = ActionHash("PropFlags"),
+	                    kPassage = ActionHash("PropSetInTransition"), kDrapeauObjet = ActionHash("PropFlags"), kViseeAuto = ActionHash("WeaponPlayerFireAutoTarget"),
 	                    kActionObjet = ActionHash("PropSetPedAction"), kSynchro = ActionHash("Sync"),
                     kBoutonHistorique = ActionHash("ActionRegisterButtonHistory"),
 	                    kInteraction = ActionHash("PropInteract");
@@ -140,6 +140,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			const CActionAttribut *v = p.Champ(24);
 			float e = Reel(p, 12, 0.0f);
 			drapeaux.push_back({e < 0.0f ? -1.0f : a, p.Mot(28), v && v->taille >= 1 ? (int32)v->valeur[0] : 0, false});
+		}else if(p.type == kViseeAuto){
+			viseesAuto.push_back({Reel(p, 12, 0.0f) < 0.0f ? -1.0f : a, (uint8)Octet(p, 24), false});
 		}else if(p.type == kDrapeauObjet){
 			const CActionAttribut *v = p.Champ(24);
 			drapeauxObjet.push_back({Reel(p, 12, 0.0f) < 0.0f ? -1.0f : a, (int32)p.Mot(28), v && v->taille >= 1 && v->valeur[0] != 0, false});
@@ -199,7 +201,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			{ const CActionAttribut *m = p.Champ(68);
 			  infosArme.push_back({a, Reel(p, 44, -1.0f), Reel(p, 64, 0.0f), false, m ? f->ChaineCitee(m->decalage) : std::string()}); }
 		}else if(p.type == kTir){
-			tirs.push_back({a, Reel(p, 52, 0.0f), Octet(p, 50), false, Reel(p, 44, -1.0f), Reel(p, 40, 1.0f)});
+			tirs.push_back({a, Reel(p, 52, 0.0f), Octet(p, 50), false, Reel(p, 44, -1.0f), Reel(p, 40, 1.0f),
+			               {Reel(p, 24, 0.0f), Reel(p, 28, 0.0f), Reel(p, 32, 0.0f), Reel(p, 36, 0.0f)}});
 		}else if(p.type == kDecalageTir || p.type == kDepartTir || p.type == kRotationTir){
 			reglagesTir.push_back({a, p.type == kDecalageTir ? 0 : p.type == kDepartTir ? 1 : 2,
 			                       {Reel(p, 24, 0.0f), Reel(p, 28, 0.0f), Reel(p, 32, 0.0f)}, false});
@@ -307,6 +310,9 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	for(DrapeauObjet &d : drapeauxObjet)   // FUN_00655b50, une entrée négative à l'arrêt du nœud (FUN_005f3fb0)
 		if(!d.fait && d.entree < 0.0f){ d.fait = true; drapeauxObjetPoses.push_back(d); }
 	drapeauxObjet.clear();
+	for(ViseeAuto &d : viseesAuto)   // FUN_00661ee0, une entrée négative à l'arrêt du nœud
+		if(!d.fait && d.entree < 0.0f){ d.fait = true; viseesAutoLancees.push_back(d); }
+	viseesAuto.clear();
 	actionsObjet.clear();
 	boutonsHistorique.clear();
 	synchros.clear();
@@ -590,6 +596,8 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; drapeauxPoses.push_back(d); }
 	for(DrapeauObjet &d : drapeauxObjet)   // FUN_00655b50
 		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; drapeauxObjetPoses.push_back(d); }
+	for(ViseeAuto &d : viseesAuto)   // FUN_00661ee0
+		if(!d.fait && d.entree >= 0.0f && Temps(t) >= d.entree){ d.fait = true; viseesAutoLancees.push_back(d); }
 	for(ActionObjet &d : actionsObjet)     // FUN_006561a0
 		if(!d.fait && Temps(t) >= d.entree){ d.fait = true; actionsObjetPosees.push_back(d); }
 	for(BoutonHistorique &d : boutonsHistorique)   // FUN_0061bab0

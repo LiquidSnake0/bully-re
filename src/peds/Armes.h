@@ -73,6 +73,28 @@ struct CChargeArme {
 
 // La visée du tir (FUN_00662a40, le point visé du tir, et ce qu'il appelle).
 struct CViseeTir {
+	// Les décalages de visée d'une piste WeaponFire sur une cible piéton : FUN_00662760 (lu à l'assembleur de 0x662760 à 0x6629c4 ;
+	// Ghidra perd la somme en y), avant l'avance (FUN_0065ecb0). Si l'un des flottants +0x18, +0x1c, +0x20 (24, 28, 32) de la piste
+	// n'est pas nul : v, l'écart du départ au point visé à plat (FUN_00414a20, z à 0) ; d, sa longueur (la racine, FUN_0085c4d0) ; s, le
+	// côté (v × (0, 0, 1), FUN_004145e0, normé par FUN_00414cc0) ; le décalage vaut +0x18 × d × s + +0x1c × v + (0 × +0x20 (le double
+	// 0x9009a0, nul), 0 × +0x20, +0x20). Si +0x24 (36) n'est pas nul et qu'il y a une cible, s'y ajoute +0x24 × l'avant de la cible (le
+	// +0x10 … +0x18 de sa matrice, FUN_00415350). Le point visé gagne le décalage, en x, y et z.
+	static CVector
+	DecalageVisee(const CVector &depart, const CVector &cible, const CVector &avantCible, float c18, float c1c, float c20, float c24)
+	{
+		CVector o(0.0f, 0.0f, 0.0f);
+		if(c18 != 0.0f || c1c != 0.0f || c20 != 0.0f){
+			float vx = cible.x - depart.x, vy = cible.y - depart.y;
+			float d = sqrtf(fabsf(vx * vx + vy * vy + 0.0f * 0.0f));
+			float sx = vy, sy = -vx, n = sqrtf(sx * sx + sy * sy);
+			if(n > 0.0f){ sx /= n; sy /= n; }
+			o.x = c18 * d * sx + c1c * vx + (float)0.0 * c20;
+			o.y = c18 * d * sy + c1c * vy + (float)0.0 * c20;
+			o.z = c20;
+		}
+		if(c24 != 0.0f){ o.x += c24 * avantCible.x; o.y += c24 * avantCible.y; o.z += c24 * avantCible.z; }
+		return CVector(cible.x + o.x, cible.y + o.y, cible.z + o.z);
+	}
 	// L'avance sur une cible qui bouge : FUN_0065ecb0 (lu à l'assembleur de 0x65ecb0 à 0x65f04a ; le pseudo-C de Ghidra perd l'ordre
 	// des sommes, la pile x87 et le `pop edi` qui décale [esp] avant les deux dernières), appelée par FUN_00662760 pour une cible piéton
 	// (FUN_00662a40 : le genre 3 de l'entité visée, +0x108 & 7) après le point visé (FUN_00662580). `depart` : le départ du tir ;

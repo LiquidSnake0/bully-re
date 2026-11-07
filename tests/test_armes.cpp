@@ -184,6 +184,18 @@ main(void)
 		t.Vider();
 		VERIF(t.Prendre(5, &ev) == 0 && ev == -1);
 	}
+	// Les décalages de visée (FUN_00662760) : nuls, le point visé ; le côté × d, l'avant × v, la hauteur en z ; l'avant de la cible.
+	{
+		CVector o(0, 0, 0), c(10, 0, 1), av(0, 1, 0);
+		CVector r = CViseeTir::DecalageVisee(o, c, av, 0, 0, 0, 0);
+		VERIF(r.x == 10.0f && r.y == 0.0f && r.z == 1.0f);
+		r = CViseeTir::DecalageVisee(o, c, av, 0.1f, 0, 0, 0);    // le côté de (10, 0) : (0, −1), × 0,1 × 10
+		VERIF(fabsf(r.x - 10.0f) < 1e-5f && fabsf(r.y + 1.0f) < 1e-5f && r.z == 1.0f);
+		r = CViseeTir::DecalageVisee(o, c, av, 0, 0.5f, 0.3f, 0);   // l'avant : 0,5 × (10, 0, 0) ; la hauteur : 0,3 en z seul
+		VERIF(fabsf(r.x - 15.0f) < 1e-5f && r.y == 0.0f && fabsf(r.z - 1.3f) < 1e-5f);
+		r = CViseeTir::DecalageVisee(o, c, av, 0, 0, 0, 2.0f);    // +0x24 × l'avant de la cible
+		VERIF(r.x == 10.0f && r.y == 2.0f && r.z == 1.0f);
+	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;
 }
