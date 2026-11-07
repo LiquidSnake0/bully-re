@@ -3097,9 +3097,18 @@ PAnimFollowPath(lua_State *L)
 	const CTriggerPath *tr = donnees.TrajetParHandle(t);
 	CReferenceTrajet r;
 	if(tr) for(const CTriggerPathPoint &n : tr->points) r.noeuds.push_back(n.pos);
+	r.trajet = t;
 	r.Remettre();
 	CSuiveurTrajet *s = suiveurs.Suivre(e, tr ? &r : nil, lua_toboolean(L, k + 1) != 0);
 	if(s == nil){ printf("%6.2f s  les 32 entités qui suivent un trajet sont prises : PAnimFollowPath sans effet\n", maintenant / 1000.0); return 0; }
+	// Le rappel (0x5c3bc5 à 0x5c3bf5) : un argument au-delà du booléen, l'entrée de l'entité (FUN_005ebb10), son emplacement +0x10
+	// (FUN_005eb8d0) et FUN_005d9e70, qui met la fonction au registre (luaL_ref), lâche l'ancien rappel s'il vivait (FUN_005d9a60) et le
+	// lie au script et au thread courants (FUN_005d8830). Sans lui, l'ancien rappel de l'entrée reste (FUN_005ebd60 ne touche pas +0x10).
+	if(lua_gettop(L) > k + 1){
+		if(s->rappel >= 0) luaL_unref(L, LUA_REGISTRYINDEX, s->rappel);
+		lua_pushvalue(L, k + 2);
+		s->rappel = luaL_ref(L, LUA_REGISTRYINDEX);
+	}
 	PlacerSuiveur(*s);
 	const CVector *pos = PositionSuivie(e);
 	printf("%6.2f s  l'entité %08x suit le trajet %d (%zu nœuds) : placée en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, (uint32)e, t,
@@ -3159,17 +3168,31 @@ PAnimFollowPathReset(lua_State *L)
 	return 0;
 }
 
-// FUN_005ec3a0 (appelée par FUN_0045f960, à chaque image) : les entités suivies avancent sur leur trajet et sont replacées.
+// FUN_005ec3a0 (appelée par FUN_0045f960, à chaque image) : les entités suivies avancent sur leur trajet et sont replacées. Un nœud
+// atteint appelle le rappel de l'entrée, s'il vit (FUN_005d7f80), dans le script qui l'a posé (FUN_005db800, FUN_005db790,
+// FUN_005dbc40 ; l'outil l'appelle dans l'état principal), avec trois nombres (FUN_005d8460, puis FUN_005d8140(3, 0)) : le déclencheur
+// de l'entité si elle est du genre 6 (+0x108 & 7 ; FUN_00773c60, son +0x23c, FUN_006d7870 sur son +0x2c ; supposé : le genre des objets
+// animés), -1 sinon ; la poignée du trajet (FUN_005ed430 → FUN_005ed270, par son nom haché) ; le nœud (FUN_005ed450 : le dernier si
+// la référence est finie, sinon le segment moins 1). Lu dans l'index (la fin de FUN_005ec0a0).
 static void
 AvancerSuiveurs(lua_State *L)
 {
 	suiveurs.Avancer(kPasTimer, [&](CSuiveurTrajet &s, bool atteint){
 		PlacerSuiveur(s);
-		if(atteint && journalRestant > 0){
+		if(!atteint) return;
+		int noeud = s.reference.fini ? (int)s.reference.noeuds.size() - 1 : s.reference.segment - 1;
+		if(journalRestant > 0){
 			journalRestant--;
-			printf("%6.2f s  l'entité %08x atteint le nœud %d de son trajet\n", maintenant / 1000.0, (uint32)s.entite,
-			       s.reference.fini ? (int)s.reference.noeuds.size() - 1 : s.reference.segment - 1);
+			printf("%6.2f s  l'entité %08x atteint le nœud %d de son trajet%s\n", maintenant / 1000.0, (uint32)s.entite, noeud,
+			       s.rappel >= 0 ? " : son rappel est appelé" : "");
 		}
+		if(s.rappel < 0 || L == nil) return;
+		int declencheur = -1;
+		if(s.entite >= 0x7f000000) declencheur = s.entite - 0x7f000000;
+		else if((s.entite >> 24) == 5){ const CObjetAnime *o = objetsAnimes.Objet((s.entite & 0xffffff) >> 8); if(o) declencheur = o->declencheur; }
+		lua_rawgeti(L, LUA_REGISTRYINDEX, s.rappel);
+		lua_pushnumber(L, declencheur); lua_pushnumber(L, s.reference.trajet); lua_pushnumber(L, noeud);
+		if(lua_pcall(L, 3, 0, 0) != 0){ printf("        rappel du trajet : %s\n", lua_tostring(L, -1)); lua_pop(L, 1); }
 	});
 }
 
