@@ -3,7 +3,9 @@
 // (FUN_00729b70, FUN_00520460). Aucun fichier du jeu.
 //   build/tests/test_objetsanimes
 #include "../src/objects/ObjetsAnimes.h"
+#include "../src/entities/SuiviTrajet.h"
 #include "../src/core/ActionTree.h"
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 
@@ -97,6 +99,30 @@ main(void)
 	VERIF(s2.RetirerHorsZone(2, ds2).empty() && s2.Objet(a) && s2.Objet(b));   // la mission et la case 0 restent
 	s2.Liberer(b);
 	VERIF(s2.Objet(b) == nil);
+	// Le PathReference (src/entities/SuiviTrajet.h : FUN_005ed6f0, FUN_005ed620, FUN_005ed400, FUN_005ed750, FUN_005ed470).
+	{
+		CReferenceTrajet r;
+		r.Remettre();
+		VERIF(r.segment == 0 && r.longueur == 0.0f && !r.PoserVitesse(1.0f) && !r.Avancer(1.0f));   // sans trajet valable
+		r.noeuds = { CVector(0, 0, 0), CVector(4, 0, 0), CVector(4, 3, 0) };
+		r.Remettre();
+		VERIF(r.segment == 1 && r.longueur == 4.0f && r.direction.x == 1.0f && r.distance == 0.0f && !r.fini);
+		VERIF(r.Avancer(1.0f) == false && r.distance == 0.0f);    // vitesse nulle : rien
+		VERIF(r.PoserVitesse(2.0f) && !r.Avancer(1.0f) && r.distance == 2.0f);
+		CVector p = r.Position();
+		VERIF(p.x == 2.0f && p.y == 0.0f);
+		VERIF(r.Avancer(1.5f) && r.segment == 2 && r.distance == 1.0f && r.longueur == 3.0f && r.direction.y == 1.0f);   // 5 − 4
+		p = r.Position();
+		VERIF(p.x == 4.0f && p.y == 1.0f);
+		VERIF(r.Avancer(2.0f) && r.fini && r.vitesse == 0.0f && r.distance == 3.0f && r.segment == 2);   // au bout : fini
+		VERIF(!r.Avancer(1.0f));                                  // fini et arrêté : rien
+		VERIF(r.PoserVitesse(-1.2f) && !r.Avancer(1.0f) && fabsf(r.distance - 1.8f) < 1e-5f);
+		VERIF(r.Avancer(2.0f) && r.segment == 1 && !r.fini && fabsf(r.distance - 3.4f) < 1e-5f);   // 4 + (1,8 − 2,4) : le segment d'avant
+		VERIF(r.Avancer(10.0f) && r.fini && r.vitesse == 0.0f && r.distance == 0.0f && r.segment == 1);   // au départ
+		r.distance = 5.0f; r.vitesse = 1.0f; r.fini = false;      // au-delà de la longueur : plus rien (lu tel quel)
+		VERIF(!r.Avancer(1.0f) && r.distance == 5.0f);
+		VERIF(r.Noeud(-1).y == 3.0f && r.Noeud(7).y == 3.0f);    // FUN_005ec760 : le dernier nœud
+	}
 	printf("test_objetsanimes : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;
 }
