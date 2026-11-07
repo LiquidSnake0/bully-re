@@ -63,6 +63,7 @@
 #include "../src/render/CameraMgr.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
+#include "../src/entities/SuiviTrajet.h"
 #include "../tests/hote/Chemins.h"
 #include <algorithm>
 #include <cstdio>
@@ -3039,6 +3040,96 @@ DeletePersistentEntity(lua_State *L)
 	if(g == 5) objetsAnimes.Liberer(h >> 8);
 	else if(g == 0 && (h & 0xff) == 2 && (size_t)(h >> 8) < persistants.size()) persistants[(size_t)(h >> 8)].detruit = true;
 	return 0;
+}
+
+// --- Les entités qui suivent un trajet (src/entities/SuiviTrajet.h : le gestionnaire 0xd13730, ses PathReference) ---
+// L'entité d'une fonction PAnim* : avec deux nombres en tête (FUN_005d81c0, lua_isnumber, sur le troisième argument pour
+// PAnimFollowPath ; deux arguments pour PAnimStopFollowPath), une case de pool et son genre (FUN_0044a510 : le genre 0, un CObject,
+// l'outil n'a que ses CObject persistants ; le genre 5, un objet animé) ; sinon un déclencheur (FUN_006d79c0 sur 0x20c7e98 : son
+// objet animé). L'outil nomme l'entité par une clé : genre × 0x1000000 + poignée, ou 0x7f000000 + le déclencheur ; 0 sans entité.
+static CSuiveursTrajet suiveurs;
+static int32
+EntiteSuivie(lua_State *L, bool deuxNombres)
+{
+	if(deuxNombres){
+		int h = (int)lua_tonumber(L, 1), g = (int)lua_tonumber(L, 2);
+		if(g == 0) return (h & 0xff) == 2 && (size_t)(h >> 8) < persistants.size() && !persistants[(size_t)(h >> 8)].detruit ? h : 0;
+		if(g == 5) return objetsAnimes.Objet(h >> 8) ? 5 * 0x1000000 + h : 0;
+		return 0;
+	}
+	int d = lua_isnumber(L, 1) ? (int)lua_tonumber(L, 1) : -1;
+	return objetsAnimes.ObjetDe(d) >= 0 ? 0x7f000000 + d : 0;
+}
+// La position d'une entité suivie (nil si elle n'existe plus).
+static CVector *
+PositionSuivie(int32 e)
+{
+	if(e >= 0x7f000000){ CObjetAnime *o = objetsAnimes.Objet(objetsAnimes.ObjetDe(e - 0x7f000000)); return o ? &o->pos : nil; }
+	int g = e >> 24, h = e & 0xffffff;
+	if(g == 0) return (size_t)(h >> 8) < persistants.size() ? &persistants[(size_t)(h >> 8)].pos : nil;
+	if(g == 5){ CObjetAnime *o = objetsAnimes.Objet(h >> 8); return o ? &o->pos : nil; }
+	return nil;
+}
+// FUN_005eb910 : la matrice de l'entité ; avec une référence valable, sa position est le point du trajet (FUN_005ed470), sinon elle
+// garde la sienne. L'orientation (le cap et le tangage gardés, la rotation +0x1c … +0x28, les angles du segment avec l'octet +0xc)
+// n'est pas suivie : l'outil ne garde que la position des entités.
+static void
+PlacerSuiveur(const CSuiveurTrajet &s)
+{
+	CVector *pos = PositionSuivie(s.entite);
+	if(pos && s.aReference && s.reference.Valable()) *pos = s.reference.Position();
+}
+
+// PAnimFollowPath(entité[, genre], trajet, orienter[, rappel]) (0x5c3b30, hors de l'index, lu à l'assembleur de 0x5c3b30 à 0x5c3bfe) :
+// l'entité ; si elle existe, la PathReference du trajet (FUN_005ed390 sur DAT_00d13cb4 : le pool des trajets DAT_020c7c50, nulle pour
+// une poignée hors du pool ou libre ; GameMalloc(0x34), le constructeur FUN_005ed8d0 et sa remise FUN_005ed6f0), le booléen orienter
+// (FUN_005d8f20) et FUN_005ebfd0 sur le gestionnaire 0xd13730, qui place aussitôt l'entité au départ du trajet (FUN_005ebd60 →
+// FUN_005eb910, FUN_0046dd40). Un argument de plus est le rappel des nœuds atteints (FUN_005eb8d0, FUN_005d9e70).
+static int
+PAnimFollowPath(lua_State *L)
+{
+	Journal("PAnimFollowPath", L, 1);
+	bool deux = lua_isnumber(L, 3) != 0;
+	int32 e = EntiteSuivie(L, deux);
+	if(e == 0) return 0;
+	int k = deux ? 3 : 2;
+	int t = lua_isnumber(L, k) ? (int)lua_tonumber(L, k) : -1;
+	const CTriggerPath *tr = donnees.TrajetParHandle(t);
+	CReferenceTrajet r;
+	if(tr) for(const CTriggerPathPoint &n : tr->points) r.noeuds.push_back(n.pos);
+	r.Remettre();
+	CSuiveurTrajet *s = suiveurs.Suivre(e, tr ? &r : nil, lua_toboolean(L, k + 1) != 0);
+	if(s == nil){ printf("%6.2f s  les 32 entités qui suivent un trajet sont prises : PAnimFollowPath sans effet\n", maintenant / 1000.0); return 0; }
+	PlacerSuiveur(*s);
+	const CVector *pos = PositionSuivie(e);
+	printf("%6.2f s  l'entité %08x suit le trajet %d (%zu nœuds) : placée en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, (uint32)e, t,
+	       r.noeuds.size(), pos ? pos->x : 0.0f, pos ? pos->y : 0.0f, pos ? pos->z : 0.0f);
+	return 0;
+}
+
+// PAnimStopFollowPath(entité[, genre]) (0x5c3d50, lu dans l'index) : l'entité (deux arguments : FUN_0044a510, sinon FUN_006d79c0),
+// puis FUN_005ebf80 : FUN_005ebee0(1) sur son entrée (la référence détruite, son cap et son tangage rendus, l'entrée vidée).
+static int
+PAnimStopFollowPath(lua_State *L)
+{
+	Journal("PAnimStopFollowPath", L, 1);
+	int32 e = EntiteSuivie(L, lua_gettop(L) == 2);
+	if(e != 0 && suiveurs.Trouver(e)){ suiveurs.Arreter(e); printf("%6.2f s  l'entité %08x ne suit plus son trajet\n", maintenant / 1000.0, (uint32)e); }
+	return 0;
+}
+
+// FUN_005ec3a0 (appelée par FUN_0045f960, à chaque image) : les entités suivies avancent sur leur trajet et sont replacées.
+static void
+AvancerSuiveurs(lua_State *L)
+{
+	suiveurs.Avancer(kPasTimer, [&](CSuiveurTrajet &s, bool atteint){
+		PlacerSuiveur(s);
+		if(atteint && journalRestant > 0){
+			journalRestant--;
+			printf("%6.2f s  l'entité %08x atteint le nœud %d de son trajet\n", maintenant / 1000.0, (uint32)s.entite,
+			       s.reference.fini ? (int)s.reference.noeuds.size() - 1 : s.reference.segment - 1);
+		}
+	});
 }
 
 // --- Les marqueurs du radar (src/hud/Marqueurs : les 300 traces de CRadar, DAT_00c674cc + 0x210) ---
@@ -7651,6 +7742,8 @@ main(int argc, char **argv)
 	lua_register(L, "PAnimRequest", PAnimRequest);
 	lua_register(L, "PAnimCreate", PAnimCreate);
 	lua_register(L, "PAnimDelete", PAnimDelete);
+	lua_register(L, "PAnimFollowPath", PAnimFollowPath);
+	lua_register(L, "PAnimStopFollowPath", PAnimStopFollowPath);
 	lua_register(L, "AddBlipForChar", AddBlipForChar);
 	lua_register(L, "BlipAddPoint", BlipAddPoint);
 	lua_register(L, "BlipRemove", BlipRemove);
@@ -8152,6 +8245,7 @@ main(int argc, char **argv)
 		MettreAJour(L);
 		AvancerPietons();
 		AvancerObjets();
+		AvancerSuiveurs(L);
 		PoserLesCollectibles();
 		AvancerRamassages();
 		ecranDeFin.Avancer(33.0f / 20.0f);   // FUN_007073c0 : le pas du moteur (ms_fTimeStep)
