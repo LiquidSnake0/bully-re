@@ -150,6 +150,25 @@ main(void)
 		r.Remettre();
 		VERIF(r.munition == -1 && r.decalage[0] == 0.0f && r.depart[1] == 0.0f && r.rotation[0] == 0.0f);
 	}
+	// L'avance sur une cible qui bouge (FUN_0065ecb0) : la bille (0,65 m par pas sans charge), le facteur +0x28 à 1.
+	{
+		auto pres = [](float a, float b){ return fabsf(a - b) < 1e-3f; };
+		CVector o(0, 0, 0), c(10, 0, 1);
+		CVector r = CViseeTir::AvanceSurCible(o, c, CVector(0, 0, 0), 0.65f, 1.0f, false, 1.0f, 1.0f);
+		VERIF(r.x == 10.0f && r.y == 0.0f && r.z == 1.0f);       // immobile : la cible
+		r = CViseeTir::AvanceSurCible(o, c, CVector(0, 0.1f, 0), 0.65f, 1.0f, false, 1.0f, 1.0f);
+		VERIF(pres(r.x, 10.0f) && pres(r.y, 10.0f / 0.65f * 0.1f) && pres(r.z, 1.0f));   // de côté : la vitesse × d / v
+		r = CViseeTir::AvanceSurCible(o, c, CVector(0.1f, 0, 0), 0.65f, 1.0f, false, 1.0f, 1.0f);
+		VERIF(pres(r.x, 10.0f + 0.1f * 10.0f / (0.65f - 0.1f)));   // qui s'éloigne : la durée refaite, d / (v − 0,1)
+		r = CViseeTir::AvanceSurCible(o, c, CVector(0, 0.1f, 0.05f), 0.65f, 1.0f, false, 1.0f, 0.5f);
+		VERIF(pres(r.y, 0.5f * 10.0f / 0.65f * 0.1f) && pres(r.z, 1.0f + 0.5f * 10.0f / 0.65f * 0.05f));   // × +0x84 de la fiche
+		r = CViseeTir::AvanceSurCible(o, CVector(100, 0, 0), CVector(0.1f, 0, 0), 0.65f, 1.0f, true, 4.0f, 1.0f);
+		// l'octet +0x124 : T = 153,8, T' = 89,4, T = √(64,4² / 4) + T' = 121,6 ; puis k = (100 / (0,65 − 0,1 × 121,6 / 121,6)) / 121,6
+		float t = 100.0f / 0.65f, tp = 0.5f * t + 12.5f; t = sqrtf((t - tp) * (t - tp) / 4.0f) + tp;
+		VERIF(pres(r.x, 100.0f + 0.1f * t * ((100.0f / (0.65f - 0.1f)) / t)));
+		r = CViseeTir::AvanceSurCible(o, CVector(0, 0, 5), CVector(0.1f, 0, 0), 0.65f, 1.0f, false, 1.0f, 1.0f);
+		VERIF(r.x == 0.0f && r.z == 5.0f);                        // à la verticale : la cible gardée
+	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;
 }

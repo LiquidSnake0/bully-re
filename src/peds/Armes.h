@@ -13,6 +13,7 @@
 // qui la tient (+0x24) ; ses munitions sont un mot en +0, l'arme un mot en +2.
 #pragma once
 #include "../common.h"
+#include <cmath>
 #include <string>
 
 struct CTypeArme {
@@ -67,6 +68,42 @@ struct CChargeArme {
 		float d = fiche ? (avecCharge - sansCharge) * charge + sansCharge : 0.0f;
 		if(degatsPiste != -1.0f) d = charge * degatsPiste;
 		return ((float)echelle / 100.0f) * d;
+	}
+};
+
+// La visée du tir (FUN_00662a40, le point visé du tir, et ce qu'il appelle).
+struct CViseeTir {
+	// L'avance sur une cible qui bouge : FUN_0065ecb0 (lu à l'assembleur de 0x65ecb0 à 0x65f04a ; le pseudo-C de Ghidra perd l'ordre
+	// des sommes, la pile x87 et le `pop edi` qui décale [esp] avant les deux dernières), appelée par FUN_00662760 pour une cible piéton
+	// (FUN_00662a40 : le genre 3 de l'entité visée, +0x108 & 7) après le point visé (FUN_00662580). `depart` : le départ du tir ;
+	// `cible` : le point visé ; `vitesse` : celle de la cible en m par pas ; `vitesseTir` : celle de la fiche (+0x60 + charge × (+0x64 −
+	// +0x60), 0,4 sans fiche) ; `facteur` : le flottant +0x28 (40) de la piste WeaponFire ; `ficheT`, `fiche128`, `fiche84` : l'octet
+	// +0x124, les flottants +0x128 et +0x84 de la fiche (faux, -, 1 sans fiche).
+	// - d, la distance à plat (la racine du carré de l'écart en x et y, plus 0 × 0 : le z de l'écart est mis à 0) ;
+	// - T = d / vitesseTir × facteur, la durée du vol en pas ; avec l'octet +0x124 de la fiche, T' = 0,5 T + 12,5 (les doubles 0x8ff1f8 et
+	//   0x93c998) et, si T − T' est positif, T = √|(T − T')² / +0x128| + T' ;
+	// - l'avance a = vitesse × T, puis a × (d / (vitesseTir − (a · u) / T)) / T, u la direction à plat normée (FUN_00414cc0) : la durée
+	//   refaite avec la part de la vitesse de la cible le long du tir ; puis a × +0x84 de la fiche ;
+	// - la cible plus a (x, y et z).
+	// Une durée nulle (une cible à la verticale du départ) divise par zéro dans le moteur ; l'outil garde alors la cible.
+	static CVector
+	AvanceSurCible(const CVector &depart, const CVector &cible, const CVector &vitesse, float vitesseTir, float facteur, bool ficheT,
+	               float fiche128, float fiche84)
+	{
+		float ex = cible.x - depart.x, ey = cible.y - depart.y;
+		float d = sqrtf(fabsf(ex * ex + ey * ey + 0.0f * 0.0f));
+		float t = d / vitesseTir * facteur;
+		if(ficheT){
+			float tp = (float)0.5 * t + (float)12.5;
+			float e = t - tp;
+			if(e > 0.0f) t = sqrtf(fabsf(e * e / fiche128)) + tp;
+		}
+		if(!(t > 0.0f) || d <= 0.0f) return cible;
+		float ax = vitesse.x * t, ay = vitesse.y * t, az = vitesse.z * t;
+		float ux = ex / d, uy = ey / d;
+		float k = (d / (vitesseTir - (ay * uy + ax * ux + az * 0.0f) / t)) / t;
+		ax *= k * fiche84; ay *= k * fiche84; az *= k * fiche84;
+		return CVector(cible.x + ax, cible.y + ay, cible.z + az);
 	}
 };
 

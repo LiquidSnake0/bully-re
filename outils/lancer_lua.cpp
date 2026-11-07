@@ -146,8 +146,11 @@ static void LacherArme(int h);
 // charge (m par pas de 0,02 s), +0x80 (128) le facteur de la gravité ; des réels.
 // DetectProjectile et DetectGrenade lisent aussi les octets +0x8c (140), +0x8d (141) et +0xe4 (228, la menace se voit), le rayon +0x94
 // (148) et le flottant +0xa0 (160).
+// L'avance sur une cible qui bouge (FUN_0065ecb0) lit l'octet +0x124 (292, la durée refaite), le flottant +0x128 (296, son diviseur)
+// et le flottant +0x84 (132, le facteur de l'avance) : 0, 1 et 1 pour la bille et la brique.
 struct CTypeProjectile { bool lu = false; int32 vie = 0; float degatsMin = 0, degatsMax = 0, vitesseMin = 0.4f, vitesseMax = 0.4f, gravite = 1.0f;
-                         std::string marque; bool o8c = false, o8d = false, menace = false; float rayon = 0, a0 = 0; };
+                         std::string marque; bool o8c = false, o8d = false, menace = false; float rayon = 0, a0 = 0;
+                         bool dureeRefaite = false; float diviseur = 1.0f, facteurAvance = 1.0f; };
 static std::map<int32, CTypeProjectile> typesProjectiles;   // par modèle d'arme (le +0x80 de son type)
 static CTypeProjectile projectileDefaut;
 static const CTypeProjectile &
@@ -169,6 +172,9 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 	const CActionAttribut *o1 = t.Champ(140), *o2 = t.Champ(141), *o3 = t.Champ(228);
 	a.o8c = o1 && o1->valeur[0]; a.o8d = o2 && o2->valeur[0]; a.menace = o3 && o3->valeur[0];
 	a.rayon = CActionBank::ButesReel(t, 148); a.a0 = CActionBank::ButesReel(t, 160);
+	const CActionAttribut *o4 = t.Champ(292);   // l'avance sur une cible qui bouge (FUN_0065ecb0) : +0x124, +0x128 et +0x84
+	a.dureeRefaite = o4 && o4->valeur[0]; a.diviseur = CActionBank::ButesReel(t, 296);
+	a.facteurAvance = t.Champ(132) ? CActionBank::ButesReel(t, 132) : 1.0f;
 	return a;
 }
 
@@ -5903,8 +5909,19 @@ PoserInfoArme(CScriptPed &p, const CActionController::InfoArme &d)
 // Les réglages du prochain tir (src/peds/Armes.h : WeaponFireOffset, WeaponFireStartOffset, WeaponFireRotation), des globales du
 // moteur que FUN_0065d160 remet à zéro après chaque tir.
 static CReglagesTir reglagesTir;
+// La position de chaque piéton au début de sa dernière image (AvancerPietons) : son déplacement depuis, divisé par le pas du moteur
+// (ms_fTimeStep, 1,65 pour 33 ms), tient lieu de sa vitesse en m par pas.
+static std::map<int, CVector> positionsImage;
+static CVector
+VitessePieton(int h)
+{
+	const CScriptPed *q = pietons.Acceder(h);
+	auto it = positionsImage.find(h);
+	if(q == nil || it == positionsImage.end()) return CVector(0.0f, 0.0f, 0.0f);
+	return CVector((q->pos.x - it->second.x) / kPasTimer, (q->pos.y - it->second.y) / kPasTimer, (q->pos.z - it->second.z) / kPasTimer);
+}
 static void
-Tirer(int ped, float charge, float degatsPiste = -1.0f)
+Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.0f)
 {
 	CScriptPed *p = pietons.Acceder(ped);
 	if(p == nil) return;
@@ -5920,7 +5937,20 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f)
 	if(o && !o->detruit) cible = o->pos;
 	// Une cible piéton : le point visé de FUN_00662580 → FUN_00662380, décalé par WeaponFireOffset ; l'outil prend 1 m au-dessus
 	// de ses pieds et, pour sa hauteur (les sphères de FUN_00474750), 1,8 m (supposé, comme TargetRelativeHeight).
-	else if(c && c != p) cible = reglagesTir.Viser(CVector(c->pos.x, c->pos.y, c->pos.z + 1.0f), 1.8f, avant);
+	else if(c && c != p){
+		cible = reglagesTir.Viser(CVector(c->pos.x, c->pos.y, c->pos.z + 1.0f), 1.8f, avant);
+		// FUN_00662760 → FUN_0065ecb0 : l'avance sur la cible qui bouge, avec la vitesse de la fiche sans borne (+0x60 + charge ×
+		// (+0x64 − +0x60)) et le facteur +0x28 de la piste. La vitesse d'un piéton à pied est son +0x1714 / ms_fTimeStep : l'outil
+		// prend son déplacement de la dernière image (VitessePieton ; supposé : le +0x1714 n'est pas lu). Les décalages +0x18 …
+		// +0x24 de la piste (FUN_00662760, nuls pour le lance-pierre) ne sont pas suivis.
+		float vt = tp.vitesseMin + charge * (tp.vitesseMax - tp.vitesseMin);
+		CVector avance = CViseeTir::AvanceSurCible(depart, cible, VitessePieton(p->verrou), vt, facteurAvance, tp.dureeRefaite, tp.diviseur,
+		                                           tp.facteurAvance);
+		if(avance.x != cible.x || avance.y != cible.y || avance.z != cible.z)
+			printf("%6.2f s  le piéton %d vise devant %d : (%.2f, %.2f, %.2f) au lieu de (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, ped, p->verrou,
+			       avance.x, avance.y, avance.z, cible.x, cible.y, cible.z);
+		cible = avance;
+	}
 	else{
 		float portee = p->armePortee + charge * (p->armeInit - p->armePortee);
 		if(portee < 0.01f) portee = 0.01f;
@@ -5977,7 +6007,7 @@ AppliquerTirs(int ped, CActionController &c)
 	for(const CActionController::Tir &d : c.tirsLances){
 		if(p == nil || p->armeTenue == -1){ reglagesTir.Remettre(); continue; }   // FUN_00661f10 sans arme en main : FUN_0065d160
 		float charge = CChargeArme::AuTir(p->armeCharge, d.facteur);   // FUN_00661f10
-		Tirer(ped, charge, d.degats);
+		Tirer(ped, charge, d.degats, d.avance);
 		p->armeCharge = CChargeArme::kVide;   // FUN_00664710, après le tir
 		if(p->drapeaux[24] == 0) inventaire.Retirer(armes, ped, p->armeMunition, 1, p->type == SCRIPT_PED_TYPE_JOUEUR, modeles.Index("RBandBall"));
 		if(d.lacher && p->armeTenue == p->armeMunition && inventaire.Munitions(armes, ped, p->armeMunition) == 0) LacherArme(ped);
@@ -6376,6 +6406,7 @@ static int TirerVue(void *);
 static void
 AvancerPietons(void)
 {
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++) if(const CScriptPed *q = pietons.Acceder(i)) positionsImage[i] = q->pos;
 	pietons.Avancer(0.033f);
 	if(etatLua) AvancerSuivis(etatLua);   // les pistes FollowPath
 	// CPed (FUN_004812d0), pour chaque piéton : les proches (FUN_0047d1d0, refaits au tirage de l'image FUN_00465910(16)), puis

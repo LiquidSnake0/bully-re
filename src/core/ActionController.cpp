@@ -199,7 +199,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			{ const CActionAttribut *m = p.Champ(68);
 			  infosArme.push_back({a, Reel(p, 44, -1.0f), Reel(p, 64, 0.0f), false, m ? f->ChaineCitee(m->decalage) : std::string()}); }
 		}else if(p.type == kTir){
-			tirs.push_back({a, Reel(p, 52, 0.0f), Octet(p, 50), false, Reel(p, 44, -1.0f)});
+			tirs.push_back({a, Reel(p, 52, 0.0f), Octet(p, 50), false, Reel(p, 44, -1.0f), Reel(p, 40, 1.0f)});
 		}else if(p.type == kDecalageTir || p.type == kDepartTir || p.type == kRotationTir){
 			reglagesTir.push_back({a, p.type == kDecalageTir ? 0 : p.type == kDepartTir ? 1 : 2,
 			                       {Reel(p, 24, 0.0f), Reel(p, 28, 0.0f), Reel(p, 32, 0.0f)}, false});
