@@ -284,6 +284,16 @@ main(void)
 		VERIF(V::PrecisionVerrou(500.0f, 2.0f, true, 0.5f) == 0.75f);     // le +0x1ec4 du joueur
 		VERIF(V::PrecisionVerrou(1500.0f, 2.0f, true, 0.5f) == 1.0f);     // 1 au plus
 	}
+	// La vie d'un projectile à sa création (FUN_004d4c40) et ce que le tir lui passe (FUN_00664710).
+	{
+		typedef CPlacesProjectiles P;
+		VERIF(P::Vie(0, 3000, 0) == 3000 && P::Vie(1500, 3000, 0) == 1500);   // la vie du tireur d'abord
+		VERIF(P::Vie(0, 0, 500) == 0);                                        // sans vie : sans fin, la mèche n'y fait rien
+		VERIF(P::Vie(0, 3000, 1000) == 2000 && P::Vie(0, 3000, 3000) == 1);   // la mèche ; une vie nulle devient 1
+		VERIF(P::Vie(0, 3000, 3500) == -500);                                 // la mèche plus longue : négative
+		VERIF(P::EcouleMeche(5000, 0) == 0 && P::EcouleMeche(5000, 4200) == 800);
+		VERIF(P::VieDuTireur(0.0f) == 0 && P::VieDuTireur(2.5f) == 2500 && P::VieDuTireur(0.0019f) == 1);   // tronquée
+	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;
 }

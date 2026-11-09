@@ -2463,6 +2463,17 @@ PedSetProjDestLua(lua_State *L)
 	return 0;
 }
 
+// PedSetProjectileLifetime(ped, secondes) (0x5ccc80, lu dans l'index : FUN_005d8200 et FUN_005c7220 pour le piéton du genre 2, le
+// flottant du deuxième argument par FUN_005d82a0) : le +0x1cc0 du piéton, la vie de ses projectiles. Aucun script ne l'appelle.
+static int
+PedSetProjectileLifetime(lua_State *L)
+{
+	Journal("PedSetProjectileLifetime", L, 1);
+	float v = (float)luaL_optnumber(L, 2, 0);
+	if(CScriptPed *p = pietons.Acceder((int)luaL_optnumber(L, 1, -1))) p->vieProjectiles = v;
+	return 0;
+}
+
 // --aller NOM[,n]@s ou --aller x,y,z@s : à s secondes, le joueur est posé au n-ième point de la
 // liste NOM (1 par défaut), ou aux coordonnées, comme s'il y avait marché.
 static void
@@ -6273,10 +6284,11 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	q.actif = true; q.modele = munition; q.tireur = ped; q.pos = depart; q.gravite = g;
 	q.vitesse = CVector(dx / T, dy / T, (dz - 0.5f * g * T * T) / T);
 	q.degats = CChargeArme::Degats(true, tp.degatsMin, tp.degatsMax, charge, degatsPiste, pietons.StatLue(ped, 0x1f, 100));
-	// La vie (FUN_004d4c40 : son quatorzième argument, ou s'il est nul la vie +0x48 de la fiche, moins le treizième ; 1 si cela fait 0 ;
-	// gardée en +0xc de l'entrée ; ce que FUN_00664710 y passe, dont une mèche tirée du +0x1cc0 du tireur, n'est pas démêlé) : l'outil
-	// prend la vie de la fiche ; 0, un projectile sans fin (FUN_004d45e0).
-	q.naissance = maintenant; q.vie = tp.vie > 0 ? (uint32)tp.vie : 0;
+	// La vie (CPlacesProjectiles::Vie, FUN_004d4c40 : la vie du tireur, +0x1cc0 × 1000, ou celle de la fiche, moins le temps depuis
+	// l'allumage de la mèche de l'objet arme, +0x140, que l'outil n'allume pas ; 1 pour 0 ; gardée en +0xc de l'entrée) ; 0, un
+	// projectile sans fin (FUN_004d45e0).
+	q.naissance = maintenant;
+	q.vie = (uint32)CPlacesProjectiles::Vie(CPlacesProjectiles::VieDuTireur(p->vieProjectiles), tp.vie, CPlacesProjectiles::EcouleMeche(maintenant, 0));
 	int evincee = -1, place = placesProjectiles.Prendre(maintenant, &evincee);   // FUN_004d4c40 → FUN_004d4590
 	if(evincee >= 0) printf("%6.2f s  la table des projectiles est pleine : le plus vieux (place %d) cède sa place\n", maintenant / 1000.0, evincee);
 	if(place < 0){ reglagesTir.Remettre(); return; }   // FUN_004d4c40 rend 0 : pas de projectile
@@ -7839,6 +7851,7 @@ main(int argc, char **argv)
 	lua_register(L, "PlayerIsInAreaObject", PlayerIsInAreaObject);
 	lua_register(L, "PedLockTarget", PedLockTarget);
 	lua_register(L, "PedSetProjDest", PedSetProjDestLua);
+	lua_register(L, "PedSetProjectileLifetime", PedSetProjectileLifetime);
 	lua_register(L, "PedSetActionTree", PedSetActionTree);
 	lua_register(L, "GetCurrentDay", GetCurrentDay);
 	lua_register(L, "SoundPlayScriptedSpeechEvent", SoundPlayScriptedSpeechEvent);

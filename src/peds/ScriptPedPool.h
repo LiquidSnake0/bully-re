@@ -276,6 +276,9 @@ struct CScriptPed {
 	CDestinationsTir destinationsTir;
 	// +0xa8 du composant de visée (+0x1c8) : la cible gardée que FUN_004d7630 rend tant qu'elle vit (CViseeTir::CibleOuRepli), -1 sans.
 	int cibleGardee = -1;
+	// +0x1cc0 : la vie des projectiles du piéton, en secondes (PedSetProjectileLifetime, 0x5ccc80 ; 0 par le constructeur de CPed,
+	// FUN_0047ffe0) ; le tir la passe à la création du projectile (CPlacesProjectiles::VieDuTireur), 0 : la vie de la fiche.
+	float vieProjectiles = 0.0f;
 	// Les droits d'attaque sur ce piéton, dans son composant de combat (+0x668) : l'octet +0x344 (+0x9ac du piéton, pris),
 	// le piéton qui les tient +0x340 (+0x9a8) et leur échéance +0x348 (+0x9b0, en ms du jeu). Un seul attaquant à la fois
 	// les prend (FUN_00486c40) ; la condition IsTargetAttackRightsTaken lit l'octet sur la cible de l'attaquant.
