@@ -346,7 +346,13 @@ public:
 	// (FUN_005f49a0), et quand son nœud finit, l'octet +0x29 (41) le fait redescendre depuis le nœud visé (sinon il
 	// s'arrête) ; l'octet +0x28 (40) le fait avancer dès le lancement. La durée de vie +0x10 (16) l'arrête. Suivies quand
 	// `sousControleurs` est posé (les arbres de l'IA) ; sinon l'outil n'en garde que les FaceTarget et SeekEntityPosition.
-	struct Lance { float entree, vie; const CActionNode *vise; bool boucle, lancee, morte; std::shared_ptr<CActionController> c; };
+	// FUN_005f72e0 (lu dans l'index le 09.11.2026) : un contrôleur qui joue un nœud avance (FUN_005f49a0) et, devenu vide avec +0x29,
+	// redescend depuis le nœud visé (la méthode +0x4c du nœud, FUN_005f4490) ; la piste vit (1). Un contrôleur vide sans +0x29 rend 0 :
+	// la piste meurt, et avec l'octet +8 (`retient`) elle ne retient plus son nœud (FUN_005f4230), qui finit quand plus rien ne le
+	// retient : le nœud Controller du lance-pierre (Spawn './UpperBody', +8 = 1, +0x29 = 0) finit avec son haut du corps, sa Sequence
+	// '../' le rend à la banque, qui reprend Controller au bouton suivant.
+	struct Lance { float entree, vie; const CActionNode *vise; bool boucle, lancee, morte; std::shared_ptr<CActionController> c;
+	               bool retient = false; };
 	std::vector<Lance> lances;
 	bool sousControleurs = false;
 	// Hors des arbres de l'IA, les pistes spawn dont le nœud visé est sous cet arbre ont aussi leur contrôleur (l'outil le pose à
