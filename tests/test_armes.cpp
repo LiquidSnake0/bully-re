@@ -5,6 +5,7 @@
 //   build/tests/test_armes
 #include "../src/peds/Armes.h"
 #include "../src/objects/Projectiles.h"
+#include "../src/core/Manette.h"
 #include <cmath>
 #include <cstdio>
 #include <map>
@@ -236,6 +237,24 @@ main(void)
 		VERIF(V::CibleOuRepli(-1, gardee, -1, -1, 7) == 7 && gardee == 7); // FUN_004d6dc0
 		gardee = -1;
 		VERIF(V::CibleOuRepli(-1, gardee, -1, -1, -1) == -1 && gardee == -1);
+	}
+	// La manette (FUN_0050c730, FUN_007386f0) : numérique, le bit du bouton dans +0x1e8 ; sinon la valeur lue de la touche ; un bouton
+	// hors des valables rend sa valeur brute.
+	{
+		CManette m;
+		m.numerique = true;
+		VERIF(m.Valeur(10) == 0.0f);
+		m.bits = 0x400;                                            // le bouton 10
+		VERIF(m.Valeur(10) == 1.0f && m.Valeur(12) == 0.0f);
+		m.bits = 0x2000;                                           // le bouton 8 (le tir chargé du lance-pierre)
+		VERIF(m.Valeur(8) == 1.0f && m.Valeur(10) == 0.0f);
+		m.valeurs[0x18] = 0.25f;
+		VERIF(m.Valeur(0x18) == 0.25f && m.Valeur(-1) == 0.0f);   // numérique : 24 n'est pas valable
+		m.numerique = false;
+		VERIF(m.Valeur(0x18, 0.5f) == 1.0f && m.Valeur(0x18, 0.0f) == 0.0f && m.Valeur(3, -1.0f) == 0.0f);
+		m.valeurs[0x10] = 0.75f;
+		VERIF(m.Valeur(0x10, 1.0f) == 0.75f);                      // 16 : hors des valables, la valeur brute
+		VERIF(CManette::Index(0, 2, 3) == 2 && CManette::Index(1, 2, 3) == 3 && CManette::Index(5, 2, 3) == 5);
 	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;

@@ -61,6 +61,7 @@
 #include "../src/hud/BarreSante.h"
 #include "../src/hud/MinuterieMission.h"
 #include "../src/render/CameraMgr.h"
+#include "../src/core/Manette.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
 #include "../src/entities/SuiviTrajet.h"
@@ -352,6 +353,19 @@ EtatBoutonJoueur(uint32 bouton)
 		else if(maintenant < b.fin + 33) etat |= 8;
 	}
 	return etat;
+}
+// La manette du joueur (src/core/Manette.h ; la manette numérique de l'index DAT_020cece8, FUN_007386f0) : les boutons 0 à 15 que
+// l'outil tient (--tenir, une demande en attente : les bits 0 et 1 de leur octet d'état) ; le bouton 10 (le verrou que lit
+// FUN_004d5d50 pour l'octet +0x7e du composant de visée) l'est aussi tant que le joueur garde une cible verrouillée par --viser ou
+// --viser-objet (supposé : l'outil verrouille d'un coup, sans tenir le bouton).
+static CManette
+ManetteJoueur(bool verrou)
+{
+	CManette m;
+	m.numerique = true;
+	for(int32 b = 0; b < 16; b++) if(EtatBoutonJoueur((uint32)b) & 3) m.bits |= CManette::kMasques[b];
+	if(verrou) m.bits |= CManette::kMasques[10];
+	return m;
 }
 // L'état des 47 boutons bruts des autres piétons (+0x20 du composant +0x2e0, 12 octets par bouton : l'octet d'état en +0),
 // que les pistes ActionRequest de leur arbre de l'IA appuient (FUN_005f3930 : 3 lâché → 8, 2 appuyé et tenu → 3, sinon
@@ -6185,15 +6199,16 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	CVector depart = reglagesTir.Partir(CVector(p->pos.x, p->pos.y, p->pos.z + 1.0f), droite, avant, haut), cible;
 	// FUN_00662a40 : d'où vient la cible (CViseeTir::SourceCible, src/peds/Armes.h). La cible du composant de visée (+0xa0, FUN_004d5980)
 	// est dans l'outil la cible verrouillée du piéton (--viser, PedLockTarget, FUN_00497d20) ou l'objet que le joueur verrouille
-	// (--viser-objet) ; le bouton 10 vaut 1 tant que le joueur tient un verrou (supposé : le bouton de verrouillage tenu) ; le mode +8
+	// (--viser-objet) ; le bouton 10 est celui de la manette du joueur (ManetteJoueur : --tenir 10, ou le verrou gardé) ; le mode +8
 	// du composant de visée n'est pas suivi (0) ; +0x54c n'a pas d'écrivain trouvé (nul) ; le repli (FUN_004d7630) n'a ni +0x9c ni la
 	// liste des candidats (FUN_004d6dc0) : la cible gardée, puis le partenaire de prise. La caméra est le mode courant du gestionnaire.
 	bool joueur = p->type == SCRIPT_PED_TYPE_JOUEUR;
 	const CObjetOutil *verrouObjet = ped == SCRIPT_PED_JOUEUR ? ObjetParPoignee(objetVise) : nil;
 	if(verrouObjet && verrouObjet->detruit) verrouObjet = nil;
 	bool aVisee = verrouObjet != nil || pietons.Acceder(p->verrou) != nil;
-	CViseeTir::Source source = CViseeTir::SourceCible(joueur, cameras.courant, objetViseTir, p->viseeAuto != 0, joueur && aVisee ? 1.0f : 0.0f, 0,
-	                                                  false, aVisee);
+	// FUN_007386f0(10, 0) → FUN_0050c730 : le bouton 10 de la manette du joueur 0 (ManetteJoueur), 1 enfoncé.
+	float bouton10 = joueur ? ManetteJoueur(aVisee).Valeur(10) : 0.0f;
+	CViseeTir::Source source = CViseeTir::SourceCible(joueur, cameras.courant, objetViseTir, p->viseeAuto != 0, bouton10, 0, false, aVisee);
 	const CScriptPed *c = nil;
 	const CObjetOutil *o = nil;
 	const CObjetAnime *a = nil;
