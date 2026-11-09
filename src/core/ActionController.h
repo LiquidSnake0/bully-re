@@ -197,7 +197,10 @@ public:
 	// degats : le flottant +0x2c (44), -1 sans lui ; avance : le flottant +0x28 (40), le facteur de la durée du vol dans l'avance sur
 	// une cible qui bouge (FUN_0065ecb0 ; 1 sans lui, supposé : toutes les pistes WeaponFire relues le portent à 1).
 	// decalages : les flottants +0x18 … +0x24 (24 à 36), les décalages de visée (FUN_00662760 ; 0 pour la bille et la brique).
-	struct Tir { float entree, facteur; bool lacher, fait; float degats = -1.0f, avance = 1.0f; float decalages[4] = {0, 0, 0, 0}; };
+	// objetVise : l'octet +0x31 (49), le tir vers l'objet visé du piéton (+0x438) et son point (+0x43c) (FUN_00662a40 ; 0 pour la
+	// bille et la brique).
+	struct Tir { float entree, facteur; bool lacher, fait; float degats = -1.0f, avance = 1.0f; float decalages[4] = {0, 0, 0, 0};
+	             bool objetVise = false; };
 	std::vector<Tir> tirs, tirsLances;
 	// - WeaponSetCharge (WeaponSetChargeTrack 0x935c74 ; lancement FUN_0065e7c0, lu dans l'index) : la charge de l'objet arme du
 	//   piéton (+0x128 de +0x1d0) reçoit le flottant +0x18 (24) ; sa mise à jour (FUN_006094f0) rend faux. `chargesPosees`.
@@ -343,7 +346,13 @@ public:
 	// (FUN_005f49a0), et quand son nœud finit, l'octet +0x29 (41) le fait redescendre depuis le nœud visé (sinon il
 	// s'arrête) ; l'octet +0x28 (40) le fait avancer dès le lancement. La durée de vie +0x10 (16) l'arrête. Suivies quand
 	// `sousControleurs` est posé (les arbres de l'IA) ; sinon l'outil n'en garde que les FaceTarget et SeekEntityPosition.
-	struct Lance { float entree, vie; const CActionNode *vise; bool boucle, lancee, morte; std::shared_ptr<CActionController> c; };
+	// FUN_005f72e0 (lu dans l'index le 09.11.2026) : un contrôleur qui joue un nœud avance (FUN_005f49a0) et, devenu vide avec +0x29,
+	// redescend depuis le nœud visé (la méthode +0x4c du nœud, FUN_005f4490) ; la piste vit (1). Un contrôleur vide sans +0x29 rend 0 :
+	// la piste meurt, et avec l'octet +8 (`retient`) elle ne retient plus son nœud (FUN_005f4230), qui finit quand plus rien ne le
+	// retient : le nœud Controller du lance-pierre (Spawn './UpperBody', +8 = 1, +0x29 = 0) finit avec son haut du corps, sa Sequence
+	// '../' le rend à la banque, qui reprend Controller au bouton suivant.
+	struct Lance { float entree, vie; const CActionNode *vise; bool boucle, lancee, morte; std::shared_ptr<CActionController> c;
+	               bool retient = false; };
 	std::vector<Lance> lances;
 	bool sousControleurs = false;
 	// Hors des arbres de l'IA, les pistes spawn dont le nœud visé est sous cet arbre ont aussi leur contrôleur (l'outil le pose à

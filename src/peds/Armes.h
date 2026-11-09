@@ -73,6 +73,99 @@ struct CChargeArme {
 
 // La visée du tir (FUN_00662a40, le point visé du tir, et ce qu'il appelle).
 struct CViseeTir {
+	// FUN_00662a40 (ecx = la piste WeaponFire lancée : +0x3c son contexte, +0x40 le piéton, +0x44 la charge ; lu à l'assembleur de
+	// 0x662a40 à 0x662b70) : d'où vient la cible du tir.
+	// - Avec l'octet +0x31 (49) de la piste : l'objet visé du piéton (+0x438) et son point (+0x43c), que FUN_006626a0 prendra ;
+	//   ailleurs, le point passé vaut -1. 4 des 81 pistes WeaponFire des .cat le portent, aucune des armes des sept missions.
+	// - Sinon, une cible n'est cherchée que si le piéton n'est pas le joueur (le type +0x1310 n'est pas 0xd), si la visée automatique
+	//   (+0x1ec0) est posée, si le bouton 10 de la manette ne vaut pas 0 (FUN_007386f0(10, 0), fcomp contre _DAT_008ff1f0 : 0 ;
+	//   test ah,0x44 et jp : seule l'égalité refuse), si le mode du composant de visée (+8 de +0x1c8, FUN_00856820) vaut 2, ou si la
+	//   caméra est une caméra de visée (le mode courant du gestionnaire, DAT_00c3ccf8 = 0xc3cc68 + 0x90, vaut 2 ou 0xd : ceux que
+	//   les conditions CameraActive du nœud Controller du lance-pierre citent ; ces deux tests ne valent que pour le joueur, les octets
+	//   [esp+0x10] et [esp+0x11]). Le joueur qui ne remplit aucune de ces conditions tire devant lui.
+	// - La cible cherchée : +0x54c, prise une seule fois (FUN_00465690 désinscrit la référence, puis +0x54c = 0) ; sans elle, la cible
+	//   du composant de visée (+0xa0, FUN_004d5980, ecx = +0x1c8) ; sans elle, FUN_004d7630 (CibleOuRepli).
+	enum Source { SOURCE_AUCUNE, SOURCE_OBJET_VISE, SOURCE_54C, SOURCE_VISEE, SOURCE_REPLI };
+	static bool CameraDeVisee(bool joueur, int32 modeCamera) { return joueur && (modeCamera == 2 || modeCamera == 0xd); }
+	static Source
+	SourceCible(bool joueur, int32 modeCamera, bool octet31, bool viseeAuto, float bouton10, int32 modeVisee, bool a54c, bool aVisee)
+	{
+		if(octet31) return SOURCE_OBJET_VISE;
+		if(joueur && !viseeAuto && bouton10 == 0.0f && modeVisee != 2 && !CameraDeVisee(joueur, modeCamera)) return SOURCE_AUCUNE;
+		if(a54c) return SOURCE_54C;
+		return aVisee ? SOURCE_VISEE : SOURCE_REPLI;
+	}
+	// FUN_004d7630 (ecx = le composant de visée +0x1c8 ; lu dans l'index) : sa cible +0xa0 ; sans elle, la cible gardée +0xa8 ; sans
+	// elle, +0x9c, puis le partenaire de prise du piéton (+0x155c de son +4), puis FUN_004d6dc0 (le choix dans la liste des candidats
+	// +0x90, +0x98 entrées de 0x1c octets) ; ce choix devient la cible gardée (FUN_00465690 pour l'ancienne, FUN_00465680 pour la
+	// nouvelle) et +0xc0 prend l'heure (DAT_00c1a9b4). -1 : pas de cible.
+	static int
+	CibleOuRepli(int a0, int &gardee, int a9c, int prise, int choisie)
+	{
+		if(a0 >= 0) return a0;
+		if(gardee >= 0) return gardee;
+		int c = a9c >= 0 ? a9c : prise >= 0 ? prise : choisie;
+		gardee = c;
+		return c;
+	}
+	// Le genre de la cible (FUN_00662a40, de 0x662b40 à 0x662b70, puis de 0x662bc5) : un piéton (les 3 bits bas de +0x108 à 3) passe par
+	// son point visé (FUN_00662580) puis par les décalages et l'avance (FUN_00662760) ; une autre entité rend aussitôt le point de
+	// FUN_006625f0 si sa méthode +0x14 rend vrai (FUN_007ffc70 pour CAutomobile ; FUN_00828240, xor al,al, pour CEntity, CObject,
+	// CPed, CProjectile et les autres classes de rtti.json) ou celui de FUN_006626a0 (avec le point +0x43c ou -1) ; sans cible, le
+	// point devant le tireur (FUN_00662180 avec une caméra de visée, FUN_0065ea50 sinon), puis FUN_00662760.
+	enum Genre { GENRE_AUCUNE, GENRE_PIETON, GENRE_AUTOMOBILE, GENRE_AUTRE };
+	// FUN_006626a0(cible, point) (lu à l'assembleur de 0x6626a0 à 0x66272e) : le point visé sur une entité qui n'est ni un piéton ni
+	// une automobile. Avec un point (+0x43c du tireur, le chemin de l'octet +0x31 ; -1 ailleurs), le point de synchronisation de ce
+	// nom sur l'entité (FUN_00467c30(cible, point, …, 1)) s'il existe ; sinon, si la cible est celle du tireur (PedGetTargetPed,
+	// FUN_00496fb0, ecx = le tireur +0x40 : pour le joueur, la cible du composant de visée, FUN_004d5980), FUN_00496d70 : le point
+	// de verrouillage +0x1dc8 du tireur, dans le repère de sa cible (+0x538, ou FUN_004d5980 ; FUN_0046dbd0 sa matrice, FUN_0041a850
+	// le produit), (0, 0, 0) sans cible ; sinon la position de l'entité (le +0x30 de sa matrice +0x14, ou +4). Puis l'imprécision
+	// (FUN_0065eb40, Imprecision) s'y ajoute.
+	// FUN_0065eb40(point) (ecx = la piste WeaponFire ; lu à l'assembleur de 0x65eb40 à 0x65eca6) : l'écart du tireur (son +0x30 ou +4)
+	// au point, sa longueur à plat d (la racine de |x² + y²|, FUN_0085c4d0) ; s = d / 20 (le double 0x900168) × (100 − la
+	// statistique 10 du tireur, « Projectile Attack Accuracy », la colonne L de pedstats.dat : 95 pour STAT_PLAYER ; FUN_00476f10) /
+	// 50 (0x900aa0) ; hors de l'écran (PedIsOnScreen, FUN_00467310, faux), × le +0x11c de la fiche de projectile par défaut
+	// (DAT_020c88c8) ; pour le joueur, × (1 − la précision du verrou, FUN_004d5cd0). Trois tirages de rand (FUN_0085c6ca),
+	// r = rand / 32767 (0x900ce8) × 2 − 1 (0x8ff1d8, Tirage) : le premier va en z, le deuxième en y, le troisième en x.
+	static float Tirage(int32 r) { return (float)((double)r / 32767.0 * 2.0 - 1.0); }
+	static CVector
+	Imprecision(const CVector &tireur, const CVector &point, int32 stat10, bool aLEcran, float horsEcran, bool joueur, float precision,
+	            float r1, float r2, float r3)
+	{
+		float ex = point.x - tireur.x, ey = point.y - tireur.y;
+		float d = sqrtf(fabsf(ex * ex + ey * ey));
+		float s = (float)((double)d / 20.0) * (float)((double)(100 - stat10) / 50.0);
+		if(!aLEcran) s = horsEcran * s;
+		if(joueur) s = (1.0f - precision) * s;
+		return CVector(r3 * s, r2 * s, r1 * s);
+	}
+	// FUN_004d5cd0 (ecx = le composant de visée +0x1c8 ; lu dans l'index) : la précision du verrou, entre 0 et 1. Le temps +0x80 du
+	// composant, borné au +0x108 de PlayerButes (DAT_020c88b8) × 1000 (le double 0x900138), divisé par ce dernier ; pour le joueur
+	// (son +4, le type 0xd), plus son +0x1ec4 ; 1 au plus.
+	static float
+	PrecisionVerrou(float temps, float butes108, bool joueur, float bonus)
+	{
+		float plein = butes108 * (float)1000.0;
+		float p = temps < plein ? temps : plein;
+		p = p / plein;
+		if(joueur) p = bonus + p;
+		return 1.0f <= p ? 1.0f : p;
+	}
+	// FUN_0065ea50(depart, portée) (ecx = la piste WeaponFire ; lu à l'assembleur de 0x65ea50 à 0x65eb39) : le point devant le tireur
+	// sans cible, hors d'une caméra de visée (FUN_00662a40, de 0x662bc5 à 0x662c4f : la portée de l'objet arme, +0x124 + la charge +0x44
+	// × (+0x120 − +0x124), 0,01 au moins, _DAT_0090054c). Le départ plus la portée × l'avant du tireur (FUN_00415350, ecx = le piéton
+	// +0x40 ; la somme par FUN_00412850) ; si la portée dépasse 0,9 (fcomp contre le double 0x900dc0, test ah,0x41 : ni inférieure ni
+	// égale), le z devient celui du tireur (le z de sa matrice, +0x14 → +0x38, ou +0xc sans matrice) : le tir part vers le sol à la
+	// hauteur de ses pieds. Pour le joueur (+0x1310 = 0xd) sur un véhicule (+0x1554), s'y ajoute DAT_00b31cb8 × la vitesse du véhicule
+	// (+0x124, +0x128, +0x12c) ; `vehicule` nul sans véhicule.
+	static CVector
+	PointDevant(const CVector &depart, const CVector &avant, float portee, float zTireur, const CVector *vehicule = nullptr, float facteur = 0.0f)
+	{
+		CVector r(depart.x + portee * avant.x, depart.y + portee * avant.y, depart.z + portee * avant.z);
+		if((double)portee > 0.9) r.z = zTireur;   // la portée (un float) contre le double 0,9 : 0,9f (0,89999998) ne le dépasse pas
+		if(vehicule){ r.x += facteur * vehicule->x; r.y += facteur * vehicule->y; r.z += facteur * vehicule->z; }
+		return r;
+	}
 	// Les décalages de visée d'une piste WeaponFire sur une cible piéton : FUN_00662760 (lu à l'assembleur de 0x662760 à 0x6629c4 ;
 	// Ghidra perd la somme en y), avant l'avance (FUN_0065ecb0). Si l'un des flottants +0x18, +0x1c, +0x20 (24, 28, 32) de la piste
 	// n'est pas nul : v, l'écart du départ au point visé à plat (FUN_00414a20, z à 0) ; d, sa longueur (la racine, FUN_0085c4d0) ; s, le
@@ -126,6 +219,39 @@ struct CViseeTir {
 		float k = (d / (vitesseTir - (ay * uy + ax * ux + az * 0.0f) / t)) / t;
 		ax *= k * fiche84; ay *= k * fiche84; az *= k * fiche84;
 		return CVector(cible.x + ax, cible.y + ay, cible.z + az);
+	}
+};
+
+// Les destinations forcées du tir d'un piéton : son composant +0x3bc (le même que PedSetProjDest prend en ecx, lu à l'assembleur de
+// 0x5cd470 à 0x5cd4f1), trois places de (x, y, z) en +0x48, +0x54 et +0x60. Une place est vide quand son x vaut _DAT_0090fb98
+// (1e11, le flottant 0x51ba43b7). Le constructeur du composant (FUN_0048c1b0, appelé par FUN_0047ffe0) met les trois places à zéro,
+// puis leurs x à 1e11 ; FUN_0048c430 (appelée par FUN_00474f50, non suivie) ne vide que le x de la première. La visée du tir
+// (FUN_00662a40, lu à l'assembleur de 0x662b7e à 0x662bc2 : ecx = +0x3bc du piéton du contexte, [+0x3c]+8) prend la première place
+// avant tout point visé, sans décalage de visée ni avance (elle rend avant FUN_00662760). Lus à l'assembleur le 09.11.2026.
+struct CDestinationsTir {
+	static constexpr float kVide = 99999997952.0f;   // _DAT_0090fb98
+	CVector place[3];
+	CDestinationsTir() { Vider(); }
+	// FUN_0048c1b0 (la part des destinations) : à zéro, puis les x à 1e11.
+	void Vider() { for(CVector &v : place){ v = CVector(0.0f, 0.0f, 0.0f); v.x = kVide; } }
+	// FUN_0048c430 : le x de la première seulement (les deux autres gardent ce qu'elles tenaient).
+	void ViderPremiere() { place[0].x = kVide; }
+	// PedSetProjDest (FUN_0048bd40, le nom de la liaison Lua 0x5cd470 ; lu à l'assembleur de 0x48bd40 à 0x48bd83) : la première place
+	// dont le x vaut 1e11 (fcom, test ah,0x44, jnp : l'égalité arrête la recherche) reçoit le point ; trois places pleines, rien.
+	bool Poser(float x, float y, float z) {
+		for(CVector &v : place) if(v.x == kVide){ v = CVector(x, y, z); return true; }
+		return false;
+	}
+	// FUN_0048bd90 (0x48bd90 à 0x48bda8) : une destination en attente, le x de la première n'est pas 1e11.
+	bool EnAttente() const { return place[0].x != kVide; }
+	// FUN_0048bdb0 (0x48bdb0 à 0x48bdf2) : rend la première ; la deuxième et la troisième avancent d'une place, et seul le x de la
+	// troisième redevient 1e11 (ses y et z restent).
+	CVector Prendre() {
+		CVector r = place[0];
+		place[0] = place[1];
+		place[1] = place[2];
+		place[2].x = kVide;
+		return r;
 	}
 };
 

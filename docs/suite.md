@@ -107,15 +107,25 @@ chantier. Un point fini passe en bas, avec son commit.
    `1_04`, `1_05`, `1_06_01` et `1_07`, les poignées des piétons créés ensuite baissent de 3, et les commandes de `1_04` et `1_05`
    sont refaites (`1_05` finit à 194,30 s) ; avec elle `PedClearHitRecord`, `PedSetMinEngage` et la condition `EngageDistance`, la
    visée automatique du joueur (`WeaponPlayerFireAutoTarget`) et les décalages de visée de `WeaponFire` (`FUN_00662760`).
+   Le 09.11 (séance 1), **la visée du joueur est refaite en entier** (`FUN_00662a40`) : les destinations forcées (`PedSetProjDest`), la
+   source de la cible (l'octet +0x31 et l'objet visé +0x438, le joueur et ses quatre conditions, +0x54c, la cible du composant de visée
+   et son repli `FUN_004d7630`), le bouton 10 de la manette (`FUN_007386f0`, `FUN_0050c730`, `src/core/Manette.h`), le point devant le
+   tireur sans cible (`FUN_0065ea50`), le point et l'imprécision sur une entité qui n'est pas un piéton (`FUN_006626a0`, `FUN_0065eb40`,
+   `FUN_004d5cd0`) et `PedTargetPAnim` ; avec elle la vie d'un projectile (`FUN_004d4c40`, `PedSetProjectileLifetime`), son test
+   d'eau (`FUN_006d48d0`) et la mort d'une piste spawn au contrôleur vide (`FUN_005f72e0`) ; les sept missions restent réussies, à
+   l'identique. Le haut du corps du lance-pierre ne repart pas encore au bouton suivant : la feuille `AimOut/default` ne finit pas.
    Suite, dans l'ordre :
-   - la suite des armes : la visée du joueur (`FUN_00662a40` en entier : le bouton 10 de la manette, `FUN_007386f0`, la cible du
-     +0x54c et celle du composant de visée, `FUN_004d5980` et `FUN_004d7630`, l'octet +0x31 de la piste et le +0x438 du piéton ; le +0x1714 du piéton que l'avance sur la cible
-     prend pour sa vitesse, que l'outil remplace par le déplacement de la dernière image), le haut du corps qui s'arrête après `AimOut` (le spawn `./UpperBody` de
-     `Controller` a l'octet +0x29 à 0 : que le bouton suivant le relance, pour ne plus passer par `--jouer` ni `--tirer`), la
-     physique des `CProjectile` (`FUN_004d4c40`, le sol, les rebonds ; le choc, `FUN_004d3860` ; la mèche que `FUN_00664710` passe
-     à la vie ; le test d'eau `FUN_006d48d0`),
-     le départ du tir (la douille « Muzzle », `FUN_0065e880`), le genre d'un coup de projectile (+0x468), le contrôleur de
-     `Locomotion` du lance-pierre qui va et vient entre `Idle` et son enfant #5ab79a15 à chaque image (`1_03`, après 138,04 s) ;
+   - la suite des armes : **les durées des animations des groupes d'armes**, pour que le haut du corps finisse `AimOut` et reparte au
+     bouton suivant sans `--jouer` ni `--tirer` (la feuille `AimOut/default` de SlingShotActions.cat est retenue par
+     `C_PLAYER\SLNG_2IDLE_T`, du groupe `W_Slingshot.agr` n° 2, absente de MAINPED.HXD, la seule lue, et de SLINGSH.HXD, qui n'a que
+     les `PROPS\SLNG_*` : trouver le dictionnaire qui la tient, `Anim/hxds.dat` et les `.agr`, puis refaire l'essai `e104b.sh` du
+     scratchpad, `1_04` au seul bouton 8) ; puis la physique des `CProjectile` (`FUN_004d4c40`, le sol, les rebonds ; le choc,
+     `FUN_004d3860` : le stimulus +0x40/+0x44 et l'explosion de `FUN_004d37d0` aux octets +0x8c, +0x8d, +0x8e ; les volumes d'eau de
+     `FUN_006d48d0`), le départ du tir (la douille « Muzzle », `FUN_0065e880`), le genre d'un coup de projectile (+0x468, le 19e
+     argument de `FUN_0047b810`), le contrôleur de `Locomotion` du lance-pierre qui va et vient entre `Idle` et son enfant
+     #5ab79a15 à chaque image (`1_03`, après 138,04 s) ; ce qui reste supposé de la visée : le point de verrouillage +0x1dc8 que pose
+     `FUN_00497d20`, le temps du verrou (+0x80 du composant de visée) et sa liste de candidats (`FUN_004d6dc0`), l'écrivain de +0x54c,
+     la caméra de visée (`FUN_00662180`), le point d'une automobile (`FUN_006625f0`, l'effet 2dfx 0x11) ;
    - ce qui reste des entités qui suivent un trajet : leur orientation (`FUN_005eb910` : le cap et le tangage gardés, la rotation
      +0x1c … +0x28 que `FUN_005ec0a0` fait tourner, les angles du segment avec l'octet +0xc, `FUN_005ed570` et `FUN_00433340` ;
      l'outil ne garde que la position de ses CObject), `PAnimFollowPathSoundLoop` (0x5c3e70, la boucle de son +4), l'octet +0xd
@@ -190,6 +200,13 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- La visée du joueur en entier, la vie et le test d'eau des projectiles, la piste spawn qui meurt (09.11, séance 1 ; 198fc0b, ec11096,
+  df3895b, 319d758, b8599fe, 304b947, 5184a36, b6fcc8c, 16aa299) : `PedSetProjDest` (`FUN_0048bd40`, `CDestinationsTir`), la source de
+  la cible du tir (`FUN_00662a40`, `CViseeTir::SourceCible`, `FUN_004d7630`), le bouton 10 (`FUN_007386f0`, `FUN_0050c730`,
+  `CManette`), le point devant le tireur (`FUN_0065ea50`), l'imprécision (`FUN_006626a0`, `FUN_0065eb40`, `FUN_004d5cd0`), la vie du
+  projectile (`FUN_004d4c40`, `PedSetProjectileLifetime`), la piste spawn au contrôleur vide (`FUN_005f72e0`), le test d'eau et le
+  fondu (`FUN_006d48d0`, `FUN_004d45e0`), `PedTargetPAnim` (0x5cfe50, `VerrouillerObjet`).
 
 - `AreaClearAllPeds` branchée et la suite de 1_07 et des armes (07.11, séance 3 ; c60757f, 2a54c45, f5a14d7, 68ecb38, 9caccfa) : `AreaClearAllPeds`
   (0x5b7e70, `CScriptPedPool::AmbiantsAVider`, les commandes de `1_04` et `1_05` refaites), `PedClearHitRecord` (0x5cfde0),

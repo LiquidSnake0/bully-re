@@ -61,6 +61,7 @@
 #include "../src/hud/BarreSante.h"
 #include "../src/hud/MinuterieMission.h"
 #include "../src/render/CameraMgr.h"
+#include "../src/core/Manette.h"
 #include "../src/peds/PedStats.h"
 #include "../src/core/ModelInfo.h"
 #include "../src/entities/SuiviTrajet.h"
@@ -352,6 +353,19 @@ EtatBoutonJoueur(uint32 bouton)
 		else if(maintenant < b.fin + 33) etat |= 8;
 	}
 	return etat;
+}
+// La manette du joueur (src/core/Manette.h ; la manette numérique de l'index DAT_020cece8, FUN_007386f0) : les boutons 0 à 15 que
+// l'outil tient (--tenir, une demande en attente : les bits 0 et 1 de leur octet d'état) ; le bouton 10 (le verrou que lit
+// FUN_004d5d50 pour l'octet +0x7e du composant de visée) l'est aussi tant que le joueur garde une cible verrouillée par --viser ou
+// --viser-objet (supposé : l'outil verrouille d'un coup, sans tenir le bouton).
+static CManette
+ManetteJoueur(bool verrou)
+{
+	CManette m;
+	m.numerique = true;
+	for(int32 b = 0; b < 16; b++) if(EtatBoutonJoueur((uint32)b) & 3) m.bits |= CManette::kMasques[b];
+	if(verrou) m.bits |= CManette::kMasques[10];
+	return m;
 }
 // L'état des 47 boutons bruts des autres piétons (+0x20 du composant +0x2e0, 12 octets par bouton : l'octet d'état en +0),
 // que les pistes ActionRequest de leur arbre de l'IA appuient (FUN_005f3930 : 3 lâché → 8, 2 appuyé et tenu → 3, sinon
@@ -2434,6 +2448,67 @@ PedLockTarget(lua_State *L)
 	// Le troisième argument : un nombre, ou un booléen que FUN_004969a0 convertit (FUN_005d81c0 choisit).
 	int mode = lua_isnumber(L, 3) ? (int)lua_tonumber(L, 3) : lua_toboolean(L, 3);
 	pietons.Verrouiller((int)luaL_optnumber(L, 1, -1), (int)luaL_optnumber(L, 2, -1), mode);
+	return 0;
+}
+
+// PedTargetPAnim(ped, déclencheur[, nom de point | mode]…) (0x5cfe50, lu à l'assembleur de 0x5cfe50 à 0x5cffad) : le piéton du genre
+// 2 (FUN_005c7220), rien sans lui. Un déclencheur nul (FUN_005d8200(L, 1)) : FUN_004989c0(0), le verrou levé (FUN_00497d20(0, 0,
+// (0, 0, 0))), l'objet visé +0x438 désinscrit (FUN_00465690) et mis à nul, son point +0x43c à 0. Sinon l'entité du déclencheur (le
+// pool DAT_020c7c48 : nulle pour un handle négatif ou une case libre, l'octet de +4 à 0x80 ; FUN_004ea270, son +0x1c) ; puis les
+// arguments à partir du troisième : une chaîne (FUN_005d81e0, le type 4 de Lua 5.0) donne le point, son haché (FUN_005fa7b0 →
+// HashString), un nombre (FUN_005d81c0) le mode ; le point vaut -1 et le mode 0 sans eux. Une entité animée (+0x108 & 7 = 6) devient
+// l'objet visé et son point (FUN_004711b0, ecx = +0x438 : la référence changée, +0x43c posé) ; puis FUN_00497d20(entité, mode,
+// (0, 0, 0)) la verrouille (CScriptPedPool::VerrouillerObjet). Les arbres de LibPropNew.lur, LibPropNewer.lur et CarnivalRides.lur
+// s'en servent ; aucune des sept missions.
+static int
+PedTargetPAnim(lua_State *L)
+{
+	Journal("PedTargetPAnim", L, 1);
+	int h = (int)luaL_optnumber(L, 1, -1);
+	CScriptPed *p = pietons.Acceder(h);
+	if(p == nil) return 0;
+	int d = lua_isnumber(L, 2) ? (int)lua_tonumber(L, 2) : 0;
+	if(d == 0){
+		pietons.Verrouiller(h, -1, 0);
+		p->objetVise = -1;
+		p->syncVise = 0;
+		return 0;
+	}
+	int objet = d < 0 ? -1 : objetsAnimes.ObjetDe(d);
+	uint32 point = 0xffffffffu;
+	int mode = 0;
+	for(int i = 3; i <= lua_gettop(L); i++){
+		if(lua_type(L, i) == LUA_TSTRING) point = ActionHash(lua_tostring(L, i));
+		else if(lua_isnumber(L, i)) mode = (int)lua_tonumber(L, i);
+	}
+	if(objet < 0) return 0;   // FUN_00497d20 sur une entité nulle : le verrou levé (supposé, comme FUN_004989c0)
+	p->objetVise = objet;
+	p->syncVise = point;
+	pietons.VerrouillerObjet(h, objet, mode);
+	printf("%6.2f s  le piéton %d vise l'objet animé %d (point %08x, mode %d)\n", maintenant / 1000.0, h, objet, point, mode);
+	return 0;
+}
+
+// PedSetProjDest(ped, x, y, z) (0x5cd470, lu à l'assembleur de 0x5cd470 à 0x5cd4f1) : le piéton (FUN_005d8200 puis FUN_005c7220),
+// les trois flottants (FUN_005d82a0, arguments 2 à 4), puis PedSetProjDest (FUN_0048bd40) sur son composant +0x3bc : la prochaine
+// destination forcée de ses tirs (CDestinationsTir, src/peds/Armes.h). Seul 4_B1.lur l'appelle.
+static int
+PedSetProjDestLua(lua_State *L)
+{
+	Journal("PedSetProjDest", L, 1);
+	if(CScriptPed *p = pietons.Acceder((int)luaL_optnumber(L, 1, -1)))
+		p->destinationsTir.Poser((float)luaL_optnumber(L, 2, 0), (float)luaL_optnumber(L, 3, 0), (float)luaL_optnumber(L, 4, 0));
+	return 0;
+}
+
+// PedSetProjectileLifetime(ped, secondes) (0x5ccc80, lu dans l'index : FUN_005d8200 et FUN_005c7220 pour le piéton du genre 2, le
+// flottant du deuxième argument par FUN_005d82a0) : le +0x1cc0 du piéton, la vie de ses projectiles. Aucun script ne l'appelle.
+static int
+PedSetProjectileLifetime(lua_State *L)
+{
+	Journal("PedSetProjectileLifetime", L, 1);
+	float v = (float)luaL_optnumber(L, 2, 0);
+	if(CScriptPed *p = pietons.Acceder((int)luaL_optnumber(L, 1, -1))) p->vieProjectiles = v;
 	return 0;
 }
 
@@ -6160,7 +6235,7 @@ VitessePieton(int h)
 	return CVector((q->pos.x - it->second.x) / kPasTimer, (q->pos.y - it->second.y) / kPasTimer, (q->pos.z - it->second.z) / kPasTimer);
 }
 static void
-Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.0f, const float *decalages = nil)
+Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.0f, const float *decalages = nil, bool objetViseTir = false)
 {
 	CScriptPed *p = pietons.Acceder(ped);
 	if(p == nil) return;
@@ -6171,15 +6246,45 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	float ac = p->cap * 3.14159265f / 180.0f;
 	CVector avant(cosf(ac), sinf(ac), 0.0f), droite(sinf(ac), -cosf(ac), 0.0f), haut(0.0f, 0.0f, 1.0f);
 	CVector depart = reglagesTir.Partir(CVector(p->pos.x, p->pos.y, p->pos.z + 1.0f), droite, avant, haut), cible;
-	// FUN_00662a40 : pour le joueur (le type 0xd), une cible n'est prise que si la visée automatique (+0x1ec0) est posée, que le bouton
-	// 10 de la manette est tenu (FUN_007386f0(10, 0), FUN_0050c730 : l'outil le tient pour tenu quand --viser a verrouillé une cible ;
-	// supposé), que FUN_00856820 rend 2, ou dans deux modes de DAT_00c3ccf8 (2 et 0xd, non suivis) ; sinon le tir part devant lui. La
-	// cible est alors celle du +0x54c (prise une fois, puis vidée : FUN_00465690), sinon celle du composant de visée (FUN_004d5980, puis
-	// FUN_004d7630) ; l'outil n'a que le verrou de --viser, et la visée automatique ne change donc rien à ses tirs.
-	bool prendCible = p->type != SCRIPT_PED_TYPE_JOUEUR || p->viseeAuto != 0 || p->verrou >= 0;
-	const CScriptPed *c = prendCible ? pietons.Acceder(p->verrou) : nil;
-	const CObjetOutil *o = ped == SCRIPT_PED_JOUEUR ? ObjetParPoignee(objetVise) : nil;
-	if(o && !o->detruit) cible = o->pos;
+	// FUN_00662a40 : d'où vient la cible (CViseeTir::SourceCible, src/peds/Armes.h). La cible du composant de visée (+0xa0, FUN_004d5980)
+	// est dans l'outil la cible verrouillée du piéton (--viser, PedLockTarget, FUN_00497d20) ou l'objet que le joueur verrouille
+	// (--viser-objet) ; le bouton 10 est celui de la manette du joueur (ManetteJoueur : --tenir 10, ou le verrou gardé) ; le mode +8
+	// du composant de visée n'est pas suivi (0) ; +0x54c n'a pas d'écrivain trouvé (nul) ; le repli (FUN_004d7630) n'a ni +0x9c ni la
+	// liste des candidats (FUN_004d6dc0) : la cible gardée, puis le partenaire de prise. La caméra est le mode courant du gestionnaire.
+	bool joueur = p->type == SCRIPT_PED_TYPE_JOUEUR;
+	const CObjetOutil *verrouObjet = ped == SCRIPT_PED_JOUEUR ? ObjetParPoignee(objetVise) : nil;
+	if(verrouObjet && verrouObjet->detruit) verrouObjet = nil;
+	const CObjetAnime *verrouAnime = objetsAnimes.Objet(p->objetAnimeVerrou);   // PedTargetPAnim
+	bool aVisee = verrouObjet != nil || verrouAnime != nil || pietons.Acceder(p->verrou) != nil;
+	// FUN_007386f0(10, 0) → FUN_0050c730 : le bouton 10 de la manette du joueur 0 (ManetteJoueur), 1 enfoncé.
+	float bouton10 = joueur ? ManetteJoueur(aVisee).Valeur(10) : 0.0f;
+	CViseeTir::Source source = CViseeTir::SourceCible(joueur, cameras.courant, objetViseTir, p->viseeAuto != 0, bouton10, 0, false, aVisee);
+	const CScriptPed *c = nil;
+	const CObjetOutil *o = nil;
+	const CObjetAnime *a = nil;
+	if(source == CViseeTir::SOURCE_OBJET_VISE) a = objetsAnimes.Objet(p->objetVise);   // +0x438 (TargetProp, PedTargetPAnim)
+	else if(source == CViseeTir::SOURCE_VISEE){
+		if(verrouObjet) o = verrouObjet;
+		else if(verrouAnime) a = verrouAnime;
+		else c = pietons.Acceder(p->verrou);
+	}
+	else if(source == CViseeTir::SOURCE_REPLI) c = pietons.Acceder(CViseeTir::CibleOuRepli(-1, p->cibleGardee, -1, p->cibleDePrise, -1));
+	// FUN_00662a40 (0x662b7e à 0x662bc2) : une destination forcée en attente (FUN_0048bd90 sur le +0x3bc du piéton) est prise
+	// (FUN_0048bdb0) avant tout point visé ; la visée rend alors sans décalage ni avance (pas de FUN_00662760).
+	if(p->destinationsTir.EnAttente()){
+		cible = p->destinationsTir.Prendre();
+		printf("%6.2f s  le piéton %d tire vers sa destination forcée (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, ped, cible.x, cible.y, cible.z);
+	}
+	// Une entité qui n'est pas un piéton ni une automobile : FUN_006626a0 (CViseeTir, src/peds/Armes.h). L'objet que le joueur
+	// verrouille est la cible du composant de visée, donc PedGetTargetPed : son point de verrouillage (+0x1dc8, posé par FUN_00497d20)
+	// n'est pas suivi, l'outil prend sa position ; l'objet visé (+0x438) et son point (+0x43c, FUN_00467c30) : sa position. Puis
+	// l'imprécision (FUN_0065eb40) : l'outil n'a ni l'écran (le piéton y est) ni le temps du verrou (+0x80 du composant : précision
+	// nulle), et ne rejoue pas le hasard du moteur : les trois tirages valent leur moyenne, 0 (supposé), et l'écart est nul.
+	else if(o || a){
+		cible = o ? o->pos : a->pos;
+		CVector e = CViseeTir::Imprecision(p->pos, cible, pietons.StatLue(ped, 10, 95), true, 1.0f, joueur, 0.0f, 0.0f, 0.0f, 0.0f);
+		cible = CVector(cible.x + e.x, cible.y + e.y, cible.z + e.z);
+	}
 	// Une cible piéton : le point visé de FUN_00662580 → FUN_00662380, décalé par WeaponFireOffset ; l'outil prend 1 m au-dessus
 	// de ses pieds et, pour sa hauteur (les sphères de FUN_00474750), 1,8 m (supposé, comme TargetRelativeHeight).
 	else if(c && c != p){
@@ -6206,8 +6311,11 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	else{
 		float portee = p->armePortee + charge * (p->armeInit - p->armePortee);
 		if(portee < 0.01f) portee = 0.01f;
-		float a = p->cap * 3.14159265f / 180.0f;
-		cible = CVector(depart.x + cosf(a) * portee, depart.y + sinf(a) * portee, depart.z);
+		// FUN_0065ea50 (CViseeTir::PointDevant) : l'avant du tireur (son cap) ; plus loin que 0,9 m, le point est à la hauteur de ses
+		// pieds. L'outil n'a ni véhicule (+0x1554) ni la caméra de visée de FUN_00662180 (les modes 2 et 0xd ne s'y posent pas).
+		cible = CViseeTir::PointDevant(depart, avant, portee, p->pos.z);
+		printf("%6.2f s  le piéton %d tire sans cible, devant lui à %.2f m : (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, ped, portee, cible.x,
+		       cible.y, cible.z);
 	}
 	float vitesse = tp.vitesseMin + charge * (tp.vitesseMax - tp.vitesseMin);
 	if(vitesse < 0.01f) vitesse = 0.01f;
@@ -6219,10 +6327,11 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	q.actif = true; q.modele = munition; q.tireur = ped; q.pos = depart; q.gravite = g;
 	q.vitesse = CVector(dx / T, dy / T, (dz - 0.5f * g * T * T) / T);
 	q.degats = CChargeArme::Degats(true, tp.degatsMin, tp.degatsMax, charge, degatsPiste, pietons.StatLue(ped, 0x1f, 100));
-	// La vie (FUN_004d4c40 : son quatorzième argument, ou s'il est nul la vie +0x48 de la fiche, moins le treizième ; 1 si cela fait 0 ;
-	// gardée en +0xc de l'entrée ; ce que FUN_00664710 y passe, dont une mèche tirée du +0x1cc0 du tireur, n'est pas démêlé) : l'outil
-	// prend la vie de la fiche ; 0, un projectile sans fin (FUN_004d45e0).
-	q.naissance = maintenant; q.vie = tp.vie > 0 ? (uint32)tp.vie : 0;
+	// La vie (CPlacesProjectiles::Vie, FUN_004d4c40 : la vie du tireur, +0x1cc0 × 1000, ou celle de la fiche, moins le temps depuis
+	// l'allumage de la mèche de l'objet arme, +0x140, que l'outil n'allume pas ; 1 pour 0 ; gardée en +0xc de l'entrée) ; 0, un
+	// projectile sans fin (FUN_004d45e0).
+	q.naissance = maintenant;
+	q.vie = (uint32)CPlacesProjectiles::Vie(CPlacesProjectiles::VieDuTireur(p->vieProjectiles), tp.vie, CPlacesProjectiles::EcouleMeche(maintenant, 0));
 	int evincee = -1, place = placesProjectiles.Prendre(maintenant, &evincee);   // FUN_004d4c40 → FUN_004d4590
 	if(evincee >= 0) printf("%6.2f s  la table des projectiles est pleine : le plus vieux (place %d) cède sa place\n", maintenant / 1000.0, evincee);
 	if(place < 0){ reglagesTir.Remettre(); return; }   // FUN_004d4c40 rend 0 : pas de projectile
@@ -6265,7 +6374,7 @@ AppliquerTirs(int ped, CActionController &c)
 	for(const CActionController::Tir &d : c.tirsLances){
 		if(p == nil || p->armeTenue == -1){ reglagesTir.Remettre(); continue; }   // FUN_00661f10 sans arme en main : FUN_0065d160
 		float charge = CChargeArme::AuTir(p->armeCharge, d.facteur);   // FUN_00661f10
-		Tirer(ped, charge, d.degats, d.avance, d.decalages);
+		Tirer(ped, charge, d.degats, d.avance, d.decalages, d.objetVise);
 		p->armeCharge = CChargeArme::kVide;   // FUN_00664710, après le tir
 		if(p->drapeaux[24] == 0) inventaire.Retirer(armes, ped, p->armeMunition, 1, p->type == SCRIPT_PED_TYPE_JOUEUR, modeles.Index("RBandBall"));
 		if(d.lacher && p->armeTenue == p->armeMunition && inventaire.Munitions(armes, ped, p->armeMunition) == 0) LacherArme(ped);
@@ -6361,9 +6470,18 @@ AvancerProjectiles(float pas)
 		if(!q.actif) continue;
 		// FUN_004d45e0 (à chaque image, lu dans l'index) : un tireur piéton qui n'est plus valable (FUN_0047b650) est oublié (le +4 de
 		// l'entrée, FUN_00465690) ; le projectile vit tant que l'octet +0x12 est nul (non suivi) et que maintenant ne dépasse pas sa
-		// création plus sa vie (+8 et +0xc, non signés), ou que sa vie est nulle ; sinon FUN_004d3dc0(i, 1). Le test d'eau
-		// (FUN_006d48d0) et le fondu de la fin de vie (+0x88 de la fiche) ne sont pas suivis.
+		// création plus sa vie (+8 et +0xc, non signés), ou que sa vie est nulle ; sinon FUN_004d3dc0(i, 1). Le fondu de la fin de
+		// vie (+0x88 de la fiche, CPlacesProjectiles::Alpha) n'a rien à dessiner dans l'outil.
 		if(q.tireur >= 0 && pietons.Acceder(q.tireur) == nil) q.tireur = -1;
+		// FUN_004d45e0 → FUN_006d48d0 (CPlacesProjectiles::DansLaMer) : sous le niveau 0 d'une zone dehors, le projectile tombe dans
+		// la mer ; FUN_004d3420 fait l'éclaboussure (non suivie) et, avec l'octet +0x8c ou +0x8d de la fiche, FUN_004d37d0 son choc
+		// (une seule fois, l'octet +0x16 : les dégâts dans le rayon +0x94 par FUN_004d2b40, le stimulus +0x44 avec l'octet +0x40 ;
+		// non suivi), puis FUN_004d3dc0(i, 0). L'outil n'a pas de sol : une bille manquée tombe jusque-là.
+		if(CPlacesProjectiles::DansLaMer(q.pos.z, ZoneDehors(zones.zoneVisible))){
+			printf("%6.2f s  le projectile %d tombe dans l'eau en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, place, q.pos.x, q.pos.y, q.pos.z);
+			q.actif = false; placesProjectiles.Liberer(place);
+			continue;
+		}
 		if(q.vie != 0 && maintenant > q.naissance + q.vie){ q.actif = false; placesProjectiles.Liberer(place); continue; }
 		CVector avant = q.pos;
 		q.pos.x += q.vitesse.x * pas; q.pos.y += q.vitesse.y * pas; q.pos.z += q.vitesse.z * pas;
@@ -7784,6 +7902,9 @@ main(int argc, char **argv)
 	lua_register(L, "PedMePlaying", PedMePlaying);
 	lua_register(L, "PlayerIsInAreaObject", PlayerIsInAreaObject);
 	lua_register(L, "PedLockTarget", PedLockTarget);
+	lua_register(L, "PedSetProjDest", PedSetProjDestLua);
+	lua_register(L, "PedTargetPAnim", PedTargetPAnim);
+	lua_register(L, "PedSetProjectileLifetime", PedSetProjectileLifetime);
 	lua_register(L, "PedSetActionTree", PedSetActionTree);
 	lua_register(L, "GetCurrentDay", GetCurrentDay);
 	lua_register(L, "SoundPlayScriptedSpeechEvent", SoundPlayScriptedSpeechEvent);

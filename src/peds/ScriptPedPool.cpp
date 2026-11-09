@@ -60,7 +60,8 @@ QuitterZones(CScriptPed *peds, int h)
 }
 
 // Un piéton qui disparaît : les références que les autres tiennent sur lui (FUN_00465680 les inscrit, le destructeur de
-// l'entité les remet à nul) : le meneur +0x2f4, le suiveur +0x2f8 et le piéton de la laisse +0x35c.
+// l'entité les remet à nul) : le meneur +0x2f4, le suiveur +0x2f8, le piéton de la laisse +0x35c et la cible gardée du composant de
+// visée (+0xa8 de +0x1c8).
 static void
 OublierReferences(CScriptPed *peds, int h)
 {
@@ -68,6 +69,7 @@ OublierReferences(CScriptPed *peds, int h)
 		if(peds[i].meneur == h) peds[i].meneur = -1;
 		if(peds[i].suiveur == h) peds[i].suiveur = -1;
 		if(peds[i].laissePieton == h) peds[i].laissePieton = -1;
+		if(peds[i].cibleGardee == h) peds[i].cibleGardee = -1;   // +0xa8 du composant de visée, inscrite par FUN_00465680
 	}
 }
 
@@ -231,11 +233,24 @@ CScriptPedPool::Verrouiller(int h, int cible, int mode)
 {
 	CScriptPed *p = Acceder(h);
 	if(p == nil) return false;
-	if(cible == -1){ LacherDroits(h); p->verrou = -1; p->verrouMode = 0; return true; }
+	if(cible == -1){ LacherDroits(h); p->verrou = -1; p->verrouMode = 0; p->objetAnimeVerrou = -1; return true; }
 	if(Acceder(cible) == nil) return false;
 	if(cible != p->verrou) LacherDroits(h);   // FUN_00497d20 → FUN_00486c00, avant de changer de cible
 	p->verrou = cible;
 	p->verrouMode = mode;
+	p->objetAnimeVerrou = -1;
+	return true;
+}
+
+bool
+CScriptPedPool::VerrouillerObjet(int h, int objet, int mode)
+{
+	CScriptPed *p = Acceder(h);
+	if(p == nil) return false;
+	if(objet != p->objetAnimeVerrou || p->verrou != -1) LacherDroits(h);
+	p->verrou = -1;
+	p->verrouMode = mode;
+	p->objetAnimeVerrou = objet;
 	return true;
 }
 

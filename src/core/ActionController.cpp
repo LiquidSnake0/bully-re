@@ -202,7 +202,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			  infosArme.push_back({a, Reel(p, 44, -1.0f), Reel(p, 64, 0.0f), false, m ? f->ChaineCitee(m->decalage) : std::string()}); }
 		}else if(p.type == kTir){
 			tirs.push_back({a, Reel(p, 52, 0.0f), Octet(p, 50), false, Reel(p, 44, -1.0f), Reel(p, 40, 1.0f),
-			               {Reel(p, 24, 0.0f), Reel(p, 28, 0.0f), Reel(p, 32, 0.0f), Reel(p, 36, 0.0f)}});
+			               {Reel(p, 24, 0.0f), Reel(p, 28, 0.0f), Reel(p, 32, 0.0f), Reel(p, 36, 0.0f)}, Octet(p, 49) != 0});
 		}else if(p.type == kDecalageTir || p.type == kDepartTir || p.type == kRotationTir){
 			reglagesTir.push_back({a, p.type == kDecalageTir ? 0 : p.type == kDepartTir ? 1 : 2,
 			                       {Reel(p, 24, 0.0f), Reel(p, 28, 0.0f), Reel(p, 32, 0.0f)}, false});
@@ -237,7 +237,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			// FUN_005f8860 : le nœud visé (+0x6c), résolu d'avance depuis le nœud qui porte la piste (FUN_005f4e30).
 			const CActionAttribut *at = p.Champ(32);
 			const CActionNode *v = at ? b.Relatif(&n, f->ChaineCitee(at->decalage).c_str()) : nil;
-			if(v) lances.push_back({a, Reel(p, 16, -1.0f), v, Octet(p, 41), false, false, nullptr});
+			if(v) lances.push_back({a, Reel(p, 16, -1.0f), v, Octet(p, 41), false, false, nullptr, Octet(p, 8)});
 		}else if(p.type == kSpawn){
 			const CActionAttribut *at = p.Champ(32);
 			if(at == nil) continue;
@@ -394,6 +394,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 		for(const Droits &g : droits) finParRetenues |= g.retient;
 		for(const De &g : desPistes) finParRetenues |= g.retient;
 		for(const Synchro &g : synchros) finParRetenues |= g.retient;
+		for(const Lance &g : lances) finParRetenues |= g.retient;   // Spawn : tant que son contrôleur joue (FUN_005f72e0)
 	}
 }
 
@@ -566,7 +567,12 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 			continue;
 		}
 		l.c->image = image; l.c->graine = graine;
-		if(l.c->joue == nil){ if(l.boucle) l.c->Entrer(b, l.vise, juge, t); continue; }
+		// FUN_005f72e0 : vide, il redescend avec +0x29 ; sans lui, la piste meurt (rend 0).
+		if(l.c->joue == nil){
+			if(l.boucle) l.c->Entrer(b, l.vise, juge, t);
+			else{ l.morte = true; l.c.reset(); }
+			continue;
+		}
 		const CActionNode *avant = l.c->joue;
 		l.c->Avancer(b, nil, juge, t);
 		(void)avant;
@@ -696,6 +702,7 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		for(const Droits &g : droits) retenu |= g.retient && !g.fait;
 		for(const De &g : desPistes) retenu |= g.retient && !g.fait;
 		for(const Synchro &g : synchros) retenu |= g.retient && g.vivante;
+		for(const Lance &g : lances) retenu |= g.retient && !g.morte;
 		fini = !retenu;
 	}
 	// Une Opportunity prise sans nœud (un chemin vide) a demandé la fin du nœud (FUN_005f49a0 : l'octet +1, quelles que

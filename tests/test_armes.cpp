@@ -5,6 +5,7 @@
 //   build/tests/test_armes
 #include "../src/peds/Armes.h"
 #include "../src/objects/Projectiles.h"
+#include "../src/core/Manette.h"
 #include <cmath>
 #include <cstdio>
 #include <map>
@@ -195,6 +196,115 @@ main(void)
 		VERIF(fabsf(r.x - 15.0f) < 1e-5f && r.y == 0.0f && fabsf(r.z - 1.3f) < 1e-5f);
 		r = CViseeTir::DecalageVisee(o, c, av, 0, 0, 0, 2.0f);    // +0x24 × l'avant de la cible
 		VERIF(r.x == 10.0f && r.y == 2.0f && r.z == 1.0f);
+	}
+	// Les destinations forcées du tir (PedSetProjDest FUN_0048bd40, FUN_0048bd90, FUN_0048bdb0, FUN_0048c430) : trois places, la
+	// première vide reçoit ; on prend la première, les autres avancent et seul le x de la troisième redevient 1e11.
+	{
+		CDestinationsTir d;
+		VERIF(!d.EnAttente());
+		VERIF(d.Poser(1, 2, 3) && d.Poser(4, 5, 6) && d.Poser(7, 8, 9) && !d.Poser(10, 11, 12));
+		CVector r = d.Prendre();
+		VERIF(r.x == 1.0f && r.y == 2.0f && r.z == 3.0f && d.EnAttente());
+		VERIF(d.place[2].x == CDestinationsTir::kVide && d.place[2].y == 8.0f && d.place[2].z == 9.0f);
+		VERIF(d.Poser(13, 14, 15) && d.place[2].x == 13.0f);   // la troisième, vide de nouveau
+		d.ViderPremiere();                                      // FUN_0048c430 : seul le x de la première
+		VERIF(!d.EnAttente() && d.place[1].x == 7.0f && d.place[2].x == 13.0f);
+		VERIF(d.Poser(16, 17, 18) && d.place[0].x == 16.0f);    // la première vide reçoit, la deuxième garde 7
+		r = d.Prendre();
+		VERIF(r.x == 16.0f && d.EnAttente() && d.place[0].x == 7.0f);
+		d.Vider();
+		VERIF(!d.EnAttente() && d.place[0].y == 0.0f);
+	}
+	// D'où vient la cible du tir (FUN_00662a40) et le repli du composant de visée (FUN_004d7630).
+	{
+		typedef CViseeTir V;
+		VERIF(V::SourceCible(true, 1, true, false, 0, 0, true, true) == V::SOURCE_OBJET_VISE);   // l'octet +0x31 d'abord
+		VERIF(V::SourceCible(true, 1, false, false, 0, 0, true, true) == V::SOURCE_AUCUNE);      // le joueur sans rien : devant lui
+		VERIF(V::SourceCible(false, 1, false, false, 0, 0, false, true) == V::SOURCE_VISEE);     // un autre piéton cherche toujours
+		VERIF(V::SourceCible(true, 1, false, true, 0, 0, false, false) == V::SOURCE_REPLI);      // la visée automatique
+		VERIF(V::SourceCible(true, 1, false, false, 0.5f, 0, true, true) == V::SOURCE_54C);      // le bouton 10, +0x54c d'abord
+		VERIF(V::SourceCible(true, 1, false, false, 0, 2, false, true) == V::SOURCE_VISEE);      // le mode 2 du composant de visée
+		VERIF(V::SourceCible(true, 0xd, false, false, 0, 0, false, true) == V::SOURCE_VISEE);    // la caméra de visée 0xd
+		VERIF(V::SourceCible(true, 2, false, false, 0, 0, false, false) == V::SOURCE_REPLI);     // ou 2
+		VERIF(!V::CameraDeVisee(false, 2) && V::CameraDeVisee(true, 2) && !V::CameraDeVisee(true, 1));
+		int gardee = -1;
+		VERIF(V::CibleOuRepli(4, gardee, 5, 6, 7) == 4 && gardee == -1);   // +0xa0 : rien n'est gardé
+		VERIF(V::CibleOuRepli(-1, gardee, 5, 6, 7) == 5 && gardee == 5);   // +0x9c, gardée en +0xa8
+		VERIF(V::CibleOuRepli(-1, gardee, -1, 6, 7) == 5);                 // la gardée tant qu'elle vit
+		gardee = -1;
+		VERIF(V::CibleOuRepli(-1, gardee, -1, 6, 7) == 6 && gardee == 6);  // le partenaire de prise (+0x155c)
+		gardee = -1;
+		VERIF(V::CibleOuRepli(-1, gardee, -1, -1, 7) == 7 && gardee == 7); // FUN_004d6dc0
+		gardee = -1;
+		VERIF(V::CibleOuRepli(-1, gardee, -1, -1, -1) == -1 && gardee == -1);
+	}
+	// La manette (FUN_0050c730, FUN_007386f0) : numérique, le bit du bouton dans +0x1e8 ; sinon la valeur lue de la touche ; un bouton
+	// hors des valables rend sa valeur brute.
+	{
+		CManette m;
+		m.numerique = true;
+		VERIF(m.Valeur(10) == 0.0f);
+		m.bits = 0x400;                                            // le bouton 10
+		VERIF(m.Valeur(10) == 1.0f && m.Valeur(12) == 0.0f);
+		m.bits = 0x2000;                                           // le bouton 8 (le tir chargé du lance-pierre)
+		VERIF(m.Valeur(8) == 1.0f && m.Valeur(10) == 0.0f);
+		m.valeurs[0x18] = 0.25f;
+		VERIF(m.Valeur(0x18) == 0.25f && m.Valeur(-1) == 0.0f);   // numérique : 24 n'est pas valable
+		m.numerique = false;
+		VERIF(m.Valeur(0x18, 0.5f) == 1.0f && m.Valeur(0x18, 0.0f) == 0.0f && m.Valeur(3, -1.0f) == 0.0f);
+		m.valeurs[0x10] = 0.75f;
+		VERIF(m.Valeur(0x10, 1.0f) == 0.75f);                      // 16 : hors des valables, la valeur brute
+		VERIF(CManette::Index(0, 2, 3) == 2 && CManette::Index(1, 2, 3) == 3 && CManette::Index(5, 2, 3) == 5);
+	}
+	// Le point devant le tireur sans cible (FUN_0065ea50) : au-delà de 0,9 m, à la hauteur de ses pieds ; le véhicule du joueur.
+	{
+		CVector d(1, 2, 3), av(0, 1, 0), v(10, 0, 0);
+		CVector r = CViseeTir::PointDevant(d, av, 0.5f, 2.0f);
+		VERIF(r.x == 1.0f && r.y == 2.5f && r.z == 3.0f);
+		r = CViseeTir::PointDevant(d, av, 0.9f, 2.0f);              // 0,9f (0,89999998) ne dépasse pas le double 0,9
+		VERIF(r.z == 3.0f);
+		r = CViseeTir::PointDevant(d, av, 0.91f, 2.0f);             // au-delà : les pieds
+		VERIF(r.z == 2.0f);
+		r = CViseeTir::PointDevant(d, av, 20.0f, 2.0f, &v, 0.5f);
+		VERIF(r.x == 6.0f && r.y == 22.0f && r.z == 2.0f);
+	}
+	// L'imprécision (FUN_0065eb40) et la précision du verrou (FUN_004d5cd0).
+	{
+		typedef CViseeTir V;
+		VERIF(V::Tirage(0) == -1.0f && V::Tirage(32767) == 1.0f);
+		CVector t(0, 0, 0), q(30, 40, 9);                          // d = 50 à plat (le z ne compte pas)
+		CVector e = V::Imprecision(t, q, 95, true, 0.5f, false, 0.0f, 1.0f, -1.0f, 0.5f);   // s = 50 / 20 × 5 / 50 = 0,25
+		VERIF(fabsf(e.x - 0.125f) < 1e-6f && fabsf(e.y + 0.25f) < 1e-6f && fabsf(e.z - 0.25f) < 1e-6f);
+		e = V::Imprecision(t, q, 95, false, 0.5f, true, 0.5f, 1.0f, 0.0f, 0.0f);            // hors de l'écran × 0,5, joueur × 0,5
+		VERIF(fabsf(e.z - 0.0625f) < 1e-6f && e.x == 0.0f && e.y == 0.0f);
+		e = V::Imprecision(t, q, 100, true, 1.0f, false, 0.0f, 1.0f, 1.0f, 1.0f);            // la statistique à 100 : aucun écart
+		VERIF(e.x == 0.0f && e.y == 0.0f && e.z == 0.0f);
+		VERIF(V::PrecisionVerrou(500.0f, 2.0f, false, 0.0f) == 0.25f);    // 500 ms sur 2 s
+		VERIF(V::PrecisionVerrou(5000.0f, 2.0f, false, 0.0f) == 1.0f);    // borné au plein
+		VERIF(V::PrecisionVerrou(500.0f, 2.0f, true, 0.5f) == 0.75f);     // le +0x1ec4 du joueur
+		VERIF(V::PrecisionVerrou(1500.0f, 2.0f, true, 0.5f) == 1.0f);     // 1 au plus
+	}
+	// La vie d'un projectile à sa création (FUN_004d4c40) et ce que le tir lui passe (FUN_00664710).
+	{
+		typedef CPlacesProjectiles P;
+		VERIF(P::Vie(0, 3000, 0) == 3000 && P::Vie(1500, 3000, 0) == 1500);   // la vie du tireur d'abord
+		VERIF(P::Vie(0, 0, 500) == 0);                                        // sans vie : sans fin, la mèche n'y fait rien
+		VERIF(P::Vie(0, 3000, 1000) == 2000 && P::Vie(0, 3000, 3000) == 1);   // la mèche ; une vie nulle devient 1
+		VERIF(P::Vie(0, 3000, 3500) == -500);                                 // la mèche plus longue : négative
+		VERIF(P::EcouleMeche(5000, 0) == 0 && P::EcouleMeche(5000, 4200) == 800);
+		VERIF(P::VieDuTireur(0.0f) == 0 && P::VieDuTireur(2.5f) == 2500 && P::VieDuTireur(0.0019f) == 1);   // tronquée
+	}
+	// Le test d'eau (FUN_006d48d0) et le fondu de la fin de vie (FUN_004d45e0).
+	{
+		typedef CPlacesProjectiles P;
+		float n = 5.0f; int32 g = 5;
+		VERIF(!P::DansLaMer(0.5f, true, &n, &g) && n == -1000000.0f && g == -1);
+		VERIF(P::DansLaMer(0.0f, true, &n, &g) && n == 0.0f && g == 1);    // 0 n'est pas au-dessus
+		VERIF(P::DansLaMer(-3.0f, true) && !P::DansLaMer(-3.0f, false));   // dedans, pas de mer
+		VERIF(P::Alpha(1000, 3000, 2000, 0) == 255 && P::Alpha(1000, 0, 2000, 500) == 255);
+		VERIF(P::Alpha(1000, 3000, 2000, 500) == 255);                     // reste 2000
+		VERIF(P::Alpha(1000, 3000, 3750, 500) == 127);                     // reste 250 : 250 × 255 / 500
+		VERIF(P::Alpha(1000, 3000, 4100, 500) == 0);                       // passé : 0 au moins
 	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;

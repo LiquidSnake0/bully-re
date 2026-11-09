@@ -619,6 +619,15 @@ première bille part à 17,36 s (27 points) et casse la vitre à 17,52 s ; mais 
 (17,79 s : son spawn a l'octet +0x29 à 0) et les appuis suivants ne tirent plus. La commande garde donc `--jouer` (et `--tirer` pour les
 jocks).
 
+**Le haut du corps, suite** (09.11, séance 1) : la piste spawn meurt désormais quand son contrôleur est vide sans l'octet +0x29
+(`FUN_005f72e0` rend 0), et une piste spawn à l'octet +8 retient son nœud tant qu'elle vit : `Controller` (Spawn `./UpperBody`, +8 = 1)
+finira avec son haut du corps et sa Sequence `../` le rendra à la banque. Mais l'essai au seul bouton 8 (`--tenir 8,0.7` à 16,6, 18,6
+et 20,6 s, sans `--jouer`) bute plus tôt : `Controller` part à 16,63 s dans la piste spawn de `Wait` (#0bb98aa5), la bille à 17,36 s
+casse la vitre 1 à 17,56 s, puis le contrôleur d'`UpperBody` reste dans `AimOut/default` (17,79 s) : son animation retenante
+`C_PLAYER\SLNG_2IDLE_T` (`W_Slingshot.agr` n° 2) n'a pas de durée dans l'outil (absente de MAINPED.HXD, la seule lue, et de
+SLINGSH.HXD), la feuille ne finit pas, le contrôleur ne se vide pas ; les boutons de 18,61 et 20,62 s ne tirent pas et la mission ne
+finit pas en 90 s. La commande garde `--jouer`.
+
 ## `1_05` (« Save Algie ») (06.11.2026)
 
 `1_05` s'enchaîne après `1_04`. Lancée seule (`build/outils/lancer_lua 90 --mission 1_05 --sans-cinematiques`), elle bouclait
