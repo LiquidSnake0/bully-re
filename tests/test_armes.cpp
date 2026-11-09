@@ -196,6 +196,24 @@ main(void)
 		r = CViseeTir::DecalageVisee(o, c, av, 0, 0, 0, 2.0f);    // +0x24 × l'avant de la cible
 		VERIF(r.x == 10.0f && r.y == 2.0f && r.z == 1.0f);
 	}
+	// Les destinations forcées du tir (PedSetProjDest FUN_0048bd40, FUN_0048bd90, FUN_0048bdb0, FUN_0048c430) : trois places, la
+	// première vide reçoit ; on prend la première, les autres avancent et seul le x de la troisième redevient 1e11.
+	{
+		CDestinationsTir d;
+		VERIF(!d.EnAttente());
+		VERIF(d.Poser(1, 2, 3) && d.Poser(4, 5, 6) && d.Poser(7, 8, 9) && !d.Poser(10, 11, 12));
+		CVector r = d.Prendre();
+		VERIF(r.x == 1.0f && r.y == 2.0f && r.z == 3.0f && d.EnAttente());
+		VERIF(d.place[2].x == CDestinationsTir::kVide && d.place[2].y == 8.0f && d.place[2].z == 9.0f);
+		VERIF(d.Poser(13, 14, 15) && d.place[2].x == 13.0f);   // la troisième, vide de nouveau
+		d.ViderPremiere();                                      // FUN_0048c430 : seul le x de la première
+		VERIF(!d.EnAttente() && d.place[1].x == 7.0f && d.place[2].x == 13.0f);
+		VERIF(d.Poser(16, 17, 18) && d.place[0].x == 16.0f);    // la première vide reçoit, la deuxième garde 7
+		r = d.Prendre();
+		VERIF(r.x == 16.0f && d.EnAttente() && d.place[0].x == 7.0f);
+		d.Vider();
+		VERIF(!d.EnAttente() && d.place[0].y == 0.0f);
+	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;
 }

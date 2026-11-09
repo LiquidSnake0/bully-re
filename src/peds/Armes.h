@@ -129,6 +129,39 @@ struct CViseeTir {
 	}
 };
 
+// Les destinations forcées du tir d'un piéton : son composant +0x3bc (le même que PedSetProjDest prend en ecx, lu à l'assembleur de
+// 0x5cd470 à 0x5cd4f1), trois places de (x, y, z) en +0x48, +0x54 et +0x60. Une place est vide quand son x vaut _DAT_0090fb98
+// (1e11, le flottant 0x51ba43b7). Le constructeur du composant (FUN_0048c1b0, appelé par FUN_0047ffe0) met les trois places à zéro,
+// puis leurs x à 1e11 ; FUN_0048c430 (appelée par FUN_00474f50, non suivie) ne vide que le x de la première. La visée du tir
+// (FUN_00662a40, lu à l'assembleur de 0x662b7e à 0x662bc2 : ecx = +0x3bc du piéton du contexte, [+0x3c]+8) prend la première place
+// avant tout point visé, sans décalage de visée ni avance (elle rend avant FUN_00662760). Lus à l'assembleur le 09.11.2026.
+struct CDestinationsTir {
+	static constexpr float kVide = 99999997952.0f;   // _DAT_0090fb98
+	CVector place[3];
+	CDestinationsTir() { Vider(); }
+	// FUN_0048c1b0 (la part des destinations) : à zéro, puis les x à 1e11.
+	void Vider() { for(CVector &v : place){ v = CVector(0.0f, 0.0f, 0.0f); v.x = kVide; } }
+	// FUN_0048c430 : le x de la première seulement (les deux autres gardent ce qu'elles tenaient).
+	void ViderPremiere() { place[0].x = kVide; }
+	// PedSetProjDest (FUN_0048bd40, le nom de la liaison Lua 0x5cd470 ; lu à l'assembleur de 0x48bd40 à 0x48bd83) : la première place
+	// dont le x vaut 1e11 (fcom, test ah,0x44, jnp : l'égalité arrête la recherche) reçoit le point ; trois places pleines, rien.
+	bool Poser(float x, float y, float z) {
+		for(CVector &v : place) if(v.x == kVide){ v = CVector(x, y, z); return true; }
+		return false;
+	}
+	// FUN_0048bd90 (0x48bd90 à 0x48bda8) : une destination en attente, le x de la première n'est pas 1e11.
+	bool EnAttente() const { return place[0].x != kVide; }
+	// FUN_0048bdb0 (0x48bdb0 à 0x48bdf2) : rend la première ; la deuxième et la troisième avancent d'une place, et seul le x de la
+	// troisième redevient 1e11 (ses y et z restent).
+	CVector Prendre() {
+		CVector r = place[0];
+		place[0] = place[1];
+		place[1] = place[2];
+		place[2].x = kVide;
+		return r;
+	}
+};
+
 // Les réglages du prochain tir : des globales que les pistes de l'arme posent avant WeaponFire, que le tir (FUN_00664710) lit et
 // que FUN_0065d160 remet à zéro (à la fin de chaque tir, quand le lancement de WeaponFire, FUN_00661f10, ne trouve pas d'arme en
 // main, et dans FUN_00662d30, WeaponFireSpecificOrientation). Lu dans l'index le 06.11.2026 ; les lancements gardent le contexte

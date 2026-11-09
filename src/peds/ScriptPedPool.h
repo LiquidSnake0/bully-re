@@ -9,6 +9,7 @@
 // scripts avancent et voient les piétons bouger, arriver et mourir.
 #pragma once
 #include "../common.h"
+#include "Armes.h"
 #include <vector>
 
 enum { SCRIPT_PED_POOL_SIZE = 24, SCRIPT_PED_JOUEUR = 0 };
@@ -271,6 +272,8 @@ struct CScriptPed {
 	float engagementMin = 0.0f;
 	// +0x1ec0 : la visée automatique du joueur (WeaponPlayerFireAutoTarget ; FUN_00662a40 vise la cible verrouillée quand il est posé).
 	uint8 viseeAuto = 0;
+	// Le composant +0x3bc : les destinations forcées du tir (PedSetProjDest, CDestinationsTir dans Armes.h), vides à la création.
+	CDestinationsTir destinationsTir;
 	// Les droits d'attaque sur ce piéton, dans son composant de combat (+0x668) : l'octet +0x344 (+0x9ac du piéton, pris),
 	// le piéton qui les tient +0x340 (+0x9a8) et leur échéance +0x348 (+0x9b0, en ms du jeu). Un seul attaquant à la fois
 	// les prend (FUN_00486c40) ; la condition IsTargetAttackRightsTaken lit l'octet sur la cible de l'attaquant.

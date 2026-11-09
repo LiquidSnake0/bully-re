@@ -2437,6 +2437,18 @@ PedLockTarget(lua_State *L)
 	return 0;
 }
 
+// PedSetProjDest(ped, x, y, z) (0x5cd470, lu à l'assembleur de 0x5cd470 à 0x5cd4f1) : le piéton (FUN_005d8200 puis FUN_005c7220),
+// les trois flottants (FUN_005d82a0, arguments 2 à 4), puis PedSetProjDest (FUN_0048bd40) sur son composant +0x3bc : la prochaine
+// destination forcée de ses tirs (CDestinationsTir, src/peds/Armes.h). Seul 4_B1.lur l'appelle.
+static int
+PedSetProjDestLua(lua_State *L)
+{
+	Journal("PedSetProjDest", L, 1);
+	if(CScriptPed *p = pietons.Acceder((int)luaL_optnumber(L, 1, -1)))
+		p->destinationsTir.Poser((float)luaL_optnumber(L, 2, 0), (float)luaL_optnumber(L, 3, 0), (float)luaL_optnumber(L, 4, 0));
+	return 0;
+}
+
 // --aller NOM[,n]@s ou --aller x,y,z@s : à s secondes, le joueur est posé au n-ième point de la
 // liste NOM (1 par défaut), ou aux coordonnées, comme s'il y avait marché.
 static void
@@ -6179,7 +6191,13 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	bool prendCible = p->type != SCRIPT_PED_TYPE_JOUEUR || p->viseeAuto != 0 || p->verrou >= 0;
 	const CScriptPed *c = prendCible ? pietons.Acceder(p->verrou) : nil;
 	const CObjetOutil *o = ped == SCRIPT_PED_JOUEUR ? ObjetParPoignee(objetVise) : nil;
-	if(o && !o->detruit) cible = o->pos;
+	// FUN_00662a40 (0x662b7e à 0x662bc2) : une destination forcée en attente (FUN_0048bd90 sur le +0x3bc du piéton) est prise
+	// (FUN_0048bdb0) avant tout point visé ; la visée rend alors sans décalage ni avance (pas de FUN_00662760).
+	if(p->destinationsTir.EnAttente()){
+		cible = p->destinationsTir.Prendre();
+		printf("%6.2f s  le piéton %d tire vers sa destination forcée (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, ped, cible.x, cible.y, cible.z);
+	}
+	else if(o && !o->detruit) cible = o->pos;
 	// Une cible piéton : le point visé de FUN_00662580 → FUN_00662380, décalé par WeaponFireOffset ; l'outil prend 1 m au-dessus
 	// de ses pieds et, pour sa hauteur (les sphères de FUN_00474750), 1,8 m (supposé, comme TargetRelativeHeight).
 	else if(c && c != p){
@@ -7784,6 +7802,7 @@ main(int argc, char **argv)
 	lua_register(L, "PedMePlaying", PedMePlaying);
 	lua_register(L, "PlayerIsInAreaObject", PlayerIsInAreaObject);
 	lua_register(L, "PedLockTarget", PedLockTarget);
+	lua_register(L, "PedSetProjDest", PedSetProjDestLua);
 	lua_register(L, "PedSetActionTree", PedSetActionTree);
 	lua_register(L, "GetCurrentDay", GetCurrentDay);
 	lua_register(L, "SoundPlayScriptedSpeechEvent", SoundPlayScriptedSpeechEvent);
