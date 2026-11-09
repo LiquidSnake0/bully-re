@@ -214,6 +214,29 @@ main(void)
 		d.Vider();
 		VERIF(!d.EnAttente() && d.place[0].y == 0.0f);
 	}
+	// D'où vient la cible du tir (FUN_00662a40) et le repli du composant de visée (FUN_004d7630).
+	{
+		typedef CViseeTir V;
+		VERIF(V::SourceCible(true, 1, true, false, 0, 0, true, true) == V::SOURCE_OBJET_VISE);   // l'octet +0x31 d'abord
+		VERIF(V::SourceCible(true, 1, false, false, 0, 0, true, true) == V::SOURCE_AUCUNE);      // le joueur sans rien : devant lui
+		VERIF(V::SourceCible(false, 1, false, false, 0, 0, false, true) == V::SOURCE_VISEE);     // un autre piéton cherche toujours
+		VERIF(V::SourceCible(true, 1, false, true, 0, 0, false, false) == V::SOURCE_REPLI);      // la visée automatique
+		VERIF(V::SourceCible(true, 1, false, false, 0.5f, 0, true, true) == V::SOURCE_54C);      // le bouton 10, +0x54c d'abord
+		VERIF(V::SourceCible(true, 1, false, false, 0, 2, false, true) == V::SOURCE_VISEE);      // le mode 2 du composant de visée
+		VERIF(V::SourceCible(true, 0xd, false, false, 0, 0, false, true) == V::SOURCE_VISEE);    // la caméra de visée 0xd
+		VERIF(V::SourceCible(true, 2, false, false, 0, 0, false, false) == V::SOURCE_REPLI);     // ou 2
+		VERIF(!V::CameraDeVisee(false, 2) && V::CameraDeVisee(true, 2) && !V::CameraDeVisee(true, 1));
+		int gardee = -1;
+		VERIF(V::CibleOuRepli(4, gardee, 5, 6, 7) == 4 && gardee == -1);   // +0xa0 : rien n'est gardé
+		VERIF(V::CibleOuRepli(-1, gardee, 5, 6, 7) == 5 && gardee == 5);   // +0x9c, gardée en +0xa8
+		VERIF(V::CibleOuRepli(-1, gardee, -1, 6, 7) == 5);                 // la gardée tant qu'elle vit
+		gardee = -1;
+		VERIF(V::CibleOuRepli(-1, gardee, -1, 6, 7) == 6 && gardee == 6);  // le partenaire de prise (+0x155c)
+		gardee = -1;
+		VERIF(V::CibleOuRepli(-1, gardee, -1, -1, 7) == 7 && gardee == 7); // FUN_004d6dc0
+		gardee = -1;
+		VERIF(V::CibleOuRepli(-1, gardee, -1, -1, -1) == -1 && gardee == -1);
+	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;
 }

@@ -6172,7 +6172,7 @@ VitessePieton(int h)
 	return CVector((q->pos.x - it->second.x) / kPasTimer, (q->pos.y - it->second.y) / kPasTimer, (q->pos.z - it->second.z) / kPasTimer);
 }
 static void
-Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.0f, const float *decalages = nil)
+Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.0f, const float *decalages = nil, bool objetViseTir = false)
 {
 	CScriptPed *p = pietons.Acceder(ped);
 	if(p == nil) return;
@@ -6183,21 +6183,33 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	float ac = p->cap * 3.14159265f / 180.0f;
 	CVector avant(cosf(ac), sinf(ac), 0.0f), droite(sinf(ac), -cosf(ac), 0.0f), haut(0.0f, 0.0f, 1.0f);
 	CVector depart = reglagesTir.Partir(CVector(p->pos.x, p->pos.y, p->pos.z + 1.0f), droite, avant, haut), cible;
-	// FUN_00662a40 : pour le joueur (le type 0xd), une cible n'est prise que si la visée automatique (+0x1ec0) est posée, que le bouton
-	// 10 de la manette est tenu (FUN_007386f0(10, 0), FUN_0050c730 : l'outil le tient pour tenu quand --viser a verrouillé une cible ;
-	// supposé), que FUN_00856820 rend 2, ou dans deux modes de DAT_00c3ccf8 (2 et 0xd, non suivis) ; sinon le tir part devant lui. La
-	// cible est alors celle du +0x54c (prise une fois, puis vidée : FUN_00465690), sinon celle du composant de visée (FUN_004d5980, puis
-	// FUN_004d7630) ; l'outil n'a que le verrou de --viser, et la visée automatique ne change donc rien à ses tirs.
-	bool prendCible = p->type != SCRIPT_PED_TYPE_JOUEUR || p->viseeAuto != 0 || p->verrou >= 0;
-	const CScriptPed *c = prendCible ? pietons.Acceder(p->verrou) : nil;
-	const CObjetOutil *o = ped == SCRIPT_PED_JOUEUR ? ObjetParPoignee(objetVise) : nil;
+	// FUN_00662a40 : d'où vient la cible (CViseeTir::SourceCible, src/peds/Armes.h). La cible du composant de visée (+0xa0, FUN_004d5980)
+	// est dans l'outil la cible verrouillée du piéton (--viser, PedLockTarget, FUN_00497d20) ou l'objet que le joueur verrouille
+	// (--viser-objet) ; le bouton 10 vaut 1 tant que le joueur tient un verrou (supposé : le bouton de verrouillage tenu) ; le mode +8
+	// du composant de visée n'est pas suivi (0) ; +0x54c n'a pas d'écrivain trouvé (nul) ; le repli (FUN_004d7630) n'a ni +0x9c ni la
+	// liste des candidats (FUN_004d6dc0) : la cible gardée, puis le partenaire de prise. La caméra est le mode courant du gestionnaire.
+	bool joueur = p->type == SCRIPT_PED_TYPE_JOUEUR;
+	const CObjetOutil *verrouObjet = ped == SCRIPT_PED_JOUEUR ? ObjetParPoignee(objetVise) : nil;
+	if(verrouObjet && verrouObjet->detruit) verrouObjet = nil;
+	bool aVisee = verrouObjet != nil || pietons.Acceder(p->verrou) != nil;
+	CViseeTir::Source source = CViseeTir::SourceCible(joueur, cameras.courant, objetViseTir, p->viseeAuto != 0, joueur && aVisee ? 1.0f : 0.0f, 0,
+	                                                  false, aVisee);
+	const CScriptPed *c = nil;
+	const CObjetOutil *o = nil;
+	const CObjetAnime *a = nil;
+	if(source == CViseeTir::SOURCE_OBJET_VISE) a = objetsAnimes.Objet(p->objetVise);   // +0x438 (TargetProp, PedTargetPAnim)
+	else if(source == CViseeTir::SOURCE_VISEE){ if(verrouObjet) o = verrouObjet; else c = pietons.Acceder(p->verrou); }
+	else if(source == CViseeTir::SOURCE_REPLI) c = pietons.Acceder(CViseeTir::CibleOuRepli(-1, p->cibleGardee, -1, p->cibleDePrise, -1));
 	// FUN_00662a40 (0x662b7e à 0x662bc2) : une destination forcée en attente (FUN_0048bd90 sur le +0x3bc du piéton) est prise
 	// (FUN_0048bdb0) avant tout point visé ; la visée rend alors sans décalage ni avance (pas de FUN_00662760).
 	if(p->destinationsTir.EnAttente()){
 		cible = p->destinationsTir.Prendre();
 		printf("%6.2f s  le piéton %d tire vers sa destination forcée (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, ped, cible.x, cible.y, cible.z);
 	}
-	else if(o && !o->detruit) cible = o->pos;
+	// Une entité qui n'est pas un piéton ni une automobile : FUN_006626a0, sa position (le +0x30 de sa matrice, ou +4) ; l'outil
+	// n'a pas l'imprécision qui s'y ajoute (FUN_0065eb40), ni le point +0x43c d'un objet visé (FUN_00467c30 : sa position).
+	else if(o) cible = o->pos;
+	else if(a) cible = a->pos;
 	// Une cible piéton : le point visé de FUN_00662580 → FUN_00662380, décalé par WeaponFireOffset ; l'outil prend 1 m au-dessus
 	// de ses pieds et, pour sa hauteur (les sphères de FUN_00474750), 1,8 m (supposé, comme TargetRelativeHeight).
 	else if(c && c != p){
@@ -6283,7 +6295,7 @@ AppliquerTirs(int ped, CActionController &c)
 	for(const CActionController::Tir &d : c.tirsLances){
 		if(p == nil || p->armeTenue == -1){ reglagesTir.Remettre(); continue; }   // FUN_00661f10 sans arme en main : FUN_0065d160
 		float charge = CChargeArme::AuTir(p->armeCharge, d.facteur);   // FUN_00661f10
-		Tirer(ped, charge, d.degats, d.avance, d.decalages);
+		Tirer(ped, charge, d.degats, d.avance, d.decalages, d.objetVise);
 		p->armeCharge = CChargeArme::kVide;   // FUN_00664710, après le tir
 		if(p->drapeaux[24] == 0) inventaire.Retirer(armes, ped, p->armeMunition, 1, p->type == SCRIPT_PED_TYPE_JOUEUR, modeles.Index("RBandBall"));
 		if(d.lacher && p->armeTenue == p->armeMunition && inventaire.Munitions(armes, ped, p->armeMunition) == 0) LacherArme(ped);

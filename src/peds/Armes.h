@@ -73,6 +73,47 @@ struct CChargeArme {
 
 // La visée du tir (FUN_00662a40, le point visé du tir, et ce qu'il appelle).
 struct CViseeTir {
+	// FUN_00662a40 (ecx = la piste WeaponFire lancée : +0x3c son contexte, +0x40 le piéton, +0x44 la charge ; lu à l'assembleur de
+	// 0x662a40 à 0x662b70) : d'où vient la cible du tir.
+	// - Avec l'octet +0x31 (49) de la piste : l'objet visé du piéton (+0x438) et son point (+0x43c), que FUN_006626a0 prendra ;
+	//   ailleurs, le point passé vaut -1. 4 des 81 pistes WeaponFire des .cat le portent, aucune des armes des sept missions.
+	// - Sinon, une cible n'est cherchée que si le piéton n'est pas le joueur (le type +0x1310 n'est pas 0xd), si la visée automatique
+	//   (+0x1ec0) est posée, si le bouton 10 de la manette ne vaut pas 0 (FUN_007386f0(10, 0), fcomp contre _DAT_008ff1f0 : 0 ;
+	//   test ah,0x44 et jp : seule l'égalité refuse), si le mode du composant de visée (+8 de +0x1c8, FUN_00856820) vaut 2, ou si la
+	//   caméra est une caméra de visée (le mode courant du gestionnaire, DAT_00c3ccf8 = 0xc3cc68 + 0x90, vaut 2 ou 0xd : ceux que
+	//   les conditions CameraActive du nœud Controller du lance-pierre citent ; ces deux tests ne valent que pour le joueur, les octets
+	//   [esp+0x10] et [esp+0x11]). Le joueur qui ne remplit aucune de ces conditions tire devant lui.
+	// - La cible cherchée : +0x54c, prise une seule fois (FUN_00465690 désinscrit la référence, puis +0x54c = 0) ; sans elle, la cible
+	//   du composant de visée (+0xa0, FUN_004d5980, ecx = +0x1c8) ; sans elle, FUN_004d7630 (CibleOuRepli).
+	enum Source { SOURCE_AUCUNE, SOURCE_OBJET_VISE, SOURCE_54C, SOURCE_VISEE, SOURCE_REPLI };
+	static bool CameraDeVisee(bool joueur, int32 modeCamera) { return joueur && (modeCamera == 2 || modeCamera == 0xd); }
+	static Source
+	SourceCible(bool joueur, int32 modeCamera, bool octet31, bool viseeAuto, float bouton10, int32 modeVisee, bool a54c, bool aVisee)
+	{
+		if(octet31) return SOURCE_OBJET_VISE;
+		if(joueur && !viseeAuto && bouton10 == 0.0f && modeVisee != 2 && !CameraDeVisee(joueur, modeCamera)) return SOURCE_AUCUNE;
+		if(a54c) return SOURCE_54C;
+		return aVisee ? SOURCE_VISEE : SOURCE_REPLI;
+	}
+	// FUN_004d7630 (ecx = le composant de visée +0x1c8 ; lu dans l'index) : sa cible +0xa0 ; sans elle, la cible gardée +0xa8 ; sans
+	// elle, +0x9c, puis le partenaire de prise du piéton (+0x155c de son +4), puis FUN_004d6dc0 (le choix dans la liste des candidats
+	// +0x90, +0x98 entrées de 0x1c octets) ; ce choix devient la cible gardée (FUN_00465690 pour l'ancienne, FUN_00465680 pour la
+	// nouvelle) et +0xc0 prend l'heure (DAT_00c1a9b4). -1 : pas de cible.
+	static int
+	CibleOuRepli(int a0, int &gardee, int a9c, int prise, int choisie)
+	{
+		if(a0 >= 0) return a0;
+		if(gardee >= 0) return gardee;
+		int c = a9c >= 0 ? a9c : prise >= 0 ? prise : choisie;
+		gardee = c;
+		return c;
+	}
+	// Le genre de la cible (FUN_00662a40, de 0x662b40 à 0x662b70, puis de 0x662bc5) : un piéton (les 3 bits bas de +0x108 à 3) passe par
+	// son point visé (FUN_00662580) puis par les décalages et l'avance (FUN_00662760) ; une autre entité rend aussitôt le point de
+	// FUN_006625f0 si sa méthode +0x14 rend vrai (FUN_007ffc70 pour CAutomobile ; FUN_00828240, xor al,al, pour CEntity, CObject,
+	// CPed, CProjectile et les autres classes de rtti.json) ou celui de FUN_006626a0 (avec le point +0x43c ou -1) ; sans cible, le
+	// point devant le tireur (FUN_00662180 avec une caméra de visée, FUN_0065ea50 sinon), puis FUN_00662760.
+	enum Genre { GENRE_AUCUNE, GENRE_PIETON, GENRE_AUTOMOBILE, GENRE_AUTRE };
 	// Les décalages de visée d'une piste WeaponFire sur une cible piéton : FUN_00662760 (lu à l'assembleur de 0x662760 à 0x6629c4 ;
 	// Ghidra perd la somme en y), avant l'avance (FUN_0065ecb0). Si l'un des flottants +0x18, +0x1c, +0x20 (24, 28, 32) de la piste
 	// n'est pas nul : v, l'écart du départ au point visé à plat (FUN_00414a20, z à 0) ; d, sa longueur (la racine, FUN_0085c4d0) ; s, le

@@ -274,6 +274,8 @@ struct CScriptPed {
 	uint8 viseeAuto = 0;
 	// Le composant +0x3bc : les destinations forcées du tir (PedSetProjDest, CDestinationsTir dans Armes.h), vides à la création.
 	CDestinationsTir destinationsTir;
+	// +0xa8 du composant de visée (+0x1c8) : la cible gardée que FUN_004d7630 rend tant qu'elle vit (CViseeTir::CibleOuRepli), -1 sans.
+	int cibleGardee = -1;
 	// Les droits d'attaque sur ce piéton, dans son composant de combat (+0x668) : l'octet +0x344 (+0x9ac du piéton, pris),
 	// le piéton qui les tient +0x340 (+0x9a8) et leur échéance +0x348 (+0x9b0, en ms du jeu). Un seul attaquant à la fois
 	// les prend (FUN_00486c40) ; la condition IsTargetAttackRightsTaken lit l'octet sur la cible de l'attaquant.

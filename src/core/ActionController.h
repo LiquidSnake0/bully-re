@@ -197,7 +197,10 @@ public:
 	// degats : le flottant +0x2c (44), -1 sans lui ; avance : le flottant +0x28 (40), le facteur de la durée du vol dans l'avance sur
 	// une cible qui bouge (FUN_0065ecb0 ; 1 sans lui, supposé : toutes les pistes WeaponFire relues le portent à 1).
 	// decalages : les flottants +0x18 … +0x24 (24 à 36), les décalages de visée (FUN_00662760 ; 0 pour la bille et la brique).
-	struct Tir { float entree, facteur; bool lacher, fait; float degats = -1.0f, avance = 1.0f; float decalages[4] = {0, 0, 0, 0}; };
+	// objetVise : l'octet +0x31 (49), le tir vers l'objet visé du piéton (+0x438) et son point (+0x43c) (FUN_00662a40 ; 0 pour la
+	// bille et la brique).
+	struct Tir { float entree, facteur; bool lacher, fait; float degats = -1.0f, avance = 1.0f; float decalages[4] = {0, 0, 0, 0};
+	             bool objetVise = false; };
 	std::vector<Tir> tirs, tirsLances;
 	// - WeaponSetCharge (WeaponSetChargeTrack 0x935c74 ; lancement FUN_0065e7c0, lu dans l'index) : la charge de l'objet arme du
 	//   piéton (+0x128 de +0x1d0) reçoit le flottant +0x18 (24) ; sa mise à jour (FUN_006094f0) rend faux. `chargesPosees`.
