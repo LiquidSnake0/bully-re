@@ -2451,6 +2451,44 @@ PedLockTarget(lua_State *L)
 	return 0;
 }
 
+// PedTargetPAnim(ped, déclencheur[, nom de point | mode]…) (0x5cfe50, lu à l'assembleur de 0x5cfe50 à 0x5cffad) : le piéton du genre
+// 2 (FUN_005c7220), rien sans lui. Un déclencheur nul (FUN_005d8200(L, 1)) : FUN_004989c0(0), le verrou levé (FUN_00497d20(0, 0,
+// (0, 0, 0))), l'objet visé +0x438 désinscrit (FUN_00465690) et mis à nul, son point +0x43c à 0. Sinon l'entité du déclencheur (le
+// pool DAT_020c7c48 : nulle pour un handle négatif ou une case libre, l'octet de +4 à 0x80 ; FUN_004ea270, son +0x1c) ; puis les
+// arguments à partir du troisième : une chaîne (FUN_005d81e0, le type 4 de Lua 5.0) donne le point, son haché (FUN_005fa7b0 →
+// HashString), un nombre (FUN_005d81c0) le mode ; le point vaut -1 et le mode 0 sans eux. Une entité animée (+0x108 & 7 = 6) devient
+// l'objet visé et son point (FUN_004711b0, ecx = +0x438 : la référence changée, +0x43c posé) ; puis FUN_00497d20(entité, mode,
+// (0, 0, 0)) la verrouille (CScriptPedPool::VerrouillerObjet). Les arbres de LibPropNew.lur, LibPropNewer.lur et CarnivalRides.lur
+// s'en servent ; aucune des sept missions.
+static int
+PedTargetPAnim(lua_State *L)
+{
+	Journal("PedTargetPAnim", L, 1);
+	int h = (int)luaL_optnumber(L, 1, -1);
+	CScriptPed *p = pietons.Acceder(h);
+	if(p == nil) return 0;
+	int d = lua_isnumber(L, 2) ? (int)lua_tonumber(L, 2) : 0;
+	if(d == 0){
+		pietons.Verrouiller(h, -1, 0);
+		p->objetVise = -1;
+		p->syncVise = 0;
+		return 0;
+	}
+	int objet = d < 0 ? -1 : objetsAnimes.ObjetDe(d);
+	uint32 point = 0xffffffffu;
+	int mode = 0;
+	for(int i = 3; i <= lua_gettop(L); i++){
+		if(lua_type(L, i) == LUA_TSTRING) point = ActionHash(lua_tostring(L, i));
+		else if(lua_isnumber(L, i)) mode = (int)lua_tonumber(L, i);
+	}
+	if(objet < 0) return 0;   // FUN_00497d20 sur une entité nulle : le verrou levé (supposé, comme FUN_004989c0)
+	p->objetVise = objet;
+	p->syncVise = point;
+	pietons.VerrouillerObjet(h, objet, mode);
+	printf("%6.2f s  le piéton %d vise l'objet animé %d (point %08x, mode %d)\n", maintenant / 1000.0, h, objet, point, mode);
+	return 0;
+}
+
 // PedSetProjDest(ped, x, y, z) (0x5cd470, lu à l'assembleur de 0x5cd470 à 0x5cd4f1) : le piéton (FUN_005d8200 puis FUN_005c7220),
 // les trois flottants (FUN_005d82a0, arguments 2 à 4), puis PedSetProjDest (FUN_0048bd40) sur son composant +0x3bc : la prochaine
 // destination forcée de ses tirs (CDestinationsTir, src/peds/Armes.h). Seul 4_B1.lur l'appelle.
@@ -6216,7 +6254,8 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	bool joueur = p->type == SCRIPT_PED_TYPE_JOUEUR;
 	const CObjetOutil *verrouObjet = ped == SCRIPT_PED_JOUEUR ? ObjetParPoignee(objetVise) : nil;
 	if(verrouObjet && verrouObjet->detruit) verrouObjet = nil;
-	bool aVisee = verrouObjet != nil || pietons.Acceder(p->verrou) != nil;
+	const CObjetAnime *verrouAnime = objetsAnimes.Objet(p->objetAnimeVerrou);   // PedTargetPAnim
+	bool aVisee = verrouObjet != nil || verrouAnime != nil || pietons.Acceder(p->verrou) != nil;
 	// FUN_007386f0(10, 0) → FUN_0050c730 : le bouton 10 de la manette du joueur 0 (ManetteJoueur), 1 enfoncé.
 	float bouton10 = joueur ? ManetteJoueur(aVisee).Valeur(10) : 0.0f;
 	CViseeTir::Source source = CViseeTir::SourceCible(joueur, cameras.courant, objetViseTir, p->viseeAuto != 0, bouton10, 0, false, aVisee);
@@ -6224,7 +6263,11 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	const CObjetOutil *o = nil;
 	const CObjetAnime *a = nil;
 	if(source == CViseeTir::SOURCE_OBJET_VISE) a = objetsAnimes.Objet(p->objetVise);   // +0x438 (TargetProp, PedTargetPAnim)
-	else if(source == CViseeTir::SOURCE_VISEE){ if(verrouObjet) o = verrouObjet; else c = pietons.Acceder(p->verrou); }
+	else if(source == CViseeTir::SOURCE_VISEE){
+		if(verrouObjet) o = verrouObjet;
+		else if(verrouAnime) a = verrouAnime;
+		else c = pietons.Acceder(p->verrou);
+	}
 	else if(source == CViseeTir::SOURCE_REPLI) c = pietons.Acceder(CViseeTir::CibleOuRepli(-1, p->cibleGardee, -1, p->cibleDePrise, -1));
 	// FUN_00662a40 (0x662b7e à 0x662bc2) : une destination forcée en attente (FUN_0048bd90 sur le +0x3bc du piéton) est prise
 	// (FUN_0048bdb0) avant tout point visé ; la visée rend alors sans décalage ni avance (pas de FUN_00662760).
@@ -7860,6 +7903,7 @@ main(int argc, char **argv)
 	lua_register(L, "PlayerIsInAreaObject", PlayerIsInAreaObject);
 	lua_register(L, "PedLockTarget", PedLockTarget);
 	lua_register(L, "PedSetProjDest", PedSetProjDestLua);
+	lua_register(L, "PedTargetPAnim", PedTargetPAnim);
 	lua_register(L, "PedSetProjectileLifetime", PedSetProjectileLifetime);
 	lua_register(L, "PedSetActionTree", PedSetActionTree);
 	lua_register(L, "GetCurrentDay", GetCurrentDay);

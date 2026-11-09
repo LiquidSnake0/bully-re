@@ -76,6 +76,13 @@ main(void)
 	VERIF(q.Verrouiller(at, ci, 3) && q.Acceder(at)->verrou == ci && q.Acceder(at)->verrouMode == 3);
 	VERIF(!q.Verrouiller(at, 23, 3) && q.Acceder(at)->verrou == ci && !q.Verrouiller(23, ci, 3));
 	VERIF(q.Verrouiller(at, -1, 0) && q.Acceder(at)->verrou == -1);
+	// FUN_00497d20 sur un objet animé (PedTargetPAnim) : le verrou du piéton levé, l'objet en cible du composant de visée ; un
+	// verrou de piéton le remplace, et le lever le vide.
+	VERIF(q.Verrouiller(at, ci, 3) && q.VerrouillerObjet(at, 7, 2) && q.Acceder(at)->verrou == -1 && q.Acceder(at)->objetAnimeVerrou == 7
+	      && q.Acceder(at)->verrouMode == 2);
+	VERIF(q.Verrouiller(at, ci, 3) && q.Acceder(at)->objetAnimeVerrou == -1);
+	VERIF(q.VerrouillerObjet(at, 7, 0) && q.Verrouiller(at, -1, 0) && q.Acceder(at)->objetAnimeVerrou == -1);
+	VERIF(!q.VerrouillerObjet(23, 7, 0));
 	int coups = 0, mortA = -1;
 	for(int i = 0; i < 1000 && mortA < 0; i++){
 		q.Avancer(0.033f);

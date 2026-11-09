@@ -272,6 +272,8 @@ struct CScriptPed {
 	float engagementMin = 0.0f;
 	// +0x1ec0 : la visée automatique du joueur (WeaponPlayerFireAutoTarget ; FUN_00662a40 vise la cible verrouillée quand il est posé).
 	uint8 viseeAuto = 0;
+	// La cible du composant de visée (+0xa0) quand c'est un objet animé (PedTargetPAnim → FUN_00497d20) : son indice, -1 sinon.
+	int objetAnimeVerrou = -1;
 	// Le composant +0x3bc : les destinations forcées du tir (PedSetProjDest, CDestinationsTir dans Armes.h), vides à la création.
 	CDestinationsTir destinationsTir;
 	// +0xa8 du composant de visée (+0x1c8) : la cible gardée que FUN_004d7630 rend tant qu'elle vit (CViseeTir::CibleOuRepli), -1 sans.
@@ -469,8 +471,13 @@ public:
 	// pas suivi).
 	const CObjectifPieton *ObjectifCourant(int handle) const;
 	// lua_PedLockTarget (0x5cb060) : rien si le piéton n'existe pas ; cible -1 lève le verrou (FUN_004989c0(0)) ;
-	// sinon, si la cible existe, FUN_00497d20 la verrouille avec le mode donné. Vrai si quelque chose a changé.
+	// sinon, si la cible existe, FUN_00497d20 la verrouille avec le mode donné. Vrai si quelque chose a changé. Le verrou d'un
+	// piéton remplace celui d'un objet animé (objetAnimeVerrou), et inversement.
 	bool Verrouiller(int handle, int cible, int mode);
+	// FUN_00497d20(entité, mode, point) sur un objet animé (PedTargetPAnim) : la cible du composant de visée devient l'objet
+	// (objetAnimeVerrou, un indice du pool des objets animés), le verrou d'un piéton est levé et ses droits d'attaque lâchés
+	// (FUN_00486c00) quand la cible change. Le point (+0x1dc8, dans le repère de l'objet) est (0, 0, 0) pour PedTargetPAnim.
+	bool VerrouillerObjet(int handle, int objet, int mode);
 	// Les droits d'attaque (le composant de combat +0x668). PrendreDroits : la piste TargetAttackRightsAcquire (table
 	// 0x93610c, lancement FUN_0062a1a0) : si la cible du piéton (PedGetTargetPed) est un piéton, FUN_00486c40 sur son
 	// composant de combat : pris, tenus par le piéton, jusqu'à maintenant + 15 000 ms ; écrase un détenteur précédent.
