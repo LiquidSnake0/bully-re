@@ -294,6 +294,18 @@ main(void)
 		VERIF(P::EcouleMeche(5000, 0) == 0 && P::EcouleMeche(5000, 4200) == 800);
 		VERIF(P::VieDuTireur(0.0f) == 0 && P::VieDuTireur(2.5f) == 2500 && P::VieDuTireur(0.0019f) == 1);   // tronquée
 	}
+	// Le test d'eau (FUN_006d48d0) et le fondu de la fin de vie (FUN_004d45e0).
+	{
+		typedef CPlacesProjectiles P;
+		float n = 5.0f; int32 g = 5;
+		VERIF(!P::DansLaMer(0.5f, true, &n, &g) && n == -1000000.0f && g == -1);
+		VERIF(P::DansLaMer(0.0f, true, &n, &g) && n == 0.0f && g == 1);    // 0 n'est pas au-dessus
+		VERIF(P::DansLaMer(-3.0f, true) && !P::DansLaMer(-3.0f, false));   // dedans, pas de mer
+		VERIF(P::Alpha(1000, 3000, 2000, 0) == 255 && P::Alpha(1000, 0, 2000, 500) == 255);
+		VERIF(P::Alpha(1000, 3000, 2000, 500) == 255);                     // reste 2000
+		VERIF(P::Alpha(1000, 3000, 3750, 500) == 127);                     // reste 250 : 250 × 255 / 500
+		VERIF(P::Alpha(1000, 3000, 4100, 500) == 0);                       // passé : 0 au moins
+	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;
 }

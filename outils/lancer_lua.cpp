@@ -6427,9 +6427,18 @@ AvancerProjectiles(float pas)
 		if(!q.actif) continue;
 		// FUN_004d45e0 (à chaque image, lu dans l'index) : un tireur piéton qui n'est plus valable (FUN_0047b650) est oublié (le +4 de
 		// l'entrée, FUN_00465690) ; le projectile vit tant que l'octet +0x12 est nul (non suivi) et que maintenant ne dépasse pas sa
-		// création plus sa vie (+8 et +0xc, non signés), ou que sa vie est nulle ; sinon FUN_004d3dc0(i, 1). Le test d'eau
-		// (FUN_006d48d0) et le fondu de la fin de vie (+0x88 de la fiche) ne sont pas suivis.
+		// création plus sa vie (+8 et +0xc, non signés), ou que sa vie est nulle ; sinon FUN_004d3dc0(i, 1). Le fondu de la fin de
+		// vie (+0x88 de la fiche, CPlacesProjectiles::Alpha) n'a rien à dessiner dans l'outil.
 		if(q.tireur >= 0 && pietons.Acceder(q.tireur) == nil) q.tireur = -1;
+		// FUN_004d45e0 → FUN_006d48d0 (CPlacesProjectiles::DansLaMer) : sous le niveau 0 d'une zone dehors, le projectile tombe dans
+		// la mer ; FUN_004d3420 fait l'éclaboussure (non suivie) et, avec l'octet +0x8c ou +0x8d de la fiche, FUN_004d37d0 son choc
+		// (une seule fois, l'octet +0x16 : les dégâts dans le rayon +0x94 par FUN_004d2b40, le stimulus +0x44 avec l'octet +0x40 ;
+		// non suivi), puis FUN_004d3dc0(i, 0). L'outil n'a pas de sol : une bille manquée tombe jusque-là.
+		if(CPlacesProjectiles::DansLaMer(q.pos.z, ZoneDehors(zones.zoneVisible))){
+			printf("%6.2f s  le projectile %d tombe dans l'eau en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, place, q.pos.x, q.pos.y, q.pos.z);
+			q.actif = false; placesProjectiles.Liberer(place);
+			continue;
+		}
 		if(q.vie != 0 && maintenant > q.naissance + q.vie){ q.actif = false; placesProjectiles.Liberer(place); continue; }
 		CVector avant = q.pos;
 		q.pos.x += q.vitesse.x * pas; q.pos.y += q.vitesse.y * pas; q.pos.z += q.vitesse.z * pas;

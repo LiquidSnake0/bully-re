@@ -51,4 +51,28 @@ struct CPlacesProjectiles {
 	// passent la même. Le treizième ne vaut que pour une vie non nulle.
 	static int32 EcouleMeche(uint32 maintenant, uint32 allumage) { return allumage != 0 ? (int32)(maintenant - allumage) : 0; }
 	static int32 VieDuTireur(float secondes) { return (int32)(int64_t)((double)secondes * 1000.0); }
+	// FUN_006d48d0(&niveau, &genre, point) (ecx = le gestionnaire de l'eau ; lu à l'assembleur de 0x6d48d0 à 0x6d491e, le reste dans
+	// l'index) : le niveau vaut d'abord _DAT_00903494 (-1e6) et le genre -1. Un point dont le z n'est pas au-dessus de 0 (fldz, fcomp
+	// [z], test ah,1 : seul 0 < z passe) dans une zone visible « dehors » (FUN_004301d0(DAT_00bd1008) : l'octet de la zone dans
+	// 0x901dd0, vrai pour 0, 1, 22, 31, 42, 43, 64, 65 et 66) est dans la mer : niveau 0, genre 1, vrai. Sinon les volumes d'eau du
+	// gestionnaire (+0x50 entrées de 8 octets, FUN_006d6e50 le dedans, FUN_006d66b0 le niveau, le genre en +0 de l'entrée), que l'outil
+	// ne lit pas.
+	static bool DansLaMer(float z, bool zoneDehors, float *niveau = nullptr, int32 *genre = nullptr) {
+		if(niveau) *niveau = -1000000.0f;
+		if(genre) *genre = -1;
+		if(0.0f < z || !zoneDehors) return false;
+		if(niveau) *niveau = 0.0f;
+		if(genre) *genre = 1;
+		return true;
+	}
+	// FUN_004d45e0 (à chaque image, lu dans l'index) : le fondu de la fin de vie. Avec un objet dessiné (+0x18 de l'objet), une vie non
+	// nulle et le fondu +0x88 de la fiche non nul, quand le reste (création + vie − maintenant) passe sous +0x88, l'alpha vaut reste ×
+	// 255 / +0x88 (0 au moins ; FUN_005f29a0 le pose) ; 255 sinon, puis FUN_004d3c90(objet, alpha × _DAT_008ff238).
+	static int32 Alpha(uint32 creation, int32 vie, uint32 maintenant, int32 fondu) {
+		if(vie == 0 || fondu == 0) return 0xff;
+		int32 reste = (int32)(creation - maintenant) + vie;
+		if(!(reste < fondu)) return 0xff;
+		int32 a = reste * 0xff / fondu;
+		return a < 0 ? 0 : a;
+	}
 };
