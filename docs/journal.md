@@ -1310,3 +1310,39 @@ en échec plutôt que de les masquer.
   (185,20 s avant `AreaClearAllPeds`), `1_06_01` à 61,81 s et `1_07` à 151,47 s.
 - **Bilan** : 1 199 fonctions recréées (7,6 % du code), contre 1 194 (7,6 %) ; 2 139 comprises (12,1 %) ; six commits (cinq de moteur et la documentation). Sur la nuit : vingt commits nouveaux en trois séances
   (PR #24, #25 et celle-ci), plus les six de la veille au soir documentés.
+
+## 09.11.2026, séance 1 (de 19 h 21 à 21 h 06)
+
+- **Les destinations forcées du tir** (`PedSetProjDest`, 0x5cd470 → `FUN_0048bd40` ; `FUN_0048bd90`, `FUN_0048bdb0`, lus à
+  l'assembleur ; `CDestinationsTir`) : trois places en +0x48, +0x54, +0x60 du composant +0x3bc, vides à x = 1e11 ; la visée les prend
+  avant tout point visé, sans décalage ni avance. Seul 4_B1.lur s'en sert.
+- **La source de la cible du tir** (`FUN_00662a40` lu à l'assembleur de 0x662a40 à 0x662c90, `CViseeTir::SourceCible`) : l'octet +0x31
+  de la piste (l'objet visé +0x438 et son point +0x43c) ; pour le joueur, la visée automatique, le bouton 10, le mode 2 du composant de
+  visée ou les caméras de visée 2 et 0xd (DAT_00c3ccf8 est le mode courant du gestionnaire de caméras) ; +0x54c pris une fois, la cible
+  du composant de visée (`FUN_004d5980`), puis son repli (`FUN_004d7630` : +0xa8 gardée, +0x9c, le partenaire de prise,
+  `FUN_004d6dc0`). Le genre de la cible : seule CAutomobile a une méthode +0x14 qui ne rend pas faux (`FUN_007ffc70`).
+- **Le bouton 10** (`FUN_007386f0`, `FUN_0050c730`, lus à l'assembleur ; `src/core/Manette.h`) : les masques de DAT_00a14810 sont les
+  bits de XInput, plus 0x400 (le bouton 10, le verrou de `FUN_004d5d50`) et 0x800 (le bouton 12).
+- **Le point devant le tireur sans cible** (`FUN_0065ea50`, lu à l'assembleur) : au-delà de 0,9 m, à la hauteur de ses pieds.
+- **L'imprécision** (`FUN_006626a0`, `FUN_0065eb40` lus à l'assembleur, `FUN_004d5cd0`) : d / 20 × (100 − la statistique 10) / 50,
+  hors de l'écran et la précision du verrou, trois tirages de rand ; l'outil prend leur moyenne (0) : l'écart est nul.
+- **La vie du projectile** (`FUN_004d4c40` de 0x4d4d05 à 0x4d4d38, `FUN_00664710`) : la vie du tireur (+0x1cc0, `PedSetProjectileLifetime`)
+  ou celle de la fiche, moins la mèche de l'objet arme (+0x140), 1 pour 0.
+- **La piste spawn au contrôleur vide** (`FUN_005f72e0`) : elle meurt sans l'octet +0x29 et ne retient plus son nœud. L'essai de `1_04`
+  au seul bouton 8 (`e104b.sh`) montre le vrai blocage du haut du corps : `AimOut/default` est retenue par `C_PLAYER\SLNG_2IDLE_T`
+  (`W_Slingshot.agr` n° 2), dont l'outil n'a pas la durée (ni MAINPED.HXD ni SLINGSH.HXD) ; seule la première vitre casse.
+- **Le test d'eau des projectiles** (`FUN_006d48d0` lu à l'assembleur, `FUN_004d45e0`) : z ≤ 0 dans une zone dehors ; le fondu de la fin
+  de vie (+0x88). Aucun projectile des sept missions ne descend jusque-là.
+- **`PedTargetPAnim`** (0x5cfe50, lu à l'assembleur ; `FUN_004711b0`) : l'objet visé, son point haché, et le verrou sur l'objet animé
+  (`CScriptPedPool::VerrouillerObjet`).
+- **Les comptes des README** : le crochet de commit (`tools/avancement.py`) calcule depuis l'arbre de travail ; les quatre premiers
+  commits, faits depuis des instantanés de `build/` pendant que l'arbre avait déjà les suivants, portent des comptes d'avance (1 223 et 1 228,
+  au lieu de 1 203, 1 211, 1 215 et 1 215) ;
+  les cinq suivants sont faits avec `--work-tree` sur l'instantané, leurs comptes sont justes. La réécriture de ces quatre commits
+  (un `push --force`) a été refusée : ils restent tels quels.
+- **REA amont** : 875 commits en attente (714 le 08.11), dont des corrections de l'outil Ghidra (#9611, #8651, #8608, #8777) ; rien ne
+  touche bully-re, qui interroge l'index et objdump.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 148,04 s), `1_04` à 82,53 s, `1_05` à 194,30 s,
+  `1_06_01` à 61,81 s et `1_07` à 151,47 s, inchangés, journaux identiques à chaque commit.
+- **Bilan** : 1 228 fonctions recréées (7,7 % du code), contre 1 199 (7,6 %) ; 2 163 comprises (12,3 %) ; dix commits (neuf de moteur et
+  la documentation).
