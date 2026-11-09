@@ -6251,8 +6251,11 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	else{
 		float portee = p->armePortee + charge * (p->armeInit - p->armePortee);
 		if(portee < 0.01f) portee = 0.01f;
-		float a = p->cap * 3.14159265f / 180.0f;
-		cible = CVector(depart.x + cosf(a) * portee, depart.y + sinf(a) * portee, depart.z);
+		// FUN_0065ea50 (CViseeTir::PointDevant) : l'avant du tireur (son cap) ; plus loin que 0,9 m, le point est à la hauteur de ses
+		// pieds. L'outil n'a ni véhicule (+0x1554) ni la caméra de visée de FUN_00662180 (les modes 2 et 0xd ne s'y posent pas).
+		cible = CViseeTir::PointDevant(depart, avant, portee, p->pos.z);
+		printf("%6.2f s  le piéton %d tire sans cible, devant lui à %.2f m : (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, ped, portee, cible.x,
+		       cible.y, cible.z);
 	}
 	float vitesse = tp.vitesseMin + charge * (tp.vitesseMax - tp.vitesseMin);
 	if(vitesse < 0.01f) vitesse = 0.01f;

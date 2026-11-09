@@ -114,6 +114,21 @@ struct CViseeTir {
 	// CPed, CProjectile et les autres classes de rtti.json) ou celui de FUN_006626a0 (avec le point +0x43c ou -1) ; sans cible, le
 	// point devant le tireur (FUN_00662180 avec une caméra de visée, FUN_0065ea50 sinon), puis FUN_00662760.
 	enum Genre { GENRE_AUCUNE, GENRE_PIETON, GENRE_AUTOMOBILE, GENRE_AUTRE };
+	// FUN_0065ea50(depart, portée) (ecx = la piste WeaponFire ; lu à l'assembleur de 0x65ea50 à 0x65eb39) : le point devant le tireur
+	// sans cible, hors d'une caméra de visée (FUN_00662a40, de 0x662bc5 à 0x662c4f : la portée de l'objet arme, +0x124 + la charge +0x44
+	// × (+0x120 − +0x124), 0,01 au moins, _DAT_0090054c). Le départ plus la portée × l'avant du tireur (FUN_00415350, ecx = le piéton
+	// +0x40 ; la somme par FUN_00412850) ; si la portée dépasse 0,9 (fcomp contre le double 0x900dc0, test ah,0x41 : ni inférieure ni
+	// égale), le z devient celui du tireur (le z de sa matrice, +0x14 → +0x38, ou +0xc sans matrice) : le tir part vers le sol à la
+	// hauteur de ses pieds. Pour le joueur (+0x1310 = 0xd) sur un véhicule (+0x1554), s'y ajoute DAT_00b31cb8 × la vitesse du véhicule
+	// (+0x124, +0x128, +0x12c) ; `vehicule` nul sans véhicule.
+	static CVector
+	PointDevant(const CVector &depart, const CVector &avant, float portee, float zTireur, const CVector *vehicule = nullptr, float facteur = 0.0f)
+	{
+		CVector r(depart.x + portee * avant.x, depart.y + portee * avant.y, depart.z + portee * avant.z);
+		if((double)portee > 0.9) r.z = zTireur;   // la portée (un float) contre le double 0,9 : 0,9f (0,89999998) ne le dépasse pas
+		if(vehicule){ r.x += facteur * vehicule->x; r.y += facteur * vehicule->y; r.z += facteur * vehicule->z; }
+		return r;
+	}
 	// Les décalages de visée d'une piste WeaponFire sur une cible piéton : FUN_00662760 (lu à l'assembleur de 0x662760 à 0x6629c4 ;
 	// Ghidra perd la somme en y), avant l'avance (FUN_0065ecb0). Si l'un des flottants +0x18, +0x1c, +0x20 (24, 28, 32) de la piste
 	// n'est pas nul : v, l'écart du départ au point visé à plat (FUN_00414a20, z à 0) ; d, sa longueur (la racine, FUN_0085c4d0) ; s, le

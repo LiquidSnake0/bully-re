@@ -256,6 +256,18 @@ main(void)
 		VERIF(m.Valeur(0x10, 1.0f) == 0.75f);                      // 16 : hors des valables, la valeur brute
 		VERIF(CManette::Index(0, 2, 3) == 2 && CManette::Index(1, 2, 3) == 3 && CManette::Index(5, 2, 3) == 5);
 	}
+	// Le point devant le tireur sans cible (FUN_0065ea50) : au-delà de 0,9 m, à la hauteur de ses pieds ; le véhicule du joueur.
+	{
+		CVector d(1, 2, 3), av(0, 1, 0), v(10, 0, 0);
+		CVector r = CViseeTir::PointDevant(d, av, 0.5f, 2.0f);
+		VERIF(r.x == 1.0f && r.y == 2.5f && r.z == 3.0f);
+		r = CViseeTir::PointDevant(d, av, 0.9f, 2.0f);              // 0,9f (0,89999998) ne dépasse pas le double 0,9
+		VERIF(r.z == 3.0f);
+		r = CViseeTir::PointDevant(d, av, 0.91f, 2.0f);             // au-delà : les pieds
+		VERIF(r.z == 2.0f);
+		r = CViseeTir::PointDevant(d, av, 20.0f, 2.0f, &v, 0.5f);
+		VERIF(r.x == 6.0f && r.y == 22.0f && r.z == 2.0f);
+	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;
 }
