@@ -268,6 +268,22 @@ main(void)
 		r = CViseeTir::PointDevant(d, av, 20.0f, 2.0f, &v, 0.5f);
 		VERIF(r.x == 6.0f && r.y == 22.0f && r.z == 2.0f);
 	}
+	// L'imprécision (FUN_0065eb40) et la précision du verrou (FUN_004d5cd0).
+	{
+		typedef CViseeTir V;
+		VERIF(V::Tirage(0) == -1.0f && V::Tirage(32767) == 1.0f);
+		CVector t(0, 0, 0), q(30, 40, 9);                          // d = 50 à plat (le z ne compte pas)
+		CVector e = V::Imprecision(t, q, 95, true, 0.5f, false, 0.0f, 1.0f, -1.0f, 0.5f);   // s = 50 / 20 × 5 / 50 = 0,25
+		VERIF(fabsf(e.x - 0.125f) < 1e-6f && fabsf(e.y + 0.25f) < 1e-6f && fabsf(e.z - 0.25f) < 1e-6f);
+		e = V::Imprecision(t, q, 95, false, 0.5f, true, 0.5f, 1.0f, 0.0f, 0.0f);            // hors de l'écran × 0,5, joueur × 0,5
+		VERIF(fabsf(e.z - 0.0625f) < 1e-6f && e.x == 0.0f && e.y == 0.0f);
+		e = V::Imprecision(t, q, 100, true, 1.0f, false, 0.0f, 1.0f, 1.0f, 1.0f);            // la statistique à 100 : aucun écart
+		VERIF(e.x == 0.0f && e.y == 0.0f && e.z == 0.0f);
+		VERIF(V::PrecisionVerrou(500.0f, 2.0f, false, 0.0f) == 0.25f);    // 500 ms sur 2 s
+		VERIF(V::PrecisionVerrou(5000.0f, 2.0f, false, 0.0f) == 1.0f);    // borné au plein
+		VERIF(V::PrecisionVerrou(500.0f, 2.0f, true, 0.5f) == 0.75f);     // le +0x1ec4 du joueur
+		VERIF(V::PrecisionVerrou(1500.0f, 2.0f, true, 0.5f) == 1.0f);     // 1 au plus
+	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;
 }

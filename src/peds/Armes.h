@@ -114,6 +114,43 @@ struct CViseeTir {
 	// CPed, CProjectile et les autres classes de rtti.json) ou celui de FUN_006626a0 (avec le point +0x43c ou -1) ; sans cible, le
 	// point devant le tireur (FUN_00662180 avec une caméra de visée, FUN_0065ea50 sinon), puis FUN_00662760.
 	enum Genre { GENRE_AUCUNE, GENRE_PIETON, GENRE_AUTOMOBILE, GENRE_AUTRE };
+	// FUN_006626a0(cible, point) (lu à l'assembleur de 0x6626a0 à 0x66272e) : le point visé sur une entité qui n'est ni un piéton ni
+	// une automobile. Avec un point (+0x43c du tireur, le chemin de l'octet +0x31 ; -1 ailleurs), le point de synchronisation de ce
+	// nom sur l'entité (FUN_00467c30(cible, point, …, 1)) s'il existe ; sinon, si la cible est celle du tireur (PedGetTargetPed,
+	// FUN_00496fb0, ecx = le tireur +0x40 : pour le joueur, la cible du composant de visée, FUN_004d5980), FUN_00496d70 : le point
+	// de verrouillage +0x1dc8 du tireur, dans le repère de sa cible (+0x538, ou FUN_004d5980 ; FUN_0046dbd0 sa matrice, FUN_0041a850
+	// le produit), (0, 0, 0) sans cible ; sinon la position de l'entité (le +0x30 de sa matrice +0x14, ou +4). Puis l'imprécision
+	// (FUN_0065eb40, Imprecision) s'y ajoute.
+	// FUN_0065eb40(point) (ecx = la piste WeaponFire ; lu à l'assembleur de 0x65eb40 à 0x65eca6) : l'écart du tireur (son +0x30 ou +4)
+	// au point, sa longueur à plat d (la racine de |x² + y²|, FUN_0085c4d0) ; s = d / 20 (le double 0x900168) × (100 − la
+	// statistique 10 du tireur, « Projectile Attack Accuracy », la colonne L de pedstats.dat : 95 pour STAT_PLAYER ; FUN_00476f10) /
+	// 50 (0x900aa0) ; hors de l'écran (PedIsOnScreen, FUN_00467310, faux), × le +0x11c de la fiche de projectile par défaut
+	// (DAT_020c88c8) ; pour le joueur, × (1 − la précision du verrou, FUN_004d5cd0). Trois tirages de rand (FUN_0085c6ca),
+	// r = rand / 32767 (0x900ce8) × 2 − 1 (0x8ff1d8, Tirage) : le premier va en z, le deuxième en y, le troisième en x.
+	static float Tirage(int32 r) { return (float)((double)r / 32767.0 * 2.0 - 1.0); }
+	static CVector
+	Imprecision(const CVector &tireur, const CVector &point, int32 stat10, bool aLEcran, float horsEcran, bool joueur, float precision,
+	            float r1, float r2, float r3)
+	{
+		float ex = point.x - tireur.x, ey = point.y - tireur.y;
+		float d = sqrtf(fabsf(ex * ex + ey * ey));
+		float s = (float)((double)d / 20.0) * (float)((double)(100 - stat10) / 50.0);
+		if(!aLEcran) s = horsEcran * s;
+		if(joueur) s = (1.0f - precision) * s;
+		return CVector(r3 * s, r2 * s, r1 * s);
+	}
+	// FUN_004d5cd0 (ecx = le composant de visée +0x1c8 ; lu dans l'index) : la précision du verrou, entre 0 et 1. Le temps +0x80 du
+	// composant, borné au +0x108 de PlayerButes (DAT_020c88b8) × 1000 (le double 0x900138), divisé par ce dernier ; pour le joueur
+	// (son +4, le type 0xd), plus son +0x1ec4 ; 1 au plus.
+	static float
+	PrecisionVerrou(float temps, float butes108, bool joueur, float bonus)
+	{
+		float plein = butes108 * (float)1000.0;
+		float p = temps < plein ? temps : plein;
+		p = p / plein;
+		if(joueur) p = bonus + p;
+		return 1.0f <= p ? 1.0f : p;
+	}
 	// FUN_0065ea50(depart, portée) (ecx = la piste WeaponFire ; lu à l'assembleur de 0x65ea50 à 0x65eb39) : le point devant le tireur
 	// sans cible, hors d'une caméra de visée (FUN_00662a40, de 0x662bc5 à 0x662c4f : la portée de l'objet arme, +0x124 + la charge +0x44
 	// × (+0x120 − +0x124), 0,01 au moins, _DAT_0090054c). Le départ plus la portée × l'avant du tireur (FUN_00415350, ecx = le piéton

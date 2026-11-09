@@ -6221,10 +6221,16 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 		cible = p->destinationsTir.Prendre();
 		printf("%6.2f s  le piéton %d tire vers sa destination forcée (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, ped, cible.x, cible.y, cible.z);
 	}
-	// Une entité qui n'est pas un piéton ni une automobile : FUN_006626a0, sa position (le +0x30 de sa matrice, ou +4) ; l'outil
-	// n'a pas l'imprécision qui s'y ajoute (FUN_0065eb40), ni le point +0x43c d'un objet visé (FUN_00467c30 : sa position).
-	else if(o) cible = o->pos;
-	else if(a) cible = a->pos;
+	// Une entité qui n'est pas un piéton ni une automobile : FUN_006626a0 (CViseeTir, src/peds/Armes.h). L'objet que le joueur
+	// verrouille est la cible du composant de visée, donc PedGetTargetPed : son point de verrouillage (+0x1dc8, posé par FUN_00497d20)
+	// n'est pas suivi, l'outil prend sa position ; l'objet visé (+0x438) et son point (+0x43c, FUN_00467c30) : sa position. Puis
+	// l'imprécision (FUN_0065eb40) : l'outil n'a ni l'écran (le piéton y est) ni le temps du verrou (+0x80 du composant : précision
+	// nulle), et ne rejoue pas le hasard du moteur : les trois tirages valent leur moyenne, 0 (supposé), et l'écart est nul.
+	else if(o || a){
+		cible = o ? o->pos : a->pos;
+		CVector e = CViseeTir::Imprecision(p->pos, cible, pietons.StatLue(ped, 10, 95), true, 1.0f, joueur, 0.0f, 0.0f, 0.0f, 0.0f);
+		cible = CVector(cible.x + e.x, cible.y + e.y, cible.z + e.z);
+	}
 	// Une cible piéton : le point visé de FUN_00662580 → FUN_00662380, décalé par WeaponFireOffset ; l'outil prend 1 m au-dessus
 	// de ses pieds et, pour sa hauteur (les sphères de FUN_00474750), 1,8 m (supposé, comme TargetRelativeHeight).
 	else if(c && c != p){
