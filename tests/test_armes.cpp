@@ -306,6 +306,34 @@ main(void)
 		VERIF(P::Alpha(1000, 3000, 3750, 500) == 127);                     // reste 250 : 250 × 255 / 500
 		VERIF(P::Alpha(1000, 3000, 4100, 500) == 0);                       // passé : 0 au moins
 	}
+	// Le choc d'un projectile (FUN_004d3860) et son explosion (FUN_004d37d0).
+	{
+		typedef CChocProjectile C;
+		VERIF(!C::Explose(false, false, false, 1.0f, 3, true));                 // aucun des trois octets
+		VERIF(C::Explose(true, false, false, -1.0f, 1, false));                 // +0x8c : partout
+		VERIF(C::Explose(false, true, false, 0.5f, 1, false) && !C::Explose(false, true, false, 0.49f, 1, false));   // +0x8d : au sol
+		VERIF(!C::Explose(false, true, false, 1.0f, 3, false));                 // +0x8d : pas sur un piéton
+		VERIF(C::Explose(false, false, true, 0.0f, 3, false) && C::Explose(false, false, true, 0.0f, 2, true));      // +0x8e
+		VERIF(!C::Explose(false, false, true, 1.0f, 4, false) && !C::Explose(false, true, true, 1.0f, 1, false));    // +0x8e efface +0x8d
+		VERIF(C::StimulusDeLObjet(true, 9.0f, 4, 0, false) && C::StimulusDeLObjet(true, 9.0f, 1, 0xf, false));
+		VERIF(!C::StimulusDeLObjet(true, 0.0f, 4, 0, false) && !C::StimulusDeLObjet(false, 9.0f, 4, 0, false));
+		VERIF(!C::StimulusDeLObjet(true, 9.0f, 3, 0, false) && !C::StimulusDeLObjet(true, 9.0f, 4, 0, true));
+		VERIF(C::Compter(0) == 1 && C::Compter(4) == 5 && C::Compter(5) == 5 && C::Compter(0xf8) == 0xf9 && C::Compter(0xfd) == 0xfd);
+		bool c = true;
+		VERIF(C::Effet("Slingshot_Hit", false, false, true, 4, 0, &c) == nil && !c);
+		VERIF(C::Effet("Slingshot_Hit", true, false, false, 0, 0, &c) != nil && c);
+		VERIF(C::Effet(nil, true, false, true, 4, 8, &c) == nil && !c);          // sans nom, pas la balle de baseball
+		VERIF(std::string(C::Effet(nil, false, true, true, 4, 8, &c)) == "BsBallMiss" && c);
+		VERIF(std::string(C::Effet(nil, false, true, true, 4, 0xd, &c)) == "DunkBallMiss" && c);
+		VERIF(C::Effet(nil, true, true, true, 4, 3, &c) == nil && c);            // le compteur monte, pas d'effet
+		VERIF(C::Effet(nil, true, true, true, 6, 8, &c) == nil && !c && C::Effet(nil, true, true, false, 0, 8, &c) == nil && !c);
+		VERIF(C::PremierSol(false, 0.51f) && !C::PremierSol(false, 0.5f) && !C::PremierSol(true, 1.0f));
+		CPlacesProjectiles t;
+		int i = t.Prendre(1000);
+		VERIF(i == 0 && t.Exploser(i) && !t.Exploser(i) && t.explose[i]);        // une seule fois
+		t.auSol[i] = true; t.Liberer(i);
+		VERIF(t.Prendre(2000) == 0 && !t.explose[0] && !t.auSol[0] && t.Exploser(0) && !t.Exploser(-1) && !t.Exploser(32));
+	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;
 }
