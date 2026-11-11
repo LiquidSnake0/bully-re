@@ -157,3 +157,69 @@ struct CContactProjectile {
 	// vitesses +0x124 à +0x138 tombent à 0, l'octet +0x180 passe à 10 et la méthode +0x1c(1) met le projectile au repos.
 	static bool AuRepos(float vitesse2, float normaleZ, bool genre7) { return vitesse2 < (genre7 ? 1e-10f : 1e-4f) && 0.8f < normaleZ; }
 };
+
+// Les explosions : une table de 15 entrées de 0x3c octets à 0xc39b60 (+0 la fiche du projectile, +4 un effet, +0xc le tireur, +0x10
+// l'objet du projectile, +0x14 le point, +0x20 la fin, +0x24 l'octet actif, +0x28 le départ, +0x2c le rayon, +0x34 le modèle, +0x38
+// l'heure de la pose). FUN_004d37d0 en pose une par FUN_004d2b40 ; FUN_004d92b0 les fait vivre à chaque image par FUN_004d2aa0,
+// avant les projectiles (FUN_004d45e0). FUN_004d2690 (lue dans l'index), sur une entrée : le balayage du rayon autour du point
+// (non lu : il reçoit le modèle, le point, le rayon, +0x98, +0x9c et +0xa0 de la fiche, le tireur, l'octet +0x90), l'objet +0x10
+// mis de côté en DAT_00c1ae70 le temps du balayage ; son effet (Toucher) ; le son, avec +0x154 de la fiche et l'argument (l'effet
+// +0xb8, « WaterExplosion » ou « MissleExplode ») ; avec l'octet +0x8f, le stimulus 3 du tireur au point, sur +0xd8.
+struct CPlacesExplosions {
+	enum { kTaille = 15 };
+	bool actif[kTaille] = {};
+	bool evincable[kTaille] = {};   // l'octet +0xdc de la fiche gardée
+	uint32 heure[kTaille] = {}, depart[kTaille] = {}, fin[kTaille] = {};
+	float rayon[kTaille] = {}, croissance[kTaille] = {};   // +0x2c ; +0xd0 de la fiche
+	// FUN_004d2b40 (lue dans l'index) : la première place libre ; la table pleine, la plus vieille (+0x38, non signé, la première des
+	// ex æquo) de celles dont la fiche a l'octet +0xdc, arrêtée (son effet +4 arrêté et rendu) ; sans aucune, -1 (la fonction rend
+	// 0 : pas d'explosion). L'entrée prend l'heure, le rayon +0x94 de la fiche, la fin (maintenant plus le délai +0xcc plus la durée
+	// +0xc8) et le départ : 0 pour un délai nul, et FUN_004d2690(1) part tout de suite (`*toutDeSuite`) ; sinon maintenant plus le
+	// délai. Avec un contact, la marque d'impact de la surface (choisie sur +0x14c de la fiche, non lu) est posée au point.
+	int Prendre(uint32 maintenant, float r, uint32 delai, uint32 duree, float croit, bool evinc, int *evincee = nil, bool *toutDeSuite = nil) {
+		int place = -1, vieille = -1;
+		uint32 plusTot = 0xffffffff;
+		for(int i = 0; i < kTaille; i++){
+			if(!actif[i]){ place = i; break; }
+			if(evincable[i] && heure[i] < plusTot){ plusTot = heure[i]; vieille = i; }
+		}
+		if(evincee) *evincee = -1;
+		if(place < 0){
+			if(vieille < 0) return -1;
+			place = vieille;
+			if(evincee) *evincee = vieille;
+		}
+		actif[place] = true; evincable[place] = evinc; heure[place] = maintenant; rayon[place] = r; croissance[place] = croit;
+		depart[place] = delai == 0 ? 0 : delai + maintenant;
+		fin[place] = duree + delai + maintenant;
+		if(toutDeSuite) *toutDeSuite = delai == 0;
+		return place;
+	}
+	// Un sac de billes (bagmrbls, DAT_00bf43e8) dont le contact a une normale au z sous 0,96 en valeur absolue (le double 0x912c40)
+	// garde dans l'entrée une autre fiche que la sienne (DAT_00c39b48, non lue) ; le rayon, le délai et la durée restent les siens.
+	static bool AutreFiche(bool sacDeBilles, float normaleZ) { return sacDeBilles && (normaleZ < 0.0f ? -normaleZ : normaleZ) < 0.96f; }
+	// FUN_004d2aa0 (lue à l'assembleur de 0x4d2aa0 à 0x4d2b34), pour une entrée active, à chaque image. Avec un départ en attente :
+	// rien tant que maintenant ne le dépasse pas (non signé), puis le départ tombe à 0 et FUN_004d2690(1) (kDepart). Sinon le rayon
+	// grandit de +0xd0 de la fiche par pas (0xc1a9a4), puis FUN_004d2690(0) tant que maintenant est sous la fin (kDure), ou l'entrée
+	// s'arrête (kFin : l'octet actif à 0, l'effet +4 arrêté et rendu).
+	enum { kRien, kDepart, kDure, kFin };
+	int Avancer(int i, uint32 maintenant, float pas) {
+		if(i < 0 || i >= kTaille || !actif[i]) return kRien;
+		if(depart[i] != 0){
+			if(maintenant <= depart[i]) return kRien;
+			depart[i] = 0;
+			return kDepart;
+		}
+		rayon[i] += croissance[i] * pas;
+		if(maintenant < fin[i]) return kDure;
+		actif[i] = false;
+		return kFin;
+	}
+	// FUN_004d2690 : quand le balayage a touché et que la fiche a l'octet +0xdd : avec un +0xe0 nul
+	// l'explosion s'arrête ; sinon sa fin est ramenée à maintenant plus +0xe0 si c'est plus tôt (les deux comparées en réels).
+	void Toucher(int i, uint32 maintenant, bool arret, uint32 sursis) {
+		if(i < 0 || i >= kTaille || !arret) return;
+		if(sursis == 0){ actif[i] = false; return; }
+		if(maintenant + sursis < fin[i]) fin[i] = maintenant + sursis;
+	}
+};

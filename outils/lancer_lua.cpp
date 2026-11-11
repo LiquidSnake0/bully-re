@@ -154,7 +154,8 @@ static void LacherArme(int h);
 struct CTypeProjectile { bool lu = false; int32 vie = 0; float degatsMin = 0, degatsMax = 0, vitesseMin = 0.4f, vitesseMax = 0.4f, gravite = 1.0f;
                          std::string marque; bool o8c = false, o8d = false, menace = false; float rayon = 0, a0 = 0;
                          bool dureeRefaite = false; float diviseur = 1.0f, facteurAvance = 1.0f;
-                         bool o40 = false, o8e = false; int32 stimulus = 0, c4 = 0; std::string effet; };
+                         bool o40 = false, o8e = false; int32 stimulus = 0, c4 = 0; std::string effet;
+                         uint32 dureeExplosion = 0, delaiExplosion = 0; float croissance = 0; bool evincable = false; };
 static std::map<int32, CTypeProjectile> typesProjectiles;   // par modèle d'arme (le +0x80 de son type)
 static CTypeProjectile projectileDefaut;
 static const CTypeProjectile &
@@ -185,6 +186,10 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 	a.o40 = o5 && o5->valeur[0]; a.o8e = o6 && o6->valeur[0];
 	a.stimulus = (int32)t.Mot(68); a.c4 = (int32)t.Mot(196);
 	it = chaines.find(192); if(it != chaines.end()) a.effet = it->second;
+	// L'explosion (FUN_004d2b40, FUN_004d2aa0) : sa durée (+0xc8), son délai (+0xcc), la croissance du rayon (+0xd0), l'octet +0xdc.
+	const CActionAttribut *o7 = t.Champ(220);
+	a.dureeExplosion = t.Mot(200); a.delaiExplosion = t.Mot(204); a.croissance = CActionBank::ButesReel(t, 208);
+	a.evincable = o7 && o7->valeur[0];
 	return a;
 }
 
@@ -200,8 +205,10 @@ static CProjectileOutil projectiles[CPlacesProjectiles::kTaille];
 static CPlacesProjectiles placesProjectiles;
 // Les marques d'impact (les decals : FUN_00560f10 compte celles d'un genre dans un déclencheur, ObjectNumProjectileImpacts) :
 // le nom de la marque de la fiche du projectile et le point du contact.
-// La table des marques a 32 places de 16 octets (la position, le genre en mot +0xc) : l'outil la tient en anneau, la plus vieille
-// cédant sa place (supposé).
+// La table des marques a 32 places de 16 octets (la position, le genre en mot +0xc) et son indice d'écriture en tête : FUN_00560f70
+// (lue dans l'index) écrit à l'indice le point avancé de 0,01 fois la normale (le double 0x900d30) et le genre, puis l'indice
+// avance et revient à 0 après la place 31 : un anneau, la plus vieille cédant sa place. Elle est appelée par le contact
+// (FUN_0046ad90, sur un bâtiment), par l'explosion (FUN_004d2b40) et par FUN_00610440, FUN_00610810 et FUN_00610ab0 (non lues).
 struct CMarque { std::string nom; CVector pos; };
 static std::vector<CMarque> marques;
 static size_t marqueSuivante = 0;
@@ -6471,8 +6478,21 @@ FrapperObjet(size_t i, int auteur, float degats)
 // Une image des projectiles (CProjectileInfo, à chaque pas) : le point avance de sa vitesse, la gravité s'y ajoute ; au bout de sa vie,
 // il disparaît. Les contacts : le corps des piétons, le modèle de collision que CTempColModels::Initialise (FUN_005712f0) leur bâtit,
 // trois sphères de 0,35 m à 0,35, 0,95 et 1,55 m au-dessus des pieds (le tireur exclu) ; le premier touché le long du pas.
+// Les explosions de l'outil (CPlacesExplosions : FUN_004d2b40, FUN_004d2aa0) : la table et ses heures, dites au journal ; le balayage
+// de leur rayon (FUN_00463b70) n'est pas suivi.
+static CPlacesExplosions explosions;
+static void
+AvancerExplosions(float pas)
+{
+	for(int i = 0; i < CPlacesExplosions::kTaille; i++){
+		int r = explosions.Avancer(i, maintenant, pas);
+		if(r == CPlacesExplosions::kDepart) printf("%6.2f s  l'explosion %d part, rayon %g m\n", maintenant / 1000.0, i, explosions.rayon[i]);
+		else if(r == CPlacesExplosions::kFin) printf("%6.2f s  l'explosion %d est finie\n", maintenant / 1000.0, i);
+	}
+}
+
 // Le choc d'un projectile de l'outil (FUN_004d3860, CChocProjectile) à un contact avec un piéton (genre 3) ou un objet (genre 4).
-// L'outil n'a ni stimuli, ni explosions, ni effets : chaque étape du choc est dite au journal, sans suite. Il n'a pas non plus la
+// L'outil n'a ni stimuli, ni effets, et ses explosions ne balaient pas : chaque étape du choc est dite au journal. Il n'a pas non plus la
 // normale ni la surface du contact : la normale est supposée de face (z nul : un +0x8d seul n'explose pas) et la surface 0 ; le
 // +0x3c de DAT_020c8704 (FUN_004a8350, pour la balle de baseball) n'est pas suivi : 0. Le premier contact au sol (FUN_004d3370,
 // l'octet +0x18) attend un sol.
@@ -6484,8 +6504,19 @@ ChoquerProjectile(int place, CProjectileOutil &q, int genre, const CVector &pt, 
 	if(tp.o40) printf("%6.2f s  choc du projectile %d : le stimulus %d naît du projectile (non suivi)\n", t, place, tp.stimulus);
 	if(CChocProjectile::Explose(tp.o8c, tp.o8d, tp.o8e, 0.0f, genre, false) && placesProjectiles.Exploser(place)){
 		// FUN_004d37d0, une seule fois : l'explosion de FUN_004d2b40 pour un rayon au-dessus de 0, puis le stimulus +0x44 du tireur.
-		if(tp.rayon > 0.0f)
-			printf("%6.2f s  choc du projectile %d : explosion en (%.2f, %.2f, %.2f), rayon %g m (non suivie)\n", t, place, pt.x, pt.y, pt.z + 0.05f, tp.rayon);
+		if(tp.rayon > 0.0f){
+			int evincee = -1;
+			bool vite = false;
+			int e = explosions.Prendre(maintenant, tp.rayon, tp.delaiExplosion, tp.dureeExplosion, tp.croissance, tp.evincable, &evincee, &vite);
+			if(evincee >= 0) printf("%6.2f s  la table des explosions est pleine : la plus vieille (place %d) cède sa place\n", t, evincee);
+			if(e < 0) printf("%6.2f s  choc du projectile %d : la table des explosions est pleine, pas d'explosion\n", t, place);
+			else{
+				printf("%6.2f s  choc du projectile %d : explosion %d en (%.2f, %.2f, %.2f), rayon %g m, %s jusqu'à %.2f s\n", t, place, e,
+				       pt.x, pt.y, pt.z + 0.05f, tp.rayon, vite ? "tout de suite" : "retardée", explosions.fin[e] / 1000.0);
+				// Avec un contact, FUN_004d2b40 pose aussi la marque d'impact de la surface (FUN_00560f70, le genre par FUN_004641e0
+				// sur +0x14c de la fiche) : cette table par surface n'est pas lue, l'outil garde la marque de son contact.
+			}
+		}
 		if(tp.o40) printf("%6.2f s  choc du projectile %d : le stimulus %d naît du tireur %d (non suivi)\n", t, place, tp.stimulus, q.tireur);
 	}
 	if(CChocProjectile::StimulusDeLObjet(true, q.degats, genre, 0, journalEnBoite))
@@ -6889,6 +6920,7 @@ AvancerPietons(void)
 		if(p && p->verrou != avant[i])
 			printf("%6.2f s  piéton %d : cible %d → %d (style %d)\n", maintenant / 1000.0, i, avant[i], p->verrou, p->verrouMode);
 	}
+	AvancerExplosions(33.0f / 20.0f);    // FUN_004d92b0 : les explosions (FUN_004d2aa0), puis les projectiles (FUN_004d45e0)
 	AvancerProjectiles(33.0f / 20.0f);   // le pas du moteur (ms_fTimeStep) compte des cinquantièmes de seconde
 	if(etatLua) AppelerCritiques(etatLua);
 	// FUN_004812d0, 0x481c45 : les déclencheurs suivis (FUN_006d6f60), piéton par piéton, après le reste de son image.

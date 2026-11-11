@@ -341,6 +341,30 @@ main(void)
 		VERIF(K::Fort(4, 3, false, 0.03f) && !K::Fort(4, 0, false, 0.029f) && !K::Fort(3, 0, false, 0.01f));
 		VERIF(K::AuRepos(0.5e-4f, 0.81f, false) && !K::AuRepos(1e-4f, 0.81f, false) && !K::AuRepos(0.5e-4f, 0.8f, false));
 		VERIF(!K::AuRepos(0.5e-4f, 0.9f, true) && K::AuRepos(0.5e-10f, 0.9f, true));
+		// Les explosions (FUN_004d2b40, FUN_004d2aa0, FUN_004d2690).
+		typedef CPlacesExplosions X;
+		X x; int ev = 0; bool vite = false;
+		VERIF(x.Prendre(1000, 0.001f, 0, 0, 0.0f, false, &ev, &vite) == 0 && vite && ev == -1 && x.depart[0] == 0 && x.fin[0] == 1000);
+		VERIF(x.Avancer(0, 1000, 1.0f) == X::kFin && !x.actif[0] && x.Avancer(0, 1001, 1.0f) == X::kRien);   // une bille : finie à l'image suivante
+		VERIF(x.Prendre(2000, 3.0f, 500, 7000, 0.5f, true, &ev, &vite) == 0 && !vite && x.depart[0] == 2500 && x.fin[0] == 9500);
+		VERIF(x.Avancer(0, 2500, 1.0f) == X::kRien && x.Avancer(0, 2501, 1.0f) == X::kDepart && x.depart[0] == 0 && x.rayon[0] == 3.0f);
+		VERIF(x.Avancer(0, 2534, 2.0f) == X::kDure && x.rayon[0] == 4.0f);
+		x.Toucher(0, 3000, false, 100);
+		VERIF(x.fin[0] == 9500);
+		x.Toucher(0, 3000, true, 100);
+		VERIF(x.fin[0] == 3100 && x.actif[0] && x.Avancer(0, 3099, 0.0f) == X::kDure);
+		x.Toucher(0, 3099, true, 9000);
+		VERIF(x.fin[0] == 3100 && x.Avancer(0, 3100, 0.0f) == X::kFin);
+		VERIF(x.Prendre(4000, 1.0f, 0, 5000, 0.0f, false) == 0);
+		x.Toucher(0, 4100, true, 0);
+		VERIF(!x.actif[0]);
+		X y;   // la table pleine : la plus vieille des évinçables, ou rien
+		for(int k = 0; k < 15; k++) VERIF(y.Prendre(100 + k, 1.0f, 0, 9000, 0.0f, false) == k);
+		VERIF(y.Prendre(500, 1.0f, 0, 9000, 0.0f, true, &ev) == -1);
+		y.evincable[7] = true; y.evincable[3] = true; y.heure[3] = y.heure[7];
+		VERIF(y.Prendre(500, 2.0f, 0, 9000, 0.0f, false, &ev) == 3 && ev == 3 && y.rayon[3] == 2.0f && !y.evincable[3]);
+		VERIF(y.Prendre(501, 2.0f, 0, 9000, 0.0f, false, &ev) == 7 && ev == 7 && y.Prendre(502, 2.0f, 0, 9000, 0.0f, false) == -1);
+		VERIF(X::AutreFiche(true, 0.95f) && X::AutreFiche(true, -0.5f) && !X::AutreFiche(true, 0.97f) && !X::AutreFiche(false, 0.0f));
 	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;
