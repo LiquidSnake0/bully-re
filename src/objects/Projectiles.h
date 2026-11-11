@@ -78,6 +78,26 @@ struct CPlacesProjectiles {
 		int32 a = reste * 0xff / fondu;
 		return a < 0 ? 0 : a;
 	}
+	// FUN_004d45e0, la fin d'un projectile hors de l'eau (lue à l'assembleur de 0x4d4717 à 0x4d4739, puis 0x4d4868) : il vit tant que
+	// son explosion n'est pas faite (l'octet +0x16 de l'entrée) et que maintenant ne dépasse pas sa création plus sa vie (cmp, jbe :
+	// non signé), ou que sa vie est nulle ; sinon FUN_004d3dc0(i, 1) le détruit. Un projectile qui a explosé à un contact disparaît
+	// donc à l'image suivante ; les autres restent dans le monde jusqu'à la fin de leur vie.
+	bool Vit(int i, uint32 maintenant, uint32 vie) const {
+		if(i < 0 || i >= kTaille || !actif[i] || explose[i]) return false;
+		return maintenant <= creation[i] + vie || vie == 0;
+	}
+	// FUN_004d3dc0(i, explosion) (lue dans l'index), pour une entrée active : l'octet actif à 0 ; son effet (+0x20, +0x24) arrêté et
+	// rendu ; puis, avec l'objet du projectile : avec son second argument, FUN_004d37d0 au point de l'objet relevé de 0,05
+	// (_DAT_009068b8), la normale (0, 0, 1), sans contact (l'explosion de la fin de vie, si elle n'est pas déjà faite) ; l'objet détruit
+	// et sa référence rendue. FUN_004d45e0 passe 1 à la fin de la vie et 0 dans l'eau, où elle fait elle-même l'explosion avec
+	// l'octet +0x8c ou +0x8d de la fiche (ExploseDansLEau ; lue à l'assembleur de 0x4d4684 à 0x4d4712 : le point du projectile relevé
+	// de 0,05, la normale (0, 0, 1), sans contact). Rend vrai quand l'explosion de la fin de vie est à faire.
+	bool Detruire(int i, bool explosion) {
+		if(i < 0 || i >= kTaille || !actif[i]) return false;
+		actif[i] = false;
+		return explosion && Exploser(i);
+	}
+	static bool ExploseDansLEau(bool partout, bool auSol) { return partout || auSol; }
 	// FUN_004d37d0 (lue dans l'index ; le choc de l'explosion, appelée par FUN_004d3860 et par la chute dans l'eau de FUN_004d45e0) :
 	// une seule fois par projectile (l'octet +0x16 de l'entrée) ; la première fois, avec un rayon +0x94 de la fiche au-dessus de 0,
 	// FUN_004d2b40 pose l'explosion (son point et sa normale, la fiche, le tireur +4 et l'objet du projectile), puis, avec l'octet +0x40

@@ -6491,6 +6491,30 @@ AvancerExplosions(float pas)
 	}
 }
 
+// L'explosion d'un projectile (FUN_004d37d0), une seule fois par place : l'explosion de FUN_004d2b40 pour un rayon au-dessus de 0,
+// puis le stimulus +0x44 du tireur. Elle vient du choc (FUN_004d3860), de la chute dans l'eau (FUN_004d45e0) ou de la fin de la vie
+// (FUN_004d3dc0) ; ces deux dernières sans contact, au point du projectile relevé de 0,05, la normale (0, 0, 1).
+static void
+ExploserProjectile(int place, const CProjectileOutil &q, const CVector &pt, const char *quoi)
+{
+	const CTypeProjectile &tp = TypeProjectile(q.modele);
+	double t = maintenant / 1000.0;
+	if(tp.rayon > 0.0f){
+		int evincee = -1;
+		bool vite = false;
+		int e = explosions.Prendre(maintenant, tp.rayon, tp.delaiExplosion, tp.dureeExplosion, tp.croissance, tp.evincable, &evincee, &vite);
+		if(evincee >= 0) printf("%6.2f s  la table des explosions est pleine : la plus vieille (place %d) cède sa place\n", t, evincee);
+		if(e < 0) printf("%6.2f s  %s du projectile %d : la table des explosions est pleine, pas d'explosion\n", t, quoi, place);
+		else{
+			printf("%6.2f s  %s du projectile %d : explosion %d en (%.2f, %.2f, %.2f), rayon %g m, %s jusqu'à %.2f s\n", t, quoi, place, e,
+			       pt.x, pt.y, pt.z + 0.05f, tp.rayon, vite ? "tout de suite" : "retardée", explosions.fin[e] / 1000.0);
+			// Avec un contact, FUN_004d2b40 pose aussi la marque d'impact de la surface (FUN_00560f70, le genre par FUN_004641e0
+			// sur +0x14c de la fiche) : cette table par surface n'est pas lue, l'outil garde la marque de son contact.
+		}
+	}
+	if(tp.o40) printf("%6.2f s  %s du projectile %d : le stimulus %d naît du tireur %d (non suivi)\n", t, quoi, place, tp.stimulus, q.tireur);
+}
+
 // Le choc d'un projectile de l'outil (FUN_004d3860, CChocProjectile) à un contact avec un piéton (genre 3) ou un objet (genre 4).
 // L'outil n'a ni stimuli, ni effets, et ses explosions ne balaient pas : chaque étape du choc est dite au journal. Il n'a pas non plus la
 // normale ni la surface du contact : la normale est supposée de face (z nul : un +0x8d seul n'explose pas) et la surface 0 ; le
@@ -6502,23 +6526,7 @@ ChoquerProjectile(int place, CProjectileOutil &q, int genre, const CVector &pt, 
 	const CTypeProjectile &tp = TypeProjectile(q.modele);
 	double t = maintenant / 1000.0;
 	if(tp.o40) printf("%6.2f s  choc du projectile %d : le stimulus %d naît du projectile (non suivi)\n", t, place, tp.stimulus);
-	if(CChocProjectile::Explose(tp.o8c, tp.o8d, tp.o8e, 0.0f, genre, false) && placesProjectiles.Exploser(place)){
-		// FUN_004d37d0, une seule fois : l'explosion de FUN_004d2b40 pour un rayon au-dessus de 0, puis le stimulus +0x44 du tireur.
-		if(tp.rayon > 0.0f){
-			int evincee = -1;
-			bool vite = false;
-			int e = explosions.Prendre(maintenant, tp.rayon, tp.delaiExplosion, tp.dureeExplosion, tp.croissance, tp.evincable, &evincee, &vite);
-			if(evincee >= 0) printf("%6.2f s  la table des explosions est pleine : la plus vieille (place %d) cède sa place\n", t, evincee);
-			if(e < 0) printf("%6.2f s  choc du projectile %d : la table des explosions est pleine, pas d'explosion\n", t, place);
-			else{
-				printf("%6.2f s  choc du projectile %d : explosion %d en (%.2f, %.2f, %.2f), rayon %g m, %s jusqu'à %.2f s\n", t, place, e,
-				       pt.x, pt.y, pt.z + 0.05f, tp.rayon, vite ? "tout de suite" : "retardée", explosions.fin[e] / 1000.0);
-				// Avec un contact, FUN_004d2b40 pose aussi la marque d'impact de la surface (FUN_00560f70, le genre par FUN_004641e0
-				// sur +0x14c de la fiche) : cette table par surface n'est pas lue, l'outil garde la marque de son contact.
-			}
-		}
-		if(tp.o40) printf("%6.2f s  choc du projectile %d : le stimulus %d naît du tireur %d (non suivi)\n", t, place, tp.stimulus, q.tireur);
-	}
+	if(CChocProjectile::Explose(tp.o8c, tp.o8d, tp.o8e, 0.0f, genre, false) && placesProjectiles.Exploser(place)) ExploserProjectile(place, q, pt, "choc");
 	if(CChocProjectile::StimulusDeLObjet(true, q.degats, genre, 0, journalEnBoite))
 		printf("%6.2f s  choc du projectile %d : le stimulus 2 naît du tireur %d sur %g m (non suivi)\n", t, place, q.tireur, tp.rayon);
 	if(q.modele == modeles.Index("RBandBall")) q.impacts &= ~7u;
@@ -6534,10 +6542,11 @@ AvancerProjectiles(float pas)
 	for(int place = 0; place < CPlacesProjectiles::kTaille; place++){
 		CProjectileOutil &q = projectiles[place];
 		if(!q.actif) continue;
-		// FUN_004d45e0 (à chaque image, lu dans l'index) : un tireur piéton qui n'est plus valable (FUN_0047b650) est oublié (le +4 de
-		// l'entrée, FUN_00465690) ; le projectile vit tant que l'octet +0x12 est nul (non suivi) et que maintenant ne dépasse pas sa
-		// création plus sa vie (+8 et +0xc, non signés), ou que sa vie est nulle ; sinon FUN_004d3dc0(i, 1). Le fondu de la fin de
-		// vie (+0x88 de la fiche, CPlacesProjectiles::Alpha) n'a rien à dessiner dans l'outil.
+		// FUN_004d45e0 (à chaque image) : un tireur piéton qui n'est plus valable (FUN_0047b650, lue dans l'index : sa place dans le
+		// pool des piétons sous 24 et son +0x178 non nul, ou le joueur) est oublié (le +4 de l'entrée, FUN_00465690) ; le projectile
+		// vit tant que son explosion n'est pas faite et que sa vie n'est pas finie (CPlacesProjectiles::Vit) ; sinon FUN_004d3dc0(i, 1),
+		// avec l'explosion de la fin de vie. Le fondu de la fin de vie (+0x88 de la fiche, CPlacesProjectiles::Alpha) n'a rien à
+		// dessiner dans l'outil.
 		if(q.tireur >= 0 && pietons.Acceder(q.tireur) == nil) q.tireur = -1;
 		// FUN_004d45e0 → FUN_006d48d0 (CPlacesProjectiles::DansLaMer) : sous le niveau 0 d'une zone dehors, le projectile tombe dans
 		// la mer ; FUN_004d3420 fait l'éclaboussure (non suivie) et, avec l'octet +0x8c ou +0x8d de la fiche, FUN_004d37d0 son choc
@@ -6545,10 +6554,16 @@ AvancerProjectiles(float pas)
 		// non suivi), puis FUN_004d3dc0(i, 0). L'outil n'a pas de sol : une bille manquée tombe jusque-là.
 		if(CPlacesProjectiles::DansLaMer(q.pos.z, ZoneDehors(zones.zoneVisible))){
 			printf("%6.2f s  le projectile %d tombe dans l'eau en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, place, q.pos.x, q.pos.y, q.pos.z);
-			q.actif = false; placesProjectiles.Liberer(place);
+			const CTypeProjectile &tp = TypeProjectile(q.modele);
+			if(CPlacesProjectiles::ExploseDansLEau(tp.o8c, tp.o8d) && placesProjectiles.Exploser(place)) ExploserProjectile(place, q, q.pos, "chute dans l'eau");
+			placesProjectiles.Detruire(place, false); q.actif = false;
 			continue;
 		}
-		if(q.vie != 0 && maintenant > q.naissance + q.vie){ q.actif = false; placesProjectiles.Liberer(place); continue; }
+		if(!placesProjectiles.Vit(place, maintenant, q.vie)){
+			if(placesProjectiles.Detruire(place, true)) ExploserProjectile(place, q, q.pos, "fin");
+			q.actif = false;
+			continue;
+		}
 		CVector avant = q.pos;
 		q.pos.x += q.vitesse.x * pas; q.pos.y += q.vitesse.y * pas; q.pos.z += q.vitesse.z * pas;
 		q.vitesse.z += q.gravite * pas;

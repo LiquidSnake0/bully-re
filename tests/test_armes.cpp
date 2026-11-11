@@ -365,6 +365,13 @@ main(void)
 		VERIF(y.Prendre(500, 2.0f, 0, 9000, 0.0f, false, &ev) == 3 && ev == 3 && y.rayon[3] == 2.0f && !y.evincable[3]);
 		VERIF(y.Prendre(501, 2.0f, 0, 9000, 0.0f, false, &ev) == 7 && ev == 7 && y.Prendre(502, 2.0f, 0, 9000, 0.0f, false) == -1);
 		VERIF(X::AutreFiche(true, 0.95f) && X::AutreFiche(true, -0.5f) && !X::AutreFiche(true, 0.97f) && !X::AutreFiche(false, 0.0f));
+		// La fin d'un projectile (FUN_004d45e0, FUN_004d3dc0).
+		CPlacesProjectiles f;
+		VERIF(f.Prendre(1000) == 0 && f.Vit(0, 1000, 0) && f.Vit(0, 999999, 0) && f.Vit(0, 1500, 500) && !f.Vit(0, 1501, 500) && !f.Vit(1, 1000, 0));
+		VERIF(f.Exploser(0) && !f.Vit(0, 1000, 0) && !f.Detruire(0, true) && !f.actif[0] && !f.Detruire(0, true));
+		VERIF(f.Prendre(2000) == 0 && f.Vit(0, 2000, 0) && f.Detruire(0, true) && !f.actif[0] && f.explose[0]);
+		VERIF(f.Prendre(3000) == 0 && !f.Detruire(0, false) && !f.explose[0] && !f.Detruire(5, true));
+		VERIF(CPlacesProjectiles::ExploseDansLEau(true, false) && CPlacesProjectiles::ExploseDansLEau(false, true) && !CPlacesProjectiles::ExploseDansLEau(false, false));
 	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;
