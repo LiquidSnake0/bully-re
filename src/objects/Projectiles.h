@@ -136,3 +136,24 @@ struct CChocProjectile {
 	// 0,5 (fld _DAT_009055a0, fcomp, test ah,5, jp).
 	static bool PremierSol(bool dejaAuSol, float normaleZ) { return !dejaAuSol && 0.5f < normaleZ; }
 };
+
+// Le contact d'un projectile en vol (FUN_0046ad90, le contact d'un CPhysical, lue dans l'index ; ici sa part pour un projectile, +0xc4
+// non nul, qui appelle le choc FUN_004d3860 à 0x46b0ae). L'octet +0x22c du projectile compte ses contacts.
+struct CContactProjectile {
+	// Le coup : contre un piéton (genre 3) ou un véhicule (genre 2), au premier contact seulement (l'octet +0x22c nul), à tous pour
+	// RBandBall (DAT_00bf432c). Sur un piéton, c'est sa méthode du coup (vtable +0x3c) avec les dégâts +0x1c de l'entrée et le tireur.
+	static bool Coup(int genre, uint8 contacts, bool rbandball) { return (genre == 3 || genre == 2) && (contacts == 0 || rbandball); }
+	// Le tireur épargné : quand le coup irait au piéton qui a tiré (+4 de l'entrée) moins de 200 ms après la création (+8, écart non
+	// signé), la fonction rend la main : ni coup, ni contact compté, ni choc.
+	static bool TireurEpargne(bool surLeTireur, uint32 maintenant, uint32 creation) { return surLeTireur && (uint32)(maintenant - creation) < 200; }
+	// L'octet « fort » passé au choc : faux contre un piéton ou un véhicule dont le coup est sauté, faux sous une vitesse (la norme de
+	// +0x124, +0x128, +0x12c, par FUN_0085c4d0) de 0,03 (le double 0x900e28).
+	static bool Fort(int genre, uint8 contacts, bool rbandball, float vitesse) {
+		if((genre == 3 || genre == 2) && !Coup(genre, contacts, rbandball)) return false;
+		return !(vitesse < 0.03f);
+	}
+	// Après le choc, sans entité de contact (ou une entité qui n'est ni un piéton ni en vol) : sous un carré de vitesse de 1e-4 (le
+	// double 0x900af8 ; 1e-10, 0x90c718, quand l'octet +0x20a vaut 7) et sur une normale au z au-dessus de 0,8 (0x900ad0), les
+	// vitesses +0x124 à +0x138 tombent à 0, l'octet +0x180 passe à 10 et la méthode +0x1c(1) met le projectile au repos.
+	static bool AuRepos(float vitesse2, float normaleZ, bool genre7) { return vitesse2 < (genre7 ? 1e-10f : 1e-4f) && 0.8f < normaleZ; }
+};

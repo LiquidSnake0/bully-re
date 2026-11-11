@@ -194,7 +194,8 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 // (src/objects/Projectiles.h : FUN_004d4590, FUN_004d3f60) : l'indice d'un projectile de l'outil est celui de son entrée.
 struct CProjectileOutil { bool actif = false; int32 modele = -1; int tireur = -1; CVector pos, vitesse; float gravite = 0, degats = 0;
                           uint32 naissance = 0, vie = 0;
-                          uint32 impacts = 0; };   // le compteur d'impacts, les trois bits bas de +0x23c (FUN_004d3860)
+                          uint32 impacts = 0;     // le compteur d'impacts, les trois bits bas de +0x23c (FUN_004d3860)
+                          uint8 contacts = 0; };  // les contacts comptés par FUN_0046ad90 (l'octet +0x22c)
 static CProjectileOutil projectiles[CPlacesProjectiles::kTaille];
 static CPlacesProjectiles placesProjectiles;
 // Les marques d'impact (les decals : FUN_00560f10 compte celles d'un genre dans un déclencheur, ObjectNumProjectileImpacts) :
@@ -6523,7 +6524,9 @@ AvancerProjectiles(float pas)
 		int touche = -1; float mieux = 2.0f;
 		for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
 			const CScriptPed *p = pietons.Acceder(i);
-			if(p == nil || i == q.tireur || p->mort) continue;
+			if(p == nil || p->mort) continue;
+			// FUN_0046ad90 : le tireur n'est épargné que pendant les 200 ms qui suivent la création.
+			if(CContactProjectile::TireurEpargne(i == q.tireur, maintenant, q.naissance)) continue;
 			for(float h : {0.35f, 0.95f, 1.55f}){
 				float u;
 				if(SegmentDansSphere(avant, q.pos, CVector(p->pos.x, p->pos.y, p->pos.z + h), 0.35f, &u) && u < mieux){ mieux = u; touche = i; }
@@ -6536,21 +6539,28 @@ AvancerProjectiles(float pas)
 			if(!objets[i].detruit && SegmentDansSphere(avant, q.pos, objets[i].pos, 0.5f, &u) && u < mieux){ mieux = u; objet = (int)i; touche = -1; }
 		}
 		// Le contact (FUN_0046ad90) : sur un piéton le coup puis le choc (FUN_004d3860) ; sur un objet le choc puis le coup. Le moteur
-		// garde le projectile, qui rebondit ; l'outil, sans rebond, le retire au premier contact.
+		// garde le projectile, qui rebondit ; l'outil, sans rebond, le retire au premier contact. L'octet « fort » du choc vient du
+		// coup et de la vitesse (celle de l'outil, en mètres par pas : supposée l'unité de +0x124).
+		bool rbandball = q.modele == modeles.Index("RBandBall");
+		float allure = sqrtf(q.vitesse.x * q.vitesse.x + q.vitesse.y * q.vitesse.y + q.vitesse.z * q.vitesse.z);
 		CVector a(avant.x + (q.pos.x - avant.x) * mieux, avant.y + (q.pos.y - avant.y) * mieux, avant.z + (q.pos.z - avant.z) * mieux);
 		if(objet >= 0){
 			PoserMarque(TypeProjectile(q.modele).marque, a);   // la marque de l'impact (FUN_00560f10 la comptera)
 			// Un journal (newsroll, DAT_00bf4414) dans une boîte aux lettres (RMailbox, DPE_RCMail) ne fait pas de stimulus 2.
 			bool boite = q.modele == modeles.Index("newsroll") &&
 			             (objets[objet].modele == modeles.Index("RMailbox") || objets[objet].modele == modeles.Index("DPE_RCMail"));
-			ChoquerProjectile(place, q, 4, a, boite, true);
+			bool fort = CContactProjectile::Fort(4, q.contacts, rbandball, allure);
+			q.contacts++;
+			ChoquerProjectile(place, q, 4, a, boite, fort);
 			q.actif = false; placesProjectiles.Liberer(place);
 			FrapperObjet((size_t)objet, q.tireur, q.degats);
 		}else if(touche >= 0){
 			CProjectileOutil c = q;
 			q.actif = false; placesProjectiles.Liberer(place);
-			RecevoirProjectile(touche, c.tireur, c.degats, c.modele);
-			ChoquerProjectile(place, c, 3, a, false, true);
+			if(CContactProjectile::Coup(3, c.contacts, rbandball)) RecevoirProjectile(touche, c.tireur, c.degats, c.modele);
+			bool fort = CContactProjectile::Fort(3, c.contacts, rbandball, allure);
+			c.contacts++;
+			ChoquerProjectile(place, c, 3, a, false, fort);
 		}
 	}
 }

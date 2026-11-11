@@ -333,6 +333,14 @@ main(void)
 		VERIF(i == 0 && t.Exploser(i) && !t.Exploser(i) && t.explose[i]);        // une seule fois
 		t.auSol[i] = true; t.Liberer(i);
 		VERIF(t.Prendre(2000) == 0 && !t.explose[0] && !t.auSol[0] && t.Exploser(0) && !t.Exploser(-1) && !t.Exploser(32));
+		// Le contact d'un projectile en vol (FUN_0046ad90).
+		typedef CContactProjectile K;
+		VERIF(K::Coup(3, 0, false) && K::Coup(2, 0, false) && !K::Coup(3, 1, false) && K::Coup(3, 5, true) && !K::Coup(4, 0, false));
+		VERIF(K::TireurEpargne(true, 1199, 1000) && !K::TireurEpargne(true, 1200, 1000) && !K::TireurEpargne(false, 1000, 1000));
+		VERIF(K::Fort(3, 0, false, 0.5f) && !K::Fort(3, 1, false, 0.5f) && K::Fort(3, 1, true, 0.5f));   // le coup sauté
+		VERIF(K::Fort(4, 3, false, 0.03f) && !K::Fort(4, 0, false, 0.029f) && !K::Fort(3, 0, false, 0.01f));
+		VERIF(K::AuRepos(0.5e-4f, 0.81f, false) && !K::AuRepos(1e-4f, 0.81f, false) && !K::AuRepos(0.5e-4f, 0.8f, false));
+		VERIF(!K::AuRepos(0.5e-4f, 0.9f, true) && K::AuRepos(0.5e-10f, 0.9f, true));
 	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;

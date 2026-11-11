@@ -15,7 +15,7 @@ Combien des fonctions de `bully.exe` le dépôt a recréées. Généré par
 |---|---:|---:|
 | `src/core` | 438 | 132 203 |
 | `src/peds` | 524 | 126 789 |
-| `src/objects` | 165 | 63 372 |
+| `src/objects` | 166 | 63 392 |
 | `src/entities` | 80 | 19 361 |
 | `src/hud` | 67 | 15 569 |
 | `src/vehicles` | 46 | 12 299 |
