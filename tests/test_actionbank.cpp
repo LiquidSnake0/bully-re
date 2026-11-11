@@ -736,6 +736,33 @@ main(void)
 				std::vector<CActionController *> tous;
 				d.Recueillir(tous);
 				VERIF(tous.size() >= 2);
+				// FUN_005f49a0 (0x5f49a0 à 0x5f4a46) : la feuille AimOut/DEFAULT n'a pas de Sequence ; à sa fin, le contrôleur sans
+				// arbre se vide (+0x10 = 0) au lieu de garder la feuille, et la piste spawn « ./UpperBody » de Controller (sans
+				// l'octet +0x29) meurt. Les durées sont celles de MAINPED.HXD (C_PLAYER\SLNG_2IDLE_T 0,3333 s, C_PLAYER\BLOCK
+				// 1,1667 s), posées ici à la main : ce test ne lit pas le dictionnaire.
+				const CActionNode *sortie = attente ? g.Relatif(attente, "../Controller/UpperBody/Aim/IntoAim/AimIdle/AimOut/DEFAULT") : nil;
+				VERIF(sortie && sortie->enfants.empty());
+				if(sortie){
+					std::map<uint32, float> avant = g.dureesAnimations;
+					g.dureesAnimations[0x1b3aa775] = 0.3333f;
+					g.dureesAnimations[0x6ef2a4ee] = 1.1667f;
+					CActionController h;
+					h.Jouer(g, sortie, 0.0f);
+					VERIF(h.joue == sortie && h.fin > 0.0f && h.fin <= 1.1667f);
+					float fin = h.fin;
+					h.Avancer(g, nil, faux, fin - 0.01f);
+					VERIF(h.joue == sortie);
+					VERIF(h.Avancer(g, nil, faux, fin + 0.01f));
+					VERIF(h.joue == nil);
+					VERIF(!h.Avancer(g, nil, faux, fin + 0.05f) && h.joue == nil);
+					// Le contrôleur d'un piéton, qui a un arbre d'où redescendre, n'est pas vidé par cette règle.
+					CActionController k;
+					k.arbre = arme;
+					k.Jouer(g, sortie, 0.0f);
+					k.Avancer(g, nil, faux, fin + 0.01f);
+					VERIF(k.joue != nil);
+					g.dureesAnimations = avant;
+				}
 			}
 		}
 		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());

@@ -744,6 +744,12 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		const CActionNode *n = Descendre(b, arbre, juge);
 		if(n && (n != joue || fini)){ Jouer(b, n, t, &juge); return true; }
 	}
+	// FUN_005f49a0 (lu à l'assembleur de 0x5f49a0 à 0x5f4a46) : un nœud que plus rien ne retient (FUN_005f4230 rend 0), ou dont
+	// la fin est demandée (+1, +2), arrête ses pistes (FUN_005f4380, FUN_005f3d80, FUN_005f3d30), remet le temps +8 à 0 et **vide
+	// le contrôleur** (+0x10 = 0, +0xc = 0) ; seule une demande déposée (+0x14 : une Sequence, une Opportunity prise) le relance
+	// (FUN_005f48f0). L'outil vide ici le contrôleur qui n'a pas d'arbre d'où redescendre (une piste spawn sans l'octet +0x29 :
+	// FUN_005f72e0 la laisse mourir à l'image suivante) ; celui d'un piéton garde son nœud tant que son arbre ne donne rien.
+	if(fini && arbre == nil){ Jouer(b, nil, t, &juge); return true; }
 	return false;
 }
 
