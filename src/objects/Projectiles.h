@@ -176,6 +176,14 @@ struct CContactProjectile {
 	// double 0x900af8 ; 1e-10, 0x90c718, quand l'octet +0x20a vaut 7) et sur une normale au z au-dessus de 0,8 (0x900ad0), les
 	// vitesses +0x124 à +0x138 tombent à 0, l'octet +0x180 passe à 10 et la méthode +0x1c(1) met le projectile au repos.
 	static bool AuRepos(float vitesse2, float normaleZ, bool genre7) { return vitesse2 < (genre7 ? 1e-10f : 1e-4f) && 0.8f < normaleZ; }
+	// La marque qu'un projectile laisse sur un bâtiment (FUN_0046ad90, lue à l'assembleur de 0x46b468 à 0x46b691) : l'entité touchée
+	// est de genre 1, le CPhysical a une fiche +0xc4, son modèle +0x10e est dans la plage des armes (DAT_00a136b0 à DAT_00a136b4) et
+	// le type de l'arme (+0x18 de son modèle) a une fiche de projectile +0x80. La fiche porte deux marques, des identifiants d'effet :
+	// +0x150 (le nom +0x54) quand le z de la normale du contact (+0x18) n'est pas sous 0,3 en valeur absolue
+	// (_DAT_00911e30 : fabs, fcomp, test ah,5, jp), +0x152 (le nom +0x58) sinon : un mur. Une marque qui n'est pas
+	// 0xffff est posée par FUN_00560f70 avec le point du contact, sa normale (+0x10) et sa surface (l'octet +0x22).
+	// Rend 0 pour la marque +0x150, 1 pour la marque +0x152.
+	static int MarqueDuBatiment(float normaleZ) { return (normaleZ < 0.0f ? -normaleZ : normaleZ) < 0.3f ? 1 : 0; }
 };
 
 // Les explosions : une table de 15 entrées de 0x3c octets à 0xc39b60 (+0 la fiche du projectile, +4 un effet, +0xc le tireur, +0x10
@@ -241,5 +249,30 @@ struct CPlacesExplosions {
 		if(i < 0 || i >= kTaille || !arret) return;
 		if(sursis == 0){ actif[i] = false; return; }
 		if(maintenant + sursis < fin[i]) fin[i] = maintenant + sursis;
+	}
+};
+
+// Les marques d'impact : une table à 0xcf1f60, son indice d'écriture en tête puis 32 places de 16 octets (la position, le genre en
+// mot +0xc). Les places qui n'ont pas servi ne répondent à aucun genre (supposé : l'outil et les tests partent d'un genre 0 que
+// personne ne pose).
+struct CPlacesMarques {
+	enum { kTaille = 32 };
+	int indice = 0;
+	float pos[kTaille][3] = {};
+	uint16 genre[kTaille] = {};
+	// FUN_00560f70(genre, point, normale, surface) (lue dans l'index) : la place de l'indice reçoit le point avancé de 0,01 fois la
+	// normale (le double 0x900d30, la somme par FUN_00412850) et le genre ; l'indice avance et revient à 0 après la place 31 : un
+	// anneau, la plus vieille cédant sa place. L'effet de la marque naît ensuite (non suivi).
+	void Poser(uint16 g, const float *point, const float *normale) {
+		for(int k = 0; k < 3; k++) pos[indice][k] = point[k] + normale[k] * 0.01f;
+		genre[indice] = g;
+		if(++indice > 0x1f) indice = 0;
+	}
+	// FUN_00560f10(genre, déclencheur) (lue dans l'index) : le nombre des 32 places de ce genre dont la position est dans le
+	// déclencheur (FUN_006d6e50) ; `dedans` est ce test.
+	template<class F> int Compter(uint16 g, F dedans) const {
+		int n = 0;
+		for(int i = 0; i < kTaille; i++) if(genre[i] == g && dedans(pos[i])) n++;
+		return n;
 	}
 };

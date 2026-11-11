@@ -152,7 +152,7 @@ static void LacherArme(int h);
 // L'avance sur une cible qui bouge (FUN_0065ecb0) lit l'octet +0x124 (292, la durée refaite), le flottant +0x128 (296, son diviseur)
 // et le flottant +0x84 (132, le facteur de l'avance) : 0, 1 et 1 pour la bille et la brique.
 struct CTypeProjectile { bool lu = false; int32 vie = 0; float degatsMin = 0, degatsMax = 0, vitesseMin = 0.4f, vitesseMax = 0.4f, gravite = 1.0f;
-                         std::string marque; bool o8c = false, o8d = false, menace = false; float rayon = 0, a0 = 0;
+                         std::string marque, marqueMur; bool o8c = false, o8d = false, menace = false; float rayon = 0, a0 = 0;
                          bool dureeRefaite = false; float diviseur = 1.0f, facteurAvance = 1.0f;
                          bool o40 = false, o8e = false; int32 stimulus = 0, c4 = 0; std::string effet;
                          uint32 dureeExplosion = 0, delaiExplosion = 0; float croissance = 0; bool evincable = false; };
@@ -173,7 +173,10 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 	a.degatsMin = CActionBank::ButesReel(t, 76); a.degatsMax = CActionBank::ButesReel(t, 80);
 	a.vitesseMin = CActionBank::ButesReel(t, 96); a.vitesseMax = CActionBank::ButesReel(t, 100);
 	a.gravite = CActionBank::ButesReel(t, 128);
+	// Les deux marques de la fiche, des noms que FUN_007282e0 résout à la première demande : +0x150 (le nom +0x54, rendu par
+	// FUN_00468bb0) et +0x152 (le nom +0x58, rendu par FUN_00468bd0, la marque d'un mur). L'outil garde les noms.
 	auto it = chaines.find(84); if(it != chaines.end()) a.marque = it->second;
+	it = chaines.find(88); if(it != chaines.end()) a.marqueMur = it->second;
 	const CActionAttribut *o1 = t.Champ(140), *o2 = t.Champ(141), *o3 = t.Champ(228);
 	a.o8c = o1 && o1->valeur[0]; a.o8d = o2 && o2->valeur[0]; a.menace = o3 && o3->valeur[0];
 	a.rayon = CActionBank::ButesReel(t, 148); a.a0 = CActionBank::ButesReel(t, 160);
@@ -203,21 +206,30 @@ struct CProjectileOutil { bool actif = false; int32 modele = -1; int tireur = -1
                           uint8 contacts = 0; };  // les contacts comptés par FUN_0046ad90 (l'octet +0x22c)
 static CProjectileOutil projectiles[CPlacesProjectiles::kTaille];
 static CPlacesProjectiles placesProjectiles;
-// Les marques d'impact (les decals : FUN_00560f10 compte celles d'un genre dans un déclencheur, ObjectNumProjectileImpacts) :
-// le nom de la marque de la fiche du projectile et le point du contact.
-// La table des marques a 32 places de 16 octets (la position, le genre en mot +0xc) et son indice d'écriture en tête : FUN_00560f70
-// (lue dans l'index) écrit à l'indice le point avancé de 0,01 fois la normale (le double 0x900d30) et le genre, puis l'indice
-// avance et revient à 0 après la place 31 : un anneau, la plus vieille cédant sa place. Elle est appelée par le contact
-// (FUN_0046ad90, sur un bâtiment), par l'explosion (FUN_004d2b40) et par FUN_00610440, FUN_00610810 et FUN_00610ab0 (non lues).
-struct CMarque { std::string nom; CVector pos; };
-static std::vector<CMarque> marques;
-static size_t marqueSuivante = 0;
+// Les marques d'impact (les decals ; CPlacesMarques : la table 0xcf1f60, FUN_00560f70 qui pose, FUN_00560f10 qui compte celles d'un
+// genre dans un déclencheur pour ObjectNumProjectileImpacts). FUN_00560f70 est appelée par le contact d'un projectile avec un bâtiment
+// (FUN_0046ad90), par l'explosion (FUN_004d2b40) et par FUN_00610440, FUN_00610810 et FUN_00610ab0 (non lues). Le genre d'une marque
+// est l'identifiant d'effet de son nom (0x667a00, résolu par FUN_007282e0) : l'outil numérote les noms qu'il rencontre, depuis 1
+// (0xffff sans nom, comme le moteur). Il n'a pas la normale du contact : la marque est posée au point même.
+static CPlacesMarques marques;
+static std::map<std::string, uint16> genresMarques;
+static uint16
+GenreMarque(const std::string &nom)
+{
+	if(nom.empty()) return 0xffff;
+	auto it = genresMarques.find(nom);
+	if(it != genresMarques.end()) return it->second;
+	uint16 g = (uint16)(genresMarques.size() + 1);
+	genresMarques[nom] = g;
+	return g;
+}
 static void
 PoserMarque(const std::string &nom, const CVector &pos)
 {
-	if(nom.empty()) return;
-	if(marques.size() < 32) marques.push_back({nom, pos});
-	else{ marques[marqueSuivante] = {nom, pos}; marqueSuivante = (marqueSuivante + 1) % 32; }
+	uint16 g = GenreMarque(nom);
+	if(g == 0xffff) return;
+	const float p[3] = {pos.x, pos.y, pos.z}, n[3] = {0.0f, 0.0f, 0.0f};
+	marques.Poser(g, p, n);
 }
 
 // --- Les objets cassables (CObject : ms_pObjectPool, 275 × 0x22c ; docs/pools.md) ---
@@ -4197,8 +4209,14 @@ ObjectNumProjectileImpacts(lua_State *L)
 	int32 a = (int32)luaL_optnumber(L, 2, -1);
 	int n = 0;
 	auto it = typesProjectiles.find(a);
-	if(it != typesProjectiles.end() && h >= 0)
-		for(const CMarque &m : marques) if(m.nom == it->second.marque && donnees.DansDeclencheur(h, m.pos)) n++;
+	if(it != typesProjectiles.end() && h >= 0){
+		// Les deux marques de la fiche, comptées l'une après l'autre et ajoutées (0x5c2ed0).
+		auto dedans = [&](const float *p){ return donnees.DansDeclencheur(h, CVector(p[0], p[1], p[2])); };
+		for(const std::string *nom : {&it->second.marque, &it->second.marqueMur}){
+			uint16 g = GenreMarque(*nom);
+			if(g != 0xffff) n += marques.Compter(g, dedans);
+		}
+	}
 	lua_pushnumber(L, n);
 	return 1;
 }
@@ -6591,7 +6609,10 @@ AvancerProjectiles(float pas)
 		float allure = sqrtf(q.vitesse.x * q.vitesse.x + q.vitesse.y * q.vitesse.y + q.vitesse.z * q.vitesse.z);
 		CVector a(avant.x + (q.pos.x - avant.x) * mieux, avant.y + (q.pos.y - avant.y) * mieux, avant.z + (q.pos.z - avant.z) * mieux);
 		if(objet >= 0){
-			PoserMarque(TypeProjectile(q.modele).marque, a);   // la marque de l'impact (FUN_00560f10 la comptera)
+			// La marque de l'impact (FUN_00560f10 la comptera). Le moteur la pose au contact d'un bâtiment (CContactProjectile::
+			// MarqueDuBatiment) ou par l'explosion ; l'outil, sans bâtiments ni surfaces, pose celle du nom +0x54 au contact d'un
+			// objet (supposé).
+			PoserMarque(TypeProjectile(q.modele).marque, a);
 			// Un journal (newsroll, DAT_00bf4414) dans une boîte aux lettres (RMailbox, DPE_RCMail) ne fait pas de stimulus 2.
 			bool boite = q.modele == modeles.Index("newsroll") &&
 			             (objets[objet].modele == modeles.Index("RMailbox") || objets[objet].modele == modeles.Index("DPE_RCMail"));

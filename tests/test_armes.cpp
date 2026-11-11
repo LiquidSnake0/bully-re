@@ -372,6 +372,19 @@ main(void)
 		VERIF(f.Prendre(2000) == 0 && f.Vit(0, 2000, 0) && f.Detruire(0, true) && !f.actif[0] && f.explose[0]);
 		VERIF(f.Prendre(3000) == 0 && !f.Detruire(0, false) && !f.explose[0] && !f.Detruire(5, true));
 		VERIF(CPlacesProjectiles::ExploseDansLEau(true, false) && CPlacesProjectiles::ExploseDansLEau(false, true) && !CPlacesProjectiles::ExploseDansLEau(false, false));
+		// Les marques d'impact (FUN_00560f70, FUN_00560f10) et celle du contact avec un bâtiment (FUN_0046ad90).
+		CPlacesMarques m;
+		const float pt[3] = {1.0f, 2.0f, 3.0f}, nz[3] = {0.0f, 0.0f, 1.0f};
+		auto partout = [](const float *) { return true; };
+		auto haut = [](const float *p) { return p[2] > 3.005f; };
+		m.Poser(7, pt, nz);
+		VERIF(m.indice == 1 && m.genre[0] == 7 && m.pos[0][2] > 3.0099f && m.pos[0][2] < 3.0101f && m.pos[0][0] == 1.0f);
+		VERIF(m.Compter(7, partout) == 1 && m.Compter(7, haut) == 1 && m.Compter(8, partout) == 0);
+		for(int k = 0; k < 31; k++) m.Poser(8, pt, nz);
+		VERIF(m.indice == 0 && m.Compter(8, partout) == 31 && m.Compter(7, partout) == 1);
+		m.Poser(9, pt, nz);   // l'anneau : la place 0 cède
+		VERIF(m.indice == 1 && m.Compter(7, partout) == 0 && m.Compter(9, partout) == 1 && m.Compter(8, partout) == 31);
+		VERIF(K::MarqueDuBatiment(1.0f) == 0 && K::MarqueDuBatiment(-0.3f) == 0 && K::MarqueDuBatiment(0.29f) == 1 && K::MarqueDuBatiment(0.0f) == 1);
 	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;
