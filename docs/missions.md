@@ -628,6 +628,17 @@ casse la vitre 1 à 17,56 s, puis le contrôleur d'`UpperBody` reste dans `AimOu
 SLINGSH.HXD), la feuille ne finit pas, le contrôleur ne se vide pas ; les boutons de 18,61 et 20,62 s ne tirent pas et la mission ne
 finit pas en 90 s. La commande garde `--jouer`.
 
+**Le haut du corps, fin** (11.11, séance 1) : ce diagnostic était faux. `C_PLAYER\SLNG_2IDLE_T` est dans MAINPED.HXD (l'enregistrement
+715, 0,3333 s) et l'outil lisait sa durée ; ce qui manquait est dans le contrôleur d'actions : à la fin d'un nœud sans suite il se vide
+(`FUN_005f49a0`), et la durée d'un nœud ne vient que des pistes à l'octet +8 (`FUN_005f4230`) : la feuille `AimOut/DEFAULT` finit à
+0,0333 s (le champ 44 de son animation retenante) et non après `C_PLAYER\BLOCK` (1,1667 s, sans l'octet). Le contrôleur d'`UpperBody`
+se vide, sa piste spawn meurt, `Controller` finit par sa Sequence `../` et repart au bouton suivant. L'essai au seul bouton 8 (`--tenir
+8,0.7` à 16,6, 18,6 et 20,6 s, sans `--jouer` du nœud `Charge`) casse les trois vitres à 17,56 s, 19,54 s et 21,55 s (les billes
+partent à 17,36 s, 19,34 s et 21,35 s ; `AimOut` commence à 17,79 s, l'attente #0bb98aa5 revient à 17,89 s) et la mission finit réussie
+à 82,53 s, comme avec la commande ci-dessus, qui reste la référence des mesures. Au contact, une bille dit maintenant son choc
+(`FUN_004d3860`) : avec la commande de référence, l'explosion de rayon 0,001 m est posée à 17,52 s et finie à l'image suivante, 17,56
+s, avec le stimulus 2 du tireur et l'effet `Slingshot_Hit`.
+
 ## `1_05` (« Save Algie ») (06.11.2026)
 
 `1_05` s'enchaîne après `1_04`. Lancée seule (`build/outils/lancer_lua 90 --mission 1_05 --sans-cinematiques`), elle bouclait
@@ -684,6 +695,9 @@ le fondu et **`MissionSucceed` : `1_05` se termine réussie à 185,20 s**.
 rendus à la population ; les piétons créés ensuite prennent leurs cases et leurs poignées baissent de 3 : les bullies de `F_Stage1_Setup`
 sont 1, 2 et 3 (4, 5 et 6 plus haut), Algie le 7 (10), l'embuscade 9 et 10 (12 et 13). La commande ci-dessus est refaite avec elles ;
 l'objectif de la fin (`1_05_MOBJ_03`) passe à 133,95 s au lieu de 154,18 s, et `1_05` se termine réussie à 194,30 s.
+Depuis le 11.11 (séance 1), elle se termine réussie à 180,31 s : les nœuds de coups reçus finissent avec leur animation retenante
+(`FUN_005f4230`) et non avec leur piste la plus longue, les adversaires tombent plus tôt (la première piste `Death` à 26,63 s au lieu
+de 27,32 s).
 
 ## `1_06_01` (« Get Help - Mission 1 ») (06.11.2026, séance 2)
 
@@ -788,6 +802,8 @@ reprend la main à 102,96 s, entre dans `_1_07_FIGHTTRIGGER` et la seconde vague
 (`/Global/1_07/Cower`, 121,01 s). Le joueur va au point de `_1_07_PLYRDOOR` : `F_CompleteMission` à 133,95 s, le clochard (134,51 s),
 la grille ouverte (138,04 s), la prise du don (145,17 s), Bucky dit `THANKS_JIMMY`, `M_PASS` (148,73 s) et **`MissionSucceed` : `1_07`
 se termine réussie à 151,47 s**.
+Depuis le 11.11 (séance 1), elle se termine réussie à 150,88 s, pour la même raison que `1_05` (la durée d'un nœud par ses pistes
+retenantes, `FUN_005f4230` : la première piste `Death` à 52,30 s au lieu de 53,00 s).
 
 ## Suite
 
