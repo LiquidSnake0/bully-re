@@ -58,6 +58,7 @@ CActionController::Duree(const CActionBank &b, const CActionNode &n)
 	for(int32 dp : n.pistes){
 		CActionTrack p;
 		if(!f->Piste(dp, p)) continue;
+		if(!Octet(p, 8)) continue;   // FUN_005f4230 : seule une piste à l'octet +8 retient le nœud
 		float vie = Reel(p, 16, -1.0f);
 		float bout = vie >= 0.0f ? Reel(p, 12, 0.0f) + vie : FinAnimation(b, p);
 		if(bout > d) d = bout;
@@ -122,7 +123,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			// Les pistes ajoutées comptent pour la fin du nœud joué comme les siennes (FUN_005f3e20 : une seule liste).
 			float vie = Reel(p, 16, -1.0f), finAnim = FinAnimation(b, p);
 			float bout = vie >= 0.0f ? a + vie : finAnim >= 0.0f ? entree + finAnim : -1.0f;
-			if(bout > finExecutees) finExecutees = bout;
+			if(Octet(p, 8) && bout > finExecutees) finExecutees = bout;
 		}
 		if(p.type == kCollision){
 			const CActionAttribut *dr = p.Champ(44), *sur = p.Champ(104);

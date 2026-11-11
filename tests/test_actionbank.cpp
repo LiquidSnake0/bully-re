@@ -36,6 +36,20 @@ CheminVu(const CActionBank &b, const CActionController &c)
 
 struct CJugeAction_Rien : CJugeAction { int Juger(const CActionTreeFile &, int32, uint32, const uint32 *) const override { return 0; } };
 
+// Les durées de MAINPED.HXD ne sont pas chargées par ce test : celles des animations d'un sous-arbre sont posées à la main. La durée
+// d'un nœud ne vient que de ses pistes à l'octet +8 (FUN_005f4230), le plus souvent une Animation.
+static void
+PoserDurees(CActionBank &b, const CActionNode &n, float d)
+{
+	if(const CActionTreeFile *f = b.Fichier(n))
+		for(int32 dp : n.pistes){
+			CActionTrack p;
+			if(f->Piste(dp, p) && (p.type == ActionHash("Animation") || p.type == ActionHash("HitAnimation")))
+				b.dureesAnimations[p.Mot(24) & 0x7fffffff] = d;
+		}
+	for(const CActionNode &e : n.enfants) PoserDurees(b, e, d);
+}
+
 int
 main(void)
 {
@@ -165,7 +179,9 @@ main(void)
 		CActionController c;
 		VERIF(c.Poser(b, arbre, sansArme, 10.0f) && c.joue == pris);
 		VERIF(b.CheminDe(pris) == "/Global/TrainingPlayer/Default/Default");   // noms hachés appris des chemins demandés
-		// Le premier nœud de TrainingPlayer dont une piste a une durée de vie finie (un coup, une provocation).
+		// Le premier nœud de TrainingPlayer dont une piste qui le retient a une durée de vie finie (un coup, une provocation) ;
+		// les animations de la banque durent ici 0,8 s (posées à la main jusqu'à la fin de l'essai des Sequence).
+		PoserDurees(b, *b.Global(), 0.8f);
 		const CActionNode *cible = nil; float d = -1.0f;
 		std::vector<const CActionNode *> pile(1, arbre);
 		while(!pile.empty() && cible == nil){
@@ -213,6 +229,7 @@ main(void)
 				printf("  Sequence : %s → %s à %.2f s\n", b.CheminDe(t.n).c_str(), b.CheminDe(t.suite).c_str(), d);
 			}
 		}
+		b.dureesAnimations.clear();
 		// Les Opportunity dans le contrôleur (FUN_005f7d70, FUN_005f7440, FUN_005f3bc0) : dans TrainingPlayer, la
 		// première Opportunity à bascule tardive (> 0) dont le nœud visé aboutit quand tout passe. Prise tout de suite,
 		// elle fait passer à sa bascule, pas avant ; avec des conditions fausses, elle ne fait rien.
@@ -414,11 +431,14 @@ main(void)
 			if(rcv && tuto){
 				CActionController c;
 				c.arbre = tuto;
+				std::map<uint32, float> avant = g.dureesAnimations;
+				PoserDurees(g, *rcv, 0.8f);   // l'animation de RCV, la seule piste qui le retient
 				c.Jouer(g, rcv, 0.0f);
 				float d = CActionController::Duree(g, *rcv);
 				VERIF(d > 0.5f && d < 1.5f);
 				VERIF(c.Avancer(g, nil, JugeDrapeau(0), d + 0.05f));
 				VERIF(g.JoueNom(c.joue, "OnGroundBounce"));
+				g.dureesAnimations = avant;
 			}
 		}
 		// Les pistes d'un nœud exécuté rejoignent celles du contrôleur (FUN_005f7070, FUN_005f3e20) : un coup reçu debout
@@ -739,7 +759,8 @@ main(void)
 				// FUN_005f49a0 (0x5f49a0 à 0x5f4a46) : la feuille AimOut/DEFAULT n'a pas de Sequence ; à sa fin, le contrôleur sans
 				// arbre se vide (+0x10 = 0) au lieu de garder la feuille, et la piste spawn « ./UpperBody » de Controller (sans
 				// l'octet +0x29) meurt. Les durées sont celles de MAINPED.HXD (C_PLAYER\SLNG_2IDLE_T 0,3333 s, C_PLAYER\BLOCK
-				// 1,1667 s), posées ici à la main : ce test ne lit pas le dictionnaire.
+				// 1,1667 s), posées ici à la main : ce test ne lit pas le dictionnaire. Seule SLNG_2IDLE_T retient la feuille
+				// (son octet +8 ; FUN_005f4230), jusqu'à son champ 44 (0,0333 s ; FUN_0060ae00) : BLOCK, sans l'octet, ne compte pas.
 				const CActionNode *sortie = attente ? g.Relatif(attente, "../Controller/UpperBody/Aim/IntoAim/AimIdle/AimOut/DEFAULT") : nil;
 				VERIF(sortie && sortie->enfants.empty());
 				if(sortie){
@@ -748,7 +769,7 @@ main(void)
 					g.dureesAnimations[0x6ef2a4ee] = 1.1667f;
 					CActionController h;
 					h.Jouer(g, sortie, 0.0f);
-					VERIF(h.joue == sortie && h.fin > 0.0f && h.fin <= 1.1667f);
+					VERIF(h.joue == sortie && fabsf(h.fin - 0.0333f) < 1e-3f);
 					float fin = h.fin;
 					h.Avancer(g, nil, faux, fin - 0.01f);
 					VERIF(h.joue == sortie);
