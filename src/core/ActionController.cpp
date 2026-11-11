@@ -58,6 +58,7 @@ CActionController::Duree(const CActionBank &b, const CActionNode &n)
 	for(int32 dp : n.pistes){
 		CActionTrack p;
 		if(!f->Piste(dp, p)) continue;
+		if(!Octet(p, 8)) continue;   // FUN_005f4230 : seule une piste à l'octet +8 retient le nœud
 		float vie = Reel(p, 16, -1.0f);
 		float bout = vie >= 0.0f ? Reel(p, 12, 0.0f) + vie : FinAnimation(b, p);
 		if(bout > d) d = bout;
@@ -122,7 +123,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			// Les pistes ajoutées comptent pour la fin du nœud joué comme les siennes (FUN_005f3e20 : une seule liste).
 			float vie = Reel(p, 16, -1.0f), finAnim = FinAnimation(b, p);
 			float bout = vie >= 0.0f ? a + vie : finAnim >= 0.0f ? entree + finAnim : -1.0f;
-			if(bout > finExecutees) finExecutees = bout;
+			if(Octet(p, 8) && bout > finExecutees) finExecutees = bout;
 		}
 		if(p.type == kCollision){
 			const CActionAttribut *dr = p.Champ(44), *sur = p.Champ(104);
@@ -744,6 +745,12 @@ CActionController::Avancer(const CActionBank &b, const CActionNode *depuisRacine
 		const CActionNode *n = Descendre(b, arbre, juge);
 		if(n && (n != joue || fini)){ Jouer(b, n, t, &juge); return true; }
 	}
+	// FUN_005f49a0 (lu à l'assembleur de 0x5f49a0 à 0x5f4a46) : un nœud que plus rien ne retient (FUN_005f4230 rend 0), ou dont
+	// la fin est demandée (+1, +2), arrête ses pistes (FUN_005f4380, FUN_005f3d80, FUN_005f3d30), remet le temps +8 à 0 et **vide
+	// le contrôleur** (+0x10 = 0, +0xc = 0) ; seule une demande déposée (+0x14 : une Sequence, une Opportunity prise) le relance
+	// (FUN_005f48f0). L'outil vide ici le contrôleur qui n'a pas d'arbre d'où redescendre (une piste spawn sans l'octet +0x29 :
+	// FUN_005f72e0 la laisse mourir à l'image suivante) ; celui d'un piéton garde son nœud tant que son arbre ne donne rien.
+	if(fini && arbre == nil){ Jouer(b, nil, t, &juge); return true; }
 	return false;
 }
 

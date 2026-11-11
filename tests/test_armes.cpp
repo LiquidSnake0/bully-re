@@ -306,6 +306,86 @@ main(void)
 		VERIF(P::Alpha(1000, 3000, 3750, 500) == 127);                     // reste 250 : 250 × 255 / 500
 		VERIF(P::Alpha(1000, 3000, 4100, 500) == 0);                       // passé : 0 au moins
 	}
+	// Le choc d'un projectile (FUN_004d3860) et son explosion (FUN_004d37d0).
+	{
+		typedef CChocProjectile C;
+		VERIF(!C::Explose(false, false, false, 1.0f, 3, true));                 // aucun des trois octets
+		VERIF(C::Explose(true, false, false, -1.0f, 1, false));                 // +0x8c : partout
+		VERIF(C::Explose(false, true, false, 0.5f, 1, false) && !C::Explose(false, true, false, 0.49f, 1, false));   // +0x8d : au sol
+		VERIF(!C::Explose(false, true, false, 1.0f, 3, false));                 // +0x8d : pas sur un piéton
+		VERIF(C::Explose(false, false, true, 0.0f, 3, false) && C::Explose(false, false, true, 0.0f, 2, true));      // +0x8e
+		VERIF(!C::Explose(false, false, true, 1.0f, 4, false) && !C::Explose(false, true, true, 1.0f, 1, false));    // +0x8e efface +0x8d
+		VERIF(C::StimulusDeLObjet(true, 9.0f, 4, 0, false) && C::StimulusDeLObjet(true, 9.0f, 1, 0xf, false));
+		VERIF(!C::StimulusDeLObjet(true, 0.0f, 4, 0, false) && !C::StimulusDeLObjet(false, 9.0f, 4, 0, false));
+		VERIF(!C::StimulusDeLObjet(true, 9.0f, 3, 0, false) && !C::StimulusDeLObjet(true, 9.0f, 4, 0, true));
+		VERIF(C::Compter(0) == 1 && C::Compter(4) == 5 && C::Compter(5) == 5 && C::Compter(0xf8) == 0xf9 && C::Compter(0xfd) == 0xfd);
+		bool c = true;
+		VERIF(C::Effet("Slingshot_Hit", false, false, true, 4, 0, &c) == nil && !c);
+		VERIF(C::Effet("Slingshot_Hit", true, false, false, 0, 0, &c) != nil && c);
+		VERIF(C::Effet(nil, true, false, true, 4, 8, &c) == nil && !c);          // sans nom, pas la balle de baseball
+		VERIF(std::string(C::Effet(nil, false, true, true, 4, 8, &c)) == "BsBallMiss" && c);
+		VERIF(std::string(C::Effet(nil, false, true, true, 4, 0xd, &c)) == "DunkBallMiss" && c);
+		VERIF(C::Effet(nil, true, true, true, 4, 3, &c) == nil && c);            // le compteur monte, pas d'effet
+		VERIF(C::Effet(nil, true, true, true, 6, 8, &c) == nil && !c && C::Effet(nil, true, true, false, 0, 8, &c) == nil && !c);
+		VERIF(C::PremierSol(false, 0.51f) && !C::PremierSol(false, 0.5f) && !C::PremierSol(true, 1.0f));
+		CPlacesProjectiles t;
+		int i = t.Prendre(1000);
+		VERIF(i == 0 && t.Exploser(i) && !t.Exploser(i) && t.explose[i]);        // une seule fois
+		t.auSol[i] = true; t.Liberer(i);
+		VERIF(t.Prendre(2000) == 0 && !t.explose[0] && !t.auSol[0] && t.Exploser(0) && !t.Exploser(-1) && !t.Exploser(32));
+		// Le contact d'un projectile en vol (FUN_0046ad90).
+		typedef CContactProjectile K;
+		VERIF(K::Coup(3, 0, false) && K::Coup(2, 0, false) && !K::Coup(3, 1, false) && K::Coup(3, 5, true) && !K::Coup(4, 0, false));
+		VERIF(K::TireurEpargne(true, 1199, 1000) && !K::TireurEpargne(true, 1200, 1000) && !K::TireurEpargne(false, 1000, 1000));
+		VERIF(K::Fort(3, 0, false, 0.5f) && !K::Fort(3, 1, false, 0.5f) && K::Fort(3, 1, true, 0.5f));   // le coup sauté
+		VERIF(K::Fort(4, 3, false, 0.03f) && !K::Fort(4, 0, false, 0.029f) && !K::Fort(3, 0, false, 0.01f));
+		VERIF(K::AuRepos(0.5e-4f, 0.81f, false) && !K::AuRepos(1e-4f, 0.81f, false) && !K::AuRepos(0.5e-4f, 0.8f, false));
+		VERIF(!K::AuRepos(0.5e-4f, 0.9f, true) && K::AuRepos(0.5e-10f, 0.9f, true));
+		// Les explosions (FUN_004d2b40, FUN_004d2aa0, FUN_004d2690).
+		typedef CPlacesExplosions X;
+		X x; int ev = 0; bool vite = false;
+		VERIF(x.Prendre(1000, 0.001f, 0, 0, 0.0f, false, &ev, &vite) == 0 && vite && ev == -1 && x.depart[0] == 0 && x.fin[0] == 1000);
+		VERIF(x.Avancer(0, 1000, 1.0f) == X::kFin && !x.actif[0] && x.Avancer(0, 1001, 1.0f) == X::kRien);   // une bille : finie à l'image suivante
+		VERIF(x.Prendre(2000, 3.0f, 500, 7000, 0.5f, true, &ev, &vite) == 0 && !vite && x.depart[0] == 2500 && x.fin[0] == 9500);
+		VERIF(x.Avancer(0, 2500, 1.0f) == X::kRien && x.Avancer(0, 2501, 1.0f) == X::kDepart && x.depart[0] == 0 && x.rayon[0] == 3.0f);
+		VERIF(x.Avancer(0, 2534, 2.0f) == X::kDure && x.rayon[0] == 4.0f);
+		x.Toucher(0, 3000, false, 100);
+		VERIF(x.fin[0] == 9500);
+		x.Toucher(0, 3000, true, 100);
+		VERIF(x.fin[0] == 3100 && x.actif[0] && x.Avancer(0, 3099, 0.0f) == X::kDure);
+		x.Toucher(0, 3099, true, 9000);
+		VERIF(x.fin[0] == 3100 && x.Avancer(0, 3100, 0.0f) == X::kFin);
+		VERIF(x.Prendre(4000, 1.0f, 0, 5000, 0.0f, false) == 0);
+		x.Toucher(0, 4100, true, 0);
+		VERIF(!x.actif[0]);
+		X y;   // la table pleine : la plus vieille des évinçables, ou rien
+		for(int k = 0; k < 15; k++) VERIF(y.Prendre(100 + k, 1.0f, 0, 9000, 0.0f, false) == k);
+		VERIF(y.Prendre(500, 1.0f, 0, 9000, 0.0f, true, &ev) == -1);
+		y.evincable[7] = true; y.evincable[3] = true; y.heure[3] = y.heure[7];
+		VERIF(y.Prendre(500, 2.0f, 0, 9000, 0.0f, false, &ev) == 3 && ev == 3 && y.rayon[3] == 2.0f && !y.evincable[3]);
+		VERIF(y.Prendre(501, 2.0f, 0, 9000, 0.0f, false, &ev) == 7 && ev == 7 && y.Prendre(502, 2.0f, 0, 9000, 0.0f, false) == -1);
+		VERIF(X::AutreFiche(true, 0.95f) && X::AutreFiche(true, -0.5f) && !X::AutreFiche(true, 0.97f) && !X::AutreFiche(false, 0.0f));
+		// La fin d'un projectile (FUN_004d45e0, FUN_004d3dc0).
+		CPlacesProjectiles f;
+		VERIF(f.Prendre(1000) == 0 && f.Vit(0, 1000, 0) && f.Vit(0, 999999, 0) && f.Vit(0, 1500, 500) && !f.Vit(0, 1501, 500) && !f.Vit(1, 1000, 0));
+		VERIF(f.Exploser(0) && !f.Vit(0, 1000, 0) && !f.Detruire(0, true) && !f.actif[0] && !f.Detruire(0, true));
+		VERIF(f.Prendre(2000) == 0 && f.Vit(0, 2000, 0) && f.Detruire(0, true) && !f.actif[0] && f.explose[0]);
+		VERIF(f.Prendre(3000) == 0 && !f.Detruire(0, false) && !f.explose[0] && !f.Detruire(5, true));
+		VERIF(CPlacesProjectiles::ExploseDansLEau(true, false) && CPlacesProjectiles::ExploseDansLEau(false, true) && !CPlacesProjectiles::ExploseDansLEau(false, false));
+		// Les marques d'impact (FUN_00560f70, FUN_00560f10) et celle du contact avec un bâtiment (FUN_0046ad90).
+		CPlacesMarques m;
+		const float pt[3] = {1.0f, 2.0f, 3.0f}, nz[3] = {0.0f, 0.0f, 1.0f};
+		auto partout = [](const float *) { return true; };
+		auto haut = [](const float *p) { return p[2] > 3.005f; };
+		m.Poser(7, pt, nz);
+		VERIF(m.indice == 1 && m.genre[0] == 7 && m.pos[0][2] > 3.0099f && m.pos[0][2] < 3.0101f && m.pos[0][0] == 1.0f);
+		VERIF(m.Compter(7, partout) == 1 && m.Compter(7, haut) == 1 && m.Compter(8, partout) == 0);
+		for(int k = 0; k < 31; k++) m.Poser(8, pt, nz);
+		VERIF(m.indice == 0 && m.Compter(8, partout) == 31 && m.Compter(7, partout) == 1);
+		m.Poser(9, pt, nz);   // l'anneau : la place 0 cède
+		VERIF(m.indice == 1 && m.Compter(7, partout) == 0 && m.Compter(9, partout) == 1 && m.Compter(8, partout) == 31);
+		VERIF(K::MarqueDuBatiment(1.0f) == 0 && K::MarqueDuBatiment(-0.3f) == 0 && K::MarqueDuBatiment(0.29f) == 1 && K::MarqueDuBatiment(0.0f) == 1);
+	}
 	printf(echecs ? "test_armes : %d échec(s)\n" : "test_armes : tout passe\n", echecs);
 	return echecs != 0;
 }

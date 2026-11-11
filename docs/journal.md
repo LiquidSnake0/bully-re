@@ -1346,3 +1346,69 @@ en échec plutôt que de les masquer.
   `1_06_01` à 61,81 s et `1_07` à 151,47 s, inchangés, journaux identiques à chaque commit.
 - **Bilan** : 1 228 fonctions recréées (7,7 % du code), contre 1 199 (7,6 %) ; 2 163 comprises (12,3 %) ; dix commits (neuf de moteur et
   la documentation).
+
+## 11.11.2026, séance 1 (de 21 h 41 à 23 h 00)
+
+- **Le contrôleur d'actions qui se vide** (`FUN_005f49a0`, lue à l'assembleur de 0x5f49a0 à 0x5f4a46 ; `CActionController::Avancer`) :
+  quand `FUN_005f4230` ne rend plus vrai, les pistes s'arrêtent, le temps +8 revient à 0, le nœud joué +0x10 passe à 0 et seule une
+  demande déposée (+0x14) relance le contrôleur. L'outil gardait le nœud fini quand rien ne donnait de suite : un contrôleur sans arbre
+  (celui d'une piste spawn) se vide maintenant. C'était le point qui bloquait le haut du corps du lance-pierre, et il est passé devant
+  les durées des groupes d'armes : le diagnostic du 09.11 était faux, `C_PLAYER\SLNG_2IDLE_T` est bien dans MAINPED.HXD
+  (l'enregistrement 715, 0,3333 s, groupe 39 `W_Slingshot`) et l'outil lisait déjà sa durée ; `hxds.dat` et `PropHXDs.dat`
+  (`FUN_0042e640`, `FUN_006c1ab0`) ne chargent que les dictionnaires des accessoires. Essai `e104b.sh` (`1_04`, les vitres au seul
+  bouton 8, sans `--jouer` du nœud `Charge`) : trois vitres sur trois, à 17,56 s, 19,70 s et 21,85 s, contre une seule avant.
+- **La durée d'un nœud par ses pistes retenantes** (`FUN_005f4230`, relue dans l'index ; `CActionController::Duree`, la fin des pistes
+  des nœuds exécutés de `FUN_005f3e20`) : seule une piste vivante à l'octet +8 retient le nœud ; les pistes sans l'octet ne comptent
+  plus pour sa fin. La feuille `AimOut/DEFAULT` finit au champ 44 de `C_PLAYER\SLNG_2IDLE_T` (0,0333 s) au lieu de la durée de
+  `C_PLAYER\BLOCK` (1,1667 s, sans l'octet). L'essai `e104b.sh` casse les trois vitres à **17,56 s, 19,54 s et 21,55 s** (les billes
+  partent à 17,36 s, 19,34 s et 21,35 s), `AimOut` commence à 17,79 s, l'attente #0bb98aa5 revient à 17,89 s, et la mission finit
+  réussie à 82,53 s. Les nœuds de coups reçus finissent avec leur animation retenante et non avec leur piste la plus longue : `1_05`
+  passe de 194,30 s à 180,31 s (la première piste `Death` à 26,63 s au lieu de 27,32 s) et `1_07` de 151,47 s à 150,88 s (52,30 s au
+  lieu de 53,00 s).
+- **Le choc d'un projectile** (`FUN_004d3860`, lue à l'assembleur de 0x4d3860 à 0x4d3c14 ; `FUN_004d37d0`, lue dans l'index ;
+  `CChocProjectile`) : l'explosion par les octets +0x8c, +0x8d et +0x8e de la fiche (partout ; au sol, sur une normale dont le z n'est
+  pas sous 0,5 et hors d'un piéton ; sur un piéton ou un véhicule occupé), du contact relevé de 0,05 ; le stimulus 2 de l'objet touché
+  ; le compteur d'impacts (les trois bits bas de +0x23c, sous 5) et l'effet +0xc0 de la fiche pour un choc fort ; le premier sol
+  (l'octet +0x18 de l'entrée) ; l'explosion une seule fois par place (l'octet +0x16 de l'entrée, 0xc3a04e), puis le stimulus +0x44 du
+  tireur avec l'octet +0x40.
+- **Le choc dans l'outil** (`ChoquerProjectile`) : la fiche d'un projectile lit ses champs 64, 68, 142, 192 et 196, et chaque contact
+  suit l'ordre de `FUN_0046ad90` (sur un objet le choc puis le coup de l'objet, sur un piéton le coup puis le choc). L'outil n'a ni
+  stimuli ni effets : chaque étape est dite au journal. Dans `1_04` une bille dans une vitre dit l'explosion de rayon 0,001 m, le
+  stimulus 2 du tireur et l'effet `Slingshot_Hit` ; dans `1_03` aux briques, `Brick_Hit`.
+- **Le contact d'un projectile** (`FUN_0046ad90`, lue dans l'index ; `CContactProjectile`) : le coup au premier contact seulement
+  (l'octet +0x22c nul, ou à chaque contact pour RBandBall) ; le tireur épargné pendant les 200 ms qui suivent la création ; l'octet «
+  fort » (nul contre un piéton ou un véhicule qui ne reçoit pas le coup, puis sous une vitesse de 0,03, `FUN_0085c4d0`) ; le repos (une
+  vitesse au carré sous 1e-4 et une normale au z au-dessus de 0,8). Dans l'outil, le tireur n'est plus écarté pour toute la vie du
+  projectile mais par `TireurEpargne`.
+- **Les explosions** (`FUN_004d2b40`, `FUN_004d2690`, `FUN_004d92b0`, lues dans l'index ; `FUN_004d2aa0`, lue à l'assembleur de
+  0x4d2aa0 à 0x4d2b34 ; `CPlacesExplosions`) : la table de 15 entrées de 0x3c octets à 0xc39b60 ; la pose (la première place libre,
+  sinon la plus vieille des évinçables, l'octet +0xdc de la fiche), le départ retardé (+0xcc), la durée (+0xc8), le rayon qui grandit
+  de +0xd0 par pas, l'arrêt quand le balayage a touché (+0xdd, +0xe0) ; les explosions avancent avant les projectiles. Dans `1_04`
+  l'explosion d'une bille est posée à 17,52 s et finie à l'image suivante, 17,56 s. Le balayage lui-même (la fonction en 0x463b70, puis
+  `004629d0`, 2 427 octets) n'est pas lu.
+- **La fin d'un projectile** (`FUN_004d45e0`, lue à l'assembleur de 0x4d4601 à 0x4d4632, de 0x4d4684 à 0x4d4739 et à 0x4d4868 ;
+  `FUN_004d3dc0`, lue dans l'index ; `CPlacesProjectiles::Vit`, `Detruire`, `ExploseDansLEau`) : un projectile qui a explosé est
+  détruit à l'image suivante ; les autres vivent jusqu'à la fin de leur vie (sans fin pour une vie nulle), où `FUN_004d3dc0(i, 1)` fait
+  l'explosion de la fin de vie au point de l'objet relevé de 0,05 ; dans l'eau l'explosion se fait d'abord avec l'octet +0x8c ou +0x8d,
+  puis la destruction sans explosion. L'octet « +0x12 » d'un commentaire précédent était l'octet +0x16 de l'entrée. Dans l'outil, le
+  choc, la chute dans l'eau et la fin de vie passent par une seule fonction (`ExploserProjectile`).
+- **Les marques d'impact** (`FUN_00560f70`, `FUN_00560f10`, lues dans l'index ; `FUN_0046ad90`, lue à l'assembleur de 0x46b468 à
+  0x46b691 ; `CPlacesMarques`, `CContactProjectile::MarqueDuBatiment`) : la table à 0xcf1f60, son indice d'écriture en tête et 32
+  places de 16 octets ; la pose écrit le point avancé de 0,01 fois la normale et revient à 0 après la place 31 ; le compte est celui
+  des places d'un genre dans un déclencheur. Sur un bâtiment, la fiche du projectile donne deux marques que `FUN_007282e0` résout à la
+  première demande : +0x150 (le nom +0x54, `FUN_00468bb0`) quand le z de la normale n'est pas sous 0,3 en valeur absolue, +0x152 (le
+  nom +0x58, `FUN_00468bd0`) sinon, un mur. `ObjectNumProjectileImpacts` compte les deux et les ajoute ; l'outil lit le champ 88 de la
+  fiche et numérote les noms des marques (il n'a pas la normale du contact : la marque est posée au point même, supposé). Aucune des
+  sept missions n'appelle `ObjectNumProjectileImpacts`.
+- **Les comptes des README** : chaque commit est parti d'un arbre qui ne contenait que lui, et le compte a été vérifié par
+  `tools/avancement.py` avant chaque envoi. Deux fois des adresses de fonctions non recréées s'étaient glissées dans les commentaires
+  de `src/objects/Projectiles.h` (cinq aux explosions, deux aux marques) : elles sont nommées dans l'outil ou sans adresse. Une
+  fonction non lue se nomme ici sans préfixe (`004629d0`, la forme de l'argument de `tools/chercher.py`), pour ne pas compter comme
+  comprise.
+- **Neuf commits et non dix** : huit de moteur et la documentation. Le neuvième commit de moteur aurait été le balayage des explosions
+  (`004629d0`, 2 427 octets, non lue) ou le rebond d'un projectile, trop gros pour la fin de la séance ; pas de remplissage.
+- **REA amont** : 1 295 commits en attente (875 le 09.11) ; rien n'est fusionné, bully-re interroge l'index et objdump.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 148,04 s), `1_04` à 82,53 s et `1_06_01` à 61,81 s,
+  inchangés ; `1_05` à 180,31 s (194,30 s avant) et `1_07` à 150,88 s (151,47 s avant) depuis le deuxième commit, inchangés ensuite.
+- **Bilan** : 1 243 fonctions recréées (7,9 % du code), contre 1 228 (7,7 %) ; 2 181 comprises (12,5 %), contre 2 163 (12,3 %) ; neuf
+  commits (huit de moteur et la documentation).

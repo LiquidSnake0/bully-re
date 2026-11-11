@@ -114,16 +114,24 @@ chantier. Un point fini passe en bas, avec son commit.
    `FUN_004d5cd0`) et `PedTargetPAnim` ; avec elle la vie d'un projectile (`FUN_004d4c40`, `PedSetProjectileLifetime`), son test
    d'eau (`FUN_006d48d0`) et la mort d'une piste spawn au contrôleur vide (`FUN_005f72e0`) ; les sept missions restent réussies, à
    l'identique. Le haut du corps du lance-pierre ne repart pas encore au bouton suivant : la feuille `AimOut/default` ne finit pas.
+   Le 11.11 (séance 1), le haut du corps du lance-pierre repart : ce n'était pas une durée manquante (`C_PLAYER\SLNG_2IDLE_T` est dans
+   MAINPED.HXD, 0,3333 s) mais le contrôleur d'actions qui ne se vidait pas à la fin d'un nœud sans suite (`FUN_005f49a0`) et la durée
+   d'un nœud qui comptait les pistes sans l'octet +8 (`FUN_005f4230`). `1_04` casse ses trois vitres au seul bouton 8 (`e104b.sh` :
+   17,56 s, 19,54 s et 21,55 s) et finit à 82,53 s ; `1_05` finit à 180,31 s et `1_07` à 150,88 s (les nœuds de coups reçus finissent
+   avec leur animation retenante). Avec lui le choc d'un projectile (`FUN_004d3860`, `FUN_004d37d0`), son contact (`FUN_0046ad90`), les
+   explosions (`FUN_004d2b40`, `FUN_004d2aa0`, `FUN_004d2690`), sa fin (`FUN_004d45e0`, `FUN_004d3dc0`) et les marques d'impact
+   (`FUN_00560f70`, `FUN_00560f10`).
    Suite, dans l'ordre :
-   - la suite des armes : **les durées des animations des groupes d'armes**, pour que le haut du corps finisse `AimOut` et reparte au
-     bouton suivant sans `--jouer` ni `--tirer` (la feuille `AimOut/default` de SlingShotActions.cat est retenue par
-     `C_PLAYER\SLNG_2IDLE_T`, du groupe `W_Slingshot.agr` n° 2, absente de MAINPED.HXD, la seule lue, et de SLINGSH.HXD, qui n'a que
-     les `PROPS\SLNG_*` : trouver le dictionnaire qui la tient, `Anim/hxds.dat` et les `.agr`, puis refaire l'essai `e104b.sh` du
-     scratchpad, `1_04` au seul bouton 8) ; puis la physique des `CProjectile` (`FUN_004d4c40`, le sol, les rebonds ; le choc,
-     `FUN_004d3860` : le stimulus +0x40/+0x44 et l'explosion de `FUN_004d37d0` aux octets +0x8c, +0x8d, +0x8e ; les volumes d'eau de
-     `FUN_006d48d0`), le départ du tir (la douille « Muzzle », `FUN_0065e880`), le genre d'un coup de projectile (+0x468, le 19e
-     argument de `FUN_0047b810`), le contrôleur de `Locomotion` du lance-pierre qui va et vient entre `Idle` et son enfant
-     #5ab79a15 à chaque image (`1_03`, après 138,04 s) ; ce qui reste supposé de la visée : le point de verrouillage +0x1dc8 que pose
+   - la suite des armes : **la physique des `CProjectile` dans le monde**. L'outil n'a ni sol ni rebond : il retire le projectile à son
+     premier contact (supposé), si bien que le repos (`CContactProjectile::AuRepos`), le premier sol (`CChocProjectile::PremierSol`) et
+     l'explosion de la fin de vie (`CPlacesProjectiles::Detruire`) ne servent encore dans aucune mission. Dans l'ordre : le vol et le
+     rebond du `CPhysical` d'un projectile (ce que `FUN_004d4c40` pose à la création, la vitesse +0x124 dont l'unité est supposée le
+     mètre par pas, le sol) ; le balayage d'une explosion (la fonction en 0x463b70 qu'appelle `FUN_004d2690`, puis `004629d0`, 2 427
+     octets, non lue : qui est touché et avec quels dégâts) ; la marque d'une explosion par la surface du contact (+0x14c de la fiche,
+     `FUN_004d2b40`) et la normale du contact dans l'outil (ses marques sont posées au point même) ; les volumes d'eau de
+     `FUN_006d48d0` ; le départ du tir (la douille « Muzzle », `FUN_0065e880`) ; le genre d'un coup de projectile (+0x468, le 19e
+     argument de `FUN_0047b810`) ; le contrôleur de `Locomotion` du lance-pierre qui va et vient entre `Idle` et son enfant #5ab79a15 à
+     chaque image (`1_03`, après 138,04 s) ; ce qui reste supposé de la visée : le point de verrouillage +0x1dc8 que pose
      `FUN_00497d20`, le temps du verrou (+0x80 du composant de visée) et sa liste de candidats (`FUN_004d6dc0`), l'écrivain de +0x54c,
      la caméra de visée (`FUN_00662180`), le point d'une automobile (`FUN_006625f0`, l'effet 2dfx 0x11) ;
    - ce qui reste des entités qui suivent un trajet : leur orientation (`FUN_005eb910` : le cap et le tangage gardés, la rotation
@@ -201,6 +209,14 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- Le haut du corps du lance-pierre qui repart, le choc, le contact, les explosions, la fin et les marques des projectiles (11.11,
+  séance 1 ; 54c60aa, 4fe6762, 3ef9480, 61771cd, 857cb1a, c87c3d2, f5f9973, 74427aa) : le contrôleur d'actions qui se vide à la fin
+  d'un nœud sans suite (`FUN_005f49a0`), la durée d'un nœud par ses seules pistes retenantes (`FUN_005f4230`) : `1_04` casse ses trois
+  vitres au seul bouton 8 (17,56 s, 19,54 s et 21,55 s), `1_05` finit à 180,31 s et `1_07` à 150,88 s ; le choc d'un projectile
+  (`FUN_004d3860`, `FUN_004d37d0`, `CChocProjectile`), son contact (`FUN_0046ad90`, `CContactProjectile`), la table des explosions
+  (`FUN_004d2b40`, `FUN_004d2aa0`, `FUN_004d2690`, `FUN_004d92b0`, `CPlacesExplosions`), la fin d'un projectile (`FUN_004d45e0`,
+  `FUN_004d3dc0`) et les marques d'impact (`FUN_00560f70`, `FUN_00560f10`, `CPlacesMarques`, les deux marques d'un bâtiment de
+  `FUN_0046ad90`) ; les sept missions restent réussies.
 - La visée du joueur en entier, la vie et le test d'eau des projectiles, la piste spawn qui meurt (09.11, séance 1 ; 198fc0b, ec11096,
   df3895b, 319d758, b8599fe, 304b947, 5184a36, b6fcc8c, 16aa299) : `PedSetProjDest` (`FUN_0048bd40`, `CDestinationsTir`), la source de
   la cible du tir (`FUN_00662a40`, `CViseeTir::SourceCible`, `FUN_004d7630`), le bouton 10 (`FUN_007386f0`, `FUN_0050c730`,
