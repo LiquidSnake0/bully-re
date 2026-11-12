@@ -205,8 +205,8 @@ struct CVolProjectile {
 	// - un +0x10 de l'entrée non nul (le +0xf0 de la fiche, une durée) : le contrôle de l'objet, puis la poussée (Pousser) ;
 	// - l'octet +0x124 de la fiche : le contrôle de l'objet, puis l'échelle de la chute (EchelleDeChute) ;
 	// - sinon : les déclencheurs où le projectile entre (006d7220 sur 0x20c7e98, non recréée), puis le contrôle de l'objet.
-	// Le contrôle de l'objet (celui de CObject, 004cf350, non recréé : le freinage d'un projectile dont l'octet +0x20a vaut 7) finit
-	// par celui de CPhysical (Controler).
+	// Le contrôle de l'objet (celui de CObject : Freiner pour un objet dont l'octet +0x20a vaut 7) finit par celui de CPhysical
+	// (Controler).
 	enum { CONTROLE_AUCUN, CONTROLE_AUTRE_VOL, CONTROLE_POUSSEE, CONTROLE_CHUTE, CONTROLE_DECLENCHEURS };
 	static int Controle(bool tenu, bool autreVol, uint32 dureePoussee, bool chuteRefaite) {
 		if(tenu) return CONTROLE_AUCUN;
@@ -249,6 +249,34 @@ struct CVolProjectile {
 		for(int i = 0; i < 3; i++) v[i] = v[i] + d[i];
 		v[2] = v[2] + (float)((double)portance * (double)pas * (1.0 - (double)f));
 		return true;
+	}
+	// FUN_004cf350 (le contrôle d'un CObject à chaque image, lue à l'assembleur de 0x4cf350 à 0x4cf4cd ; celui d'un CProjectile
+	// l'appelle avant sa poussée ou sa chute). Avec +0xb0 non nul, rien. Pour un objet dont l'octet +0x20a vaut 7, et quand 006838d0
+	// rend faux (l'objet de DAT_01b89150, non suivi), un freinage : sa fiche F est celle du nom +0x12c de la fiche du projectile
+	// (résolue par 0072ad50 dans la table 0x1b65378), sinon celle de DAT_020c888c ; s est la norme de la vitesse (FUN_0040df90, lue de
+	// 0x40df90 à 0x40dfc0 : la racine de |z² + (x² + y²)|). Quand s atteint F+0x1c (fcomp, test ah,0x41, jne : l'égalité aussi) le
+	// facteur est F+0x20 ; sinon le facteur est F+0x24 et, quand s est strictement sous F+0x18, la vitesse et la vitesse angulaire
+	// prennent d'abord le vecteur de DAT_00bcc564 (dans le bss ; supposé nul). Puis les deux vitesses sont multipliées par le
+	// facteur. Dans tous les cas sans +0xb0 la fonction finit par le contrôle de CPhysical (un saut vers Controler).
+	static float Norme(const float *v) { return sqrtf(fabsf(v[2] * v[2] + (v[0] * v[0] + v[1] * v[1]))); }
+	static void Freiner(float *v, float *w, float seuilArret, float seuilVite, float facteurVite, float facteurLent) {
+		float s = Norme(v), f;
+		if(seuilVite <= s) f = facteurVite;
+		else{
+			f = facteurLent;
+			if(s < seuilArret){ v[0] = v[1] = v[2] = 0.0f; w[0] = w[1] = w[2] = 0.0f; }
+		}
+		for(int i = 0; i < 3; i++) v[i] = v[i] * f;
+		for(int i = 0; i < 3; i++) w[i] = w[i] * f;
+	}
+	// FUN_004cf190 (la mise au repos d'un CObject, lue à l'assembleur de 0x4cf190 à 0x4cf1c6 ; la méthode +0x1c d'un CProjectile,
+	// qui redresse d'abord sa matrice quand l'octet +0x15 de son entrée est levé, finit par elle). L'argument (un octet : au repos
+	// ou non) va dans +0x28, ou dans +0xb0 pour un objet dont l'octet +0x20a vaut 7 ; le compteur de repos +0x180 prend 10 quand
+	// l'argument n'est pas nul, 0 sinon (neg, sbb, and 0xa). Le +0xb0 que les contrôles lisent d'abord est donc, pour ces objets,
+	// le repos lui-même.
+	static void Reposer(unsigned char repos, bool genre7, uint32 *o28, uint32 *ob0, unsigned char *compte) {
+		if(genre7) *ob0 = repos; else *o28 = repos;
+		*compte = repos ? 10 : 0;
 	}
 	// La fonction 0046ca40 (le déplacement d'un CPhysical dans le monde, 2 884 octets, non recréée en entier ; ici sa part pour un projectile, +0xc4 non nul, lue à
 	// l'assembleur de 0x46cd98 à 0x46ce47 et de 0x46d0d7 à 0x46d22e ; le balayage qui trouve le contact n'est pas recréé). Au

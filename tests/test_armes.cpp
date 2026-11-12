@@ -461,6 +461,24 @@ main(void)
 		pv[0] = 1.0f; pv[1] = 0.0f; pv[2] = 2.0f;
 		VERIF(!V::Pousser(pv, 3000, 1000, 2000, 0.5f, 0.25f, 0.5f, 2.0f) && !V::Pousser(pv, 4000, 1000, 2000, 0.5f, 0.25f, 0.5f, 2.0f) && pv[0] == 1.0f && pv[2] == 2.0f);
 		VERIF(V::Pousser(pv, 2999, 1000, 2000, 0.5f, 0.25f, 0.5f, 2.0f) && pv[0] > 1.0f && pv[0] < 1.001f);
+		// Le freinage d'un objet (FUN_004cf350) : au-dessus du seuil haut un facteur, dessous l'autre, et l'arrêt sous le seuil bas.
+		float fv[3] = {3.0f, 0.0f, 4.0f}, fw[3] = {1.0f, 2.0f, 0.0f};
+		VERIF(V::Norme(fv) == 5.0f);
+		V::Freiner(fv, fw, 1.0f, 5.0f, 0.5f, 0.25f);       // la norme atteint le seuil haut : le facteur des vitesses hautes
+		VERIF(fv[0] == 1.5f && fv[2] == 2.0f && fw[0] == 0.5f && fw[1] == 1.0f);
+		V::Freiner(fv, fw, 1.0f, 5.0f, 0.5f, 0.25f);       // 2,5 : sous le seuil haut, au-dessus du seuil bas
+		VERIF(fv[0] == 0.375f && fv[2] == 0.5f && fw[0] == 0.125f && fw[1] == 0.25f);
+		V::Freiner(fv, fw, 1.0f, 5.0f, 0.5f, 0.25f);       // 0,625 : sous le seuil bas, tout s'arrête
+		VERIF(fv[0] == 0.0f && fv[1] == 0.0f && fv[2] == 0.0f && fw[0] == 0.0f && fw[1] == 0.0f && fw[2] == 0.0f);
+		fv[0] = 1.0f; fv[1] = 0.0f; fv[2] = 0.0f; fw[0] = 1.0f;
+		V::Freiner(fv, fw, 1.0f, 5.0f, 0.5f, 0.25f);       // au seuil bas compris : pas d'arrêt
+		VERIF(fv[0] == 0.25f && fw[0] == 0.25f);
+		// La mise au repos d'un objet (FUN_004cf190) : +0x28, ou +0xb0 pour l'octet +0x20a à 7 ; le compteur à 10 ou à 0.
+		uint32 r28 = 5, rb0 = 5; unsigned char rcpt = 3;
+		V::Reposer(1, false, &r28, &rb0, &rcpt);
+		VERIF(r28 == 1 && rb0 == 5 && rcpt == 10);
+		V::Reposer(0, true, &r28, &rb0, &rcpt);
+		VERIF(r28 == 1 && rb0 == 0 && rcpt == 0);
 		// La fin d'un projectile (FUN_004d45e0, FUN_004d3dc0).
 		CPlacesProjectiles f;
 		VERIF(f.Prendre(1000) == 0 && f.Vit(0, 1000, 0) && f.Vit(0, 999999, 0) && f.Vit(0, 1500, 500) && !f.Vit(0, 1501, 500) && !f.Vit(1, 1000, 0));

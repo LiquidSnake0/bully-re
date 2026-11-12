@@ -157,6 +157,7 @@ struct CTypeProjectile { bool lu = false; int32 vie = 0; float degatsMin = 0, de
                          bool o40 = false, o8e = false; int32 stimulus = 0, c4 = 0; std::string effet;
                          uint32 dureeExplosion = 0, delaiExplosion = 0; float croissance = 0; bool evincable = false;
                          std::string effetPres;   // +0xa8 (168), l'effet du passage près du joueur (FUN_004d2290)
+                         bool o7c = false;        // +0x7c (124) : l'octet +0x20a du projectile vaut 7 au lieu de 6 (FUN_004d4c40, FUN_004cf350)
                          uint32 dureePoussee = 0; float poussee = 0, portance = 0, delaiPoussee = 0;   // +0xf0, +0xf8, +0xfc, +0x100 (FUN_004d1ec0)
                          float elasticite = CVolProjectile::kElasticite; };   // +0x5c (92), que FUN_004d4c40 pose en +0x164 du projectile
 static std::map<int32, CTypeProjectile> typesProjectiles;   // par modèle d'arme (le +0x80 de son type)
@@ -177,6 +178,7 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 	a.vitesseMin = CActionBank::ButesReel(t, 96); a.vitesseMax = CActionBank::ButesReel(t, 100);
 	a.gravite = CActionBank::ButesReel(t, 128);
 	{ auto ip = chaines.find(168); if(ip != chaines.end()) a.effetPres = ip->second; }
+	{ const CActionAttribut *o = t.Champ(124); a.o7c = o && o->valeur[0]; }
 	// La poussée (FUN_004d1ec0) : sa durée (+0xf0 = 240, que la création copie au +0x10 de l'entrée : supposé, la création n'étant
 	// pas relue), le facteur le long de la vitesse (+0xf8), la portance (+0xfc) et la part de la durée avant l'extinction (+0x100).
 	a.dureePoussee = t.Mot(240); a.poussee = CActionBank::ButesReel(t, 248); a.portance = CActionBank::ButesReel(t, 252);
@@ -6628,7 +6630,13 @@ AvancerProjectiles(float pas)
 		{
 			float pt[3] = {q.pos.x, q.pos.y, q.pos.z}, v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z}, w[3] = {0.0f, 0.0f, 0.0f}, mw[3] = {0.0f, 0.0f, 0.0f};
 			if(CVolProjectile::Controler(v, w, q.moyenne, mw, &q.repos, true, false, CVolProjectile::kAir, pas)){
-				q.vitesse = CVector(0.0f, 0.0f, 0.0f); q.pose = true;
+				// La méthode +0x1c(1) d'un projectile (FUN_004d1560, lue de 0x4d1560 à 0x4d1666 : avec l'octet +0x15 de son entrée elle
+				// redresse d'abord sa matrice, l'axe z vers le haut, ce que l'outil ne suit pas), puis la mise au repos d'un objet
+				// (FUN_004cf190) : +0x28 levé, ou +0xb0 pour un projectile dont l'octet +0x20a vaut 7 (l'octet +0x7c de sa fiche, par
+				// la création FUN_004d4c40), le compteur à 10. Dans les deux cas l'outil ne le bouge plus.
+				uint32 o28 = 0, ob0 = 0;
+				CVolProjectile::Reposer(1, TypeProjectile(q.modele).o7c, &o28, &ob0, &q.repos);
+				q.vitesse = CVector(0.0f, 0.0f, 0.0f); q.pose = o28 != 0 || ob0 != 0;
 				printf("%6.2f s  le projectile %d est au repos en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, place, q.pos.x, q.pos.y, q.pos.z);
 				continue;
 			}
