@@ -1412,3 +1412,91 @@ en échec plutôt que de les masquer.
   inchangés ; `1_05` à 180,31 s (194,30 s avant) et `1_07` à 150,88 s (151,47 s avant) depuis le deuxième commit, inchangés ensuite.
 - **Bilan** : 1 243 fonctions recréées (7,9 % du code), contre 1 228 (7,7 %) ; 2 181 comprises (12,5 %), contre 2 163 (12,3 %) ; neuf
   commits (huit de moteur et la documentation).
+
+## 12.11.2026, séance 1 (de 22 h 19 à 23 h 41)
+
+- **Le vol d'un projectile** (`FUN_004494d0`, lue à l'assembleur de 0x4494d0 à 0x4494e4 ; `FUN_004d1510`, de 0x4d1510 à 0x4d1555 ;
+  `FUN_00469760`, de 0x469760 à 0x4698bb ; `FUN_004d2160`, de 0x4d2160 à 0x4d228c ; `CVolProjectile::Gravite`, `Peser`, `Deplacer`) :
+  la vtable de `CProjectile` (0x9059c4) garde le déplacement de `CPhysical` (+0x94) et change la gravité par pas (+0x8c : le facteur
+  +0x230 fois 0,008, le double 0x905a70) et le poids (+0x90 : vz perd cette gravité fois le pas 0xc1a9a4 fois l'échelle +0x154 quand
+  le bit 0x2 de +0x1bc est levé). Le déplacement avance x et y de la vitesse fois d (d = +0x154 fois le pas) et z de vz × d moins la
+  moitié de la gravité fois d² : **l'unité de +0x124 est bien le mètre par pas**. Le constructeur pose la masse et le facteur de
+  gravité à 1, l'air +0x160 à 0,99999, l'élasticité +0x164 à 0,75, +0x168 à 0,0008, +0xc4 à 1. L'outil remplace son pas d'Euler par
+  `Deplacer` : par image le projectile descend de 1,5 × g × pas² de plus (0,0327 m pour un facteur 1), et les chocs baissent : dans
+  `1_04` à 17,52 s, z 7,68 → 7,58 m (42 lignes changées) ; dans `1_03` aux briques à 123,72 s, z 10,68 → 9,57 m (6 lignes).
+  **Rectification** : le message du commit d37cc93 range ce choc de 123,72 s dans `1_04` ; il est dans `1_03` aux briques (`1_04`
+  finit à 82,53 s).
+- **La résistance de l'air** (`FUN_004698c0`, lue de 0x4698c0 à 0x469a1c ; `CVolProjectile::Air`) : la fin du contrôle d'un
+  `CPhysical`. Au-dessus de 0,1 (le double 0x900128), la vitesse et la vitesse angulaire prennent +0x160 puissance le pas (la
+  fonction 0085cb40, supposée être pow) ; sinon une traînée, (1 / |1 + +0x160 × 0,5 × |v|²|) puissance le pas, et 0,99 pour la
+  vitesse angulaire. Pour un projectile : 0,99999 puissance 1,65 par image de 33 ms, 0,05 % de vitesse perdue par seconde. Dans
+  `1_04` les chocs des vols les plus longs bougent d'un centimètre (75,04, 75,87 et 76,66 s : y -92,15 → -92,16 m) ; dans `1_03` aux
+  briques, 123,72 s et 125,30 s.
+- **Le repos** (`FUN_00469a20`, lue de 0x469a20 à 0x469c5c ; `CVolProjectile::Controler`) : le contrôle d'un `CPhysical` à chaque
+  image. Les moyennes +0x13c et +0x148 prennent la moitié de leur somme avec la vitesse et la vitesse angulaire du moment ; sous
+  0,003 fois le pas (le double 0x90c700 ; 0,00495 m par pas pour 33 ms, soit 0,25 m/s) pour les deux, le compteur +0x180 monte, et à
+  la onzième image de suite la méthode +0x1c(1) met l'entité au repos et les vitesses tombent à 0 ; sinon la fonction finit par un
+  saut vers l'air. L'outil garde la moyenne et le compteur de chaque projectile et écrit « le projectile N est au repos en (…) » ;
+  **faute de sol dans l'outil des missions, la ligne ne paraît dans aucune des sept** (tests seulement).
+- **Le rebond** (la part du projectile dans la fonction `0046ca40`, le déplacement d'un `CPhysical` dans le monde, 2 884 octets,
+  non recréée en entier et non comptée ; lue de 0x46cd98 à 0x46ce47 et de 0x46d0d7 à 0x46d22e ; `CVolProjectile::Recul`,
+  `Rebondir`) : après le contact, l'entité revient à la fraction du trajet moins 0,005 (le double 0x90c740) ; +0xc4 non nul (cmp en
+  0x46ce40, jne 0x46cf6f), c'est un projectile et il rebondit, les autres glissent. La normale (son z positif effacé quand
+  l'entité touchée porte +0xf0) est normalisée ; la vitesse devient tangentiel × (v − n p) − normal × n p : 0,75 et 0,75
+  (_DAT_00a24040, _DAT_00a2403c) contre un piéton, l'élasticité +0x164 (le +0x5c de la fiche) sinon. **L'outil ne retire plus un
+  projectile à son premier contact** : il recule, rebondit et reste dans le monde. Supposé : le contact au point où le trajet
+  entre dans la sphère de l'outil et la normale du centre à ce point (essayée d'abord et écartée : la normale au point le plus
+  proche du centre, perpendiculaire au vol). Dans `1_04`, vingt et un rebonds : les trois vitres à 17,52, 19,50 et 21,52 s
+  (coefficient 0,3, l'élasticité de la bille), dix-huit sur les piétons 5 à 10 de 74,08 à 78,11 s (0,75) ; dans `1_03` aux briques,
+  trois sur Davis à 123,72, 125,30 et 127,22 s. Tous explosent à leur contact et sont détruits à l'image suivante : aucun vol
+  après rebond dans les sept missions.
+- **La paire d'un contact** (`FUN_0046b720`, 342 octets, lue de 0x46b720 à 0x46b873 ; `CContactProjectile::SansContact`) : elle
+  remet à 0 le +0xb0 de l'entité touchée et fait les deux contacts (`FUN_0046ad90` dans les deux sens), sauf entre un projectile
+  et un piéton dans deux cas : le piéton a un +0x1310 de 0xd et il est le tireur ; ou le projectile est bas (son z moins celui du
+  piéton, moins 0,1847944, strictement sous 0,5) et lent (strictement sous 0,1 m par pas). **Une bille qui roule aux pieds d'un
+  piéton ne le touche pas.** L'outil passe ce juge avant ses sphères ; le +0x1310 n'est pas suivi.
+- **Le contrôle d'un projectile** (`FUN_004d2290`, sa méthode +0x30, lue de 0x4d2290 à 0x4d24e9 ; `FUN_004d2090`, de 0x4d2090 à
+  0x4d20ce ; `CVolProjectile::Controle`, `PresDuJoueur`, `EchelleDeChute`) : tenu (+0xb0), rien ; sinon le son du modèle (non
+  suivi), l'effet +0xa8 de la fiche une seule fois (le bit 0x1 de +0x22d) quand le projectile passe à 2 m au plus d'un point 1,5 m
+  au-dessus du joueur, puis le choix : l'octet +0x15 de l'entrée → un autre vol (`004d1960`, non lu) ; un +0x10 de l'entrée (le
+  +0xf0 de la fiche) → le contrôle de l'objet puis la poussée ; l'octet +0x124 de la fiche → le contrôle de l'objet puis
+  l'échelle de la chute (+0x154 = le +0x128 de la fiche tant que vz est strictement sous -0,1 m par pas, 1 sinon) ; sinon les
+  déclencheurs (`006d7220`, non recréée) puis le contrôle de l'objet. L'outil lit l'effet (le champ 168), garde le bit et
+  l'échelle, et écrit « passe près du joueur » et « échelle de temps ».
+- **La poussée** (`FUN_004d1ec0`, lue de 0x4d1ec0 à 0x4d208a ; `CVolProjectile::Pousser`) : tant que le temps n'a pas atteint la
+  création (+8 de l'entrée) plus la durée (+0x10, le +0xf0 de la fiche), la vitesse reçoit ((v × le pas) × le +0xf8 de la fiche)
+  × (1 − f) et vz reçoit en plus (le +0xfc × le pas) × (1 − f) ; f vaut 0 jusqu'au délai (la durée fois le +0x100 de la fiche,
+  rendue en entier par 0085c6f0, supposée la conversion), puis monte en ligne droite jusqu'à 1 à la fin de la durée. L'outil lit
+  les champs 240, 248, 252 et 256 et pousse après le contrôle.
+- **Le freinage et la mise au repos** (`FUN_004cf350`, le contrôle d'un `CObject`, lue de 0x4cf350 à 0x4cf4cd ; `FUN_0040df90`,
+  la norme ; `FUN_004cf190`, lue de 0x4cf190 à 0x4cf1c6 ; `CVolProjectile::Norme`, `Freiner`, `Reposer`) : pour un objet dont
+  l'octet +0x20a vaut 7 (la création le pose à 7 avec l'octet +0x7c de la fiche, 6 sinon), la fiche du freinage (le nom +0x12c de
+  la fiche du projectile dans la table 0x1b65378, sinon DAT_020c888c) donne deux seuils et deux facteurs : au-dessus de +0x1c, la
+  vitesse et la vitesse angulaire prennent +0x20 ; sinon +0x24, et sous +0x18 elles tombent d'abord à DAT_00bcc564 (bss, supposé
+  nul) ; puis le contrôle du `CPhysical`. La mise au repos : +0xb0 pour le genre 7, +0x28 sinon, et le compteur +0x180 à 10 ou à 0.
+  `FUN_004d1560` (lue de 0x4d1560 à 0x4d1666, la méthode +0x1c d'un `CProjectile`) redresse la matrice avant, non recréé.
+  L'outil lit le champ 124 et pose par `Reposer` ; il ne lit pas la fiche du freinage (`Freiner` dans les tests seulement).
+- **La fléchette et le frisbee** (les deux modèles à part du rebond dans `0046ca40`, lus de 0x46cf6f à 0x46d0d2 et de 0x46d231 à
+  0x46d2f6 ; `FUN_004150b0`, lue de 0x4150b0 à 0x4150cf ; `CVolProjectile::Planter`, `Devier`, `NormaleDuContact`) : la table des
+  noms de modèles (0xa136e8, `FUN_0043f1e0`, `FUN_0043f220`) donne DAT_00bf44dc = « dart », DAT_00bf439c = « Wfrisbee »,
+  DAT_00bf4394 = « WFtBomb ». La fléchette ne rebondit pas : vitesse à 0, 0,1 de plus le long de son vol, le bit 0x2 de +0x1bc
+  baissé, +0x28 à 1 : plantée. Le frisbee reçoit après son rebond, sur une normale au z sous 0,7 en valeur absolue, la normale
+  fois 0,03 et (0, 0, 1) fois -0,03, à l'échelle (0,7 − |nz|) / 0,7. Aucune des sept missions ne tire ces deux modèles : tests
+  seulement.
+- **Le sol manque à l'outil des missions** : `outils/lancer_lua.cpp` n'a pas la collision du monde (`CMondeCollision` n'est branché
+  que dans `outils/scene.h` et `outils/visite.cpp`). Ses projectiles ne touchent que des sphères de piétons et d'objets, et tous
+  ceux des sept missions explosent à leur contact : le repos, le freinage, la poussée, l'échelle de la chute, la paire du contact
+  et les deux modèles à part ne se voient que dans `tests/test_armes.cpp`. C'est le premier point de `docs/suite.md`.
+- **Les comptes des README** : chaque commit est parti d'un arbre qui ne contenait que lui, le compte vérifié par
+  `tools/avancement.py` avant chaque envoi, et les fonctions ajoutées au compte listées avant chaque vérification (un script de
+  la séance compare les adresses citées dans `src` à celles de HEAD). Écrites sans préfixe dans `src` pour ne pas être comptées :
+  `0046ca40` (lue et recréée pour la seule part du projectile), `0085cb40` (supposée pow), `004d3360`, `006d7220`,
+  `00598030`, `0059a710`, `00414cc0`.
+- **REA amont** : 1 320 commits en attente (1 295 le 11.11), dont 35 sur PE, x86, objdump ou l'index (`fix(pe): honor import
+  directory bounds (#10044)`, `fix(objdump): reflect observed launch failure in discovery availability (#9051)`) ; rien n'est
+  fusionné, bully-re interroge l'index et objdump.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 148,04 s), `1_04` à 82,53 s, `1_05` à 180,31 s,
+  `1_06_01` à 61,81 s et `1_07` à 150,88 s, inchangés à chaque commit. Les journaux ne changent qu'aux trois premiers commits et
+  au rebond (les coordonnées des chocs, puis vingt et une lignes de rebond dans `1_04` et trois dans `1_03` aux briques).
+- **Bilan** : 1 256 fonctions recréées (8,0 % du code), contre 1 243 (7,9 %) ; 2 196 comprises (12,6 %), contre 2 181 (12,5 %) ; dix
+  commits (neuf de moteur et la documentation).

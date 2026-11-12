@@ -155,7 +155,11 @@ struct CTypeProjectile { bool lu = false; int32 vie = 0; float degatsMin = 0, de
                          std::string marque, marqueMur; bool o8c = false, o8d = false, menace = false; float rayon = 0, a0 = 0;
                          bool dureeRefaite = false; float diviseur = 1.0f, facteurAvance = 1.0f;
                          bool o40 = false, o8e = false; int32 stimulus = 0, c4 = 0; std::string effet;
-                         uint32 dureeExplosion = 0, delaiExplosion = 0; float croissance = 0; bool evincable = false; };
+                         uint32 dureeExplosion = 0, delaiExplosion = 0; float croissance = 0; bool evincable = false;
+                         std::string effetPres;   // +0xa8 (168), l'effet du passage près du joueur (FUN_004d2290)
+                         bool o7c = false;        // +0x7c (124) : l'octet +0x20a du projectile vaut 7 au lieu de 6 (FUN_004d4c40, FUN_004cf350)
+                         uint32 dureePoussee = 0; float poussee = 0, portance = 0, delaiPoussee = 0;   // +0xf0, +0xf8, +0xfc, +0x100 (FUN_004d1ec0)
+                         float elasticite = CVolProjectile::kElasticite; };   // +0x5c (92), que FUN_004d4c40 pose en +0x164 du projectile
 static std::map<int32, CTypeProjectile> typesProjectiles;   // par modèle d'arme (le +0x80 de son type)
 static CTypeProjectile projectileDefaut;
 static const CTypeProjectile &
@@ -173,6 +177,15 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 	a.degatsMin = CActionBank::ButesReel(t, 76); a.degatsMax = CActionBank::ButesReel(t, 80);
 	a.vitesseMin = CActionBank::ButesReel(t, 96); a.vitesseMax = CActionBank::ButesReel(t, 100);
 	a.gravite = CActionBank::ButesReel(t, 128);
+	{ auto ip = chaines.find(168); if(ip != chaines.end()) a.effetPres = ip->second; }
+	{ const CActionAttribut *o = t.Champ(124); a.o7c = o && o->valeur[0]; }
+	// La poussée (FUN_004d1ec0) : sa durée (+0xf0 = 240, que la création copie au +0x10 de l'entrée : supposé, la création n'étant
+	// pas relue), le facteur le long de la vitesse (+0xf8), la portance (+0xfc) et la part de la durée avant l'extinction (+0x100).
+	a.dureePoussee = t.Mot(240); a.poussee = CActionBank::ButesReel(t, 248); a.portance = CActionBank::ButesReel(t, 252);
+	a.delaiPoussee = CActionBank::ButesReel(t, 256);
+	// L'élasticité du rebond (+0x5c) ; une fiche sans ce champ garde 0,75, la valeur du constructeur du projectile (supposé : la valeur
+	// par défaut de la fiche n'est pas lue).
+	if(t.Champ(92)) a.elasticite = CActionBank::ButesReel(t, 92);
 	// Les deux marques de la fiche, des noms que FUN_007282e0 résout à la première demande : +0x150 (le nom +0x54, rendu par
 	// FUN_00468bb0) et +0x152 (le nom +0x58, rendu par FUN_00468bd0, la marque d'un mur). L'outil garde les noms.
 	auto it = chaines.find(84); if(it != chaines.end()) a.marque = it->second;
@@ -197,13 +210,20 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 }
 
 // Un projectile en vol (le moteur crée un CProjectile, un CPhysical de 0x24c octets : FUN_004d4c40 → FUN_004d24f0, FUN_004d2160 ;
-// sa table, 0xc3a068, est celle que lit DetectProjectile). L'outil n'en joue pas la physique : un point qui suit sa vitesse et la
-// gravité à chaque pas (ms_fTimeStep, 0,02 s), jusqu'à la fin de sa vie (+0x48) ou un contact. Les 32 places de la table
+// sa table, 0xc3a068, est celle que lit DetectProjectile). L'outil en joue le vol (CVolProjectile : la gravité FUN_004d1510 et le
+// déplacement FUN_00469760 à chaque pas, ms_fTimeStep, 0,02 s), jusqu'à la fin de sa vie (+0x48) ou un contact ; `gravite` est le
+// facteur +0x230 (le +0x80 de la fiche). Les 32 places de la table
 // (src/objects/Projectiles.h : FUN_004d4590, FUN_004d3f60) : l'indice d'un projectile de l'outil est celui de son entrée.
 struct CProjectileOutil { bool actif = false; int32 modele = -1; int tireur = -1; CVector pos, vitesse; float gravite = 0, degats = 0;
                           uint32 naissance = 0, vie = 0;
                           uint32 impacts = 0;     // le compteur d'impacts, les trois bits bas de +0x23c (FUN_004d3860)
-                          uint8 contacts = 0; };  // les contacts comptés par FUN_0046ad90 (l'octet +0x22c)
+                          uint8 contacts = 0;     // les contacts comptés par FUN_0046ad90 (l'octet +0x22c)
+                          // Le repos (FUN_00469a20) : la moyenne de la vitesse (+0x13c), le compteur (l'octet +0x180), et le projectile
+                          // que la méthode +0x1c(1) a posé (supposé : il ne bouge plus et ne touche plus rien).
+                          float moyenne[3] = {0, 0, 0}; uint8 repos = 0; bool pose = false;
+                          bool pousse = false;     // la poussée de FUN_004d1ec0 a déjà été dite
+                          bool presJoue = false;   // le bit 0x1 de +0x22d : l'effet du passage près du joueur est joué (FUN_004d2290)
+                          float echelle = 1.0f; }; // l'échelle de temps +0x154 (1 par le constructeur de CPhysical ; FUN_004d2090)
 static CProjectileOutil projectiles[CPlacesProjectiles::kTaille];
 static CPlacesProjectiles placesProjectiles;
 // Les marques d'impact (les decals ; CPlacesMarques : la table 0xcf1f60, FUN_00560f70 qui pose, FUN_00560f10 qui compte celles d'un
@@ -6358,7 +6378,7 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	if(T <= 0.01f) T = 0.01f;
 	float g = tp.gravite * -0.008f;
 	CProjectileOutil q;
-	q.actif = true; q.modele = munition; q.tireur = ped; q.pos = depart; q.gravite = g;
+	q.actif = true; q.modele = munition; q.tireur = ped; q.pos = depart; q.gravite = tp.gravite;   // FUN_004d4c40 : +0x80 de la fiche → +0x230
 	q.vitesse = CVector(dx / T, dy / T, (dz - 0.5f * g * T * T) / T);
 	q.degats = CChargeArme::Degats(true, tp.degatsMin, tp.degatsMax, charge, degatsPiste, pietons.StatLue(ped, 0x1f, 100));
 	// La vie (CPlacesProjectiles::Vie, FUN_004d4c40 : la vie du tireur, +0x1cc0 × 1000, ou celle de la fiche, moins le temps depuis
@@ -6582,29 +6602,88 @@ AvancerProjectiles(float pas)
 			q.actif = false;
 			continue;
 		}
+		if(q.pose) continue;
+		// Le contrôle du projectile (FUN_004d2290) : l'effet +0xa8 de la fiche, une fois, quand il passe à 2 m au plus d'un point
+		// 1,5 m au-dessus du joueur (un nom que l'outil ne joue pas ; supposé un son) ; puis, pour une fiche dont l'octet +0x124 est
+		// levé, l'échelle de la chute (FUN_004d2090, posée après le contrôle : elle vaut au déplacement de cette image). Le mode de
+		// DAT_01b65c14, la poussée (+0xf0 de la fiche) et les déclencheurs ne sont pas suivis.
+		const CTypeProjectile &tq = TypeProjectile(q.modele);
+		if(!tq.effetPres.empty() && !q.presJoue)
+			for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
+				const CScriptPed *j = pietons.Acceder(i);
+				if(j == nil || j->type != SCRIPT_PED_TYPE_JOUEUR) continue;
+				float pj[3] = {j->pos.x, j->pos.y, j->pos.z}, pq[3] = {q.pos.x, q.pos.y, q.pos.z};
+				if(CVolProjectile::PresDuJoueur(pj, pq)){
+					q.presJoue = true;
+					printf("%6.2f s  le projectile %d passe près du joueur : effet %s (non joué)\n", maintenant / 1000.0, place, tq.effetPres.c_str());
+				}
+				break;
+			}
 		CVector avant = q.pos;
-		q.pos.x += q.vitesse.x * pas; q.pos.y += q.vitesse.y * pas; q.pos.z += q.vitesse.z * pas;
-		q.vitesse.z += q.gravite * pas;
+		// Le déplacement (FUN_00469760, que le projectile reçoit par sa méthode +0x94) : la gravité d'abord (FUN_004d1510, la
+		// méthode +0x90 : +0x230 × 0,008 par pas, FUN_004494d0), puis la position ; un projectile de l'outil pèse toujours (le mode
+		// de DAT_01b65c14 n'est pas suivi).
+		// Avant lui, le contrôle de l'image (FUN_00469a20 ; supposé : le contrôle passe avant le déplacement, comme dans les moteurs
+		// de la même famille) : la mesure du repos (onze images de suite sous 0,003 m par pas en moyenne : le projectile est posé),
+		// sinon la résistance de l'air (FUN_004698c0 : 0,99999 puissance le pas, la valeur du constructeur). L'outil ne suit pas la
+		// vitesse angulaire du projectile (nulle ici), ni +0x34 et +0xb0 (nuls, supposé).
+		{
+			float pt[3] = {q.pos.x, q.pos.y, q.pos.z}, v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z}, w[3] = {0.0f, 0.0f, 0.0f}, mw[3] = {0.0f, 0.0f, 0.0f};
+			if(CVolProjectile::Controler(v, w, q.moyenne, mw, &q.repos, true, false, CVolProjectile::kAir, pas)){
+				// La méthode +0x1c(1) d'un projectile (FUN_004d1560, lue de 0x4d1560 à 0x4d1666 : avec l'octet +0x15 de son entrée elle
+				// redresse d'abord sa matrice, l'axe z vers le haut, ce que l'outil ne suit pas), puis la mise au repos d'un objet
+				// (FUN_004cf190) : +0x28 levé, ou +0xb0 pour un projectile dont l'octet +0x20a vaut 7 (l'octet +0x7c de sa fiche, par
+				// la création FUN_004d4c40), le compteur à 10. Dans les deux cas l'outil ne le bouge plus.
+				uint32 o28 = 0, ob0 = 0;
+				CVolProjectile::Reposer(1, TypeProjectile(q.modele).o7c, &o28, &ob0, &q.repos);
+				q.vitesse = CVector(0.0f, 0.0f, 0.0f); q.pose = o28 != 0 || ob0 != 0;
+				printf("%6.2f s  le projectile %d est au repos en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, place, q.pos.x, q.pos.y, q.pos.z);
+				continue;
+			}
+			int controle = CVolProjectile::Controle(false, false, tq.dureePoussee, tq.dureeRefaite);
+			if(controle == CVolProjectile::CONTROLE_POUSSEE){
+				float v0[3] = {v[0], v[1], v[2]};
+				if(CVolProjectile::Pousser(v, maintenant, q.naissance, tq.dureePoussee, tq.delaiPoussee, tq.poussee, tq.portance, pas) && !q.pousse){
+					q.pousse = true;
+					printf("%6.2f s  le projectile %d est poussé pendant %u ms (facteur %g, portance %g, extinction après %g de la durée) : vitesse (%.3f, %.3f, %.3f) → (%.3f, %.3f, %.3f) m par pas\n",
+					       maintenant / 1000.0, place, tq.dureePoussee, tq.poussee, tq.portance, tq.delaiPoussee, v0[0], v0[1], v0[2], v[0], v[1], v[2]);
+				}
+			}
+			if(controle == CVolProjectile::CONTROLE_CHUTE){
+				float e = CVolProjectile::EchelleDeChute(v[2], tq.diviseur);
+				if(e != q.echelle) printf("%6.2f s  le projectile %d : échelle de temps %g (vitesse en z %.3f m par pas)\n", maintenant / 1000.0, place, e, v[2]);
+				q.echelle = e;
+			}
+			CVolProjectile::Deplacer(pt, v, false, true, CVolProjectile::Gravite(q.gravite), pas, q.echelle);
+			q.pos = CVector(pt[0], pt[1], pt[2]); q.vitesse = CVector(v[0], v[1], v[2]);
+		}
 		int touche = -1; float mieux = 2.0f;
+		CVector centre(0.0f, 0.0f, 0.0f);   // le centre de la sphère touchée, pour la normale du contact
 		for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
 			const CScriptPed *p = pietons.Acceder(i);
 			if(p == nil || p->mort) continue;
 			// FUN_0046ad90 : le tireur n'est épargné que pendant les 200 ms qui suivent la création.
 			if(CContactProjectile::TireurEpargne(i == q.tireur, maintenant, q.naissance)) continue;
+			// FUN_0046b720 : un projectile bas (sous 0,68 m au-dessus de la position du piéton, supposée ici celle de l'outil) et
+			// lent (sous 0,1 m par pas) ne touche pas le piéton ; le +0x1310 du piéton n'est pas suivi (0).
+			{
+				float v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z};
+				if(CContactProjectile::SansContact(true, 0, i == q.tireur, q.pos.z, p->pos.z, v)) continue;
+			}
 			for(float h : {0.35f, 0.95f, 1.55f}){
 				float u;
-				if(SegmentDansSphere(avant, q.pos, CVector(p->pos.x, p->pos.y, p->pos.z + h), 0.35f, &u) && u < mieux){ mieux = u; touche = i; }
+				if(SegmentDansSphere(avant, q.pos, CVector(p->pos.x, p->pos.y, p->pos.z + h), 0.35f, &u) && u < mieux){ mieux = u; touche = i; centre = CVector(p->pos.x, p->pos.y, p->pos.z + h); }
 			}
 		}
 		// Les objets cassables : une sphère de 0,5 m autour de leur position (supposé : l'outil ne lit pas leur modèle de collision).
 		int objet = -1;
 		for(size_t i = 0; i < objets.size(); i++){
 			float u;
-			if(!objets[i].detruit && SegmentDansSphere(avant, q.pos, objets[i].pos, 0.5f, &u) && u < mieux){ mieux = u; objet = (int)i; touche = -1; }
+			if(!objets[i].detruit && SegmentDansSphere(avant, q.pos, objets[i].pos, 0.5f, &u) && u < mieux){ mieux = u; objet = (int)i; touche = -1; centre = objets[i].pos; }
 		}
-		// Le contact (FUN_0046ad90) : sur un piéton le coup puis le choc (FUN_004d3860) ; sur un objet le choc puis le coup. Le moteur
-		// garde le projectile, qui rebondit ; l'outil, sans rebond, le retire au premier contact. L'octet « fort » du choc vient du
-		// coup et de la vitesse (celle de l'outil, en mètres par pas : supposée l'unité de +0x124).
+		// Le contact (FUN_0046ad90) : sur un piéton le coup puis le choc (FUN_004d3860) ; sur un objet le choc puis le coup. Le
+		// projectile reste dans le monde : il recule au point du contact et rebondit (FUN_0046ca40, plus bas). L'octet « fort » du
+		// choc vient du coup et de la vitesse d'avant le rebond (en mètres par pas, l'unité de +0x124).
 		bool rbandball = q.modele == modeles.Index("RBandBall");
 		float allure = sqrtf(q.vitesse.x * q.vitesse.x + q.vitesse.y * q.vitesse.y + q.vitesse.z * q.vitesse.z);
 		CVector a(avant.x + (q.pos.x - avant.x) * mieux, avant.y + (q.pos.y - avant.y) * mieux, avant.z + (q.pos.z - avant.z) * mieux);
@@ -6619,15 +6698,51 @@ AvancerProjectiles(float pas)
 			bool fort = CContactProjectile::Fort(4, q.contacts, rbandball, allure);
 			q.contacts++;
 			ChoquerProjectile(place, q, 4, a, boite, fort);
-			q.actif = false; placesProjectiles.Liberer(place);
 			FrapperObjet((size_t)objet, q.tireur, q.degats);
 		}else if(touche >= 0){
-			CProjectileOutil c = q;
-			q.actif = false; placesProjectiles.Liberer(place);
-			if(CContactProjectile::Coup(3, c.contacts, rbandball)) RecevoirProjectile(touche, c.tireur, c.degats, c.modele);
-			bool fort = CContactProjectile::Fort(3, c.contacts, rbandball, allure);
-			c.contacts++;
-			ChoquerProjectile(place, c, 3, a, false, fort);
+			if(CContactProjectile::Coup(3, q.contacts, rbandball)) RecevoirProjectile(touche, q.tireur, q.degats, q.modele);
+			bool fort = CContactProjectile::Fort(3, q.contacts, rbandball, allure);
+			q.contacts++;
+			ChoquerProjectile(place, q, 3, a, false, fort);
+		}
+		// Le rebond (FUN_0046ca40, après le contact) : le projectile recule à la fraction du contact moins 0,005, puis sa vitesse se
+		// renverse le long de la normale : 0,75 et 0,75 contre un piéton, l'élasticité de la fiche (+0x5c) sinon. Le contact est
+		// le point où le trajet de l'image entre dans la sphère de l'outil (et non le point le plus proche du centre, qui sert au
+		// choc : sa normale serait perpendiculaire au vol), et la normale va du centre à ce point (supposé : le moteur prend le
+		// contact et la normale de son modèle de collision) ; le +0xf0 de l'entité touchée n'est pas suivi (nul).
+		if((objet >= 0 || touche >= 0) && q.actif){
+			float rayon = touche >= 0 ? 0.35f : 0.5f, entree = mieux;
+			CVector d(q.pos.x - avant.x, q.pos.y - avant.y, q.pos.z - avant.z);
+			float l2 = d.x * d.x + d.y * d.y + d.z * d.z;
+			if(l2 > 0.0f){
+				float tc = ((centre.x - avant.x) * d.x + (centre.y - avant.y) * d.y + (centre.z - avant.z) * d.z) / l2;
+				float px = avant.x + d.x * tc - centre.x, py = avant.y + d.y * tc - centre.y, pz = avant.z + d.z * tc - centre.z;
+				float reste = rayon * rayon - (px * px + py * py + pz * pz);
+				if(reste >= 0.0f){ entree = tc - sqrtf(reste / l2); entree = entree < 0.0f ? 0.0f : entree > 1.0f ? 1.0f : entree; }
+			}
+			CVector e0(avant.x + d.x * entree, avant.y + d.y * entree, avant.z + d.z * entree);
+			float f = CVolProjectile::Recul(entree);
+			q.pos = CVector(avant.x + d.x * f, avant.y + d.y * f, avant.z + d.z * f);
+			float n[3] = {e0.x - centre.x, e0.y - centre.y, e0.z - centre.z}, v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z};
+			float e = TypeProjectile(q.modele).elasticite;
+			// Deux modèles à part : la fléchette (« dart », DAT_00bf44dc) se plante au lieu de rebondir, et le frisbee (« Wfrisbee »,
+			// DAT_00bf439c) est dévié après son rebond (FUN_0046ca40, de 0x46cf6f à 0x46d0d2 et de 0x46d231 à 0x46d2f6). La table
+			// des noms de modèles (0xa136e8, FUN_0043f1e0 qui la lit, FUN_0043f220 qui écrit l'indice) donne aussi « WFtBomb » à
+			// DAT_00bf4394, le modèle au son de 8 000 de FUN_004d2290.
+			if(q.modele >= 0 && q.modele == modeles.Index("dart")){
+				float pq[3] = {q.pos.x, q.pos.y, q.pos.z};
+				CVolProjectile::Planter(pq, v);
+				q.pos = CVector(pq[0], pq[1], pq[2]); q.vitesse = CVector(0.0f, 0.0f, 0.0f); q.pose = true;
+				printf("%6.2f s  le projectile %d (une fléchette) se plante dans %s %d en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, place,
+				       touche >= 0 ? "le piéton" : "l'objet", touche >= 0 ? touche : objet, q.pos.x, q.pos.y, q.pos.z);
+				continue;
+			}
+			CVolProjectile::Rebondir(v, n, touche >= 0, false, e);
+			if(q.modele >= 0 && q.modele == modeles.Index("Wfrisbee") && CVolProjectile::Devier(v, n, false))
+				printf("%6.2f s  le projectile %d (un frisbee) est dévié par le contact\n", maintenant / 1000.0, place);
+			printf("%6.2f s  le projectile %d rebondit sur %s %d : vitesse (%.3f, %.3f, %.3f) → (%.3f, %.3f, %.3f) m par pas, coefficient %g\n", maintenant / 1000.0, place,
+			       touche >= 0 ? "le piéton" : "l'objet", touche >= 0 ? touche : objet, q.vitesse.x, q.vitesse.y, q.vitesse.z, v[0], v[1], v[2], touche >= 0 ? CVolProjectile::kNormalPieton : e);
+			q.vitesse = CVector(v[0], v[1], v[2]);
 		}
 	}
 }

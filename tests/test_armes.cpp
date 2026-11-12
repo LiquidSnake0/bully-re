@@ -365,6 +365,133 @@ main(void)
 		VERIF(y.Prendre(500, 2.0f, 0, 9000, 0.0f, false, &ev) == 3 && ev == 3 && y.rayon[3] == 2.0f && !y.evincable[3]);
 		VERIF(y.Prendre(501, 2.0f, 0, 9000, 0.0f, false, &ev) == 7 && ev == 7 && y.Prendre(502, 2.0f, 0, 9000, 0.0f, false) == -1);
 		VERIF(X::AutreFiche(true, 0.95f) && X::AutreFiche(true, -0.5f) && !X::AutreFiche(true, 0.97f) && !X::AutreFiche(false, 0.0f));
+		// Le vol (FUN_004494d0, FUN_004d1510, FUN_00469760) : la gravité d'un facteur 1 est 0,008 par pas ; un pas de 1,65.
+		typedef CVolProjectile V;
+		VERIF(V::Gravite(1.0f) == 0.008f && V::Gravite(0.0f) == 0.0f && fabsf(V::Gravite(2.5f) - 0.02f) < 1e-7f);
+		VERIF(V::Peser(0.5f, false, 0.008f, 1.65f) == 0.5f && fabsf(V::Peser(0.5f, true, 0.008f, 1.65f) - (0.5f - 0.0132f)) < 1e-6f);
+		VERIF(fabsf(V::Peser(0.5f, true, 0.008f, 1.65f, 0.5f) - (0.5f - 0.0066f)) < 1e-6f);
+		float vp[3] = {10.0f, 20.0f, 30.0f}, vv[3] = {1.0f, -2.0f, 0.5f};
+		VERIF(!V::Deplacer(vp, vv, true, true, 0.008f, 1.65f) && vv[0] == 0.0f && vv[1] == 0.0f && vv[2] == 0.0f && vp[0] == 10.0f && vp[2] == 30.0f);
+		vv[0] = 1.0f; vv[1] = -2.0f; vv[2] = 0.5f;
+		VERIF(V::Deplacer(vp, vv, false, false, 0.008f, 1.65f) && fabsf(vp[0] - 11.65f) < 1e-5f && fabsf(vp[1] - 16.7f) < 1e-5f && fabsf(vp[2] - 30.825f) < 1e-5f && vv[2] == 0.5f);
+		// Pesant : la vitesse perd 0,0132 avant de déplacer, et la position perd encore ½ × 0,008 × 1,65² = 0,01089.
+		vp[0] = 0.0f; vp[1] = 0.0f; vp[2] = 0.0f;
+		VERIF(V::Deplacer(vp, vv, false, true, 0.008f, 1.65f) && fabsf(vv[2] - 0.4868f) < 1e-6f && fabsf(vp[2] - (0.4868f * 1.65f - 0.01089f)) < 1e-5f);
+		// L'air (FUN_004698c0) : au-dessus de 0,1, le facteur est la résistance puissance le pas, sur les deux vitesses.
+		float av[3] = {1.0f, -2.0f, 4.0f}, aw[3] = {0.5f, 0.0f, -1.0f};
+		V::Air(av, aw, 0.5f, 2.0f);
+		VERIF(av[0] == 0.25f && av[1] == -0.5f && av[2] == 1.0f && aw[0] == 0.125f && aw[1] == 0.0f && aw[2] == -0.25f);
+		av[0] = 1.0f; av[1] = 0.0f; av[2] = 0.0f;
+		V::Air(av, aw, V::kAir, 1.65f);
+		VERIF(av[0] < 1.0f && fabsf(av[0] - 0.9999835f) < 1e-6f);
+		// Sous 0,1 : la traînée 1 / |1 + r × 0,5 × |v|²| puissance le pas, et 0,99 sur la vitesse angulaire.
+		av[0] = 2.0f; av[1] = 0.0f; av[2] = 0.0f; aw[0] = 1.0f; aw[1] = 2.0f; aw[2] = -1.0f;
+		V::Air(av, aw, 0.05f, 1.0f);
+		VERIF(fabsf(av[0] - 2.0f / 1.1f) < 1e-6f && fabsf(aw[0] - 0.99f) < 1e-7f && fabsf(aw[1] - 1.98f) < 1e-6f && fabsf(aw[2] + 0.99f) < 1e-7f);
+		av[0] = 0.0f; av[1] = 3.0f; av[2] = 4.0f;
+		V::Air(av, aw, 0.08f, 2.0f);
+		VERIF(fabsf(av[1] - 3.0f / 4.0f) < 1e-6f && fabsf(av[2] - 1.0f) < 1e-6f);
+		// Le repos (FUN_00469a20) : le seuil est 0,003 × le pas (0,00495 pour 1,65), sur la moyenne glissante des vitesses.
+		float rv[3] = {1.0f, 0.0f, 0.0f}, rw[3] = {0.0f, 0.0f, 0.0f}, rmv[3] = {0.0f, 0.0f, 0.0f}, rmw[3] = {0.0f, 0.0f, 0.0f};
+		unsigned char rc = 7;
+		// En vol : la moyenne prend la moitié de la vitesse, le compteur retombe à 0, l'air passe.
+		VERIF(!V::Controler(rv, rw, rmv, rmw, &rc, true, false, 0.5f, 1.0f) && rc == 0 && rmv[0] == 0.5f && rv[0] == 0.5f);
+		// Sans mesure (un +0x34, ou un autre genre) : ni moyenne ni compteur, l'air seul.
+		rc = 7;
+		VERIF(!V::Controler(rv, rw, rmv, rmw, &rc, false, false, 0.5f, 1.0f) && rc == 7 && rmv[0] == 0.5f && rv[0] == 0.25f);
+		// Immobile : la moyenne se divise par deux à chaque image (0,5 → sous 0,00495 à la septième), puis le compteur monte ;
+		// à onze, les vitesses tombent à 0 et la fonction rend vrai, le compteur gardé à 10.
+		rv[0] = 0.0f; rw[1] = 0.001f; rc = 0;
+		int images = 0, sousLeSeuil = 0;
+		bool pose = false;
+		while(!pose && images < 100){ pose = V::Controler(rv, rw, rmv, rmw, &rc, true, false, V::kAir, 1.65f); images++; if(!pose && rc == 1 && sousLeSeuil == 0) sousLeSeuil = images; }
+		VERIF(pose && sousLeSeuil == 7 && images == 17 && rc == 10 && rw[1] == 0.0f && rv[0] == 0.0f);
+		// Tenu (+0xb0) : le compteur ne monte pas. Une vitesse angulaire au-dessus du seuil le remet à 0. Le seuil juste aussi.
+		rc = 3; rmv[0] = 0.0f; rmw[1] = 0.0f; rw[1] = 0.0f;
+		VERIF(!V::Controler(rv, rw, rmv, rmw, &rc, true, true, V::kAir, 1.65f) && rc == 3);
+		rw[2] = 1.0f;
+		VERIF(!V::Controler(rv, rw, rmv, rmw, &rc, true, false, V::kAir, 1.65f) && rc == 0);
+		rw[2] = 0.0f; rmw[2] = 0.0f; rc = 3; rv[0] = 0.006f; rmv[0] = 0.0f;
+		VERIF(!V::Controler(rv, rw, rmv, rmw, &rc, true, false, V::kAir, 1.0f) && rc == 0 && rmv[0] == 0.003f);
+		// Le rebond (FUN_0046ca40) : le recul au contact, puis la vitesse renversée le long de la normale.
+		VERIF(fabsf(V::Recul(0.5f) - 0.495f) < 1e-7f && V::Recul(0.0f) < 0.0f);
+		// Sur un sol (normale en z), élasticité 0,5 : la chute de 2 devient une montée de 1, le glissement de 4 tombe à 2.
+		float bv[3] = {4.0f, 0.0f, -2.0f}, bn[3] = {0.0f, 0.0f, 3.0f};
+		V::Rebondir(bv, bn, false, false, 0.5f);
+		VERIF(bv[0] == 2.0f && bv[1] == 0.0f && bv[2] == 1.0f);
+		// Contre un piéton : 0,75 et 0,75, quelle que soit l'élasticité. Un mur en x.
+		bv[0] = -4.0f; bv[1] = 2.0f; bv[2] = 0.0f; bn[0] = 1.0f; bn[1] = 0.0f; bn[2] = 0.0f;
+		V::Rebondir(bv, bn, true, false, 0.1f);
+		VERIF(bv[0] == 3.0f && bv[1] == 1.5f && bv[2] == 0.0f);
+		// L'entité à plat (+0xf0) : le z positif de la normale est effacé avant de normaliser ; un z négatif reste.
+		bv[0] = -1.0f; bv[1] = 0.0f; bv[2] = -1.0f; bn[0] = 3.0f; bn[1] = 0.0f; bn[2] = 4.0f;
+		V::Rebondir(bv, bn, false, true, 1.0f);
+		VERIF(bv[0] == 1.0f && bv[1] == 0.0f && bv[2] == -1.0f);
+		bv[0] = 0.0f; bv[1] = 0.0f; bv[2] = 2.0f; bn[0] = 0.0f; bn[1] = 0.0f; bn[2] = -1.0f;
+		V::Rebondir(bv, bn, false, true, 1.0f);
+		VERIF(bv[0] == 0.0f && bv[2] == -2.0f);
+		// Une élasticité de 1 garde la norme ; de 0,75 (le constructeur), une vitesse de face revient aux trois quarts.
+		bv[0] = 0.0f; bv[1] = -0.4f; bv[2] = 0.0f; bn[0] = 0.0f; bn[1] = 1.0f; bn[2] = 0.0f;
+		V::Rebondir(bv, bn, false, false, V::kElasticite);
+		VERIF(fabsf(bv[1] - 0.3f) < 1e-7f);
+		// La paire du contact (FUN_0046b720) : pas de contact entre un projectile bas et lent et un piéton.
+		typedef CContactProjectile K;
+		float lent[3] = {0.05f, 0.0f, 0.05f}, vif[3] = {0.2f, 0.0f, 0.0f}, juste[3] = {0.0f, 0.099f, 0.0f};
+		VERIF(K::SansContact(true, 0, false, 10.5f, 10.0f, lent) && !K::SansContact(false, 0, false, 10.5f, 10.0f, lent));
+		VERIF(!K::SansContact(true, 0, false, 10.5f, 10.0f, vif) && K::SansContact(true, 0, false, 10.5f, 10.0f, juste));
+		// La hauteur : 0,5 + 0,1847944 au-dessus du piéton, strictement.
+		VERIF(K::SansContact(true, 0, false, 10.68f, 10.0f, lent) && !K::SansContact(true, 0, false, 10.69f, 10.0f, lent) && K::SansContact(true, 0, false, 5.0f, 10.0f, lent));
+		// Le tireur dans le jeu 0xd n'est jamais touché par son projectile, à toute vitesse et à toute hauteur.
+		VERIF(K::SansContact(true, 0xd, true, 12.0f, 10.0f, vif) && !K::SansContact(true, 0xd, false, 12.0f, 10.0f, vif) && !K::SansContact(true, 8, true, 12.0f, 10.0f, vif));
+		// Le contrôle d'un projectile (FUN_004d2290) : tenu, l'autre vol, la poussée, la chute refaite, sinon les déclencheurs.
+		VERIF(V::Controle(true, true, 5, true) == V::CONTROLE_AUCUN && V::Controle(false, true, 5, true) == V::CONTROLE_AUTRE_VOL);
+		VERIF(V::Controle(false, false, 5, true) == V::CONTROLE_POUSSEE && V::Controle(false, false, 0, true) == V::CONTROLE_CHUTE && V::Controle(false, false, 0, false) == V::CONTROLE_DECLENCHEURS);
+		// Près du joueur : 2 m autour d'un point 1,5 m au-dessus de sa position, le bord compris.
+		float pj[3] = {10.0f, 20.0f, 5.0f}, pq1[3] = {10.0f, 20.0f, 8.5f}, pq2[3] = {10.0f, 20.0f, 8.6f}, pq3[3] = {12.0f, 20.0f, 6.5f}, pq4[3] = {11.5f, 21.5f, 6.5f};
+		VERIF(V::PresDuJoueur(pj, pq1) && !V::PresDuJoueur(pj, pq2) && V::PresDuJoueur(pj, pq3) && !V::PresDuJoueur(pj, pq4) && V::PresDuJoueur(pj, pj));
+		// L'échelle de la chute (FUN_004d2090) : le +0x128 de la fiche sous -0,1 m par pas, strictement ; 1 sinon.
+		VERIF(V::EchelleDeChute(-0.2f, 0.5f) == 0.5f && V::EchelleDeChute(-0.1f, 0.5f) == 1.0f && V::EchelleDeChute(0.3f, 0.5f) == 1.0f && V::EchelleDeChute(-0.1000001f, 0.5f) == 0.5f);
+		// La poussée (FUN_004d1ec0) : pleine jusqu'au délai, puis éteinte en ligne droite jusqu'à la fin de la durée.
+		float pv[3] = {1.0f, 0.0f, 2.0f};
+		VERIF(V::Pousser(pv, 1000, 1000, 2000, 0.5f, 0.25f, 0.5f, 2.0f) && pv[0] == 1.5f && pv[1] == 0.0f && pv[2] == 4.0f);
+		pv[0] = 1.0f; pv[1] = 0.0f; pv[2] = 2.0f;
+		VERIF(V::Pousser(pv, 2000, 1000, 2000, 0.5f, 0.25f, 0.5f, 2.0f) && pv[0] == 1.5f && pv[2] == 4.0f);   // au délai compris, f = 0
+		pv[0] = 1.0f; pv[1] = 0.0f; pv[2] = 2.0f;
+		VERIF(V::Pousser(pv, 2500, 1000, 2000, 0.5f, 0.25f, 0.5f, 2.0f) && pv[0] == 1.25f && pv[2] == 3.0f);  // f = 0,5
+		pv[0] = 1.0f; pv[1] = 0.0f; pv[2] = 2.0f;
+		VERIF(!V::Pousser(pv, 3000, 1000, 2000, 0.5f, 0.25f, 0.5f, 2.0f) && !V::Pousser(pv, 4000, 1000, 2000, 0.5f, 0.25f, 0.5f, 2.0f) && pv[0] == 1.0f && pv[2] == 2.0f);
+		VERIF(V::Pousser(pv, 2999, 1000, 2000, 0.5f, 0.25f, 0.5f, 2.0f) && pv[0] > 1.0f && pv[0] < 1.001f);
+		// Le freinage d'un objet (FUN_004cf350) : au-dessus du seuil haut un facteur, dessous l'autre, et l'arrêt sous le seuil bas.
+		float fv[3] = {3.0f, 0.0f, 4.0f}, fw[3] = {1.0f, 2.0f, 0.0f};
+		VERIF(V::Norme(fv) == 5.0f);
+		V::Freiner(fv, fw, 1.0f, 5.0f, 0.5f, 0.25f);       // la norme atteint le seuil haut : le facteur des vitesses hautes
+		VERIF(fv[0] == 1.5f && fv[2] == 2.0f && fw[0] == 0.5f && fw[1] == 1.0f);
+		V::Freiner(fv, fw, 1.0f, 5.0f, 0.5f, 0.25f);       // 2,5 : sous le seuil haut, au-dessus du seuil bas
+		VERIF(fv[0] == 0.375f && fv[2] == 0.5f && fw[0] == 0.125f && fw[1] == 0.25f);
+		V::Freiner(fv, fw, 1.0f, 5.0f, 0.5f, 0.25f);       // 0,625 : sous le seuil bas, tout s'arrête
+		VERIF(fv[0] == 0.0f && fv[1] == 0.0f && fv[2] == 0.0f && fw[0] == 0.0f && fw[1] == 0.0f && fw[2] == 0.0f);
+		fv[0] = 1.0f; fv[1] = 0.0f; fv[2] = 0.0f; fw[0] = 1.0f;
+		V::Freiner(fv, fw, 1.0f, 5.0f, 0.5f, 0.25f);       // au seuil bas compris : pas d'arrêt
+		VERIF(fv[0] == 0.25f && fw[0] == 0.25f);
+		// La mise au repos d'un objet (FUN_004cf190) : +0x28, ou +0xb0 pour l'octet +0x20a à 7 ; le compteur à 10 ou à 0.
+		uint32 r28 = 5, rb0 = 5; unsigned char rcpt = 3;
+		V::Reposer(1, false, &r28, &rb0, &rcpt);
+		VERIF(r28 == 1 && rb0 == 5 && rcpt == 10);
+		V::Reposer(0, true, &r28, &rb0, &rcpt);
+		VERIF(r28 == 1 && rb0 == 0 && rcpt == 0);
+		// La fléchette se plante : la vitesse à 0, la position avancée de 0,1 le long de la direction du vol.
+		float dp[3] = {1.0f, 2.0f, 3.0f}, dv[3] = {0.0f, 3.0f, 4.0f};
+		V::Planter(dp, dv);
+		VERIF(dv[0] == 0.0f && dv[1] == 0.0f && dv[2] == 0.0f && dp[0] == 1.0f && fabsf(dp[1] - 2.06f) < 1e-6f && fabsf(dp[2] - 3.08f) < 1e-6f);
+		// Le frisbee dévié : contre un mur droit, 0,03 le long de la normale et 0,03 vers le bas ; rien sur un sol ni au-dessus de 0,7.
+		float fn[3] = {2.0f, 0.0f, 0.0f}, fz[3] = {0.0f, 0.0f, 1.0f}, fp[3] = {0.6f, 0.0f, 0.8f}, fq[3] = {0.8f, 0.0f, 0.6f}, fr[3] = {0.0f, 0.0f, 0.0f};
+		VERIF(V::Devier(fr, fn, false) && fabsf(fr[0] - 0.03f) < 1e-8f && fr[1] == 0.0f && fabsf(fr[2] + 0.03f) < 1e-8f);
+		fr[0] = fr[1] = fr[2] = 0.0f;
+		VERIF(!V::Devier(fr, fz, false) && !V::Devier(fr, fp, false) && fr[0] == 0.0f && fr[2] == 0.0f);
+		VERIF(V::Devier(fr, fq, false) && fabsf(fr[0] - 0.8f * 0.03f / 7.0f) < 1e-7f && fabsf(fr[2] - (0.6f * 0.03f - 0.03f) / 7.0f) < 1e-7f);
+		// Un sol sous une entité à plat (+0xf0) devient une normale nulle : la poussée vers le bas seule, entière.
+		fr[0] = fr[1] = fr[2] = 0.0f;
+		VERIF(V::Devier(fr, fz, true) && fr[0] == 0.0f && fabsf(fr[2] + 0.03f) < 1e-8f);
 		// La fin d'un projectile (FUN_004d45e0, FUN_004d3dc0).
 		CPlacesProjectiles f;
 		VERIF(f.Prendre(1000) == 0 && f.Vit(0, 1000, 0) && f.Vit(0, 999999, 0) && f.Vit(0, 1500, 500) && !f.Vit(0, 1501, 500) && !f.Vit(1, 1000, 0));

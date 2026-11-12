@@ -4,6 +4,7 @@
 // Lu dans l'index le 07.11.2026 (FUN_004d4c40, la création ; FUN_004d4590, FUN_004d3f60, FUN_004d3dc0).
 #pragma once
 #include "../common.h"
+#include <cmath>
 
 struct CPlacesProjectiles {
 	enum { kTaille = 32 };
@@ -109,6 +110,236 @@ struct CPlacesProjectiles {
 	}
 };
 
+// Le vol d'un projectile : un CProjectile est un CPhysical dont la vitesse (+0x124, +0x128, +0x12c) compte des mètres par pas
+// (0xc1a9a4, le pas du moteur en cinquantièmes de seconde). Son constructeur (FUN_004d2160, lu à l'assembleur de 0x4d2160 à 0x4d228c) pose le facteur de
+// gravité +0x230 à 1, la masse +0x158 et +0x15c à 1, la résistance de l'air +0x160 à 0,99999 (_DAT_00912824), l'élasticité +0x164 à
+// 0,75 (_DAT_0093e860), +0x168 à 0,0008 (_DAT_009137dc), +0xc4 à 1 et l'octet des contacts +0x22c à 0 ; celui de CPhysical
+// (lu dans l'index) l'échelle +0x154 à 1. La création (FUN_004d4c40, relue dans l'index) y écrit la vitesse du tir, le facteur de
+// gravité de la fiche (+0x80 → +0x230), son élasticité (+0x5c → +0x164), l'octet +0x20a (6, ou 7 avec l'octet +0x7c de la fiche) et
+// le bit 0x2 de +0x1bc, levé hors du mode de DAT_01b65c14 : le projectile pèse.
+struct CVolProjectile {
+	static constexpr float kAir = 0.99999f, kElasticite = 0.75f;
+	// FUN_004494d0 (la méthode +0x8c de CProjectile, lue à l'assembleur de 0x4494d0 à 0x4494e4) : la gravité du projectile par pas,
+	// son facteur +0x230 fois 0,008 (le double 0x905a70), arrondie en simple précision.
+	static float Gravite(float facteur) { return (float)((double)facteur * (double)0.008f); }
+	// FUN_004d1510 (la méthode +0x90 de CProjectile, lue à l'assembleur de 0x4d1510 à 0x4d1555) : avec le bit 0x2 de +0x1bc, la vitesse
+	// en z perd la gravité (la méthode +0x8c) fois le pas fois l'échelle +0x154.
+	static float Peser(float vz, bool pese, float gravite, float pas, float echelle = 1.0f) {
+		return pese ? (float)((double)vz - (double)gravite * pas * echelle) : vz;
+	}
+	// FUN_00469760 (la méthode +0x94 de CPhysical, le déplacement, lue à l'assembleur de 0x469760 à 0x4698bb). Avec le bit 0x1 de
+	// +0x1bd, la vitesse tombe à 0 et rien ne bouge (rend faux). Sinon la méthode +0x90 d'abord (Peser), puis la position avance de
+	// la vitesse fois d, d = l'échelle +0x154 fois le pas ; en z, quand l'entité pèse (le bit 0x2 de +0x1bc) et que sa méthode +0x88
+	// rend 0 (celle de CProjectile, 0x828240 : xor al,al), la position perd en plus la moitié (le double 0x8ff1f8) de la gravité fois
+	// d au carré (d au carré arrondi en simple précision). La vitesse en z a donc déjà perdu la gravité du pas quand elle déplace.
+	static bool Deplacer(float *pos, float *v, bool fige, bool pese, float gravite, float pas, float echelle = 1.0f) {
+		if(fige){ v[0] = v[1] = v[2] = 0.0f; return false; }
+		v[2] = Peser(v[2], pese, gravite, pas, echelle);
+		float d = echelle * pas;
+		pos[0] = pos[0] + d * v[0];
+		pos[1] = v[1] * d + pos[1];
+		if(!pese) pos[2] = d * v[2] + pos[2];
+		else pos[2] = (float)(((double)v[2] * (double)d - (double)gravite * 0.5 * (double)(float)((double)d * (double)d)) + (double)pos[2]);
+		return true;
+	}
+	// FUN_004698c0 (la résistance de l'air d'un CPhysical, lue à l'assembleur de 0x4698c0 à 0x469a1c ; 0085cb40, la puissance à deux
+	// arguments sur la pile du coprocesseur, est supposée être pow). Avec une résistance +0x160 strictement au-dessus de 0,1 (le
+	// double 0x900128 : fcomp, test ah,0x41, jne), la vitesse et la vitesse angulaire (+0x130, +0x134, +0x138) prennent le facteur
+	// +0x160 puissance le pas : pour un projectile, 0,99999 puissance 1,65 par image. Sinon (une traînée) : le facteur de la vitesse
+	// est (1 / |1 + +0x160 × 0,5 × |v|²|) puissance le pas, chaque étape arrondie en simple précision, et la vitesse angulaire prend
+	// 0,99 (le double 0x8ffcf8).
+	static void Air(float *v, float *w, float air, float pas) {
+		if((double)air > 0.1){
+			float f = (float)pow((double)air, (double)pas);
+			for(int i = 0; i < 3; i++) v[i] = v[i] * f;
+			for(int i = 0; i < 3; i++) w[i] = w[i] * f;
+			return;
+		}
+		float n2 = v[1] * v[1] + v[0] * v[0] + v[2] * v[2];
+		float k = (float)((double)air * 0.5 * (double)n2);
+		float a = fabsf(1.0f + k);
+		float b = 1.0f / a;
+		float f = (float)pow((double)b, (double)pas);
+		for(int i = 0; i < 3; i++) v[i] = v[i] * f;
+		for(int i = 0; i < 3; i++) w[i] = (float)((double)w[i] * 0.99);
+	}
+	// FUN_00469a20 (le contrôle d'un CPhysical à chaque image, sa méthode +0x30, lue à l'assembleur de 0x469a20 à 0x469c5c ; celui
+	// d'un objet y arrive en dernier). Elle remet d'abord à 0 +0x1a0, +0x2c, +0x38, +0x40, +0x7c, le mot +0x1b4, +0x1a4, et le bit
+	// 0x10 de +0x1bc hors d'un piéton (le genre, +0x108 & 7, autre que 3) ; avec +0x108 & 0xf8 égal à 0x10 elle rend la main là ;
+	// sinon l'octet +0x181 et +0x4c passent à 0. La mesure du repos ne se fait que sans +0x34 et pour un objet (genre 4) ou un piéton
+	// sans +0x30 (`mesure`) : les moyennes +0x13c (de la vitesse) et +0x148 (de la vitesse angulaire) deviennent la moitié (le double
+	// 0x8ff1f8) de leur somme avec la vitesse du moment (0x412850, supposée la somme de deux vecteurs) ; le seuil est le pas fois
+	// 0,003 (le double 0x90c700), au carré. Une moyenne dont le carré de la norme atteint le seuil remet le compteur +0x180 à 0
+	// (fcompp, test ah,0x41, jne : l'égalité aussi). Sous le seuil pour les deux, et sans +0xb0 (`tenu`), le compteur monte : au-delà
+	// de 10, il reste à 10, la méthode +0x1c(1) met l'entité au repos, les deux vitesses tombent à 0 et la fonction rend la main
+	// (rend vrai ici) sans l'air. Dans tous les autres cas elle finit par la résistance de l'air (un saut vers Air).
+	static bool Controler(float *v, float *w, float *mv, float *mw, unsigned char *compte, bool mesure, bool tenu, float air, float pas) {
+		if(mesure){
+			for(int i = 0; i < 3; i++) mv[i] = (float)((double)(float)(mv[i] + v[i]) * 0.5);
+			for(int i = 0; i < 3; i++) mw[i] = (float)((double)(float)(mw[i] + w[i]) * 0.5);
+			float s = (float)((double)pas * 0.003);
+			float n2 = mv[1] * mv[1] + mv[0] * mv[0] + mv[2] * mv[2];
+			float s2 = s * s;
+			if(s2 <= n2) *compte = 0;
+			else{
+				n2 = mw[1] * mw[1] + mw[0] * mw[0] + mw[2] * mw[2];
+				if(s2 <= n2) *compte = 0;
+				else if(!tenu){
+					*compte = (unsigned char)(*compte + 1);
+					if(*compte > 10){
+						*compte = 10;
+						v[0] = v[1] = v[2] = 0.0f; w[0] = w[1] = w[2] = 0.0f;
+						return true;
+					}
+				}
+			}
+		}
+		Air(v, w, air, pas);
+		return false;
+	}
+	// FUN_004d2290 (le contrôle d'un CProjectile à chaque image, sa méthode +0x30, lue à l'assembleur de 0x4d2290 à 0x4d24e9). Tenu
+	// (+0xb0 non nul), rien. Sinon : le son du modèle (00598030 sur 0xcf5dc4, puis 0059a710 avec 3 000, ou 8 000 pour le modèle de
+	// DAT_00bf4394 ; non suivi) ; l'effet +0xa8 de la fiche, une seule fois (le bit 0x1 de +0x22d), quand le projectile passe près
+	// du joueur (DAT_00c1aea8 ; PresDuJoueur) ; puis le contrôle selon l'entrée de la table (004d3360 la rend) et la fiche :
+	// - l'octet +0x15 de l'entrée (le mode de DAT_01b65c14 à la création) : un autre vol, non suivi (0x4d1960) ;
+	// - un +0x10 de l'entrée non nul (le +0xf0 de la fiche, une durée) : le contrôle de l'objet, puis la poussée (Pousser) ;
+	// - l'octet +0x124 de la fiche : le contrôle de l'objet, puis l'échelle de la chute (EchelleDeChute) ;
+	// - sinon : les déclencheurs où le projectile entre (006d7220 sur 0x20c7e98, non recréée), puis le contrôle de l'objet.
+	// Le contrôle de l'objet (celui de CObject : Freiner pour un objet dont l'octet +0x20a vaut 7) finit par celui de CPhysical
+	// (Controler).
+	enum { CONTROLE_AUCUN, CONTROLE_AUTRE_VOL, CONTROLE_POUSSEE, CONTROLE_CHUTE, CONTROLE_DECLENCHEURS };
+	static int Controle(bool tenu, bool autreVol, uint32 dureePoussee, bool chuteRefaite) {
+		if(tenu) return CONTROLE_AUCUN;
+		if(autreVol) return CONTROLE_AUTRE_VOL;
+		if(dureePoussee != 0) return CONTROLE_POUSSEE;
+		return chuteRefaite ? CONTROLE_CHUTE : CONTROLE_DECLENCHEURS;
+	}
+	// Près du joueur (de 0x4d231e à 0x4d2386) : l'écart du joueur au projectile (0x414a20, supposée la différence de deux vecteurs),
+	// son z relevé de 1,5 (le double 0x8ffa08), a un carré de norme qui ne dépasse pas 4 (_DAT_00900b0c : fld, fcomp, test ah,1,
+	// jne) : à 2 m au plus d'un point 1,5 m au-dessus de la position du joueur.
+	static bool PresDuJoueur(const float *joueur, const float *projectile) {
+		float x = joueur[0] - projectile[0], y = joueur[1] - projectile[1];
+		float z = (float)((double)(float)(joueur[2] - projectile[2]) + 1.5);
+		float d2 = z * z + (y * y + x * x);
+		return d2 <= 4.0f;
+	}
+	// FUN_004d2090 (lue à l'assembleur de 0x4d2090 à 0x4d20ce ; pour une fiche dont l'octet +0x124 est levé, après le contrôle) :
+	// l'échelle de temps +0x154 du projectile vaut le +0x128 de la fiche tant que sa vitesse en z est strictement sous -0,1 (le
+	// double 0x912830 : fcomp, test ah,5, jp), et 1 sinon. Un projectile qui retombe à plus de 0,1 m par pas vole donc à une autre
+	// allure : c'est le +0x128 par lequel la visée (FUN_0065ecb0) refait la durée du vol.
+	static float EchelleDeChute(float vz, float echelleFiche) { return (double)vz < (double)-0.1f ? echelleFiche : 1.0f; }
+	// FUN_004d1ec0 (la poussée d'un projectile, lue à l'assembleur de 0x4d1ec0 à 0x4d208a ; pour une entrée dont le +0x10, la durée
+	// +0xf0 de la fiche, n'est pas nul, après le contrôle). Tant que maintenant (0xc1a9b4) est strictement avant la création (+8 de
+	// l'entrée) plus la durée (cmp, jae) : le délai est la durée fois le +0x100 de la fiche (0x85c6f0, supposée la conversion en
+	// entier qui tronque) ; la fraction f vaut 0 jusqu'au délai compris (jbe), puis (maintenant - création - délai) / (durée -
+	// délai), et rien ne se passe quand f atteint 1 (fcom, test ah,0x41, je ; fucom, test ah,0x44, jnp). La vitesse gagne
+	// ((v × pas) × +0xf8 de la fiche) × (1 - f), chaque produit arrondi en simple précision, et sa composante z gagne en plus
+	// (+0xfc de la fiche × pas) × (1 - f) : une poussée le long de la vitesse et une portance, qui s'éteignent sur la durée
+	// (supposé : le vol d'une fusée).
+	static bool Pousser(float *v, uint32 maintenant, uint32 creation, uint32 duree, float fractionDelai, float poussee, float portance, float pas) {
+		if(maintenant >= creation + duree) return false;
+		float f = 0.0f;
+		uint32 delai = (uint32)(long long)((double)fractionDelai * (double)duree);
+		if(maintenant > creation + delai){
+			f = (float)((double)(uint32)(maintenant - creation - delai) / (double)(int32)(duree - delai));
+			if(f >= 1.0f) return false;
+		}
+		float r = (float)(1.0 - (double)f), d[3];
+		for(int i = 0; i < 3; i++){ float a = v[i] * pas; a = a * poussee; d[i] = a * r; }
+		for(int i = 0; i < 3; i++) v[i] = v[i] + d[i];
+		v[2] = v[2] + (float)((double)portance * (double)pas * (1.0 - (double)f));
+		return true;
+	}
+	// FUN_004cf350 (le contrôle d'un CObject à chaque image, lue à l'assembleur de 0x4cf350 à 0x4cf4cd ; celui d'un CProjectile
+	// l'appelle avant sa poussée ou sa chute). Avec +0xb0 non nul, rien. Pour un objet dont l'octet +0x20a vaut 7, et quand 006838d0
+	// rend faux (l'objet de DAT_01b89150, non suivi), un freinage : sa fiche F est celle du nom +0x12c de la fiche du projectile
+	// (résolue par 0072ad50 dans la table 0x1b65378), sinon celle de DAT_020c888c ; s est la norme de la vitesse (FUN_0040df90, lue de
+	// 0x40df90 à 0x40dfc0 : la racine de |z² + (x² + y²)|). Quand s atteint F+0x1c (fcomp, test ah,0x41, jne : l'égalité aussi) le
+	// facteur est F+0x20 ; sinon le facteur est F+0x24 et, quand s est strictement sous F+0x18, la vitesse et la vitesse angulaire
+	// prennent d'abord le vecteur de DAT_00bcc564 (dans le bss ; supposé nul). Puis les deux vitesses sont multipliées par le
+	// facteur. Dans tous les cas sans +0xb0 la fonction finit par le contrôle de CPhysical (un saut vers Controler).
+	static float Norme(const float *v) { return sqrtf(fabsf(v[2] * v[2] + (v[0] * v[0] + v[1] * v[1]))); }
+	static void Freiner(float *v, float *w, float seuilArret, float seuilVite, float facteurVite, float facteurLent) {
+		float s = Norme(v), f;
+		if(seuilVite <= s) f = facteurVite;
+		else{
+			f = facteurLent;
+			if(s < seuilArret){ v[0] = v[1] = v[2] = 0.0f; w[0] = w[1] = w[2] = 0.0f; }
+		}
+		for(int i = 0; i < 3; i++) v[i] = v[i] * f;
+		for(int i = 0; i < 3; i++) w[i] = w[i] * f;
+	}
+	// FUN_004cf190 (la mise au repos d'un CObject, lue à l'assembleur de 0x4cf190 à 0x4cf1c6 ; la méthode +0x1c d'un CProjectile,
+	// qui redresse d'abord sa matrice quand l'octet +0x15 de son entrée est levé, finit par elle). L'argument (un octet : au repos
+	// ou non) va dans +0x28, ou dans +0xb0 pour un objet dont l'octet +0x20a vaut 7 ; le compteur de repos +0x180 prend 10 quand
+	// l'argument n'est pas nul, 0 sinon (neg, sbb, and 0xa). Le +0xb0 que les contrôles lisent d'abord est donc, pour ces objets,
+	// le repos lui-même.
+	static void Reposer(unsigned char repos, bool genre7, uint32 *o28, uint32 *ob0, unsigned char *compte) {
+		if(genre7) *ob0 = repos; else *o28 = repos;
+		*compte = repos ? 10 : 0;
+	}
+	// La fonction 0046ca40 (le déplacement d'un CPhysical dans le monde, 2 884 octets, non recréée en entier ; ici sa part pour un projectile, +0xc4 non nul, lue à
+	// l'assembleur de 0x46cd98 à 0x46ce47 et de 0x46d0d7 à 0x46d22e ; le balayage qui trouve le contact n'est pas recréé). Au
+	// contact le plus proche, à la fraction f du déplacement de l'image, le projectile est reposé à l'ancienne position plus le
+	// déplacement fois (f − 0,005) (le double 0x90c740), arrondi en simple précision.
+	static float Recul(float fraction) { return (float)((double)fraction - 0.005); }
+	// Puis il rebondit, au premier tour de la boucle des contacts (les autres CPhysical glissent le long de la normale et refont
+	// jusqu'à trois tours). La normale du contact, dont le z positif est mis à 0 quand l'entité touchée a un +0xf0 (`aPlat` ; fldz,
+	// fcom, test ah,5, jp), est normalisée (0x414cc0, supposée). Contre un piéton (le genre de l'entité touchée, +0x108 & 7, vaut 3)
+	// le coefficient tangentiel est _DAT_00a24040 et le normal _DAT_00a2403c, 0,75 tous les deux ; sinon les deux sont l'élasticité
+	// +0x164 du projectile (le +0x5c de sa fiche). La vitesse se partage en sa part le long de la normale, vn = n × (v·n) (le produit
+	// scalaire arrondi en simple précision : vz nz + (vy ny + vx nx)), et le reste vt = v − vn ; la nouvelle vitesse est
+	// tangentiel × vt − normal × vn. Deux modèles ont leur cas à part (Planter, Devier).
+	static constexpr float kTangentielPieton = 0.75f, kNormalPieton = 0.75f;
+	static void NormaleDuContact(const float *normale, bool aPlat, float *n) {
+		n[0] = normale[0]; n[1] = normale[1]; n[2] = normale[2];
+		if(aPlat && 0.0f < n[2]) n[2] = 0.0f;
+		float l = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+		if(l > 0.0f){ n[0] /= l; n[1] /= l; n[2] /= l; }
+	}
+	// La fléchette (de 0x46cf6f à 0x46d0d2 ; le modèle de DAT_00bf44dc, que la table des noms de modèles 0xa136e8, des paires nom
+	// puis adresse lues par 0043f1e0, donne à « dart ») ne rebondit pas : sa vitesse tombe à 0 et sa position avance de 0,1 (le
+	// double 0x900128) le long de la direction qu'avait cette vitesse (normalisée par 00414cc0, supposée), chaque composante
+	// arrondie en simple précision ; puis le bit 0x2 de +0x1bc est baissé (elle ne pèse plus), +0x28 passe à 1 (le repos d'un objet,
+	// comme Reposer l'écrit) et +0x20 à 0 : elle reste plantée. La suite (un cap ramené entre -π et π puis posé, et deux appels sur
+	// sa position et la normale, 007014f0 et 00701e70) n'est pas suivie.
+	static void Planter(float *pos, float *v) {
+		float d[3] = {v[0], v[1], v[2]};
+		v[0] = v[1] = v[2] = 0.0f;
+		float l = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+		if(l > 0.0f){ d[0] /= l; d[1] /= l; d[2] /= l; }
+		for(int i = 0; i < 3; i++){ d[i] = (float)((double)d[i] * 0.1); pos[i] = pos[i] + d[i]; }
+	}
+	// Le frisbee (de 0x46d231 à 0x46d2f6 ; le modèle de DAT_00bf439c, « Wfrisbee » dans la même table) reçoit après son rebond deux
+	// poussées quand le z de la normale du contact est strictement sous 0,7 en valeur absolue (_DAT_00a24038 : fcom, test ah,0x41,
+	// jne), toutes deux à l'échelle k = (0,7 - |nz|) / 0,7 : la normale fois 0,03 (_DAT_00a24034) fois k, puis (0, 0, 1) fois -0,03
+	// (_DAT_00a24030) fois k (FUN_00412200 deux fois, puis FUN_004150b0, lue de 0x4150b0 à 0x4150cf : la somme dans le premier
+	// vecteur). Contre un mur il est donc repoussé du mur et rabattu vers le bas, d'autant plus que le mur est droit.
+	static bool Devier(float *v, const float *normale, bool aPlat) {
+		float n[3];
+		NormaleDuContact(normale, aPlat, n);
+		float a = fabsf(n[2]);
+		if(0.7f <= a) return false;
+		float k = (0.7f - a) / 0.7f;
+		for(int i = 0; i < 3; i++){ float t = n[i] * 0.03f; v[i] = v[i] + t * k; }
+		float haut[3] = {0.0f, 0.0f, 1.0f};
+		for(int i = 0; i < 3; i++){ float t = haut[i] * -0.03f; v[i] = v[i] + t * k; }
+		return true;
+	}
+	static void Rebondir(float *v, const float *normale, bool pieton, bool aPlat, float elasticite) {
+		float n[3];
+		NormaleDuContact(normale, aPlat, n);
+		float tangentiel = pieton ? kTangentielPieton : elasticite;
+		float normal = -(pieton ? kNormalPieton : elasticite);
+		float p = v[2] * n[2] + (v[1] * n[1] + v[0] * n[0]);
+		for(int i = 0; i < 3; i++){
+			float vn = n[i] * p;
+			float vt = v[i] - vn;
+			v[i] = tangentiel * vt + normal * vn;
+		}
+	}
+};
+
 // Le choc d'un projectile (FUN_004d3860, lue à l'assembleur de 0x4d3860 à 0x4d3c14 ; appelée par le contact du CPhysical, FUN_0046ad90,
 // avec le projectile, l'entité touchée, le point de contact et un octet « fort »). Dans l'ordre :
 //  1. avec l'octet +0x40 de la fiche, le stimulus +0x44 naît du projectile (PedCreateStimulus(+0x44, projectile, 0, 0, -1, -1)) ;
@@ -163,6 +394,24 @@ struct CContactProjectile {
 	// Le coup : contre un piéton (genre 3) ou un véhicule (genre 2), au premier contact seulement (l'octet +0x22c nul), à tous pour
 	// RBandBall (DAT_00bf432c). Sur un piéton, c'est sa méthode du coup (vtable +0x3c) avec les dégâts +0x1c de l'entrée et le tireur.
 	static bool Coup(int genre, uint8 contacts, bool rbandball) { return (genre == 3 || genre == 2) && (contacts == 0 || rbandball); }
+	// FUN_0046b720 (la paire d'un contact, 342 octets, lue à l'assembleur de 0x46b720 à 0x46b873 ; le déplacement 0046ca40 l'appelle
+	// avec l'entité touchée, le contact et un angle). Elle remet à 0 le +0xb0 de l'entité touchée, puis fait les deux contacts
+	// (FUN_0046ad90 dans un sens, puis dans l'autre) sauf, quand l'un des deux est un projectile (+0xc4 non nul ; celui de l'entité
+	// touchée d'abord) et l'autre un piéton (genre 3), dans deux cas, que cette fonction rend vrais : le piéton a un +0x1310 de 0xd
+	// et il est le tireur du projectile (le +4 de son entrée, par 004d3360) ; ou le projectile est bas et lent : son z moins
+	// celui du piéton, moins 0,1847944 (le double 0x90c720), est strictement sous 0,5 (_DAT_009055a0 : fcomp, test ah,5, jp) et sa
+	// vitesse (la racine, 0x85c4d0, du carré de la norme de +0x124) est strictement sous 0,1 (le double 0x900128 : test ah,5, jnp).
+	// Une bille qui roule aux pieds d'un piéton ne le touche donc pas.
+	static bool SansContact(bool pieton, int32 jeuDuPieton, bool estLeTireur, float zProjectile, float zPieton, const float *v) {
+		if(!pieton) return false;
+		if(jeuDuPieton == 0xd && estLeTireur) return true;
+		float dz = zProjectile - zPieton;
+		dz = (float)((double)dz - 0.1847944);
+		if(!(dz < 0.5f)) return false;
+		float n2 = v[1] * v[1] + v[0] * v[0] + v[2] * v[2];
+		float n = sqrtf(fabsf(n2));
+		return (double)n < 0.1;
+	}
 	// Le tireur épargné : quand le coup irait au piéton qui a tiré (+4 de l'entrée) moins de 200 ms après la création (+8, écart non
 	// signé), la fonction rend la main : ni coup, ni contact compté, ni choc.
 	static bool TireurEpargne(bool surLeTireur, uint32 maintenant, uint32 creation) { return surLeTireur && (uint32)(maintenant - creation) < 200; }

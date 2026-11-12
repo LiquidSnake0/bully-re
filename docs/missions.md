@@ -560,6 +560,11 @@ Chaque brique (la fiche BRICK : 0,38 m par pas, 30 points) touche Davis sur ses 
 points, `cbDavisHit`) ; `T_BossBattleTutorial` affiche `1_03_T02` quand le joueur tient la deuxième ; `CutsceneDavisBegs`, puis
 `PlayerPickupSlingshot` met le lance-pierre en main (`PropSetInTransition`, `PropAttach`) : **`1_03` se termine réussie à 148,04 s**.
 
+**Le rebond des briques** (12.11, séance 1) : avec le vol du moteur (`CVolProjectile::Deplacer`), la première brique, visée en z
+10,18 m, touche Davis à 123,72 s en z 9,57 m (10,68 m avant) ; les trois briques rebondissent sur lui (le piéton 6, coefficient 0,75
+contre un piéton) à 123,72 s, 125,30 s et 127,22 s, explosent à leur contact et sont détruites à l'image suivante. Les points ôtés
+et la fin à 148,04 s sont inchangés.
+
 ## `1_04` (« The Slingshot ») (05.11.2026)
 
 `1_04` s'enchaîne après `1_03`. Lancée seule (`build/outils/lancer_lua 120 --mission 1_04 --sans-cinematiques`), `MissionSetup` finit à
@@ -638,6 +643,16 @@ partent à 17,36 s, 19,34 s et 21,35 s ; `AimOut` commence à 17,79 s, l'attente
 à 82,53 s, comme avec la commande ci-dessus, qui reste la référence des mesures. Au contact, une bille dit maintenant son choc
 (`FUN_004d3860`) : avec la commande de référence, l'explosion de rayon 0,001 m est posée à 17,52 s et finie à l'image suivante, 17,56
 s, avec le stimulus 2 du tireur et l'effet `Slingshot_Hit`.
+
+**Le vol et le rebond des billes** (12.11, séance 1) : le vol d'un projectile est celui du moteur (`CVolProjectile::Deplacer`,
+`FUN_00469760` ; la gravité +0x230 × 0,008 par pas, `FUN_004494d0`), avec l'air (`FUN_004698c0`) et le contrôle du repos
+(`FUN_00469a20`). Les chocs sont un peu plus bas qu'avant (la bille de 17,36 s, visée en z 7,60 m, touche la vitre à 17,52 s en z
+7,58 m au lieu de 7,68 m : la visée de l'outil reste une parabole continue, le départ du tir `FUN_0065e880` n'étant pas recréé). Un
+projectile n'est plus retiré à son contact : il recule et rebondit (`CVolProjectile::Recul`, `Rebondir`, la part du projectile dans
+la fonction `0046ca40`). La mission écrit vingt et un rebonds : sur les trois vitres à 17,52 s, 19,50 s et 21,52 s (coefficient 0,3,
+l'élasticité de la fiche de la bille ; à 17,52 s la vitesse (-0,186, 0,840, 0,086) devient (0,052, -0,236, -0,096) m par pas), puis
+dix-huit sur les piétons 5 à 10, de 74,08 s à 78,11 s (coefficient 0,75). Chaque bille explose à son contact (rayon 0,001 m) et est
+détruite à l'image suivante : aucune ne vole après son rebond. La mission finit réussie à 82,53 s, inchangée.
 
 ## `1_05` (« Save Algie ») (06.11.2026)
 
