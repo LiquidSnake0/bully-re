@@ -122,11 +122,43 @@ chantier. Un point fini passe en bas, avec son commit.
    explosions (`FUN_004d2b40`, `FUN_004d2aa0`, `FUN_004d2690`), sa fin (`FUN_004d45e0`, `FUN_004d3dc0`) et les marques d'impact
    (`FUN_00560f70`, `FUN_00560f10`).
    Suite, dans l'ordre :
-   - la suite des armes : **la physique des `CProjectile` dans le monde**. L'outil n'a ni sol ni rebond : il retire le projectile à son
-     premier contact (supposé), si bien que le repos (`CContactProjectile::AuRepos`), le premier sol (`CChocProjectile::PremierSol`) et
-     l'explosion de la fin de vie (`CPlacesProjectiles::Detruire`) ne servent encore dans aucune mission. Dans l'ordre : le vol et le
-     rebond du `CPhysical` d'un projectile (ce que `FUN_004d4c40` pose à la création, la vitesse +0x124 dont l'unité est supposée le
-     mètre par pas, le sol) ; le balayage d'une explosion (la fonction en 0x463b70 qu'appelle `FUN_004d2690`, puis `004629d0`, 2 427
+   - la suite des armes : **le sol sous les projectiles de l'outil des missions**. La physique d'un `CProjectile` est recréée dans
+     `CVolProjectile` (`src/objects/Projectiles.h` ; 12.11, séance 1, voir « Fait ») : le vol, l'air, le repos, le rebond, la paire du
+     contact, le contrôle, la poussée, le freinage, la fléchette et le frisbee. Mais `outils/lancer_lua.cpp` (`AvancerProjectiles`)
+     n'a toujours **pas de sol** : ses projectiles ne touchent que les sphères des piétons (0,35 m, trois par piéton) et des objets
+     cassables (0,5 m), et tous ceux des sept missions explosent à leur contact (rayon 0,001 m) et sont détruits à l'image suivante.
+     Le repos (`Controler`, `Reposer`), le premier sol (`CChocProjectile::PremierSol`, `FUN_004d3370`), le freinage (`Freiner`),
+     l'explosion de la fin de vie (`CPlacesProjectiles::Detruire`) et un vol après rebond ne se voient donc que dans
+     `tests/test_armes.cpp`. Dans l'ordre :
+     1. brancher la collision du monde dans `lancer_lua` : `CMondeCollision` (`src/collision/Marche.h`) n'est branché que dans
+        `outils/scene.h` et `outils/visite.cpp` ; il faut le charger pour la zone de la mission et y lancer le trajet de l'image
+        (de `avant` à `q.pos`), puis passer le point et la normale du contact à `CVolProjectile::Recul` et `Rebondir` (l'outil
+        prend aujourd'hui le point où le trajet entre dans sa sphère et la normale du centre à ce point, supposé ; le point du
+        choc reste le point le plus proche du centre ; essayé et écarté : la normale au point le plus proche, perpendiculaire au
+        vol, ne renverse rien). Un essai hors mission suffit pour voir le repos : tirer une bille vers le sol et lire « le
+        projectile N est au repos en (…) » ;
+     2. le balayage du déplacement lui-même : la fonction 0046ca40 (2 884 octets) n'est recréée que pour sa part du projectile
+        (lue de 0x46cd98 à 0x46ce47, de 0x46cf6f à 0x46d2f6) ; restent son début (de 0x46ca40 à 0x46cd98 : le balayage, par la
+        fonction `0046c970` qu'elle appelle, non lue), la glissade des autres `CPhysical` (de 0x46ce71, avec +0,001 du double
+        0x900fa0, jusqu'à trois tours) et la sortie (0x46d2fc). La paire `FUN_0046b720` est recréée (`CContactProjectile::
+        SansContact`), les deux contacts `FUN_0046ad90` aussi ;
+     3. le départ du tir (`FUN_0065e880`, la douille « Muzzle ») : la visée de l'outil tire encore le long d'une parabole continue
+        alors que le vol du moteur (`Deplacer`) descend de 1,5 × g × pas² de plus par image (0,0327 m pour un facteur de gravité
+        1) : les chocs sont plus bas que le point visé (`1_04` à 17,52 s : z 7,58 m pour 7,60 visés ; `1_03` aux briques à
+        123,72 s : 9,57 m pour 10,18 visés) ;
+     4. ce que le contrôle `FUN_004d2290` laisse non suivi : l'autre vol de l'octet +0x15 de l'entrée (la fonction `004d1960`,
+        non lue ; le mode de DAT_01b65c14 à la création), les déclencheurs (`006d7220` sur 0x20c7e98), le son du modèle
+        (`00598030` sur 0xcf5dc4 puis `0059a710` avec 3 000, ou 8 000 pour « WFtBomb », DAT_00bf4394), l'effet +0xa8 de la fiche
+        (lu par l'outil, non joué) ; la fiche du freinage (le nom +0x12c de la fiche du projectile, construit par `005fa720`,
+        `005fa7b0`, `005fa760` et résolu par `0072ad50` dans la table 0x1b65378, sinon DAT_020c888c : l'outil ne la lit pas,
+        `Freiner` ne sert que dans les tests) ; le redressement de la matrice par `FUN_004d1560` (lue de 0x4d1560 à 0x4d1666) ;
+        la suite de la fléchette plantée (les fonctions `00415320`, `0041a460` avec -π et π, `0046a540`, puis `007014f0` et
+        `00701e70` sur sa position) ; l'ordre du contrôle et du déplacement dans la boucle du monde (supposé : le contrôle
+        d'abord, non relu) ; la vitesse angulaire d'un projectile (nulle dans l'outil) ; `006838d0` (rend 0 sans DAT_01b89150).
+     La table des noms de modèles est en 0xa136e8 (paires nom, adresse de la globale ; `FUN_0043f1e0` la lit, `FUN_0043f220` y
+     écrit l'indice) : « dart » = DAT_00bf44dc, « Wfrisbee » = DAT_00bf439c, « WFtBomb » = DAT_00bf4394 ; elle nomme tout
+     `DAT_00bf4xxx` comparé à un modèle (+0x10e).
+     Puis, comme avant : le balayage d'une explosion (la fonction en 0x463b70 qu'appelle `FUN_004d2690`, puis `004629d0`, 2 427
      octets, non lue : qui est touché et avec quels dégâts) ; la marque d'une explosion par la surface du contact (+0x14c de la fiche,
      `FUN_004d2b40`) et la normale du contact dans l'outil (ses marques sont posées au point même) ; les volumes d'eau de
      `FUN_006d48d0` ; le départ du tir (la douille « Muzzle », `FUN_0065e880`) ; le genre d'un coup de projectile (+0x468, le 19e
@@ -209,6 +241,15 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- La physique d'un projectile dans le monde (12.11, séance 1 ; d37cc93, dbacaa5, 4c7b7c4, fb6074b, a181812, d61ab96, 4777fc2, 949c743, 698e156) : `CVolProjectile` dans `src/objects/Projectiles.h`. Le vol
+  (`FUN_004494d0`, `FUN_004d1510`, `FUN_00469760`, `FUN_004d2160` : la gravité +0x230 × 0,008 par pas, le déplacement, l'unité de
+  +0x124 = le mètre par pas) ; l'air (`FUN_004698c0` : 0,99999 puissance le pas) ; le repos (`FUN_00469a20` : onze images sous
+  0,003 fois le pas) ; le rebond (la part du projectile dans `0046ca40` : le recul de 0,005, 0,75 et 0,75 contre un piéton,
+  l'élasticité +0x164 sinon) ; la paire du contact (`FUN_0046b720` : ni le tireur du jeu 0xd, ni un projectile bas et lent) ; le
+  contrôle (`FUN_004d2290`, `FUN_004d2090` : l'effet près du joueur, le choix du vol, l'échelle de la chute) ; la poussée (`FUN_004d1ec0`) ; le freinage et la mise au repos (`FUN_004cf350`, `FUN_0040df90`, `FUN_004cf190`) ; la fléchette qui se
+  plante et le frisbee dévié (`Planter`, `Devier`, `FUN_004150b0` ; la table des noms de modèles 0xa136e8, `FUN_0043f1e0`).
+  L'outil ne retire plus un projectile à son contact : `1_04` écrit vingt et un rebonds (les trois vitres à 17,52 s, 19,50 s et
+  21,52 s), `1_03` aux briques trois. Les sept missions et leurs temps sont inchangés.
 - Le haut du corps du lance-pierre qui repart, le choc, le contact, les explosions, la fin et les marques des projectiles (11.11,
   séance 1 ; 54c60aa, 4fe6762, 3ef9480, 61771cd, 857cb1a, c87c3d2, f5f9973, 74427aa) : le contrôleur d'actions qui se vide à la fin
   d'un nœud sans suite (`FUN_005f49a0`), la durée d'un nœud par ses seules pistes retenantes (`FUN_005f4230`) : `1_04` casse ses trois
