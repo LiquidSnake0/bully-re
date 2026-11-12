@@ -202,8 +202,7 @@ struct CVolProjectile {
 	// DAT_00bf4394 ; non suivi) ; l'effet +0xa8 de la fiche, une seule fois (le bit 0x1 de +0x22d), quand le projectile passe près
 	// du joueur (DAT_00c1aea8 ; PresDuJoueur) ; puis le contrôle selon l'entrée de la table (004d3360 la rend) et la fiche :
 	// - l'octet +0x15 de l'entrée (le mode de DAT_01b65c14 à la création) : un autre vol, non suivi (0x4d1960) ;
-	// - un +0x10 de l'entrée non nul (le +0xf0 de la fiche, une durée) : le contrôle de l'objet, puis la poussée (004d1ec0, non
-	//   recréée) ;
+	// - un +0x10 de l'entrée non nul (le +0xf0 de la fiche, une durée) : le contrôle de l'objet, puis la poussée (Pousser) ;
 	// - l'octet +0x124 de la fiche : le contrôle de l'objet, puis l'échelle de la chute (EchelleDeChute) ;
 	// - sinon : les déclencheurs où le projectile entre (006d7220 sur 0x20c7e98, non recréée), puis le contrôle de l'objet.
 	// Le contrôle de l'objet (celui de CObject, 004cf350, non recréé : le freinage d'un projectile dont l'octet +0x20a vaut 7) finit
@@ -229,6 +228,28 @@ struct CVolProjectile {
 	// double 0x912830 : fcomp, test ah,5, jp), et 1 sinon. Un projectile qui retombe à plus de 0,1 m par pas vole donc à une autre
 	// allure : c'est le +0x128 par lequel la visée (FUN_0065ecb0) refait la durée du vol.
 	static float EchelleDeChute(float vz, float echelleFiche) { return (double)vz < (double)-0.1f ? echelleFiche : 1.0f; }
+	// FUN_004d1ec0 (la poussée d'un projectile, lue à l'assembleur de 0x4d1ec0 à 0x4d208a ; pour une entrée dont le +0x10, la durée
+	// +0xf0 de la fiche, n'est pas nul, après le contrôle). Tant que maintenant (0xc1a9b4) est strictement avant la création (+8 de
+	// l'entrée) plus la durée (cmp, jae) : le délai est la durée fois le +0x100 de la fiche (0x85c6f0, supposée la conversion en
+	// entier qui tronque) ; la fraction f vaut 0 jusqu'au délai compris (jbe), puis (maintenant - création - délai) / (durée -
+	// délai), et rien ne se passe quand f atteint 1 (fcom, test ah,0x41, je ; fucom, test ah,0x44, jnp). La vitesse gagne
+	// ((v × pas) × +0xf8 de la fiche) × (1 - f), chaque produit arrondi en simple précision, et sa composante z gagne en plus
+	// (+0xfc de la fiche × pas) × (1 - f) : une poussée le long de la vitesse et une portance, qui s'éteignent sur la durée
+	// (supposé : le vol d'une fusée).
+	static bool Pousser(float *v, uint32 maintenant, uint32 creation, uint32 duree, float fractionDelai, float poussee, float portance, float pas) {
+		if(maintenant >= creation + duree) return false;
+		float f = 0.0f;
+		uint32 delai = (uint32)(long long)((double)fractionDelai * (double)duree);
+		if(maintenant > creation + delai){
+			f = (float)((double)(uint32)(maintenant - creation - delai) / (double)(int32)(duree - delai));
+			if(f >= 1.0f) return false;
+		}
+		float r = (float)(1.0 - (double)f), d[3];
+		for(int i = 0; i < 3; i++){ float a = v[i] * pas; a = a * poussee; d[i] = a * r; }
+		for(int i = 0; i < 3; i++) v[i] = v[i] + d[i];
+		v[2] = v[2] + (float)((double)portance * (double)pas * (1.0 - (double)f));
+		return true;
+	}
 	// La fonction 0046ca40 (le déplacement d'un CPhysical dans le monde, 2 884 octets, non recréée en entier ; ici sa part pour un projectile, +0xc4 non nul, lue à
 	// l'assembleur de 0x46cd98 à 0x46ce47 et de 0x46d0d7 à 0x46d22e ; le balayage qui trouve le contact n'est pas recréé). Au
 	// contact le plus proche, à la fraction f du déplacement de l'image, le projectile est reposé à l'ancienne position plus le

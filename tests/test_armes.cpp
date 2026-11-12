@@ -451,6 +451,16 @@ main(void)
 		VERIF(V::PresDuJoueur(pj, pq1) && !V::PresDuJoueur(pj, pq2) && V::PresDuJoueur(pj, pq3) && !V::PresDuJoueur(pj, pq4) && V::PresDuJoueur(pj, pj));
 		// L'échelle de la chute (FUN_004d2090) : le +0x128 de la fiche sous -0,1 m par pas, strictement ; 1 sinon.
 		VERIF(V::EchelleDeChute(-0.2f, 0.5f) == 0.5f && V::EchelleDeChute(-0.1f, 0.5f) == 1.0f && V::EchelleDeChute(0.3f, 0.5f) == 1.0f && V::EchelleDeChute(-0.1000001f, 0.5f) == 0.5f);
+		// La poussée (FUN_004d1ec0) : pleine jusqu'au délai, puis éteinte en ligne droite jusqu'à la fin de la durée.
+		float pv[3] = {1.0f, 0.0f, 2.0f};
+		VERIF(V::Pousser(pv, 1000, 1000, 2000, 0.5f, 0.25f, 0.5f, 2.0f) && pv[0] == 1.5f && pv[1] == 0.0f && pv[2] == 4.0f);
+		pv[0] = 1.0f; pv[1] = 0.0f; pv[2] = 2.0f;
+		VERIF(V::Pousser(pv, 2000, 1000, 2000, 0.5f, 0.25f, 0.5f, 2.0f) && pv[0] == 1.5f && pv[2] == 4.0f);   // au délai compris, f = 0
+		pv[0] = 1.0f; pv[1] = 0.0f; pv[2] = 2.0f;
+		VERIF(V::Pousser(pv, 2500, 1000, 2000, 0.5f, 0.25f, 0.5f, 2.0f) && pv[0] == 1.25f && pv[2] == 3.0f);  // f = 0,5
+		pv[0] = 1.0f; pv[1] = 0.0f; pv[2] = 2.0f;
+		VERIF(!V::Pousser(pv, 3000, 1000, 2000, 0.5f, 0.25f, 0.5f, 2.0f) && !V::Pousser(pv, 4000, 1000, 2000, 0.5f, 0.25f, 0.5f, 2.0f) && pv[0] == 1.0f && pv[2] == 2.0f);
+		VERIF(V::Pousser(pv, 2999, 1000, 2000, 0.5f, 0.25f, 0.5f, 2.0f) && pv[0] > 1.0f && pv[0] < 1.001f);
 		// La fin d'un projectile (FUN_004d45e0, FUN_004d3dc0).
 		CPlacesProjectiles f;
 		VERIF(f.Prendre(1000) == 0 && f.Vit(0, 1000, 0) && f.Vit(0, 999999, 0) && f.Vit(0, 1500, 500) && !f.Vit(0, 1501, 500) && !f.Vit(1, 1000, 0));

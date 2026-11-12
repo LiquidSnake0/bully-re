@@ -157,6 +157,7 @@ struct CTypeProjectile { bool lu = false; int32 vie = 0; float degatsMin = 0, de
                          bool o40 = false, o8e = false; int32 stimulus = 0, c4 = 0; std::string effet;
                          uint32 dureeExplosion = 0, delaiExplosion = 0; float croissance = 0; bool evincable = false;
                          std::string effetPres;   // +0xa8 (168), l'effet du passage près du joueur (FUN_004d2290)
+                         uint32 dureePoussee = 0; float poussee = 0, portance = 0, delaiPoussee = 0;   // +0xf0, +0xf8, +0xfc, +0x100 (FUN_004d1ec0)
                          float elasticite = CVolProjectile::kElasticite; };   // +0x5c (92), que FUN_004d4c40 pose en +0x164 du projectile
 static std::map<int32, CTypeProjectile> typesProjectiles;   // par modèle d'arme (le +0x80 de son type)
 static CTypeProjectile projectileDefaut;
@@ -176,6 +177,10 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 	a.vitesseMin = CActionBank::ButesReel(t, 96); a.vitesseMax = CActionBank::ButesReel(t, 100);
 	a.gravite = CActionBank::ButesReel(t, 128);
 	{ auto ip = chaines.find(168); if(ip != chaines.end()) a.effetPres = ip->second; }
+	// La poussée (FUN_004d1ec0) : sa durée (+0xf0 = 240, que la création copie au +0x10 de l'entrée : supposé, la création n'étant
+	// pas relue), le facteur le long de la vitesse (+0xf8), la portance (+0xfc) et la part de la durée avant l'extinction (+0x100).
+	a.dureePoussee = t.Mot(240); a.poussee = CActionBank::ButesReel(t, 248); a.portance = CActionBank::ButesReel(t, 252);
+	a.delaiPoussee = CActionBank::ButesReel(t, 256);
 	// L'élasticité du rebond (+0x5c) ; une fiche sans ce champ garde 0,75, la valeur du constructeur du projectile (supposé : la valeur
 	// par défaut de la fiche n'est pas lue).
 	if(t.Champ(92)) a.elasticite = CActionBank::ButesReel(t, 92);
@@ -214,6 +219,7 @@ struct CProjectileOutil { bool actif = false; int32 modele = -1; int tireur = -1
                           // Le repos (FUN_00469a20) : la moyenne de la vitesse (+0x13c), le compteur (l'octet +0x180), et le projectile
                           // que la méthode +0x1c(1) a posé (supposé : il ne bouge plus et ne touche plus rien).
                           float moyenne[3] = {0, 0, 0}; uint8 repos = 0; bool pose = false;
+                          bool pousse = false;     // la poussée de FUN_004d1ec0 a déjà été dite
                           bool presJoue = false;   // le bit 0x1 de +0x22d : l'effet du passage près du joueur est joué (FUN_004d2290)
                           float echelle = 1.0f; }; // l'échelle de temps +0x154 (1 par le constructeur de CPhysical ; FUN_004d2090)
 static CProjectileOutil projectiles[CPlacesProjectiles::kTaille];
@@ -6626,7 +6632,16 @@ AvancerProjectiles(float pas)
 				printf("%6.2f s  le projectile %d est au repos en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, place, q.pos.x, q.pos.y, q.pos.z);
 				continue;
 			}
-			if(CVolProjectile::Controle(false, false, 0, tq.dureeRefaite) == CVolProjectile::CONTROLE_CHUTE){
+			int controle = CVolProjectile::Controle(false, false, tq.dureePoussee, tq.dureeRefaite);
+			if(controle == CVolProjectile::CONTROLE_POUSSEE){
+				float v0[3] = {v[0], v[1], v[2]};
+				if(CVolProjectile::Pousser(v, maintenant, q.naissance, tq.dureePoussee, tq.delaiPoussee, tq.poussee, tq.portance, pas) && !q.pousse){
+					q.pousse = true;
+					printf("%6.2f s  le projectile %d est poussé pendant %u ms (facteur %g, portance %g, extinction après %g de la durée) : vitesse (%.3f, %.3f, %.3f) → (%.3f, %.3f, %.3f) m par pas\n",
+					       maintenant / 1000.0, place, tq.dureePoussee, tq.poussee, tq.portance, tq.delaiPoussee, v0[0], v0[1], v0[2], v[0], v[1], v[2]);
+				}
+			}
+			if(controle == CVolProjectile::CONTROLE_CHUTE){
 				float e = CVolProjectile::EchelleDeChute(v[2], tq.diviseur);
 				if(e != q.echelle) printf("%6.2f s  le projectile %d : échelle de temps %g (vitesse en z %.3f m par pas)\n", maintenant / 1000.0, place, e, v[2]);
 				q.echelle = e;
