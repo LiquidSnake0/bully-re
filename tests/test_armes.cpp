@@ -268,6 +268,53 @@ main(void)
 		r = CViseeTir::PointDevant(d, av, 20.0f, 2.0f, &v, 0.5f);
 		VERIF(r.x == 6.0f && r.y == 22.0f && r.z == 2.0f);
 	}
+	// La vitesse de départ (FUN_0065f050) : la durée du vol à plat, la parabole, les bornes de la fiche et la dispersion.
+	{
+		typedef CViseeTir V;
+		int n = 0; float T = 0.0f; int tires = 0;
+		auto zero = [&]{ tires++; return 0.5f; };
+		CVector d(0, 0, 0), c(8, 6, 3);
+		CVector v = V::VitesseDepart(d, c, 0.0f, nullptr, false, 0.0f, zero, &n, &T);   // sans fiche : 0,4 m par pas, G = −0,008, un essai
+		VERIF(n == 1 && T == 25.0f && tires == 0);                                       // 10 m à plat (le z n'y entre pas) / 0,4
+		VERIF(fabsf(v.x - 0.32f) < 1e-6f && fabsf(v.y - 0.24f) < 1e-6f && fabsf(v.z - (3.0f + 0.004f * 625.0f) / 25.0f) < 1e-6f);
+		V::FicheVitesse f; f.allureMin = 0.5f; f.allureMax = 1.0f; f.gravite = 0.5f;
+		v = V::VitesseDepart(d, c, 1.0f, &f, false, 0.0f, zero, &n, &T);                 // la charge pleine : 1 m par pas, T = 10
+		VERIF(n == 1 && T == 10.0f && fabsf(v.x - 0.8f) < 1e-6f && fabsf(v.z - (3.0f + 0.002f * 100.0f) / 10.0f) < 1e-6f && tires == 0);
+		f.allureMin = f.allureMax = 0.001f;                                              // sous 0,01 : 0,01
+		v = V::VitesseDepart(d, c, 0.0f, &f, false, 0.0f, zero, &n, &T);
+		VERIF(n == 1 && fabsf(T - 1000.0f) < 0.01f);
+		v = V::VitesseDepart(d, CVector(0, 0, 5), 0.0f, nullptr, false, 0.0f, zero, &n, &T);   // à la verticale : T = 0,01 au moins
+		VERIF(T == 0.01f && v.x == 0.0f && v.z > 499.0f);
+		// l'angle d'arrivée : à 1 m par pas sur 10 m, w.z = 0,32 − 0,04 = 0,28 (le tir monte encore) ; avec 10° demandés, T s'allonge
+		// de (T + 1) × 1,06 jusqu'à ce que la plongée y soit
+		f = V::FicheVitesse(); f.allureMin = f.allureMax = 1.0f; f.gravite = 0.5f; f.angle = 10.0f;
+		v = V::VitesseDepart(d, c, 0.0f, &f, false, 0.0f, zero, &n, &T);
+		VERIF(n > 1 && n < 20 && T > 10.0f);
+		{
+			float wz = v.z + T * -0.004f, plat = sqrtf(v.x * v.x + v.y * v.y);
+			VERIF(atanf(-wz / plat) * 180.0f / 3.1415927f >= 10.0f);
+			float T0 = 10.0f; for(int k = 1; k < n; k++){ T0 = (float)((double)T0 + 1.0); T0 = (float)((double)T0 * 1.059999942779541); }
+			VERIF(T == T0);
+		}
+		f.angle = 89.99f; f.arriveeMin = 5.0f;                                           // jamais bon : le vingtième essai est gardé
+		v = V::VitesseDepart(d, c, 0.0f, &f, false, 0.0f, zero, &n, &T);
+		VERIF(n == 20);
+		f = V::FicheVitesse(); f.allureMin = f.allureMax = 1.0f; f.monteeMax = 0.3f;     // v.z = 0,3 + 0,02 = 0,32 dépasse +0x6c
+		v = V::VitesseDepart(d, c, 0.0f, &f, false, 0.0f, zero, &n, &T);
+		VERIF(n > 1 && v.z <= 0.3f);
+		f = V::FicheVitesse(); f.allureMin = f.allureMax = 1.0f; f.monteeMin = 0.1f;     // v.z sous +0x68 : le vol s'allonge
+		v = V::VitesseDepart(d, CVector(8, 6, 0), 0.0f, &f, false, 0.0f, zero, &n, &T);   // à plat : v.z = 0,004 T, 0,04 à T = 10
+		VERIF(n == 9 && v.z >= 0.1f && T > 25.0f && tires == 0);
+		// la dispersion : trois tirages, le premier en z, le troisième en x ; le joueur × (1 − la précision)
+		f = V::FicheVitesse(); f.allureMin = f.allureMax = 1.0f; f.gravite = 0.0f; f.dispersion = 0.1f;
+		float suite[3] = {1.0f, -1.0f, 0.5f}; int k = 0;
+		auto tir = [&]{ return suite[k++]; };
+		v = V::VitesseDepart(d, c, 0.0f, &f, false, 0.0f, tir, &n, &T);
+		VERIF(k == 3 && fabsf(v.x - 0.85f) < 1e-6f && fabsf(v.y - 0.5f) < 1e-6f && fabsf(v.z - 0.4f) < 1e-6f);
+		k = 0;
+		v = V::VitesseDepart(d, c, 0.0f, &f, true, 0.75f, tir, &n, &T);
+		VERIF(k == 3 && fabsf(v.x - 0.8125f) < 1e-6f && fabsf(v.y - 0.575f) < 1e-6f && fabsf(v.z - 0.325f) < 1e-6f);
+	}
 	// L'imprécision (FUN_0065eb40) et la précision du verrou (FUN_004d5cd0).
 	{
 		typedef CViseeTir V;

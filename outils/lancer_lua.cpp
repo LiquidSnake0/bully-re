@@ -162,7 +162,12 @@ struct CTypeProjectile { bool lu = false; int32 vie = 0; float degatsMin = 0, de
                          std::string effetPres;   // +0xa8 (168), l'effet du passage près du joueur (FUN_004d2290)
                          bool o7c = false;        // +0x7c (124) : l'octet +0x20a du projectile vaut 7 au lieu de 6 (FUN_004d4c40, FUN_004cf350)
                          uint32 dureePoussee = 0; float poussee = 0, portance = 0, delaiPoussee = 0;   // +0xf0, +0xf8, +0xfc, +0x100 (FUN_004d1ec0)
-                         float elasticite = CVolProjectile::kElasticite; };   // +0x5c (92), que FUN_004d4c40 pose en +0x164 du projectile
+                         float elasticite = CVolProjectile::kElasticite;      // +0x5c (92), que FUN_004d4c40 pose en +0x164 du projectile
+                         // Les bornes de la vitesse de départ (FUN_0065f050, CViseeTir::VitesseDepart) : v.z au départ (+0x68, +0x6c), w.z
+                         // à l'arrivée (+0x70, +0x74), l'angle de la plongée (+0x78) et la dispersion (+0x120). Une fiche sans le champ
+                         // garde -1, la borne sans effet, et une dispersion nulle (supposé : les valeurs par défaut de la fiche ne sont
+                         // pas lues).
+                         float monteeMin = -1.0f, monteeMax = -1.0f, arriveeMin = -1.0f, arriveeMax = -1.0f, angleArrivee = -1.0f, dispersion = 0.0f; };
 static std::map<int32, CTypeProjectile> typesProjectiles;   // par modèle d'arme (le +0x80 de son type)
 static CTypeProjectile projectileDefaut;
 static const CTypeProjectile &
@@ -180,6 +185,12 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 	a.degatsMin = CActionBank::ButesReel(t, 76); a.degatsMax = CActionBank::ButesReel(t, 80);
 	a.vitesseMin = CActionBank::ButesReel(t, 96); a.vitesseMax = CActionBank::ButesReel(t, 100);
 	a.gravite = CActionBank::ButesReel(t, 128);
+	if(t.Champ(104)) a.monteeMin = CActionBank::ButesReel(t, 104);
+	if(t.Champ(108)) a.monteeMax = CActionBank::ButesReel(t, 108);
+	if(t.Champ(112)) a.arriveeMin = CActionBank::ButesReel(t, 112);
+	if(t.Champ(116)) a.arriveeMax = CActionBank::ButesReel(t, 116);
+	if(t.Champ(120)) a.angleArrivee = CActionBank::ButesReel(t, 120);
+	if(t.Champ(288)) a.dispersion = CActionBank::ButesReel(t, 288);
 	{ auto ip = chaines.find(168); if(ip != chaines.end()) a.effetPres = ip->second; }
 	{ const CActionAttribut *o = t.Champ(124); a.o7c = o && o->valeur[0]; }
 	// La poussée (FUN_004d1ec0) : sa durée (+0xf0 = 240, que la création copie au +0x10 de l'entrée : supposé, la création n'étant
@@ -6379,13 +6390,21 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	}
 	float vitesse = tp.vitesseMin + charge * (tp.vitesseMax - tp.vitesseMin);
 	if(vitesse < 0.01f) vitesse = 0.01f;
-	float dx = cible.x - depart.x, dy = cible.y - depart.y, dz = cible.z - depart.z;
-	float T = sqrtf(dx * dx + dy * dy + dz * dz) / vitesse;
-	if(T <= 0.01f) T = 0.01f;
-	float g = tp.gravite * -0.008f;
+	// La vitesse de départ (FUN_0065f050, CViseeTir::VitesseDepart) : la durée du vol est la distance à plat sur l'allure, allongée
+	// tant que les bornes de la fiche ne sont pas tenues. La dispersion (+0x120) : l'outil ne rejoue pas le hasard du moteur, les
+	// trois tirages valent leur moyenne, 0 (supposé, comme pour l'imprécision de FUN_0065eb40).
+	CViseeTir::FicheVitesse fv;
+	fv.allureMin = tp.vitesseMin; fv.allureMax = tp.vitesseMax; fv.gravite = tp.gravite;
+	fv.monteeMin = tp.monteeMin; fv.monteeMax = tp.monteeMax; fv.arriveeMin = tp.arriveeMin; fv.arriveeMax = tp.arriveeMax;
+	fv.angle = tp.angleArrivee; fv.dispersion = tp.dispersion;
+	int essaisVol = 0; float dureeVol = 0.0f;
+	CVector v0 = CViseeTir::VitesseDepart(depart, cible, charge, tp.lu ? &fv : nullptr, joueur, 0.0f, []{ return 0.0f; }, &essaisVol, &dureeVol);
+	if(essaisVol > 1)
+		printf("%6.2f s  le tir du piéton %d allonge son vol : %d essais, %.2f pas (bornes de la fiche : montée %.3f à %.3f, arrivée %.3f à %.3f, angle %.1f)\n",
+		       maintenant / 1000.0, ped, essaisVol, dureeVol, tp.monteeMin, tp.monteeMax, tp.arriveeMin, tp.arriveeMax, tp.angleArrivee);
 	CProjectileOutil q;
 	q.actif = true; q.modele = munition; q.tireur = ped; q.pos = depart; q.gravite = tp.gravite;   // FUN_004d4c40 : +0x80 de la fiche → +0x230
-	q.vitesse = CVector(dx / T, dy / T, (dz - 0.5f * g * T * T) / T);
+	q.vitesse = v0;
 	q.degats = CChargeArme::Degats(true, tp.degatsMin, tp.degatsMax, charge, degatsPiste, pietons.StatLue(ped, 0x1f, 100));
 	// La vie (CPlacesProjectiles::Vie, FUN_004d4c40 : la vie du tireur, +0x1cc0 × 1000, ou celle de la fiche, moins le temps depuis
 	// l'allumage de la mèche de l'objet arme, +0x140, que l'outil n'allume pas ; 1 pour 0 ; gardée en +0xc de l'entrée) ; 0, un

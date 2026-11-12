@@ -151,6 +151,69 @@ struct CViseeTir {
 		if(joueur) p = bonus + p;
 		return 1.0f <= p ? 1.0f : p;
 	}
+	// FUN_0065f050(départ, cible, charge, fiche, tireur) (lue à l'assembleur de 0x65f050 à 0x65f4c4) : la vitesse de départ d'un
+	// projectile, en mètres par pas. La gravité G = le +0x80 de la fiche (1 sans fiche) × −0,008 (le double 0x912870) ; l'allure a =
+	// +0x60 + charge × (+0x64 − +0x60) (0,4, _DAT_0090048c, sans fiche), 0,01 (_DAT_0090054c) sous 0,01 (le double 0x900d30) ; la durée
+	// du vol T = la distance à plat du départ à la cible (la racine de |x² + y² + 0|, FUN_0085c4d0 : le z n'y entre pas) / a, 0,01
+	// au moins. Puis jusqu'à vingt essais : v = (cible − (0, 0, ½ G T²) − départ) × (1 / T) (½ : le double 0x8ff1f8) ; la vitesse
+	// à l'arrivée w = v + (0, 0, G T) (FUN_00412850 ; le double nul 0x9009a0 en x et en y) et l'angle de sa plongée, atan(−w.z / la
+	// racine de |w.x² + w.y²|) (l'arc tangente du CRT, supposé) × 180 / π (les doubles 0x900158 et 0x900160). Sans fiche,
+	// v est rendue. L'essai est bon quand v.z tient entre +0x68 et +0x6c, w.z entre +0x70 et +0x74 et que l'angle atteint +0x78, une
+	// borne à −1 (_DAT_009009ac) étant sans effet ; sinon T devient (T + 1) × 1,06 (les doubles 0x8ff1d8 et 0x93c9a0) et l'essai
+	// recommence ; le vingtième est gardé tel quel. Enfin la dispersion +0x120 de la fiche, si elle n'est pas nulle : trois tirages
+	// de rand (FUN_0085c6ca ; Tirage), le premier en z, le deuxième en y, le troisième en x, × +0x120, × (1 − la précision du
+	// verrou, FUN_004d5cd0) pour le joueur (le +0x1310 du tireur à 0xd), ajoutés à v. `tirer` rend un tirage (Tirage) ; il n'est
+	// appelé qu'avec une dispersion.
+	struct FicheVitesse {
+		float allureMin = 0.4f, allureMax = 0.4f;          // +0x60, +0x64
+		float monteeMin = -1.0f, monteeMax = -1.0f;        // +0x68, +0x6c : les bornes de v.z au départ
+		float arriveeMin = -1.0f, arriveeMax = -1.0f;      // +0x70, +0x74 : les bornes de w.z à l'arrivée
+		float angle = -1.0f;                               // +0x78 : la plongée à l'arrivée, en degrés, au moins
+		float gravite = 1.0f;                              // +0x80
+		float dispersion = 0.0f;                           // +0x120
+	};
+	template<class R> static CVector
+	VitesseDepart(const CVector &depart, const CVector &cible, float charge, const FicheVitesse *f, bool joueur, float precision,
+	              R &&tirer, int *essais = nullptr, float *duree = nullptr)
+	{
+		float G = (float)((double)(f ? f->gravite : 1.0f) * -0.00800000037997961);
+		float a = 0.4f;
+		if(f) a = f->allureMin + charge * (f->allureMax - f->allureMin);
+		if((double)a < 0.009999999776482582) a = 0.01f;
+		float ex = depart.x - cible.x, ey = depart.y - cible.y;
+		float T = sqrtf(fabsf(ex * ex + ey * ey + 0.0f)) / a;
+		if(!(T > 0.01f)) T = 0.01f;
+		float demi = (float)(0.5 * (double)G);
+		CVector v(0.0f, 0.0f, 0.0f);
+		int i = 0;
+		for(;;){
+			float chute = demi * T; chute = chute * T;
+			float inv = 1.0f / T;
+			v.x = inv * (cible.x - depart.x); v.y = (cible.y - depart.y) * inv; v.z = inv * (cible.z - chute - depart.z);
+			float wx = v.x, wy = v.y, wz = v.z + T * G;
+			float pente = -wz / sqrtf(fabsf(wx * wx + wy * wy));
+			float angle = (float)((double)atanf(pente) * 180.0 / 3.1415927410125732);
+			if(essais) *essais = i + 1;
+			if(duree) *duree = T;
+			if(f == nullptr) return v;
+			bool bon = true;
+			if(f->monteeMin != -1.0f && v.z < f->monteeMin) bon = false;
+			if(f->monteeMax != -1.0f && f->monteeMax < v.z) bon = false;
+			if(f->arriveeMin != -1.0f && wz < f->arriveeMin) bon = false;
+			if(f->arriveeMax != -1.0f && f->arriveeMax < wz) bon = false;
+			if((f->angle == -1.0f || f->angle <= angle) && bon) break;
+			if(i == 0x13) break;
+			i++;
+			T = (float)((double)T + 1.0);
+			T = (float)((double)T * 1.059999942779541);
+		}
+		if(f->dispersion != 0.0f){
+			float s = f->dispersion, r1 = tirer(), r2 = tirer(), r3 = tirer();
+			if(joueur) s = (1.0f - precision) * s;
+			v.x = v.x + r3 * s; v.y = v.y + r2 * s; v.z = r1 * s + v.z;
+		}
+		return v;
+	}
 	// FUN_0065ea50(depart, portée) (ecx = la piste WeaponFire ; lu à l'assembleur de 0x65ea50 à 0x65eb39) : le point devant le tireur
 	// sans cible, hors d'une caméra de visée (FUN_00662a40, de 0x662bc5 à 0x662c4f : la portée de l'objet arme, +0x124 + la charge +0x44
 	// × (+0x120 − +0x124), 0,01 au moins, _DAT_0090054c). Le départ plus la portée × l'avant du tireur (FUN_00415350, ecx = le piéton
