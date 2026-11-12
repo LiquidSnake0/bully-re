@@ -87,5 +87,24 @@ main(void)
 	}
 
 	printf("test_marche : %s\n", g_ko ? "ECHEC" : "ok");
+	// Le trajet d'un point : le premier volume croisé, la fraction du trajet et la normale tournée contre le sens du trajet.
+	{
+		CMondeCollision t;
+		Pave(t, -10, -10, -1, 10, 10, 0);            // sol, dessus à z = 0
+		Pave(t, 6, -10, 0, 7, 10, 3);                // mur à x = 6
+		t.AjouterSphere(CVector(0, 6, 0), 1.0f);     // un rocher
+		for(int tour = 0; tour < 2; tour++){
+			float f; CVector n;
+			Verifier(t.Trajet(CVector(0, 0, 2), CVector(0, 0, -2), &f, &n) && fabsf(f - 0.5f) < 1e-5f && fabsf(n.z - 1.0f) < 1e-5f, "le trajet qui tombe touche le sol à mi-chemin, normale vers le haut");
+			Verifier(t.Trajet(CVector(1, 0, 1), CVector(3, 0, -1), &f, &n) && fabsf(f - 0.5f) < 1e-5f && fabsf(n.z - 1.0f) < 1e-5f && fabsf(n.x) < 1e-5f, "le trajet en biais touche le sol, la normale reste celle du sol");
+			Verifier(t.Trajet(CVector(5, 0, 1), CVector(9, 0, 1), &f, &n) && fabsf(f - 0.25f) < 1e-5f && fabsf(n.x + 1.0f) < 1e-5f, "le trajet vers +x touche la première face du mur, normale vers -x");
+			Verifier(t.Trajet(CVector(9, 0, 1), CVector(5, 0, 1), &f, &n) && fabsf(f - 0.5f) < 1e-5f && fabsf(n.x - 1.0f) < 1e-5f, "le trajet vers -x touche l'autre face, normale vers +x");
+			Verifier(!t.Trajet(CVector(0, 0, 2), CVector(5, 0, 2), &f, &n), "rien de croisé au-dessus du sol");
+			Verifier(!t.Trajet(CVector(0, 0, 2), CVector(0, 0, 0.5f), &f, &n), "le trajet qui s'arrête avant le sol ne le touche pas");
+			Verifier(t.Trajet(CVector(0, 6, 3), CVector(0, 6, 0.5f), &f, &n) && fabsf(f - 0.8f) < 1e-5f && fabsf(n.z - 1.0f) < 1e-5f, "le trajet entre dans le rocher par son sommet");
+			Verifier(!t.Trajet(CVector(0, 6, 0.5f), CVector(0, 6, 0.2f), &f, &n), "un départ dans le rocher ne compte pas");
+			t.Indexer(4.0f);                             // le second tour avec la grille : mêmes réponses
+		}
+	}
 	return g_ko ? 1 : 0;
 }

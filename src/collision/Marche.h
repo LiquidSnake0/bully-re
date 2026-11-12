@@ -29,6 +29,15 @@ struct CMondeCollision {
 	// Repousse une sphère hors des volumes, seulement à l'horizontale (on ne se
 	// fait pas soulever par un mur) ; rend le nombre de contacts.
 	int32 Repousser(CVector &centre, float rayon) const;
+	// Premier volume que croise le trajet de a à b : la fraction du trajet au
+	// point d'entrée (entre 0 et 1) et la normale de la surface, tournée contre
+	// le sens du trajet. Les triangles se croisent des deux côtés ; une sphère
+	// par son entrée seulement (un départ dedans ne compte pas). Rend faux si
+	// rien n'est croisé. `volume` reçoit le rang du triangle touché (dans
+	// l'ordre des ajouts, une boîte en comptant douze), ou -1 - le rang de la
+	// sphère. C'est le trajet d'un point : le balayage d'un volume par
+	// bully.exe n'est pas retrouvé.
+	bool Trajet(const CVector &a, const CVector &b, float *fraction, CVector *normale, int32 *volume = nullptr) const;
 
 	// Grille en plan (x, y) des triangles : chaque case liste ceux dont la
 	// boîte la touche. Sol et Repousser ne testent plus que les triangles des
