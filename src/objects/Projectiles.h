@@ -289,15 +289,46 @@ struct CVolProjectile {
 	// le coefficient tangentiel est _DAT_00a24040 et le normal _DAT_00a2403c, 0,75 tous les deux ; sinon les deux sont l'élasticité
 	// +0x164 du projectile (le +0x5c de sa fiche). La vitesse se partage en sa part le long de la normale, vn = n × (v·n) (le produit
 	// scalaire arrondi en simple précision : vz nz + (vy ny + vx nx)), et le reste vt = v − vn ; la nouvelle vitesse est
-	// tangentiel × vt − normal × vn. Deux modèles ont leur cas à part, non suivis : celui de DAT_00bf44dc ne rebondit pas (vitesse à
-	// 0, avancé de 0,1 le long de sa direction, le bit 0x2 de +0x1bc baissé : il se plante, supposé) et celui de DAT_00bf439c reçoit en
-	// plus deux poussées de 0,03 sur une normale au z sous 0,7 en valeur absolue.
+	// tangentiel × vt − normal × vn. Deux modèles ont leur cas à part (Planter, Devier).
 	static constexpr float kTangentielPieton = 0.75f, kNormalPieton = 0.75f;
-	static void Rebondir(float *v, const float *normale, bool pieton, bool aPlat, float elasticite) {
-		float n[3] = {normale[0], normale[1], normale[2]};
+	static void NormaleDuContact(const float *normale, bool aPlat, float *n) {
+		n[0] = normale[0]; n[1] = normale[1]; n[2] = normale[2];
 		if(aPlat && 0.0f < n[2]) n[2] = 0.0f;
 		float l = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
 		if(l > 0.0f){ n[0] /= l; n[1] /= l; n[2] /= l; }
+	}
+	// La fléchette (de 0x46cf6f à 0x46d0d2 ; le modèle de DAT_00bf44dc, que la table des noms de modèles 0xa136e8, des paires nom
+	// puis adresse lues par 0043f1e0, donne à « dart ») ne rebondit pas : sa vitesse tombe à 0 et sa position avance de 0,1 (le
+	// double 0x900128) le long de la direction qu'avait cette vitesse (normalisée par 00414cc0, supposée), chaque composante
+	// arrondie en simple précision ; puis le bit 0x2 de +0x1bc est baissé (elle ne pèse plus), +0x28 passe à 1 (le repos d'un objet,
+	// comme Reposer l'écrit) et +0x20 à 0 : elle reste plantée. La suite (un cap ramené entre -π et π puis posé, et deux appels sur
+	// sa position et la normale, 007014f0 et 00701e70) n'est pas suivie.
+	static void Planter(float *pos, float *v) {
+		float d[3] = {v[0], v[1], v[2]};
+		v[0] = v[1] = v[2] = 0.0f;
+		float l = sqrtf(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+		if(l > 0.0f){ d[0] /= l; d[1] /= l; d[2] /= l; }
+		for(int i = 0; i < 3; i++){ d[i] = (float)((double)d[i] * 0.1); pos[i] = pos[i] + d[i]; }
+	}
+	// Le frisbee (de 0x46d231 à 0x46d2f6 ; le modèle de DAT_00bf439c, « Wfrisbee » dans la même table) reçoit après son rebond deux
+	// poussées quand le z de la normale du contact est strictement sous 0,7 en valeur absolue (_DAT_00a24038 : fcom, test ah,0x41,
+	// jne), toutes deux à l'échelle k = (0,7 - |nz|) / 0,7 : la normale fois 0,03 (_DAT_00a24034) fois k, puis (0, 0, 1) fois -0,03
+	// (_DAT_00a24030) fois k (FUN_00412200 deux fois, puis FUN_004150b0, lue de 0x4150b0 à 0x4150cf : la somme dans le premier
+	// vecteur). Contre un mur il est donc repoussé du mur et rabattu vers le bas, d'autant plus que le mur est droit.
+	static bool Devier(float *v, const float *normale, bool aPlat) {
+		float n[3];
+		NormaleDuContact(normale, aPlat, n);
+		float a = fabsf(n[2]);
+		if(0.7f <= a) return false;
+		float k = (0.7f - a) / 0.7f;
+		for(int i = 0; i < 3; i++){ float t = n[i] * 0.03f; v[i] = v[i] + t * k; }
+		float haut[3] = {0.0f, 0.0f, 1.0f};
+		for(int i = 0; i < 3; i++){ float t = haut[i] * -0.03f; v[i] = v[i] + t * k; }
+		return true;
+	}
+	static void Rebondir(float *v, const float *normale, bool pieton, bool aPlat, float elasticite) {
+		float n[3];
+		NormaleDuContact(normale, aPlat, n);
 		float tangentiel = pieton ? kTangentielPieton : elasticite;
 		float normal = -(pieton ? kNormalPieton : elasticite);
 		float p = v[2] * n[2] + (v[1] * n[1] + v[0] * n[0]);

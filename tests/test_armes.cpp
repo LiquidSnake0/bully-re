@@ -479,6 +479,19 @@ main(void)
 		VERIF(r28 == 1 && rb0 == 5 && rcpt == 10);
 		V::Reposer(0, true, &r28, &rb0, &rcpt);
 		VERIF(r28 == 1 && rb0 == 0 && rcpt == 0);
+		// La fléchette se plante : la vitesse à 0, la position avancée de 0,1 le long de la direction du vol.
+		float dp[3] = {1.0f, 2.0f, 3.0f}, dv[3] = {0.0f, 3.0f, 4.0f};
+		V::Planter(dp, dv);
+		VERIF(dv[0] == 0.0f && dv[1] == 0.0f && dv[2] == 0.0f && dp[0] == 1.0f && fabsf(dp[1] - 2.06f) < 1e-6f && fabsf(dp[2] - 3.08f) < 1e-6f);
+		// Le frisbee dévié : contre un mur droit, 0,03 le long de la normale et 0,03 vers le bas ; rien sur un sol ni au-dessus de 0,7.
+		float fn[3] = {2.0f, 0.0f, 0.0f}, fz[3] = {0.0f, 0.0f, 1.0f}, fp[3] = {0.6f, 0.0f, 0.8f}, fq[3] = {0.8f, 0.0f, 0.6f}, fr[3] = {0.0f, 0.0f, 0.0f};
+		VERIF(V::Devier(fr, fn, false) && fabsf(fr[0] - 0.03f) < 1e-8f && fr[1] == 0.0f && fabsf(fr[2] + 0.03f) < 1e-8f);
+		fr[0] = fr[1] = fr[2] = 0.0f;
+		VERIF(!V::Devier(fr, fz, false) && !V::Devier(fr, fp, false) && fr[0] == 0.0f && fr[2] == 0.0f);
+		VERIF(V::Devier(fr, fq, false) && fabsf(fr[0] - 0.8f * 0.03f / 7.0f) < 1e-7f && fabsf(fr[2] - (0.6f * 0.03f - 0.03f) / 7.0f) < 1e-7f);
+		// Un sol sous une entité à plat (+0xf0) devient une normale nulle : la poussée vers le bas seule, entière.
+		fr[0] = fr[1] = fr[2] = 0.0f;
+		VERIF(V::Devier(fr, fz, true) && fr[0] == 0.0f && fabsf(fr[2] + 0.03f) < 1e-8f);
 		// La fin d'un projectile (FUN_004d45e0, FUN_004d3dc0).
 		CPlacesProjectiles f;
 		VERIF(f.Prendre(1000) == 0 && f.Vit(0, 1000, 0) && f.Vit(0, 999999, 0) && f.Vit(0, 1500, 500) && !f.Vit(0, 1501, 500) && !f.Vit(1, 1000, 0));

@@ -6725,7 +6725,21 @@ AvancerProjectiles(float pas)
 			q.pos = CVector(avant.x + d.x * f, avant.y + d.y * f, avant.z + d.z * f);
 			float n[3] = {e0.x - centre.x, e0.y - centre.y, e0.z - centre.z}, v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z};
 			float e = TypeProjectile(q.modele).elasticite;
+			// Deux modèles à part : la fléchette (« dart », DAT_00bf44dc) se plante au lieu de rebondir, et le frisbee (« Wfrisbee »,
+			// DAT_00bf439c) est dévié après son rebond (FUN_0046ca40, de 0x46cf6f à 0x46d0d2 et de 0x46d231 à 0x46d2f6). La table
+			// des noms de modèles (0xa136e8, FUN_0043f1e0 qui la lit, FUN_0043f220 qui écrit l'indice) donne aussi « WFtBomb » à
+			// DAT_00bf4394, le modèle au son de 8 000 de FUN_004d2290.
+			if(q.modele >= 0 && q.modele == modeles.Index("dart")){
+				float pq[3] = {q.pos.x, q.pos.y, q.pos.z};
+				CVolProjectile::Planter(pq, v);
+				q.pos = CVector(pq[0], pq[1], pq[2]); q.vitesse = CVector(0.0f, 0.0f, 0.0f); q.pose = true;
+				printf("%6.2f s  le projectile %d (une fléchette) se plante dans %s %d en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, place,
+				       touche >= 0 ? "le piéton" : "l'objet", touche >= 0 ? touche : objet, q.pos.x, q.pos.y, q.pos.z);
+				continue;
+			}
 			CVolProjectile::Rebondir(v, n, touche >= 0, false, e);
+			if(q.modele >= 0 && q.modele == modeles.Index("Wfrisbee") && CVolProjectile::Devier(v, n, false))
+				printf("%6.2f s  le projectile %d (un frisbee) est dévié par le contact\n", maintenant / 1000.0, place);
 			printf("%6.2f s  le projectile %d rebondit sur %s %d : vitesse (%.3f, %.3f, %.3f) → (%.3f, %.3f, %.3f) m par pas, coefficient %g\n", maintenant / 1000.0, place,
 			       touche >= 0 ? "le piéton" : "l'objet", touche >= 0 ? touche : objet, q.vitesse.x, q.vitesse.y, q.vitesse.z, v[0], v[1], v[2], touche >= 0 ? CVolProjectile::kNormalPieton : e);
 			q.vitesse = CVector(v[0], v[1], v[2]);
