@@ -204,7 +204,10 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 struct CProjectileOutil { bool actif = false; int32 modele = -1; int tireur = -1; CVector pos, vitesse; float gravite = 0, degats = 0;
                           uint32 naissance = 0, vie = 0;
                           uint32 impacts = 0;     // le compteur d'impacts, les trois bits bas de +0x23c (FUN_004d3860)
-                          uint8 contacts = 0; };  // les contacts comptés par FUN_0046ad90 (l'octet +0x22c)
+                          uint8 contacts = 0;     // les contacts comptés par FUN_0046ad90 (l'octet +0x22c)
+                          // Le repos (FUN_00469a20) : la moyenne de la vitesse (+0x13c), le compteur (l'octet +0x180), et le projectile
+                          // que la méthode +0x1c(1) a posé (supposé : il ne bouge plus et ne touche plus rien).
+                          float moyenne[3] = {0, 0, 0}; uint8 repos = 0; bool pose = false; };
 static CProjectileOutil projectiles[CPlacesProjectiles::kTaille];
 static CPlacesProjectiles placesProjectiles;
 // Les marques d'impact (les decals ; CPlacesMarques : la table 0xcf1f60, FUN_00560f70 qui pose, FUN_00560f10 qui compte celles d'un
@@ -6583,16 +6586,22 @@ AvancerProjectiles(float pas)
 			q.actif = false;
 			continue;
 		}
+		if(q.pose) continue;
 		CVector avant = q.pos;
 		// Le déplacement (FUN_00469760, que le projectile reçoit par sa méthode +0x94) : la gravité d'abord (FUN_004d1510, la
 		// méthode +0x90 : +0x230 × 0,008 par pas, FUN_004494d0), puis la position ; un projectile de l'outil pèse toujours (le mode
 		// de DAT_01b65c14 n'est pas suivi).
-		// Avant lui, la résistance de l'air (FUN_004698c0, à la fin du contrôle de l'image ; supposé : le contrôle passe avant le
-		// déplacement, comme dans les moteurs de la même famille) : 0,99999 puissance le pas, la valeur du constructeur. L'outil ne
-		// suit pas la vitesse angulaire du projectile.
+		// Avant lui, le contrôle de l'image (FUN_00469a20 ; supposé : le contrôle passe avant le déplacement, comme dans les moteurs
+		// de la même famille) : la mesure du repos (onze images de suite sous 0,003 m par pas en moyenne : le projectile est posé),
+		// sinon la résistance de l'air (FUN_004698c0 : 0,99999 puissance le pas, la valeur du constructeur). L'outil ne suit pas la
+		// vitesse angulaire du projectile (nulle ici), ni +0x34 et +0xb0 (nuls, supposé).
 		{
-			float pt[3] = {q.pos.x, q.pos.y, q.pos.z}, v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z}, w[3] = {0.0f, 0.0f, 0.0f};
-			CVolProjectile::Air(v, w, CVolProjectile::kAir, pas);
+			float pt[3] = {q.pos.x, q.pos.y, q.pos.z}, v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z}, w[3] = {0.0f, 0.0f, 0.0f}, mw[3] = {0.0f, 0.0f, 0.0f};
+			if(CVolProjectile::Controler(v, w, q.moyenne, mw, &q.repos, true, false, CVolProjectile::kAir, pas)){
+				q.vitesse = CVector(0.0f, 0.0f, 0.0f); q.pose = true;
+				printf("%6.2f s  le projectile %d est au repos en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, place, q.pos.x, q.pos.y, q.pos.z);
+				continue;
+			}
 			CVolProjectile::Deplacer(pt, v, false, true, CVolProjectile::Gravite(q.gravite), pas);
 			q.pos = CVector(pt[0], pt[1], pt[2]); q.vitesse = CVector(v[0], v[1], v[2]);
 		}

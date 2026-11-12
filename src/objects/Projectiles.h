@@ -163,6 +163,40 @@ struct CVolProjectile {
 		for(int i = 0; i < 3; i++) v[i] = v[i] * f;
 		for(int i = 0; i < 3; i++) w[i] = (float)((double)w[i] * 0.99);
 	}
+	// FUN_00469a20 (le contrôle d'un CPhysical à chaque image, sa méthode +0x30, lue à l'assembleur de 0x469a20 à 0x469c5c ; celui
+	// d'un objet y arrive en dernier). Elle remet d'abord à 0 +0x1a0, +0x2c, +0x38, +0x40, +0x7c, le mot +0x1b4, +0x1a4, et le bit
+	// 0x10 de +0x1bc hors d'un piéton (le genre, +0x108 & 7, autre que 3) ; avec +0x108 & 0xf8 égal à 0x10 elle rend la main là ;
+	// sinon l'octet +0x181 et +0x4c passent à 0. La mesure du repos ne se fait que sans +0x34 et pour un objet (genre 4) ou un piéton
+	// sans +0x30 (`mesure`) : les moyennes +0x13c (de la vitesse) et +0x148 (de la vitesse angulaire) deviennent la moitié (le double
+	// 0x8ff1f8) de leur somme avec la vitesse du moment (0x412850, supposée la somme de deux vecteurs) ; le seuil est le pas fois
+	// 0,003 (le double 0x90c700), au carré. Une moyenne dont le carré de la norme atteint le seuil remet le compteur +0x180 à 0
+	// (fcompp, test ah,0x41, jne : l'égalité aussi). Sous le seuil pour les deux, et sans +0xb0 (`tenu`), le compteur monte : au-delà
+	// de 10, il reste à 10, la méthode +0x1c(1) met l'entité au repos, les deux vitesses tombent à 0 et la fonction rend la main
+	// (rend vrai ici) sans l'air. Dans tous les autres cas elle finit par la résistance de l'air (un saut vers Air).
+	static bool Controler(float *v, float *w, float *mv, float *mw, unsigned char *compte, bool mesure, bool tenu, float air, float pas) {
+		if(mesure){
+			for(int i = 0; i < 3; i++) mv[i] = (float)((double)(float)(mv[i] + v[i]) * 0.5);
+			for(int i = 0; i < 3; i++) mw[i] = (float)((double)(float)(mw[i] + w[i]) * 0.5);
+			float s = (float)((double)pas * 0.003);
+			float n2 = mv[1] * mv[1] + mv[0] * mv[0] + mv[2] * mv[2];
+			float s2 = s * s;
+			if(s2 <= n2) *compte = 0;
+			else{
+				n2 = mw[1] * mw[1] + mw[0] * mw[0] + mw[2] * mw[2];
+				if(s2 <= n2) *compte = 0;
+				else if(!tenu){
+					*compte = (unsigned char)(*compte + 1);
+					if(*compte > 10){
+						*compte = 10;
+						v[0] = v[1] = v[2] = 0.0f; w[0] = w[1] = w[2] = 0.0f;
+						return true;
+					}
+				}
+			}
+		}
+		Air(v, w, air, pas);
+		return false;
+	}
 };
 
 // Le choc d'un projectile (FUN_004d3860, lue à l'assembleur de 0x4d3860 à 0x4d3c14 ; appelée par le contact du CPhysical, FUN_0046ad90,

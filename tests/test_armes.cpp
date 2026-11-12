@@ -391,6 +391,28 @@ main(void)
 		av[0] = 0.0f; av[1] = 3.0f; av[2] = 4.0f;
 		V::Air(av, aw, 0.08f, 2.0f);
 		VERIF(fabsf(av[1] - 3.0f / 4.0f) < 1e-6f && fabsf(av[2] - 1.0f) < 1e-6f);
+		// Le repos (FUN_00469a20) : le seuil est 0,003 × le pas (0,00495 pour 1,65), sur la moyenne glissante des vitesses.
+		float rv[3] = {1.0f, 0.0f, 0.0f}, rw[3] = {0.0f, 0.0f, 0.0f}, rmv[3] = {0.0f, 0.0f, 0.0f}, rmw[3] = {0.0f, 0.0f, 0.0f};
+		unsigned char rc = 7;
+		// En vol : la moyenne prend la moitié de la vitesse, le compteur retombe à 0, l'air passe.
+		VERIF(!V::Controler(rv, rw, rmv, rmw, &rc, true, false, 0.5f, 1.0f) && rc == 0 && rmv[0] == 0.5f && rv[0] == 0.5f);
+		// Sans mesure (un +0x34, ou un autre genre) : ni moyenne ni compteur, l'air seul.
+		rc = 7;
+		VERIF(!V::Controler(rv, rw, rmv, rmw, &rc, false, false, 0.5f, 1.0f) && rc == 7 && rmv[0] == 0.5f && rv[0] == 0.25f);
+		// Immobile : la moyenne se divise par deux à chaque image (0,5 → sous 0,00495 à la septième), puis le compteur monte ;
+		// à onze, les vitesses tombent à 0 et la fonction rend vrai, le compteur gardé à 10.
+		rv[0] = 0.0f; rw[1] = 0.001f; rc = 0;
+		int images = 0, sousLeSeuil = 0;
+		bool pose = false;
+		while(!pose && images < 100){ pose = V::Controler(rv, rw, rmv, rmw, &rc, true, false, V::kAir, 1.65f); images++; if(!pose && rc == 1 && sousLeSeuil == 0) sousLeSeuil = images; }
+		VERIF(pose && sousLeSeuil == 7 && images == 17 && rc == 10 && rw[1] == 0.0f && rv[0] == 0.0f);
+		// Tenu (+0xb0) : le compteur ne monte pas. Une vitesse angulaire au-dessus du seuil le remet à 0. Le seuil juste aussi.
+		rc = 3; rmv[0] = 0.0f; rmw[1] = 0.0f; rw[1] = 0.0f;
+		VERIF(!V::Controler(rv, rw, rmv, rmw, &rc, true, true, V::kAir, 1.65f) && rc == 3);
+		rw[2] = 1.0f;
+		VERIF(!V::Controler(rv, rw, rmv, rmw, &rc, true, false, V::kAir, 1.65f) && rc == 0);
+		rw[2] = 0.0f; rmw[2] = 0.0f; rc = 3; rv[0] = 0.006f; rmv[0] = 0.0f;
+		VERIF(!V::Controler(rv, rw, rmv, rmw, &rc, true, false, V::kAir, 1.0f) && rc == 0 && rmv[0] == 0.003f);
 		// La fin d'un projectile (FUN_004d45e0, FUN_004d3dc0).
 		CPlacesProjectiles f;
 		VERIF(f.Prendre(1000) == 0 && f.Vit(0, 1000, 0) && f.Vit(0, 999999, 0) && f.Vit(0, 1500, 500) && !f.Vit(0, 1501, 500) && !f.Vit(1, 1000, 0));
