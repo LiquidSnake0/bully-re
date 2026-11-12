@@ -443,6 +443,14 @@ main(void)
 		VERIF(K::SansContact(true, 0, false, 10.68f, 10.0f, lent) && !K::SansContact(true, 0, false, 10.69f, 10.0f, lent) && K::SansContact(true, 0, false, 5.0f, 10.0f, lent));
 		// Le tireur dans le jeu 0xd n'est jamais touché par son projectile, à toute vitesse et à toute hauteur.
 		VERIF(K::SansContact(true, 0xd, true, 12.0f, 10.0f, vif) && !K::SansContact(true, 0xd, false, 12.0f, 10.0f, vif) && !K::SansContact(true, 8, true, 12.0f, 10.0f, vif));
+		// Le contrôle d'un projectile (FUN_004d2290) : tenu, l'autre vol, la poussée, la chute refaite, sinon les déclencheurs.
+		VERIF(V::Controle(true, true, 5, true) == V::CONTROLE_AUCUN && V::Controle(false, true, 5, true) == V::CONTROLE_AUTRE_VOL);
+		VERIF(V::Controle(false, false, 5, true) == V::CONTROLE_POUSSEE && V::Controle(false, false, 0, true) == V::CONTROLE_CHUTE && V::Controle(false, false, 0, false) == V::CONTROLE_DECLENCHEURS);
+		// Près du joueur : 2 m autour d'un point 1,5 m au-dessus de sa position, le bord compris.
+		float pj[3] = {10.0f, 20.0f, 5.0f}, pq1[3] = {10.0f, 20.0f, 8.5f}, pq2[3] = {10.0f, 20.0f, 8.6f}, pq3[3] = {12.0f, 20.0f, 6.5f}, pq4[3] = {11.5f, 21.5f, 6.5f};
+		VERIF(V::PresDuJoueur(pj, pq1) && !V::PresDuJoueur(pj, pq2) && V::PresDuJoueur(pj, pq3) && !V::PresDuJoueur(pj, pq4) && V::PresDuJoueur(pj, pj));
+		// L'échelle de la chute (FUN_004d2090) : le +0x128 de la fiche sous -0,1 m par pas, strictement ; 1 sinon.
+		VERIF(V::EchelleDeChute(-0.2f, 0.5f) == 0.5f && V::EchelleDeChute(-0.1f, 0.5f) == 1.0f && V::EchelleDeChute(0.3f, 0.5f) == 1.0f && V::EchelleDeChute(-0.1000001f, 0.5f) == 0.5f);
 		// La fin d'un projectile (FUN_004d45e0, FUN_004d3dc0).
 		CPlacesProjectiles f;
 		VERIF(f.Prendre(1000) == 0 && f.Vit(0, 1000, 0) && f.Vit(0, 999999, 0) && f.Vit(0, 1500, 500) && !f.Vit(0, 1501, 500) && !f.Vit(1, 1000, 0));

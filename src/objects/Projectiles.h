@@ -197,6 +197,38 @@ struct CVolProjectile {
 		Air(v, w, air, pas);
 		return false;
 	}
+	// FUN_004d2290 (le contrôle d'un CProjectile à chaque image, sa méthode +0x30, lue à l'assembleur de 0x4d2290 à 0x4d24e9). Tenu
+	// (+0xb0 non nul), rien. Sinon : le son du modèle (00598030 sur 0xcf5dc4, puis 0059a710 avec 3 000, ou 8 000 pour le modèle de
+	// DAT_00bf4394 ; non suivi) ; l'effet +0xa8 de la fiche, une seule fois (le bit 0x1 de +0x22d), quand le projectile passe près
+	// du joueur (DAT_00c1aea8 ; PresDuJoueur) ; puis le contrôle selon l'entrée de la table (004d3360 la rend) et la fiche :
+	// - l'octet +0x15 de l'entrée (le mode de DAT_01b65c14 à la création) : un autre vol, non suivi (0x4d1960) ;
+	// - un +0x10 de l'entrée non nul (le +0xf0 de la fiche, une durée) : le contrôle de l'objet, puis la poussée (004d1ec0, non
+	//   recréée) ;
+	// - l'octet +0x124 de la fiche : le contrôle de l'objet, puis l'échelle de la chute (EchelleDeChute) ;
+	// - sinon : les déclencheurs où le projectile entre (006d7220 sur 0x20c7e98, non recréée), puis le contrôle de l'objet.
+	// Le contrôle de l'objet (celui de CObject, 004cf350, non recréé : le freinage d'un projectile dont l'octet +0x20a vaut 7) finit
+	// par celui de CPhysical (Controler).
+	enum { CONTROLE_AUCUN, CONTROLE_AUTRE_VOL, CONTROLE_POUSSEE, CONTROLE_CHUTE, CONTROLE_DECLENCHEURS };
+	static int Controle(bool tenu, bool autreVol, uint32 dureePoussee, bool chuteRefaite) {
+		if(tenu) return CONTROLE_AUCUN;
+		if(autreVol) return CONTROLE_AUTRE_VOL;
+		if(dureePoussee != 0) return CONTROLE_POUSSEE;
+		return chuteRefaite ? CONTROLE_CHUTE : CONTROLE_DECLENCHEURS;
+	}
+	// Près du joueur (de 0x4d231e à 0x4d2386) : l'écart du joueur au projectile (0x414a20, supposée la différence de deux vecteurs),
+	// son z relevé de 1,5 (le double 0x8ffa08), a un carré de norme qui ne dépasse pas 4 (_DAT_00900b0c : fld, fcomp, test ah,1,
+	// jne) : à 2 m au plus d'un point 1,5 m au-dessus de la position du joueur.
+	static bool PresDuJoueur(const float *joueur, const float *projectile) {
+		float x = joueur[0] - projectile[0], y = joueur[1] - projectile[1];
+		float z = (float)((double)(float)(joueur[2] - projectile[2]) + 1.5);
+		float d2 = z * z + (y * y + x * x);
+		return d2 <= 4.0f;
+	}
+	// FUN_004d2090 (lue à l'assembleur de 0x4d2090 à 0x4d20ce ; pour une fiche dont l'octet +0x124 est levé, après le contrôle) :
+	// l'échelle de temps +0x154 du projectile vaut le +0x128 de la fiche tant que sa vitesse en z est strictement sous -0,1 (le
+	// double 0x912830 : fcomp, test ah,5, jp), et 1 sinon. Un projectile qui retombe à plus de 0,1 m par pas vole donc à une autre
+	// allure : c'est le +0x128 par lequel la visée (FUN_0065ecb0) refait la durée du vol.
+	static float EchelleDeChute(float vz, float echelleFiche) { return (double)vz < (double)-0.1f ? echelleFiche : 1.0f; }
 	// La fonction 0046ca40 (le déplacement d'un CPhysical dans le monde, 2 884 octets, non recréée en entier ; ici sa part pour un projectile, +0xc4 non nul, lue à
 	// l'assembleur de 0x46cd98 à 0x46ce47 et de 0x46d0d7 à 0x46d22e ; le balayage qui trouve le contact n'est pas recréé). Au
 	// contact le plus proche, à la fraction f du déplacement de l'image, le projectile est reposé à l'ancienne position plus le
