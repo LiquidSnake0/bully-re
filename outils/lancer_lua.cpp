@@ -167,7 +167,24 @@ struct CTypeProjectile { bool lu = false; int32 vie = 0; float degatsMin = 0, de
                          // à l'arrivée (+0x70, +0x74), l'angle de la plongée (+0x78) et la dispersion (+0x120). Une fiche sans le champ
                          // garde -1, la borne sans effet, et une dispersion nulle (supposé : les valeurs par défaut de la fiche ne sont
                          // pas lues).
-                         float monteeMin = -1.0f, monteeMax = -1.0f, arriveeMin = -1.0f, arriveeMax = -1.0f, angleArrivee = -1.0f, dispersion = 0.0f; };
+                         float monteeMin = -1.0f, monteeMax = -1.0f, arriveeMin = -1.0f, arriveeMax = -1.0f, angleArrivee = -1.0f, dispersion = 0.0f;
+                         std::string freinage; }; // +0x12c (300) : le nom de la fiche du freinage (00680140)
+// Le freinage d'un projectile dont l'octet +0x20a vaut 7 (FUN_004cf350, CVolProjectile::Freiner). Sa fiche (00680140, 0072ae00 et
+// 006838d0, lues au décompilé ; les deux noms, lus à l'assembleur de 0x618052 à 0x61807a, où 005fa730 les pose) : celle du chemin
+// { « DodgeballPhysics » (DAT_01b65374), le nom +0x12c de la fiche du projectile } sous l'arbre des réglages (DAT_020c8874), de la
+// classe « DodgeballPhysicsButes » (DAT_01b65378), résolue par FUN_0072ad50 ; à défaut, ou sans fiche de projectile, celle de
+// DAT_020c888c, la piste DodgeballPhysicsButes du nœud Globals (0072ae00). +0x18 (24) : le seuil d'arrêt ; +0x1c (28) : le seuil
+// à partir duquel le facteur est +0x20 (32) ; +0x24 (36) : le facteur en dessous. 006838d0 rend faux tant que l'objet du jeu de
+// ballon (DAT_01b89150) est nul, donc hors de ce mini-jeu : le freinage vaut alors pour tout projectile de ce genre.
+struct CFicheFreinage { bool lue = false; float seuilArret = 0.0f, seuilVite = 0.0f, facteurVite = 1.0f, facteurLent = 1.0f; };
+static CFicheFreinage freinageDefaut;
+static std::map<int32, CFicheFreinage> freinages;   // par modèle d'arme, quand la fiche de son projectile en nomme une
+static const CFicheFreinage &
+Freinage(int32 arme)
+{
+	auto it = freinages.find(arme);
+	return it == freinages.end() ? freinageDefaut : it->second;
+}
 static std::map<int32, CTypeProjectile> typesProjectiles;   // par modèle d'arme (le +0x80 de son type)
 static CTypeProjectile projectileDefaut;
 static const CTypeProjectile &
@@ -193,6 +210,7 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 	if(t.Champ(288)) a.dispersion = CActionBank::ButesReel(t, 288);
 	{ auto ip = chaines.find(168); if(ip != chaines.end()) a.effetPres = ip->second; }
 	{ const CActionAttribut *o = t.Champ(124); a.o7c = o && o->valeur[0]; }
+	{ auto ifr = chaines.find(300); if(ifr != chaines.end()) a.freinage = ifr->second; }
 	// La poussée (FUN_004d1ec0) : sa durée (+0xf0 = 240, que la création copie au +0x10 de l'entrée : supposé, la création n'étant
 	// pas relue), le facteur le long de la vitesse (+0xf8), la portance (+0xfc) et la part de la durée avant l'extinction (+0x100).
 	a.dureePoussee = t.Mot(240); a.poussee = CActionBank::ButesReel(t, 248); a.portance = CActionBank::ButesReel(t, 252);
@@ -2853,6 +2871,29 @@ ChargerArmes(void)
 		   CActionBank::ButesChemin("Global_Weapons.cat", {ActionHash("Weapons"), ActionHash("Projectiles"), ActionHash(a.second.nomProjectile.c_str())},
 		                            ActionHash("ProjectileButes"), t, &ch))
 			typesProjectiles[a.first] = LireTypeProjectile(t, ch);
+	{
+		auto lire = [](const CActionTrack &x){
+			CFicheFreinage f; f.lue = true;
+			f.seuilArret = CActionBank::ButesReel(x, 24); f.seuilVite = CActionBank::ButesReel(x, 28);
+			f.facteurVite = CActionBank::ButesReel(x, 32); f.facteurLent = CActionBank::ButesReel(x, 36);
+			return f;
+		};
+		CActionTrack tf;
+		if(CActionBank::ButesChemin("Globals.cat", {ActionHash("GlobalsBank"), ActionHash("Globals")}, ActionHash("DodgeballPhysicsButes"), tf))
+			freinageDefaut = lire(tf);
+		int genre7 = 0, nommees = 0;
+		for(const auto &a : typesProjectiles){
+			if(a.second.o7c) genre7++;
+			if(a.second.freinage.empty()) continue;
+			if(CActionBank::ButesChemin("Globals.cat", {ActionHash("GlobalsBank"), ActionHash("Globals"), ActionHash("DodgeballPhysics"),
+			                                            ActionHash(a.second.freinage.c_str())}, ActionHash("DodgeballPhysicsButes"), tf)){
+				freinages[a.first] = lire(tf); nommees++;
+			}
+		}
+		if(freinageDefaut.lue)
+			printf("le freinage des projectiles (DodgeballPhysicsButes de Globals) : arrêt sous %g m par pas, × %g dès %g m par pas, × %g en dessous ; %d fiches de genre 7, %d fiches de freinage nommées\n",
+			       freinageDefaut.seuilArret, freinageDefaut.facteurVite, freinageDefaut.seuilVite, freinageDefaut.facteurLent, genre7, nommees);
+	}
 	armes.sansFin[0] = modeles.Index("marble"); armes.sansFin[1] = modeles.Index("supermarble"); armes.sansFin[2] = modeles.Index("RubBand");
 	// DAT_00a136b8 et les quatre modèles que FUN_00541ae0 traite à part (InitModelIndices, la table des noms 0xa136e8).
 	if(!modeles.objets.empty()) objetsJoueur.premier = modeles.objets.begin()->first;
@@ -6765,6 +6806,12 @@ AvancerProjectiles(float pas)
 		// vitesse angulaire du projectile (nulle ici), ni +0x34 et +0xb0 (nuls, supposé).
 		{
 			float pt[3] = {q.pos.x, q.pos.y, q.pos.z}, v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z}, w[3] = {0.0f, 0.0f, 0.0f}, mw[3] = {0.0f, 0.0f, 0.0f};
+			// Avant lui le freinage du contrôle de l'objet (FUN_004cf350) : pour un projectile dont l'octet +0x20a vaut 7 (l'octet +0x7c
+			// de sa fiche), les deux vitesses fois le facteur de sa fiche de freinage, à chaque image.
+			if(tq.o7c){
+				const CFicheFreinage &ff = Freinage(q.modele);
+				if(ff.lue) CVolProjectile::Freiner(v, w, ff.seuilArret, ff.seuilVite, ff.facteurVite, ff.facteurLent);
+			}
 			if(CVolProjectile::Controler(v, w, q.moyenne, mw, &q.repos, true, false, CVolProjectile::kAir, pas)){
 				// La méthode +0x1c(1) d'un projectile (FUN_004d1560, lue de 0x4d1560 à 0x4d1666 : avec l'octet +0x15 de son entrée elle
 				// redresse d'abord sa matrice, l'axe z vers le haut, ce que l'outil ne suit pas), puis la mise au repos d'un objet
