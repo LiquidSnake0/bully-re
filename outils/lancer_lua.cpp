@@ -6616,6 +6616,12 @@ AvancerProjectiles(float pas)
 			if(p == nil || p->mort) continue;
 			// FUN_0046ad90 : le tireur n'est épargné que pendant les 200 ms qui suivent la création.
 			if(CContactProjectile::TireurEpargne(i == q.tireur, maintenant, q.naissance)) continue;
+			// FUN_0046b720 : un projectile bas (sous 0,68 m au-dessus de la position du piéton, supposée ici celle de l'outil) et
+			// lent (sous 0,1 m par pas) ne touche pas le piéton ; le +0x1310 du piéton n'est pas suivi (0).
+			{
+				float v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z};
+				if(CContactProjectile::SansContact(true, 0, i == q.tireur, q.pos.z, p->pos.z, v)) continue;
+			}
 			for(float h : {0.35f, 0.95f, 1.55f}){
 				float u;
 				if(SegmentDansSphere(avant, q.pos, CVector(p->pos.x, p->pos.y, p->pos.z + h), 0.35f, &u) && u < mieux){ mieux = u; touche = i; centre = CVector(p->pos.x, p->pos.y, p->pos.z + h); }

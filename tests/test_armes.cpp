@@ -434,6 +434,15 @@ main(void)
 		bv[0] = 0.0f; bv[1] = -0.4f; bv[2] = 0.0f; bn[0] = 0.0f; bn[1] = 1.0f; bn[2] = 0.0f;
 		V::Rebondir(bv, bn, false, false, V::kElasticite);
 		VERIF(fabsf(bv[1] - 0.3f) < 1e-7f);
+		// La paire du contact (FUN_0046b720) : pas de contact entre un projectile bas et lent et un piéton.
+		typedef CContactProjectile K;
+		float lent[3] = {0.05f, 0.0f, 0.05f}, vif[3] = {0.2f, 0.0f, 0.0f}, juste[3] = {0.0f, 0.099f, 0.0f};
+		VERIF(K::SansContact(true, 0, false, 10.5f, 10.0f, lent) && !K::SansContact(false, 0, false, 10.5f, 10.0f, lent));
+		VERIF(!K::SansContact(true, 0, false, 10.5f, 10.0f, vif) && K::SansContact(true, 0, false, 10.5f, 10.0f, juste));
+		// La hauteur : 0,5 + 0,1847944 au-dessus du piéton, strictement.
+		VERIF(K::SansContact(true, 0, false, 10.68f, 10.0f, lent) && !K::SansContact(true, 0, false, 10.69f, 10.0f, lent) && K::SansContact(true, 0, false, 5.0f, 10.0f, lent));
+		// Le tireur dans le jeu 0xd n'est jamais touché par son projectile, à toute vitesse et à toute hauteur.
+		VERIF(K::SansContact(true, 0xd, true, 12.0f, 10.0f, vif) && !K::SansContact(true, 0xd, false, 12.0f, 10.0f, vif) && !K::SansContact(true, 8, true, 12.0f, 10.0f, vif));
 		// La fin d'un projectile (FUN_004d45e0, FUN_004d3dc0).
 		CPlacesProjectiles f;
 		VERIF(f.Prendre(1000) == 0 && f.Vit(0, 1000, 0) && f.Vit(0, 999999, 0) && f.Vit(0, 1500, 500) && !f.Vit(0, 1501, 500) && !f.Vit(1, 1000, 0));

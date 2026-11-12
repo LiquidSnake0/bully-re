@@ -282,6 +282,24 @@ struct CContactProjectile {
 	// Le coup : contre un piéton (genre 3) ou un véhicule (genre 2), au premier contact seulement (l'octet +0x22c nul), à tous pour
 	// RBandBall (DAT_00bf432c). Sur un piéton, c'est sa méthode du coup (vtable +0x3c) avec les dégâts +0x1c de l'entrée et le tireur.
 	static bool Coup(int genre, uint8 contacts, bool rbandball) { return (genre == 3 || genre == 2) && (contacts == 0 || rbandball); }
+	// FUN_0046b720 (la paire d'un contact, 342 octets, lue à l'assembleur de 0x46b720 à 0x46b873 ; le déplacement 0046ca40 l'appelle
+	// avec l'entité touchée, le contact et un angle). Elle remet à 0 le +0xb0 de l'entité touchée, puis fait les deux contacts
+	// (FUN_0046ad90 dans un sens, puis dans l'autre) sauf, quand l'un des deux est un projectile (+0xc4 non nul ; celui de l'entité
+	// touchée d'abord) et l'autre un piéton (genre 3), dans deux cas, que cette fonction rend vrais : le piéton a un +0x1310 de 0xd
+	// et il est le tireur du projectile (le +4 de son entrée, par 004d3360) ; ou le projectile est bas et lent : son z moins
+	// celui du piéton, moins 0,1847944 (le double 0x90c720), est strictement sous 0,5 (_DAT_009055a0 : fcomp, test ah,5, jp) et sa
+	// vitesse (la racine, 0x85c4d0, du carré de la norme de +0x124) est strictement sous 0,1 (le double 0x900128 : test ah,5, jnp).
+	// Une bille qui roule aux pieds d'un piéton ne le touche donc pas.
+	static bool SansContact(bool pieton, int32 jeuDuPieton, bool estLeTireur, float zProjectile, float zPieton, const float *v) {
+		if(!pieton) return false;
+		if(jeuDuPieton == 0xd && estLeTireur) return true;
+		float dz = zProjectile - zPieton;
+		dz = (float)((double)dz - 0.1847944);
+		if(!(dz < 0.5f)) return false;
+		float n2 = v[1] * v[1] + v[0] * v[0] + v[2] * v[2];
+		float n = sqrtf(fabsf(n2));
+		return (double)n < 0.1;
+	}
 	// Le tireur épargné : quand le coup irait au piéton qui a tiré (+4 de l'entrée) moins de 200 ms après la création (+8, écart non
 	// signé), la fonction rend la main : ni coup, ni contact compté, ni choc.
 	static bool TireurEpargne(bool surLeTireur, uint32 maintenant, uint32 creation) { return surLeTireur && (uint32)(maintenant - creation) < 200; }
