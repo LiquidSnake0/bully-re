@@ -365,6 +365,18 @@ main(void)
 		VERIF(y.Prendre(500, 2.0f, 0, 9000, 0.0f, false, &ev) == 3 && ev == 3 && y.rayon[3] == 2.0f && !y.evincable[3]);
 		VERIF(y.Prendre(501, 2.0f, 0, 9000, 0.0f, false, &ev) == 7 && ev == 7 && y.Prendre(502, 2.0f, 0, 9000, 0.0f, false) == -1);
 		VERIF(X::AutreFiche(true, 0.95f) && X::AutreFiche(true, -0.5f) && !X::AutreFiche(true, 0.97f) && !X::AutreFiche(false, 0.0f));
+		// Le vol (FUN_004494d0, FUN_004d1510, FUN_00469760) : la gravité d'un facteur 1 est 0,008 par pas ; un pas de 1,65.
+		typedef CVolProjectile V;
+		VERIF(V::Gravite(1.0f) == 0.008f && V::Gravite(0.0f) == 0.0f && fabsf(V::Gravite(2.5f) - 0.02f) < 1e-7f);
+		VERIF(V::Peser(0.5f, false, 0.008f, 1.65f) == 0.5f && fabsf(V::Peser(0.5f, true, 0.008f, 1.65f) - (0.5f - 0.0132f)) < 1e-6f);
+		VERIF(fabsf(V::Peser(0.5f, true, 0.008f, 1.65f, 0.5f) - (0.5f - 0.0066f)) < 1e-6f);
+		float vp[3] = {10.0f, 20.0f, 30.0f}, vv[3] = {1.0f, -2.0f, 0.5f};
+		VERIF(!V::Deplacer(vp, vv, true, true, 0.008f, 1.65f) && vv[0] == 0.0f && vv[1] == 0.0f && vv[2] == 0.0f && vp[0] == 10.0f && vp[2] == 30.0f);
+		vv[0] = 1.0f; vv[1] = -2.0f; vv[2] = 0.5f;
+		VERIF(V::Deplacer(vp, vv, false, false, 0.008f, 1.65f) && fabsf(vp[0] - 11.65f) < 1e-5f && fabsf(vp[1] - 16.7f) < 1e-5f && fabsf(vp[2] - 30.825f) < 1e-5f && vv[2] == 0.5f);
+		// Pesant : la vitesse perd 0,0132 avant de déplacer, et la position perd encore ½ × 0,008 × 1,65² = 0,01089.
+		vp[0] = 0.0f; vp[1] = 0.0f; vp[2] = 0.0f;
+		VERIF(V::Deplacer(vp, vv, false, true, 0.008f, 1.65f) && fabsf(vv[2] - 0.4868f) < 1e-6f && fabsf(vp[2] - (0.4868f * 1.65f - 0.01089f)) < 1e-5f);
 		// La fin d'un projectile (FUN_004d45e0, FUN_004d3dc0).
 		CPlacesProjectiles f;
 		VERIF(f.Prendre(1000) == 0 && f.Vit(0, 1000, 0) && f.Vit(0, 999999, 0) && f.Vit(0, 1500, 500) && !f.Vit(0, 1501, 500) && !f.Vit(1, 1000, 0));

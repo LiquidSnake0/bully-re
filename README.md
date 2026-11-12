@@ -100,7 +100,7 @@ outside the repository.
 
 ## Status
 
-**7.9 % of `bully.exe`'s code recreated** (1243 of 20,819 functions), 12.5 %
+**7.9 % of `bully.exe`'s code recreated** (1246 of 20,819 functions), 12.5 %
 understood (code, docs, names). Breakdown in [docs/avancement.md](docs/avancement.md),
 regenerated on every commit by `tools/avancement.py`.
 

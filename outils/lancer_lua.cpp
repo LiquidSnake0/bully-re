@@ -197,8 +197,9 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 }
 
 // Un projectile en vol (le moteur crée un CProjectile, un CPhysical de 0x24c octets : FUN_004d4c40 → FUN_004d24f0, FUN_004d2160 ;
-// sa table, 0xc3a068, est celle que lit DetectProjectile). L'outil n'en joue pas la physique : un point qui suit sa vitesse et la
-// gravité à chaque pas (ms_fTimeStep, 0,02 s), jusqu'à la fin de sa vie (+0x48) ou un contact. Les 32 places de la table
+// sa table, 0xc3a068, est celle que lit DetectProjectile). L'outil en joue le vol (CVolProjectile : la gravité FUN_004d1510 et le
+// déplacement FUN_00469760 à chaque pas, ms_fTimeStep, 0,02 s), jusqu'à la fin de sa vie (+0x48) ou un contact ; `gravite` est le
+// facteur +0x230 (le +0x80 de la fiche). Les 32 places de la table
 // (src/objects/Projectiles.h : FUN_004d4590, FUN_004d3f60) : l'indice d'un projectile de l'outil est celui de son entrée.
 struct CProjectileOutil { bool actif = false; int32 modele = -1; int tireur = -1; CVector pos, vitesse; float gravite = 0, degats = 0;
                           uint32 naissance = 0, vie = 0;
@@ -6358,7 +6359,7 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	if(T <= 0.01f) T = 0.01f;
 	float g = tp.gravite * -0.008f;
 	CProjectileOutil q;
-	q.actif = true; q.modele = munition; q.tireur = ped; q.pos = depart; q.gravite = g;
+	q.actif = true; q.modele = munition; q.tireur = ped; q.pos = depart; q.gravite = tp.gravite;   // FUN_004d4c40 : +0x80 de la fiche → +0x230
 	q.vitesse = CVector(dx / T, dy / T, (dz - 0.5f * g * T * T) / T);
 	q.degats = CChargeArme::Degats(true, tp.degatsMin, tp.degatsMax, charge, degatsPiste, pietons.StatLue(ped, 0x1f, 100));
 	// La vie (CPlacesProjectiles::Vie, FUN_004d4c40 : la vie du tireur, +0x1cc0 × 1000, ou celle de la fiche, moins le temps depuis
@@ -6583,8 +6584,14 @@ AvancerProjectiles(float pas)
 			continue;
 		}
 		CVector avant = q.pos;
-		q.pos.x += q.vitesse.x * pas; q.pos.y += q.vitesse.y * pas; q.pos.z += q.vitesse.z * pas;
-		q.vitesse.z += q.gravite * pas;
+		// Le déplacement (FUN_00469760, que le projectile reçoit par sa méthode +0x94) : la gravité d'abord (FUN_004d1510, la
+		// méthode +0x90 : +0x230 × 0,008 par pas, FUN_004494d0), puis la position ; un projectile de l'outil pèse toujours (le mode
+		// de DAT_01b65c14 n'est pas suivi).
+		{
+			float pt[3] = {q.pos.x, q.pos.y, q.pos.z}, v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z};
+			CVolProjectile::Deplacer(pt, v, false, true, CVolProjectile::Gravite(q.gravite), pas);
+			q.pos = CVector(pt[0], pt[1], pt[2]); q.vitesse = CVector(v[0], v[1], v[2]);
+		}
 		int touche = -1; float mieux = 2.0f;
 		for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
 			const CScriptPed *p = pietons.Acceder(i);

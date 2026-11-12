@@ -109,6 +109,40 @@ struct CPlacesProjectiles {
 	}
 };
 
+// Le vol d'un projectile : un CProjectile est un CPhysical dont la vitesse (+0x124, +0x128, +0x12c) compte des mètres par pas
+// (0xc1a9a4, le pas du moteur en cinquantièmes de seconde). Son constructeur (FUN_004d2160, lu à l'assembleur de 0x4d2160 à 0x4d228c) pose le facteur de
+// gravité +0x230 à 1, la masse +0x158 et +0x15c à 1, la résistance de l'air +0x160 à 0,99999 (_DAT_00912824), l'élasticité +0x164 à
+// 0,75 (_DAT_0093e860), +0x168 à 0,0008 (_DAT_009137dc), +0xc4 à 1 et l'octet des contacts +0x22c à 0 ; celui de CPhysical
+// (lu dans l'index) l'échelle +0x154 à 1. La création (FUN_004d4c40, relue dans l'index) y écrit la vitesse du tir, le facteur de
+// gravité de la fiche (+0x80 → +0x230), son élasticité (+0x5c → +0x164), l'octet +0x20a (6, ou 7 avec l'octet +0x7c de la fiche) et
+// le bit 0x2 de +0x1bc, levé hors du mode de DAT_01b65c14 : le projectile pèse.
+struct CVolProjectile {
+	static constexpr float kAir = 0.99999f, kElasticite = 0.75f;
+	// FUN_004494d0 (la méthode +0x8c de CProjectile, lue à l'assembleur de 0x4494d0 à 0x4494e4) : la gravité du projectile par pas,
+	// son facteur +0x230 fois 0,008 (le double 0x905a70), arrondie en simple précision.
+	static float Gravite(float facteur) { return (float)((double)facteur * (double)0.008f); }
+	// FUN_004d1510 (la méthode +0x90 de CProjectile, lue à l'assembleur de 0x4d1510 à 0x4d1555) : avec le bit 0x2 de +0x1bc, la vitesse
+	// en z perd la gravité (la méthode +0x8c) fois le pas fois l'échelle +0x154.
+	static float Peser(float vz, bool pese, float gravite, float pas, float echelle = 1.0f) {
+		return pese ? (float)((double)vz - (double)gravite * pas * echelle) : vz;
+	}
+	// FUN_00469760 (la méthode +0x94 de CPhysical, le déplacement, lue à l'assembleur de 0x469760 à 0x4698bb). Avec le bit 0x1 de
+	// +0x1bd, la vitesse tombe à 0 et rien ne bouge (rend faux). Sinon la méthode +0x90 d'abord (Peser), puis la position avance de
+	// la vitesse fois d, d = l'échelle +0x154 fois le pas ; en z, quand l'entité pèse (le bit 0x2 de +0x1bc) et que sa méthode +0x88
+	// rend 0 (celle de CProjectile, 0x828240 : xor al,al), la position perd en plus la moitié (le double 0x8ff1f8) de la gravité fois
+	// d au carré (d au carré arrondi en simple précision). La vitesse en z a donc déjà perdu la gravité du pas quand elle déplace.
+	static bool Deplacer(float *pos, float *v, bool fige, bool pese, float gravite, float pas, float echelle = 1.0f) {
+		if(fige){ v[0] = v[1] = v[2] = 0.0f; return false; }
+		v[2] = Peser(v[2], pese, gravite, pas, echelle);
+		float d = echelle * pas;
+		pos[0] = pos[0] + d * v[0];
+		pos[1] = v[1] * d + pos[1];
+		if(!pese) pos[2] = d * v[2] + pos[2];
+		else pos[2] = (float)(((double)v[2] * (double)d - (double)gravite * 0.5 * (double)(float)((double)d * (double)d)) + (double)pos[2]);
+		return true;
+	}
+};
+
 // Le choc d'un projectile (FUN_004d3860, lue à l'assembleur de 0x4d3860 à 0x4d3c14 ; appelée par le contact du CPhysical, FUN_0046ad90,
 // avec le projectile, l'entité touchée, le point de contact et un octet « fort »). Dans l'ordre :
 //  1. avec l'octet +0x40 de la fiche, le stimulus +0x44 naît du projectile (PedCreateStimulus(+0x44, projectile, 0, 0, -1, -1)) ;
