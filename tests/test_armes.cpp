@@ -462,6 +462,50 @@ main(void)
 		VERIF(!V::Controler(rv, rw, rmv, rmw, &rc, true, false, V::kAir, 1.0f) && rc == 0 && rmv[0] == 0.003f);
 		// Le rebond (FUN_0046ca40) : le recul au contact, puis la vitesse renversée le long de la normale.
 		VERIF(fabsf(V::Recul(0.5f) - 0.495f) < 1e-7f && V::Recul(0.0f) < 0.0f);
+		// Le début du déplacement : l'entité immobile, le partage de la chute ; le balayage d'un secteur (FUN_0046c970) et des
+		// secteurs ; la sortie : la pose après la chute et la distance parcourue.
+		{
+			float nul[3] = {0, 0, 0}, vz[3] = {0, 0, -0.01f};
+			VERIF(V::Immobile(nul, nul, 0x08) && !V::Immobile(nul, nul, 0x03) && !V::Immobile(vz, nul, 0x08) && !V::Immobile(nul, vz, 0xf8));
+			float z = 4.0f;
+			VERIF(V::PartagerChute(4.0f, &z, 0) == 0.0f && z == 4.0f);                    // à plat : pas de partage
+			z = 4.5f; VERIF(V::PartagerChute(4.0f, &z, 0) == 0.0f && z == 4.5f);          // en montée non plus
+			z = 3.0f; VERIF(V::PartagerChute(4.0f, &z, 1) == 0.0f && z == 3.0f);          // ni pour un projectile (+0xc4)
+			float chute = V::PartagerChute(4.0f, &z, 0);
+			VERIF(fabsf(chute + 1.05f) < 1e-6f && fabsf(z - 4.05f) < 1e-6f);
+			VERIF(V::Recul(1.0f) == (float)(1.0 - (double)0.005f));
+			V::ContactBalaye m;
+			VERIF(m.fraction == 3.4028234663852886e+38f && sizeof(float) * 3 == sizeof(m.point));
+			float fr[4] = {0.8f, 0.3f, 0.5f, 0.1f}; int vus = 0;
+			auto liste = [&](int i, V::ContactBalaye *c){ vus |= 1 << i; if(i == 0) return false; c->fraction = fr[i]; c->point[0] = (float)i; return true; };
+			VERIF(V::BalayerSecteur(&m, false, liste) && vus == 7 && m.fraction == 0.3f && m.point[0] == 1.0f);   // sans la quatrième liste
+			vus = 0;
+			VERIF(V::BalayerSecteur(&m, true, liste) && vus == 15 && m.fraction == 0.1f && m.point[0] == 3.0f);   // avec elle
+			VERIF(!V::BalayerSecteur(&m, true, liste) && m.fraction == 0.1f);            // l'égalité ne remplace pas
+			V::ContactBalaye m2; float fs[3] = {0.6f, 0.2f, 0.2f};
+			auto sect = [&](int i, V::ContactBalaye *c){ if(i == 0) return false; if(fs[i] < c->fraction){ c->fraction = fs[i]; c->point[1] = (float)i; return true; } return false; };
+			VERIF(V::BalayerSecteurs(3, &m2, sect) && m2.fraction == 0.2f && m2.point[1] == 1.0f);
+			V::ContactBalaye m3;
+			VERIF(!V::BalayerSecteurs(1, &m3, sect) && m3.fraction == 3.4028234663852886e+38f);
+			{
+				V::ContactBalaye a, b; int e1 = 1, e2 = 2; std::string liens;
+				auto del = [&](const void *e){ liens += e == &e1 ? "-1" : "-2"; };
+				auto lie = [&](const void *e){ liens += e == &e1 ? "+1" : "+2"; };
+				b.entite = &e1; b.point[2] = 3.0f; b.normale[1] = -1.0f; b.o1c = 7; b.o20 = 8; b.o22 = 9; b.fraction = 0.25f;
+				VERIF(&a.Copier(b, del, lie) == &a && liens == "+1" && a.entite == &e1 && a.point[2] == 3.0f && a.normale[1] == -1.0f);
+				VERIF(a.o1c == 7 && a.o20 == 8 && a.o22 == 9 && a.fraction == 0.25f);
+				a.Copier(b, del, lie); VERIF(liens == "+1");                               // la même référence : ni déliée ni liée
+				b.entite = &e2; a.Copier(b, del, lie); VERIF(liens == "+1-1+2");           // l'ancienne déliée, puis la nouvelle liée
+				b.entite = nullptr; a.Copier(b, del, lie); VERIF(liens == "+1-1+2-2" && a.entite == nullptr);
+			}
+			bool remis = false;
+			VERIF(V::CodeDeBalayage(7, &remis) == 8 && !remis && V::CodeDeBalayage(0xfffe) == 0xffff && V::CodeDeBalayage(0xffff, &remis) == 1 && remis);
+			float avantChute[3] = {1.0f, 2.0f, 4.05f}, pos[3] = {1.0f, 2.0f, 3.0f};
+			VERIF(!V::PoserApresChute(avantChute, pos, false, 0.5f) && pos[2] == 3.0f);
+			VERIF(V::PoserApresChute(avantChute, pos, true, 0.5f) && fabsf(pos[2] - (4.05f - 1.05f * 0.495f)) < 1e-6f && pos[0] == 1.0f);
+			float debut[3] = {0, 0, 0}, fin[3] = {2.0f, 3.0f, 6.0f};
+			VERIF(V::Distance(debut, fin) == 7.0f && V::Distance(fin, fin) == 0.0f);
+		}
 		// Sur un sol (normale en z), élasticité 0,5 : la chute de 2 devient une montée de 1, le glissement de 4 tombe à 2.
 		float bv[3] = {4.0f, 0.0f, -2.0f}, bn[3] = {0.0f, 0.0f, 3.0f};
 		V::Rebondir(bv, bn, false, false, 0.5f);

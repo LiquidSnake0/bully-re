@@ -279,10 +279,110 @@ struct CVolProjectile {
 		*compte = repos ? 10 : 0;
 	}
 	// La fonction 0046ca40 (le déplacement d'un CPhysical dans le monde, 2 884 octets, non recréée en entier ; ici sa part pour un projectile, +0xc4 non nul, lue à
-	// l'assembleur de 0x46cd98 à 0x46ce47 et de 0x46d0d7 à 0x46d22e ; le balayage qui trouve le contact n'est pas recréé). Au
+	// l'assembleur de 0x46cd98 à 0x46ce47 et de 0x46d0d7 à 0x46d22e ; le balayage d'une liste de secteur, 0046c4b0, n'est pas recréé). Au
 	// contact le plus proche, à la fraction f du déplacement de l'image, le projectile est reposé à l'ancienne position plus le
-	// déplacement fois (f − 0,005) (le double 0x90c740), arrondi en simple précision.
-	static float Recul(float fraction) { return (float)((double)fraction - 0.005); }
+	// déplacement fois (f − 0,005) (le double 0x90c740, qui vaut 0,005 en simple précision : 0,004999999888241291), arrondi en
+	// simple précision.
+	static float Recul(float fraction) { return (float)((double)fraction - 0.004999999888241291); }
+	// Le début de la même fonction (lu à l'assembleur de son premier octet à 0x46cd98). La distance parcourue +0x19c passe à 0 ; tenue (+0xb0
+	// non nul) ou sans son +0x1c, l'entité ne fait rien de plus. Quand les trois réels de sa vitesse (+0x124) et les trois de sa
+	// vitesse angulaire (+0x130) sont tous nuls (fcom contre 0, test ah,0x44, jp) et que l'octet +0x108 a un des bits 0xf8, elle
+	// ne se déplace pas : +0x34 passe à 0 et +0x38 à 1, et la fonction rend la main.
+	static bool Immobile(const float *v, const float *w, uint32 o108) {
+		for(int i = 0; i < 3; i++) if(v[i] != 0.0f || w[i] != 0.0f) return false;
+		return (o108 & 0xf8) != 0;
+	}
+	// Sinon elle avance (ses méthodes +0xa0, qui remplit quatre listes, +0x98 et +0x94 ; non suivies) puis, quand elle descend
+	// (l'ancien z strictement au-dessus du nouveau : fcom, test ah,0x41, jne) et que son +0xc4 est nul (celui d'un projectile ne
+	// l'est pas : ce partage n'est pas pour lui), sa chute est mise de côté : nouveau z − ancien z − 0,05 (le double 0x900c18, 0,05
+	// en simple précision), et le z de sa position devient l'ancien z + 0,05. Le premier balayage se fait donc à plat, 5 cm plus
+	// haut qu'au départ ; la chute, strictement négative, se balaie à la sortie (PoserApresChute). 0 : pas de partage.
+	static float PartagerChute(float ancienZ, float *z, uint32 oc4) {
+		if(!(ancienZ > *z) || oc4 != 0) return 0.0f;
+		float chute = (float)((double)*z - (double)ancienZ - 0.05000000074505806);
+		*z = (float)(0.05000000074505806 + (double)ancienZ);
+		return chute;
+	}
+	// Le contact d'un balayage (0x28 octets ; FUN_0046c970 et le déplacement en posent un sur la pile : trois réels nuls en +0x0,
+	// une référence nulle en +0xc, libérée à la fin par 00465690, trois réels nuls en +0x10, et la fraction du déplacement en
+	// +0x24, FLT_MAX, le réel 0x9009b8, tant que rien n'est touché). Supposé : +0x0 est le point et +0x10 la normale.
+	struct ContactBalaye {
+		float point[3] = {0.0f, 0.0f, 0.0f};
+		const void *entite = nullptr;
+		float normale[3] = {0.0f, 0.0f, 0.0f};
+		uint32 o1c = 0;
+		uint16 o20 = 0, o22 = 0;
+		float fraction = 3.4028234663852886e+38f;
+		// FUN_0046a920 (l'affectation d'un contact, lue à l'assembleur de 0x46a920 à 0x46a99b, ret 4) : les trois mots de +0x0 ; la
+		// référence +0xc quand elle change : l'ancienne, non nulle, est déliée (00465690 avec l'adresse du champ), la nouvelle est
+		// posée puis, non nulle, liée (00465680) ; les quatre mots de +0x10 à +0x1c, les deux mots courts +0x20 et +0x22, la fraction
+		// +0x24. Rend le contact. `delier` et `lier` reçoivent l'entité.
+		template<class D, class L> ContactBalaye &Copier(const ContactBalaye &c, D &&delier, L &&lier) {
+			for(int i = 0; i < 3; i++) point[i] = c.point[i];
+			if(c.entite != entite){
+				if(entite) delier(entite);
+				entite = c.entite;
+				if(c.entite) lier(c.entite);
+			}
+			for(int i = 0; i < 3; i++) normale[i] = c.normale[i];
+			o1c = c.o1c; o20 = c.o20; o22 = c.o22; fraction = c.fraction;
+			return *this;
+		}
+	};
+	// FUN_0046c970(listes, secteur, meilleur, arg4, quatrième) (lue à l'assembleur de 0x46c970 à 0x46ca3f, ret 0x14) : le balayage
+	// d'un secteur. Les quatre listes du secteur (quatre mots de suite ; la quatrième, de rang 3, seulement quand l'octet du
+	// cinquième argument vaut 1) passent une à une par 0046c4b0 (le balayage d'une liste, non recréé : `balayer`, qui reçoit le rang
+	// de la liste et un contact local, le même pour les quatre listes, fait une fois avant la boucle). Quand elle rend vrai et que
+	// la fraction du contact local est strictement sous celle du meilleur (fcompp, test ah,0x41, jne), le contact local est copié
+	// dans le meilleur (FUN_0046a920, Copier ; les liens de la référence ne sont pas suivis ici) et la fonction rendra vrai.
+	template<class B> static bool BalayerSecteur(ContactBalaye *meilleur, bool quatrieme, B &&balayer) {
+		ContactBalaye local;
+		bool touche = false;
+		for(int i = 0; i < 4; i++){
+			if(!quatrieme && i == 3) continue;
+			if(!balayer(i, &local)) continue;
+			if(!(local.fraction < meilleur->fraction)) continue;
+			touche = true;
+			meilleur->Copier(local, [](const void *){}, [](const void *){});
+		}
+		return touche;
+	}
+	// La boucle du déplacement sur les secteurs de l'entité (la liste +0x178 : le secteur en +8 du nœud, le suivant en +0x10 ; de
+	// 0x46cc0b à 0x46cc80, et la même de 0x46d364 à 0x46d3d5) : FUN_0046c970 sur chaque secteur, avec un contact neuf par balayage
+	// de l'entité, et le meilleur garde celui dont la fraction est strictement la plus petite. Avant elle le code de balayage (le
+	// mot 0xc1ae88) monte de 1, ou repart à 1 après 0045d6f0 quand il a atteint 0xffff.
+	template<class S> static bool BalayerSecteurs(int secteurs, ContactBalaye *meilleur, S &&secteur) {
+		bool touche = false;
+		ContactBalaye c;
+		for(int i = 0; i < secteurs; i++){
+			if(!secteur(i, &c)) continue;
+			touche = true;
+			if(c.fraction < meilleur->fraction) *meilleur = c;
+		}
+		return touche;
+	}
+	static uint16 CodeDeBalayage(uint16 code, bool *remis = nullptr) {
+		if(remis) *remis = code >= 0xffff;
+		return code < 0xffff ? (uint16)(code + 1) : 1;
+	}
+	// La sortie de la même fonction (lue à l'assembleur de 0x46d2fc à 0x46d588). Le bit 0x10 de +0x1bd est baissé. Quand la chute
+	// mise de côté est strictement négative (fldz, fcomp, test ah,0x41, jne), la position d'avant la chute est gardée, le z descend
+	// de la chute et un second balayage, le même, cherche ce qu'elle touche : au contact, la position devient celle d'avant la
+	// chute plus l'écart fois (la fraction − 0,005, le double 0x90c740) (00414a20, la différence ; FUN_00412850, la somme ; posée
+	// par 0041c390), et le bit 0x10 de +0x1bd est levé. Vrai : l'entité s'est posée.
+	static bool PoserApresChute(const float *avantChute, float *pos, bool contact, float fraction) {
+		if(!contact) return false;
+		float f = Recul(fraction);
+		for(int i = 0; i < 3; i++){ float e = pos[i] - avantChute[i]; e = e * f; pos[i] = avantChute[i] + e; }
+		return true;
+	}
+	// Puis 00443950, +0x34 passe à 0 et +0x38 à 1, et +0x19c reçoit la distance parcourue pendant l'image : la norme (la racine,
+	// 0x85c4d0, de |z² + (y² + x²)|) de la position moins celle du début de la fonction ; enfin 00469320 et la libération des
+	// références des deux contacts.
+	static float Distance(const float *debut, const float *pos) {
+		float d[3] = {pos[0] - debut[0], pos[1] - debut[1], pos[2] - debut[2]};
+		return Norme(d);
+	}
 	// Puis il rebondit, au premier tour de la boucle des contacts (les autres CPhysical glissent le long de la normale et refont
 	// jusqu'à trois tours). La normale du contact, dont le z positif est mis à 0 quand l'entité touchée a un +0xf0 (`aPlat` ; fldz,
 	// fcom, test ah,5, jp), est normalisée (0x414cc0, supposée). Contre un piéton (le genre de l'entité touchée, +0x108 & 7, vaut 3)
