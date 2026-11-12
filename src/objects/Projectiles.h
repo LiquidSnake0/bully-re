@@ -4,6 +4,7 @@
 // Lu dans l'index le 07.11.2026 (FUN_004d4c40, la création ; FUN_004d4590, FUN_004d3f60, FUN_004d3dc0).
 #pragma once
 #include "../common.h"
+#include <cmath>
 
 struct CPlacesProjectiles {
 	enum { kTaille = 32 };
@@ -140,6 +141,27 @@ struct CVolProjectile {
 		if(!pese) pos[2] = d * v[2] + pos[2];
 		else pos[2] = (float)(((double)v[2] * (double)d - (double)gravite * 0.5 * (double)(float)((double)d * (double)d)) + (double)pos[2]);
 		return true;
+	}
+	// FUN_004698c0 (la résistance de l'air d'un CPhysical, lue à l'assembleur de 0x4698c0 à 0x469a1c ; 0085cb40, la puissance à deux
+	// arguments sur la pile du coprocesseur, est supposée être pow). Avec une résistance +0x160 strictement au-dessus de 0,1 (le
+	// double 0x900128 : fcomp, test ah,0x41, jne), la vitesse et la vitesse angulaire (+0x130, +0x134, +0x138) prennent le facteur
+	// +0x160 puissance le pas : pour un projectile, 0,99999 puissance 1,65 par image. Sinon (une traînée) : le facteur de la vitesse
+	// est (1 / |1 + +0x160 × 0,5 × |v|²|) puissance le pas, chaque étape arrondie en simple précision, et la vitesse angulaire prend
+	// 0,99 (le double 0x8ffcf8).
+	static void Air(float *v, float *w, float air, float pas) {
+		if((double)air > 0.1){
+			float f = (float)pow((double)air, (double)pas);
+			for(int i = 0; i < 3; i++) v[i] = v[i] * f;
+			for(int i = 0; i < 3; i++) w[i] = w[i] * f;
+			return;
+		}
+		float n2 = v[1] * v[1] + v[0] * v[0] + v[2] * v[2];
+		float k = (float)((double)air * 0.5 * (double)n2);
+		float a = fabsf(1.0f + k);
+		float b = 1.0f / a;
+		float f = (float)pow((double)b, (double)pas);
+		for(int i = 0; i < 3; i++) v[i] = v[i] * f;
+		for(int i = 0; i < 3; i++) w[i] = (float)((double)w[i] * 0.99);
 	}
 };
 

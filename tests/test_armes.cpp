@@ -377,6 +377,20 @@ main(void)
 		// Pesant : la vitesse perd 0,0132 avant de déplacer, et la position perd encore ½ × 0,008 × 1,65² = 0,01089.
 		vp[0] = 0.0f; vp[1] = 0.0f; vp[2] = 0.0f;
 		VERIF(V::Deplacer(vp, vv, false, true, 0.008f, 1.65f) && fabsf(vv[2] - 0.4868f) < 1e-6f && fabsf(vp[2] - (0.4868f * 1.65f - 0.01089f)) < 1e-5f);
+		// L'air (FUN_004698c0) : au-dessus de 0,1, le facteur est la résistance puissance le pas, sur les deux vitesses.
+		float av[3] = {1.0f, -2.0f, 4.0f}, aw[3] = {0.5f, 0.0f, -1.0f};
+		V::Air(av, aw, 0.5f, 2.0f);
+		VERIF(av[0] == 0.25f && av[1] == -0.5f && av[2] == 1.0f && aw[0] == 0.125f && aw[1] == 0.0f && aw[2] == -0.25f);
+		av[0] = 1.0f; av[1] = 0.0f; av[2] = 0.0f;
+		V::Air(av, aw, V::kAir, 1.65f);
+		VERIF(av[0] < 1.0f && fabsf(av[0] - 0.9999835f) < 1e-6f);
+		// Sous 0,1 : la traînée 1 / |1 + r × 0,5 × |v|²| puissance le pas, et 0,99 sur la vitesse angulaire.
+		av[0] = 2.0f; av[1] = 0.0f; av[2] = 0.0f; aw[0] = 1.0f; aw[1] = 2.0f; aw[2] = -1.0f;
+		V::Air(av, aw, 0.05f, 1.0f);
+		VERIF(fabsf(av[0] - 2.0f / 1.1f) < 1e-6f && fabsf(aw[0] - 0.99f) < 1e-7f && fabsf(aw[1] - 1.98f) < 1e-6f && fabsf(aw[2] + 0.99f) < 1e-7f);
+		av[0] = 0.0f; av[1] = 3.0f; av[2] = 4.0f;
+		V::Air(av, aw, 0.08f, 2.0f);
+		VERIF(fabsf(av[1] - 3.0f / 4.0f) < 1e-6f && fabsf(av[2] - 1.0f) < 1e-6f);
 		// La fin d'un projectile (FUN_004d45e0, FUN_004d3dc0).
 		CPlacesProjectiles f;
 		VERIF(f.Prendre(1000) == 0 && f.Vit(0, 1000, 0) && f.Vit(0, 999999, 0) && f.Vit(0, 1500, 500) && !f.Vit(0, 1501, 500) && !f.Vit(1, 1000, 0));

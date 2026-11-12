@@ -6587,8 +6587,12 @@ AvancerProjectiles(float pas)
 		// Le déplacement (FUN_00469760, que le projectile reçoit par sa méthode +0x94) : la gravité d'abord (FUN_004d1510, la
 		// méthode +0x90 : +0x230 × 0,008 par pas, FUN_004494d0), puis la position ; un projectile de l'outil pèse toujours (le mode
 		// de DAT_01b65c14 n'est pas suivi).
+		// Avant lui, la résistance de l'air (FUN_004698c0, à la fin du contrôle de l'image ; supposé : le contrôle passe avant le
+		// déplacement, comme dans les moteurs de la même famille) : 0,99999 puissance le pas, la valeur du constructeur. L'outil ne
+		// suit pas la vitesse angulaire du projectile.
 		{
-			float pt[3] = {q.pos.x, q.pos.y, q.pos.z}, v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z};
+			float pt[3] = {q.pos.x, q.pos.y, q.pos.z}, v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z}, w[3] = {0.0f, 0.0f, 0.0f};
+			CVolProjectile::Air(v, w, CVolProjectile::kAir, pas);
 			CVolProjectile::Deplacer(pt, v, false, true, CVolProjectile::Gravite(q.gravite), pas);
 			q.pos = CVector(pt[0], pt[1], pt[2]); q.vitesse = CVector(v[0], v[1], v[2]);
 		}
