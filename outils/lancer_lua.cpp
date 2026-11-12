@@ -155,7 +155,8 @@ struct CTypeProjectile { bool lu = false; int32 vie = 0; float degatsMin = 0, de
                          std::string marque, marqueMur; bool o8c = false, o8d = false, menace = false; float rayon = 0, a0 = 0;
                          bool dureeRefaite = false; float diviseur = 1.0f, facteurAvance = 1.0f;
                          bool o40 = false, o8e = false; int32 stimulus = 0, c4 = 0; std::string effet;
-                         uint32 dureeExplosion = 0, delaiExplosion = 0; float croissance = 0; bool evincable = false; };
+                         uint32 dureeExplosion = 0, delaiExplosion = 0; float croissance = 0; bool evincable = false;
+                         float elasticite = CVolProjectile::kElasticite; };   // +0x5c (92), que FUN_004d4c40 pose en +0x164 du projectile
 static std::map<int32, CTypeProjectile> typesProjectiles;   // par modèle d'arme (le +0x80 de son type)
 static CTypeProjectile projectileDefaut;
 static const CTypeProjectile &
@@ -173,6 +174,9 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 	a.degatsMin = CActionBank::ButesReel(t, 76); a.degatsMax = CActionBank::ButesReel(t, 80);
 	a.vitesseMin = CActionBank::ButesReel(t, 96); a.vitesseMax = CActionBank::ButesReel(t, 100);
 	a.gravite = CActionBank::ButesReel(t, 128);
+	// L'élasticité du rebond (+0x5c) ; une fiche sans ce champ garde 0,75, la valeur du constructeur du projectile (supposé : la valeur
+	// par défaut de la fiche n'est pas lue).
+	if(t.Champ(92)) a.elasticite = CActionBank::ButesReel(t, 92);
 	// Les deux marques de la fiche, des noms que FUN_007282e0 résout à la première demande : +0x150 (le nom +0x54, rendu par
 	// FUN_00468bb0) et +0x152 (le nom +0x58, rendu par FUN_00468bd0, la marque d'un mur). L'outil garde les noms.
 	auto it = chaines.find(84); if(it != chaines.end()) a.marque = it->second;
@@ -6606,6 +6610,7 @@ AvancerProjectiles(float pas)
 			q.pos = CVector(pt[0], pt[1], pt[2]); q.vitesse = CVector(v[0], v[1], v[2]);
 		}
 		int touche = -1; float mieux = 2.0f;
+		CVector centre(0.0f, 0.0f, 0.0f);   // le centre de la sphère touchée, pour la normale du contact
 		for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
 			const CScriptPed *p = pietons.Acceder(i);
 			if(p == nil || p->mort) continue;
@@ -6613,18 +6618,18 @@ AvancerProjectiles(float pas)
 			if(CContactProjectile::TireurEpargne(i == q.tireur, maintenant, q.naissance)) continue;
 			for(float h : {0.35f, 0.95f, 1.55f}){
 				float u;
-				if(SegmentDansSphere(avant, q.pos, CVector(p->pos.x, p->pos.y, p->pos.z + h), 0.35f, &u) && u < mieux){ mieux = u; touche = i; }
+				if(SegmentDansSphere(avant, q.pos, CVector(p->pos.x, p->pos.y, p->pos.z + h), 0.35f, &u) && u < mieux){ mieux = u; touche = i; centre = CVector(p->pos.x, p->pos.y, p->pos.z + h); }
 			}
 		}
 		// Les objets cassables : une sphère de 0,5 m autour de leur position (supposé : l'outil ne lit pas leur modèle de collision).
 		int objet = -1;
 		for(size_t i = 0; i < objets.size(); i++){
 			float u;
-			if(!objets[i].detruit && SegmentDansSphere(avant, q.pos, objets[i].pos, 0.5f, &u) && u < mieux){ mieux = u; objet = (int)i; touche = -1; }
+			if(!objets[i].detruit && SegmentDansSphere(avant, q.pos, objets[i].pos, 0.5f, &u) && u < mieux){ mieux = u; objet = (int)i; touche = -1; centre = objets[i].pos; }
 		}
-		// Le contact (FUN_0046ad90) : sur un piéton le coup puis le choc (FUN_004d3860) ; sur un objet le choc puis le coup. Le moteur
-		// garde le projectile, qui rebondit ; l'outil, sans rebond, le retire au premier contact. L'octet « fort » du choc vient du
-		// coup et de la vitesse (celle de l'outil, en mètres par pas : supposée l'unité de +0x124).
+		// Le contact (FUN_0046ad90) : sur un piéton le coup puis le choc (FUN_004d3860) ; sur un objet le choc puis le coup. Le
+		// projectile reste dans le monde : il recule au point du contact et rebondit (FUN_0046ca40, plus bas). L'octet « fort » du
+		// choc vient du coup et de la vitesse d'avant le rebond (en mètres par pas, l'unité de +0x124).
 		bool rbandball = q.modele == modeles.Index("RBandBall");
 		float allure = sqrtf(q.vitesse.x * q.vitesse.x + q.vitesse.y * q.vitesse.y + q.vitesse.z * q.vitesse.z);
 		CVector a(avant.x + (q.pos.x - avant.x) * mieux, avant.y + (q.pos.y - avant.y) * mieux, avant.z + (q.pos.z - avant.z) * mieux);
@@ -6639,15 +6644,37 @@ AvancerProjectiles(float pas)
 			bool fort = CContactProjectile::Fort(4, q.contacts, rbandball, allure);
 			q.contacts++;
 			ChoquerProjectile(place, q, 4, a, boite, fort);
-			q.actif = false; placesProjectiles.Liberer(place);
 			FrapperObjet((size_t)objet, q.tireur, q.degats);
 		}else if(touche >= 0){
-			CProjectileOutil c = q;
-			q.actif = false; placesProjectiles.Liberer(place);
-			if(CContactProjectile::Coup(3, c.contacts, rbandball)) RecevoirProjectile(touche, c.tireur, c.degats, c.modele);
-			bool fort = CContactProjectile::Fort(3, c.contacts, rbandball, allure);
-			c.contacts++;
-			ChoquerProjectile(place, c, 3, a, false, fort);
+			if(CContactProjectile::Coup(3, q.contacts, rbandball)) RecevoirProjectile(touche, q.tireur, q.degats, q.modele);
+			bool fort = CContactProjectile::Fort(3, q.contacts, rbandball, allure);
+			q.contacts++;
+			ChoquerProjectile(place, q, 3, a, false, fort);
+		}
+		// Le rebond (FUN_0046ca40, après le contact) : le projectile recule à la fraction du contact moins 0,005, puis sa vitesse se
+		// renverse le long de la normale : 0,75 et 0,75 contre un piéton, l'élasticité de la fiche (+0x5c) sinon. Le contact est
+		// le point où le trajet de l'image entre dans la sphère de l'outil (et non le point le plus proche du centre, qui sert au
+		// choc : sa normale serait perpendiculaire au vol), et la normale va du centre à ce point (supposé : le moteur prend le
+		// contact et la normale de son modèle de collision) ; le +0xf0 de l'entité touchée n'est pas suivi (nul).
+		if((objet >= 0 || touche >= 0) && q.actif){
+			float rayon = touche >= 0 ? 0.35f : 0.5f, entree = mieux;
+			CVector d(q.pos.x - avant.x, q.pos.y - avant.y, q.pos.z - avant.z);
+			float l2 = d.x * d.x + d.y * d.y + d.z * d.z;
+			if(l2 > 0.0f){
+				float tc = ((centre.x - avant.x) * d.x + (centre.y - avant.y) * d.y + (centre.z - avant.z) * d.z) / l2;
+				float px = avant.x + d.x * tc - centre.x, py = avant.y + d.y * tc - centre.y, pz = avant.z + d.z * tc - centre.z;
+				float reste = rayon * rayon - (px * px + py * py + pz * pz);
+				if(reste >= 0.0f){ entree = tc - sqrtf(reste / l2); entree = entree < 0.0f ? 0.0f : entree > 1.0f ? 1.0f : entree; }
+			}
+			CVector e0(avant.x + d.x * entree, avant.y + d.y * entree, avant.z + d.z * entree);
+			float f = CVolProjectile::Recul(entree);
+			q.pos = CVector(avant.x + d.x * f, avant.y + d.y * f, avant.z + d.z * f);
+			float n[3] = {e0.x - centre.x, e0.y - centre.y, e0.z - centre.z}, v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z};
+			float e = TypeProjectile(q.modele).elasticite;
+			CVolProjectile::Rebondir(v, n, touche >= 0, false, e);
+			printf("%6.2f s  le projectile %d rebondit sur %s %d : vitesse (%.3f, %.3f, %.3f) → (%.3f, %.3f, %.3f) m par pas, coefficient %g\n", maintenant / 1000.0, place,
+			       touche >= 0 ? "le piéton" : "l'objet", touche >= 0 ? touche : objet, q.vitesse.x, q.vitesse.y, q.vitesse.z, v[0], v[1], v[2], touche >= 0 ? CVolProjectile::kNormalPieton : e);
+			q.vitesse = CVector(v[0], v[1], v[2]);
 		}
 	}
 }

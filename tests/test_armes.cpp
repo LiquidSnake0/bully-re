@@ -413,6 +413,27 @@ main(void)
 		VERIF(!V::Controler(rv, rw, rmv, rmw, &rc, true, false, V::kAir, 1.65f) && rc == 0);
 		rw[2] = 0.0f; rmw[2] = 0.0f; rc = 3; rv[0] = 0.006f; rmv[0] = 0.0f;
 		VERIF(!V::Controler(rv, rw, rmv, rmw, &rc, true, false, V::kAir, 1.0f) && rc == 0 && rmv[0] == 0.003f);
+		// Le rebond (FUN_0046ca40) : le recul au contact, puis la vitesse renversée le long de la normale.
+		VERIF(fabsf(V::Recul(0.5f) - 0.495f) < 1e-7f && V::Recul(0.0f) < 0.0f);
+		// Sur un sol (normale en z), élasticité 0,5 : la chute de 2 devient une montée de 1, le glissement de 4 tombe à 2.
+		float bv[3] = {4.0f, 0.0f, -2.0f}, bn[3] = {0.0f, 0.0f, 3.0f};
+		V::Rebondir(bv, bn, false, false, 0.5f);
+		VERIF(bv[0] == 2.0f && bv[1] == 0.0f && bv[2] == 1.0f);
+		// Contre un piéton : 0,75 et 0,75, quelle que soit l'élasticité. Un mur en x.
+		bv[0] = -4.0f; bv[1] = 2.0f; bv[2] = 0.0f; bn[0] = 1.0f; bn[1] = 0.0f; bn[2] = 0.0f;
+		V::Rebondir(bv, bn, true, false, 0.1f);
+		VERIF(bv[0] == 3.0f && bv[1] == 1.5f && bv[2] == 0.0f);
+		// L'entité à plat (+0xf0) : le z positif de la normale est effacé avant de normaliser ; un z négatif reste.
+		bv[0] = -1.0f; bv[1] = 0.0f; bv[2] = -1.0f; bn[0] = 3.0f; bn[1] = 0.0f; bn[2] = 4.0f;
+		V::Rebondir(bv, bn, false, true, 1.0f);
+		VERIF(bv[0] == 1.0f && bv[1] == 0.0f && bv[2] == -1.0f);
+		bv[0] = 0.0f; bv[1] = 0.0f; bv[2] = 2.0f; bn[0] = 0.0f; bn[1] = 0.0f; bn[2] = -1.0f;
+		V::Rebondir(bv, bn, false, true, 1.0f);
+		VERIF(bv[0] == 0.0f && bv[2] == -2.0f);
+		// Une élasticité de 1 garde la norme ; de 0,75 (le constructeur), une vitesse de face revient aux trois quarts.
+		bv[0] = 0.0f; bv[1] = -0.4f; bv[2] = 0.0f; bn[0] = 0.0f; bn[1] = 1.0f; bn[2] = 0.0f;
+		V::Rebondir(bv, bn, false, false, V::kElasticite);
+		VERIF(fabsf(bv[1] - 0.3f) < 1e-7f);
 		// La fin d'un projectile (FUN_004d45e0, FUN_004d3dc0).
 		CPlacesProjectiles f;
 		VERIF(f.Prendre(1000) == 0 && f.Vit(0, 1000, 0) && f.Vit(0, 999999, 0) && f.Vit(0, 1500, 500) && !f.Vit(0, 1501, 500) && !f.Vit(1, 1000, 0));

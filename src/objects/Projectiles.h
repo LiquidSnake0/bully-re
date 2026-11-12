@@ -197,6 +197,35 @@ struct CVolProjectile {
 		Air(v, w, air, pas);
 		return false;
 	}
+	// La fonction 0046ca40 (le déplacement d'un CPhysical dans le monde, 2 884 octets, non recréée en entier ; ici sa part pour un projectile, +0xc4 non nul, lue à
+	// l'assembleur de 0x46cd98 à 0x46ce47 et de 0x46d0d7 à 0x46d22e ; le balayage qui trouve le contact n'est pas recréé). Au
+	// contact le plus proche, à la fraction f du déplacement de l'image, le projectile est reposé à l'ancienne position plus le
+	// déplacement fois (f − 0,005) (le double 0x90c740), arrondi en simple précision.
+	static float Recul(float fraction) { return (float)((double)fraction - 0.005); }
+	// Puis il rebondit, au premier tour de la boucle des contacts (les autres CPhysical glissent le long de la normale et refont
+	// jusqu'à trois tours). La normale du contact, dont le z positif est mis à 0 quand l'entité touchée a un +0xf0 (`aPlat` ; fldz,
+	// fcom, test ah,5, jp), est normalisée (0x414cc0, supposée). Contre un piéton (le genre de l'entité touchée, +0x108 & 7, vaut 3)
+	// le coefficient tangentiel est _DAT_00a24040 et le normal _DAT_00a2403c, 0,75 tous les deux ; sinon les deux sont l'élasticité
+	// +0x164 du projectile (le +0x5c de sa fiche). La vitesse se partage en sa part le long de la normale, vn = n × (v·n) (le produit
+	// scalaire arrondi en simple précision : vz nz + (vy ny + vx nx)), et le reste vt = v − vn ; la nouvelle vitesse est
+	// tangentiel × vt − normal × vn. Deux modèles ont leur cas à part, non suivis : celui de DAT_00bf44dc ne rebondit pas (vitesse à
+	// 0, avancé de 0,1 le long de sa direction, le bit 0x2 de +0x1bc baissé : il se plante, supposé) et celui de DAT_00bf439c reçoit en
+	// plus deux poussées de 0,03 sur une normale au z sous 0,7 en valeur absolue.
+	static constexpr float kTangentielPieton = 0.75f, kNormalPieton = 0.75f;
+	static void Rebondir(float *v, const float *normale, bool pieton, bool aPlat, float elasticite) {
+		float n[3] = {normale[0], normale[1], normale[2]};
+		if(aPlat && 0.0f < n[2]) n[2] = 0.0f;
+		float l = sqrtf(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+		if(l > 0.0f){ n[0] /= l; n[1] /= l; n[2] /= l; }
+		float tangentiel = pieton ? kTangentielPieton : elasticite;
+		float normal = -(pieton ? kNormalPieton : elasticite);
+		float p = v[2] * n[2] + (v[1] * n[1] + v[0] * n[0]);
+		for(int i = 0; i < 3; i++){
+			float vn = n[i] * p;
+			float vt = v[i] - vn;
+			v[i] = tangentiel * vt + normal * vn;
+		}
+	}
 };
 
 // Le choc d'un projectile (FUN_004d3860, lue à l'assembleur de 0x4d3860 à 0x4d3c14 ; appelée par le contact du CPhysical, FUN_0046ad90,
