@@ -1,6 +1,7 @@
 // Marcher dans des volumes de collision construits à la main : ne lit aucun
 // fichier du jeu. Un sol, une marche, un mur, une rampe, une sphère.
 #include "collision/Marche.h"
+#include "collision/Balayes.h"
 #include <cmath>
 #include <cstdio>
 
@@ -105,6 +106,61 @@ main(void)
 			Verifier(!t.Trajet(CVector(0, 6, 0.5f), CVector(0, 6, 0.2f), &f, &n), "un départ dans le rocher ne compte pas");
 			t.Indexer(4.0f);                             // le second tour avec la grille : mêmes réponses
 		}
+	}
+	// Les tests de collision balayés de bully.exe (src/collision/Balayes.h) : matrices, sommets, deux sphères.
+	{
+		typedef CCollisionBalayee B;
+		auto pres = [](float a, float b) { return fabsf(a - b) < 1e-5f; };
+		// Un quart de tour autour de z (la droite vers +y, l'avant vers −x), posé en (10, 20, 30).
+		B::Matrice m;
+		float r[16] = {0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 10, 20, 30, 0};
+		for(int i = 0; i < 16; i++) m.m[i] = r[i];
+		const float p[3] = {1, 2, 3};
+		float q[4], v[4], back[4];
+		B::Point(q, m.m, p);
+		Verifier(pres(q[0], 8) && pres(q[1], 21) && pres(q[2], 33), "FUN_0045d3b0 : le point passé par la matrice");
+		B::Tourner(v, m.m, p);
+		Verifier(pres(v[0], -2) && pres(v[1], 1) && pres(v[2], 3), "FUN_00414560 : le vecteur tourné, sans la position");
+		B::Matrice inv; inv.m[15] = 7;
+		B::Inverser(m.m, inv.m);
+		B::Point(back, inv.m, q);
+		Verifier(pres(back[0], 1) && pres(back[1], 2) && pres(back[2], 3) && inv.m[15] == 7, "FUN_00413620 : l'inverse ramène le point, le quatrième réel non écrit");
+		Verifier(pres(inv.m[12], -20) && pres(inv.m[13], 10) && pres(inv.m[14], -30), "FUN_00413620 : la position de l'inverse");
+		B::Matrice prod; prod.o40 = 99;
+		B::Multiplier(&prod, inv.m, m.m);
+		bool ident = prod.o40 == 0;
+		for(int j = 0; j < 4; j++) for(int i = 0; i < 3; i++) ident = ident && pres(prod.m[j * 4 + i], (i == j) ? 1.0f : 0.0f);
+		Verifier(ident, "FUN_00413780 : l'inverse fois la matrice, l'identité, le mot +0x40 à zéro");
+		B::Multiplier(&prod, m.m, m.m);
+		Verifier(pres(prod.m[0], -1) && pres(prod.m[5], -1) && pres(prod.m[12], -10) && pres(prod.m[13], 30) && pres(prod.m[14], 60), "FUN_00413780 : deux quarts de tour, un demi-tour, les positions composées");
+		const int16 som[6] = {128, -256, 64, 0, 1, -1};
+		float s3[3];
+		B::Sommet(s3, som, 0);
+		Verifier(s3[0] == 1.0f && s3[1] == -2.0f && s3[2] == 0.5f, "FUN_0056e530 : un sommet, trois entiers sur 128");
+		B::Sommet(s3, som, 1);
+		Verifier(s3[0] == 0.0f && s3[1] == 0.0078125f && s3[2] == -0.0078125f, "FUN_0056e530 : le second sommet, 6 octets plus loin");
+		// Deux sphères de 0,5 m : a part de l'origine et avance de 4 m en x, b attend en (2, 0, 0).
+		const float a[4] = {0, 0, 0, 0.5f}, zero[3] = {0, 0, 0}, da[3] = {4, 0, 0};
+		float f = -1, pt[3];
+		const float b[4] = {2, 0, 0, 0.5f};
+		Verifier(B::SpheresBalayees(a, b, 1.0f, da, zero, &f, pt) && pres(f, 0.25f) && pres(pt[0], 1.5f) && pt[1] == 0.0f, "FUN_00576a00 : touché au quart du trajet, en x = 1,5");
+		Verifier(B::SpheresBalayees(b, a, 1.0f, zero, da, &f, pt) && pres(f, 0.25f) && pres(pt[0], 1.5f), "FUN_00576a00 : le même vu de b");
+		const float dm[3] = {-4, 0, 0};
+		Verifier(!B::SpheresBalayees(a, b, 1.0f, dm, zero, &f, pt), "FUN_00576a00 : a s'éloigne de b (d · e > 0), rien");
+		const float bl[4] = {5, 0, 0, 0.5f}, d1[3] = {1, 0, 0};
+		Verifier(!B::SpheresBalayees(a, bl, 1.0f, d1, zero, &f, pt), "FUN_00576a00 : le plus proche après t, encore à 3 m, rien");
+		const float bc[4] = {2, 3, 0, 0.5f};
+		Verifier(!B::SpheresBalayees(a, bc, 1.0f, da, zero, &f, pt), "FUN_00576a00 : passe à 3 m de côté, le discriminant négatif");
+		const float bo[4] = {0.5f, 0, 0, 0.5f};
+		f = -1;
+		Verifier(B::SpheresBalayees(a, bo, 1.0f, da, zero, &f, pt) && f == 0.0f && pt[0] == 0.25f, "FUN_00576a00 : déjà en contact, à 0, au milieu des centres");
+		f = -1;
+		Verifier(B::SpheresBalayees(a, bo, 1.0f, zero, zero, &f, pt) && f == 0.0f && pt[0] == 0.25f, "FUN_00576a00 : sans déplacement, en contact, au milieu");
+		Verifier(!B::SpheresBalayees(a, b, 1.0f, zero, zero, &f, pt), "FUN_00576a00 : sans déplacement, à 2 m, rien");
+		const float d2[3] = {2, 0, 0};
+		Verifier(B::SpheresBalayees(a, b, 1.0f, d2, zero, &f, pt) && pres(f, 0.5f) && pres(pt[0], 1.5f), "FUN_00576a00 : le contact à la moitié, la fin du trajet juste au contact");
+		const float bd[4] = {2, 0, 0, 0.5f}, db[3] = {-2, 0, 0};
+		Verifier(B::SpheresBalayees(a, bd, 1.0f, d2, db, &f, pt) && pres(f, 0.25f) && pres(pt[0], 1.0f), "FUN_00576a00 : les deux bougent, se croisent au milieu");
 	}
 	return g_ko ? 1 : 0;
 }
