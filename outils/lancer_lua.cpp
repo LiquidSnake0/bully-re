@@ -6803,18 +6803,43 @@ VueDuMonde(const CMondeCollision &m)
 	}
 	return v;
 }
+// Les sphères du modèle de collision d'un projectile : celles du modèle de même nom dans les .col de Stream/World.img (la table
+// colsMonde, que CollisionDuMonde remplit : baseball.col, marble.col, BRICK.col… y sont), dans leur ordre. Supposé : c'est le
+// modèle que rend FUN_0051ae00 (ModeleDeCollision) pour un projectile, celui de la fiche de son modèle. Sans modèle (ou sans
+// sphère), une sphère de rayon nul en son centre.
+static const std::vector<CCollisionBalayee::SphereCol> &
+SpheresDuProjectile(int32 modele)
+{
+	static std::map<int32, std::vector<CCollisionBalayee::SphereCol>> vues;
+	auto dj = vues.find(modele);
+	if(dj != vues.end()) return dj->second;
+	std::vector<CCollisionBalayee::SphereCol> &v = vues[modele];
+	std::string k = NomDeModeleMonde(modele);
+	for(char &c : k) c = (char)tolower((unsigned char)c);
+	auto it = colsMonde.find(k);
+	if(!k.empty() && it != colsMonde.end() && it->second->pColData)
+		for(int32 i = 0; i < it->second->pColData->numSpheres; i++){
+			const CColSphere &c = it->second->pColData->spheres[i];
+			CCollisionBalayee::SphereCol s = CCollisionBalayee::SphereCol();
+			s.centre[0] = c.center.x; s.centre[1] = c.center.y; s.centre[2] = c.center.z; s.rayon = c.radius; s.surface = c.surface; s.o11 = c.piece;
+			v.push_back(s);
+		}
+	if(v.empty()) v.push_back(CCollisionBalayee::SphereCol());
+	printf("%6.2f s  le modèle de collision du projectile %d (%s) : %zu sphère(s), la première de %.3f m en (%.3f, %.3f, %.3f)\n", maintenant / 1000.0,
+	       modele, k.c_str(), v.size(), v[0].rayon, v[0].centre[0], v[0].centre[1], v[0].centre[2]);
+	return v;
+}
 // Le trajet d'un projectile de a à b contre la collision de la zone, par le test général et avec les arguments que lui donne la
-// méthode +0xa4 d'un CProjectile (FUN_0046a340 : cinq mots nuls, 0xf, un a14 nul et a15 = 1). Le projectile est une sphère de
-// rayon nul (supposé : l'outil ne lit pas son modèle de collision, FUN_0051ae00 ; le rayon du balayage, Rayon, est nul aussi),
-// posée sans rotation à a puis à b. Rend la fraction, la normale du contact et le rang du volume touché (celui du triangle, ou
+// méthode +0xa4 d'un CProjectile (FUN_0046a340 : cinq mots nuls, 0xf, un a14 nul et a15 = 1). Le projectile est son modèle de
+// collision (SpheresDuProjectile), posé sans rotation à a puis à b (supposé : la rotation d'un projectile n'est pas suivie). Rend la fraction, la normale du contact et le rang du volume touché (celui du triangle, ou
 // −1 − celui de la sphère), comme CMondeCollision::Trajet le faisait, et le mot +0x22 du contact (la surface d'un triangle).
 static bool
-TesterMonde(const CMondeCollision &m, const CVector &a, const CVector &b, float *fraction, CVector *normale, int32 *volume, uint16 *surface = nil)
+TesterMonde(const CMondeCollision &m, int32 modele, const CVector &a, const CVector &b, float *fraction, CVector *normale, int32 *volume, uint16 *surface = nil)
 {
 	typedef CCollisionBalayee CB;
 	const CVueMonde &vue = VueDuMonde(m);
-	static const CB::SphereCol point = CB::SphereCol();
-	CB::DonneesCol proj; proj.spheres = &point; proj.nSpheres = 1;
+	const std::vector<CB::SphereCol> &sp = SpheresDuProjectile(modele);
+	CB::DonneesCol proj; proj.spheres = &sp[0]; proj.nSpheres = (int8)(sp.size() < 127 ? sp.size() : 127);
 	CB::Matrice m1, m2, id;
 	m1.m[12] = a.x; m1.m[13] = a.y; m1.m[14] = a.z; m2.m[12] = b.x; m2.m[13] = b.y; m2.m[14] = b.z;
 	CVolProjectile::ContactBalaye c;
@@ -6833,7 +6858,8 @@ TesterMonde(const CMondeCollision &m, const CVector &a, const CVector &b, float 
 		*volume = dernier;
 		if(dernier < 0){
 			// Une sphère : la première dont le contact donne cette fraction (les sphères passent avant les triangles).
-			const float pa[4] = {a.x, a.y, a.z, 0.0f}, d[3] = {b.x - a.x, b.y - a.y, b.z - a.z}, zero[3] = {0, 0, 0};
+			float pa[4], d[3] = {b.x - a.x, b.y - a.y, b.z - a.z}, zero[3] = {0, 0, 0};
+			CB::Point(pa, m1.m, sp[c.o1c < sp.size() ? c.o1c : 0].centre); pa[3] = sp[c.o1c < sp.size() ? c.o1c : 0].rayon;
 			for(int j = 0; j < vue.nSpheres; j++){
 				const CB::SphereCol &sp = vue.spheres[j];
 				float sb[4] = {sp.centre[0], sp.centre[1], sp.centre[2], sp.rayon}, f, pt[3];
@@ -6965,7 +6991,7 @@ struct CBalayageOutil {
 		}
 		// Le test lui-même est celui du binaire, le test général (TesterMonde) : un triangle n'est touché que de face (FUN_00575510).
 		uint16 surface = 0;
-		if(!(TesterMonde(*collision, avant, q->pos, &fMonde, &nMonde, &vMonde, &surface) && fMonde < entree)) return 0;
+		if(!(TesterMonde(*collision, q->modele, avant, q->pos, &fMonde, &nMonde, &vMonde, &surface) && fMonde < entree)) return 0;
 		contact->o22 = surface;
 		monde = true; objet = -1; touche = -1;
 		contact->fraction = fMonde; contact->normale[0] = nMonde.x; contact->normale[1] = nMonde.y; contact->normale[2] = nMonde.z;
