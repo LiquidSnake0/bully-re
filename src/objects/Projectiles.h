@@ -282,7 +282,7 @@ struct CVolProjectile {
 		*compte = repos ? 10 : 0;
 	}
 	// La fonction 0046ca40 (le déplacement d'un CPhysical dans le monde, 2 884 octets, non recréée en entier ; ici sa part pour un projectile, +0xc4 non nul, lue à
-	// l'assembleur de 0x46cd98 à 0x46ce47 et de 0x46d0d7 à 0x46d22e ; le balayage d'une liste de secteur, 0046c4b0, n'est pas recréé). Au
+	// l'assembleur de 0x46cd98 à 0x46ce47 et de 0x46d0d7 à 0x46d22e ; le balayage d'une liste de secteur, FUN_0046c4b0, est BalayerListe). Au
 	// contact le plus proche, à la fraction f du déplacement de l'image, le projectile est reposé à l'ancienne position plus le
 	// déplacement fois (f − 0,005) (le double 0x90c740, qui vaut 0,005 en simple précision : 0,004999999888241291), arrondi en
 	// simple précision.
@@ -350,7 +350,7 @@ struct CVolProjectile {
 	};
 	// FUN_0046c970(listes, secteur, meilleur, arg4, quatrième) (lue à l'assembleur de 0x46c970 à 0x46ca3f, ret 0x14) : le balayage
 	// d'un secteur. Les quatre listes du secteur (quatre mots de suite ; la quatrième, de rang 3, seulement quand l'octet du
-	// cinquième argument vaut 1) passent une à une par 0046c4b0 (le balayage d'une liste, non recréé : `balayer`, qui reçoit le rang
+	// cinquième argument vaut 1) passent une à une par FUN_0046c4b0 (le balayage d'une liste, BalayerListe : `balayer`, qui reçoit le rang
 	// de la liste et un contact local, le même pour les quatre listes, fait une fois avant la boucle). Quand elle rend vrai et que
 	// la fraction du contact local est strictement sous celle du meilleur (fcompp, test ah,0x41, jne), le contact local est copié
 	// dans le meilleur (FUN_0046a920, Copier ; les liens de la référence ne sont pas suivis ici) et la fonction rendra vrai.
@@ -591,6 +591,119 @@ struct CVolProjectile {
 		else n = (uint8)contreModele();
 		if(n > 0 && oc4 && (uint8)contact->o22 == 0x41) return 0;
 		return n;
+	}
+	// FUN_0046c4b0(arg1, &liste, meilleur, arg4) (méthode de l'entité qui balaie, lue à l'assembleur de 0x46c4b0 à 0x46c877, 967
+	// octets, ret 0x10) : le balayage d'une liste de secteur, le vrai test de collision du déplacement d'un CPhysical. FUN_0046c970
+	// l'appelle pour chaque liste d'un secteur (BalayerSecteur). Ce qu'elle lit d'une entité, sous le nom de son offset :
+	struct EntiteBalayee {
+		uint8 o108 = 0;                                        // ses trois bits bas : le genre (3 un piéton, 2 un véhicule, supposé)
+		uint16 o10a = 0;                                       // le code du dernier balayage qui l'a vue
+		int16 o10e = 0;                                        // le modèle
+		uint32 oc4 = 0;                                        // non nul : un projectile
+		uint32 o1c = 0, o20 = 0, o60 = 0, of4 = 0, o100 = 0;   // le filtre d'entrée
+		uint32 o28 = 0;                                        // de l'entité qui balaie : nul, son rayon grandit de sa vitesse
+		float vitesse[3] = {0.0f, 0.0f, 0.0f};                 // +0x124, +0x128, +0x12c
+	};
+	// Le volume du modèle de collision d'une entité (le mot +0x38 du modèle que rend FUN_0051ae00) : ce que le balayage en lit.
+	struct VolumeBalaye {
+		uint16 o1c = 0; uint8 o1e = 0, o1f = 0;                // trois comptes (supposé : sphères, boîtes, triangles ; non lu)
+		uint32 o18 = 0;
+	};
+	// Le déroulement, dans l'ordre du binaire. `m` porte ce que la fonction lit hors de l'entité : Code() (le mot 0xc1ae88, le code
+	// du balayage en cours), Pas() (le réel 0xc1a9a4), Rayon(moi) (FUN_00465cc0), Centre(moi, centre) (FUN_00466b50), Entite(piscine,
+	// indice) (FUN_0044a290), Noeud(suivant) (le mot 0xc0f788 + 4 × suivant), SansPietons() (l'octet 0xc2b10b vaut 1),
+	// IgnorePieton(moi, e) (FUN_004760b0), IgnoreSonGenre2(moi, e) (FUN_00476160), IgnoreGenre2Lie(moi, e) (FUN_00476270),
+	// BitDuModele(e) (le bit 1 << l'octet 0xa147e0 de l'octet +0xb de la fiche du modèle, table 0xc67738), Volume(e),
+	// Spheres(e, centre, rayon) (FUN_00465bc0), ProjectileIgnore(piéton, projectile) (FUN_004761a0), VehiculeIgnore(entité,
+	// projectile) (FUN_00469f10), ModeleSerre(modèle) (un des trois de DAT_00bf435c, DAT_00bf4358, DAT_00bf4354), Avant(e, vecteur)
+	// (FUN_00415350), Tester(moi, arg1, e, &local, arg4) (la méthode +0xa4 de la vtable de l'entité qui balaie : FUN_0046a340 pour
+	// un CProjectile), Lier(e) et Delier(e) (00465680, 00465690).
+	//  1. Le rayon du balayage est celui de l'entité ; quand son +0x28 est nul il grandit de la norme de sa vitesse (la racine,
+	//     0x85c4d0, de |vy² + vx² + vz²| arrondi en simple précision) fois le pas. Le centre vient de FUN_00466b50.
+	//  2. La liste : un nœud est un mot ; ses quatre bits bas sont la piscine, les quatorze suivants l'indice, les quatorze hauts le
+	//     nœud suivant (0x3fff : la fin). Le suivant est lu avant tout filtre.
+	//  3. Une entité dont le +0x10a vaut déjà le code est passée (une entité tient dans plusieurs listes) ; sinon elle le reçoit.
+	//  4. Quand c'est un piéton qui balaie : un projectile est passé ; un piéton est passé si l'octet 0xc2b10b vaut 1, si arg4 n'est
+	//     pas nul ou si FUN_004760b0 est vrai ; une entité de genre 2 si FUN_00476160 ou FUN_00476270 est vrai. Quand c'est une
+	//     entité de genre 2 qui balaie : un projectile est passé.
+	//  5. L'entité qui balaie elle-même est passée.
+	//  6. Le filtre d'entrée : (+0x20 non nul, et +0x1c ou +0x60 non nul, et le bit du modèle, et +0xf4 nul), ou sinon +0x100 non nul.
+	//  7. Le volume du modèle de collision : nul → passée ; ses trois comptes nuls → passée ; son +0x18 non nul → passée.
+	//  8. Le test des sphères (FUN_00465bc0) faux → passée.
+	//  9. Quand c'est un projectile qui balaie, trois jugements : un piéton que FUN_004761a0 écarte, une entité de genre 2 que
+	//     FUN_00469f10 écarte, un projectile du même modèle serré tourné du même côté (MemeSens) → passée. Sinon, quand c'est une
+	//     entité de genre 2 qui balaie un projectile : FUN_00469f10 dans l'autre sens (jamais atteint : le point 4 l'a déjà passé).
+	// 10. Un contact neuf (FUN_00415e50), la méthode +0xa4 ; non nulle : la référence du contact local est liée à l'entité
+	//     (FUN_0045f0a0) et, quand sa fraction est strictement sous celle du meilleur (fcompp, test ah,0x41, jne), le meilleur le
+	//     copie (FUN_0046a920), se lie à l'entité (FUN_0045f0a0) et la fonction rendra vrai. Le contact local est défait
+	//     (FUN_004153b0).
+	template<class E, class A, class M>
+	static bool BalayerListe(E *moi, A arg1, const uint32 *noeud, ContactBalaye *meilleur, bool arg4, M &m) {
+		uint16 code = m.Code();
+		bool touche = false;
+		float rayon = m.Rayon(moi), centre[3];
+		m.Centre(moi, centre);
+		if(moi->o28 == 0){
+			const float *v = moi->vitesse;
+			float n2 = (float)((double)v[1] * (double)v[1] + (double)v[0] * (double)v[0] + (double)v[2] * (double)v[2]);
+			float n = sqrtf(fabsf(n2));
+			rayon = (float)((double)n * (double)m.Pas() + (double)rayon);
+		}
+		auto lier = [&](const void *x){ m.Lier(x); };
+		auto delier = [&](const void *x){ m.Delier(x); };
+		int genreMoi = moi->o108 & 7;
+		while(noeud){
+			uint32 mot = *noeud;
+			E *e = m.Entite((int)(mot & 0xf), (int)((mot >> 4) & 0x3fff));
+			uint32 suivant = mot >> 18;
+			noeud = suivant == 0x3fff ? nullptr : m.Noeud(suivant);
+			if(e->o10a == code) continue;
+			e->o10a = code;
+			int genre = e->o108 & 7;
+			if(genreMoi == 3){
+				if(e->oc4 != 0) continue;
+				if(genre == 3){
+					if(m.SansPietons() || arg4 || m.IgnorePieton(moi, e)) continue;
+				}else if(genre == 2){
+					if(m.IgnoreSonGenre2(moi, e) || m.IgnoreGenre2Lie(moi, e)) continue;
+				}
+			}else if(genreMoi == 2){
+				if(e->oc4 != 0) continue;
+			}
+			if(e == moi) continue;
+			bool entre = e->o20 != 0 && (e->o1c != 0 || e->o60 != 0) && m.BitDuModele(e) && e->of4 == 0;
+			if(!entre && e->o100 == 0) continue;
+			const VolumeBalaye *vol = m.Volume(e);
+			if(vol == nullptr) continue;
+			if(vol->o1c == 0 && vol->o1e == 0 && vol->o1f == 0) continue;
+			if(vol->o18 != 0) continue;
+			if(!m.Spheres(e, centre, rayon)) continue;
+			if(moi->oc4 != 0){
+				bool pieton = true, vehicule = true, serre = true;
+				if(genre == 3) pieton = !m.ProjectileIgnore(e, moi);
+				else if(genre == 2) vehicule = !m.VehiculeIgnore(e, moi);
+				if(moi->o10e == e->o10e && m.ModeleSerre((int)moi->o10e)){
+					float avantE[3], avantMoi[3];
+					m.Avant(e, avantE);
+					m.Avant(moi, avantMoi);
+					if(MemeSens(avantMoi, avantE)) serre = false;
+				}
+				if(!pieton || !vehicule || !serre) continue;
+			}else if(genreMoi == 2 && e->oc4 != 0){
+				if(m.VehiculeIgnore(moi, e)) continue;
+			}
+			ContactBalaye local;
+			if(m.Tester(moi, arg1, e, &local, arg4) != 0){
+				local.LierEntite(e, delier, lier);
+				if(local.fraction < meilleur->fraction){
+					meilleur->Copier(local, delier, lier);
+					meilleur->LierEntite(e, delier, lier);
+					touche = true;
+				}
+			}
+			local.Defaire(delier);
+		}
+		return touche;
 	}
 	// Puis il rebondit, au premier tour de la boucle des contacts (les autres CPhysical glissent le long de la normale et refont
 	// jusqu'à trois tours). La normale du contact, dont le z positif est mis à 0 quand l'entité touchée a un +0xf0 (`aPlat` ; fldz,

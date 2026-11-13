@@ -624,6 +624,79 @@ main(void)
 				neuf.Defaire([&](const void *){ delies++; }); VERIF(delies == 0);
 				neuf.entite = &oc; neuf.Defaire([&](const void *e){ if(e == &oc) delies++; }); VERIF(delies == 1 && neuf.entite == &oc);
 			}
+			{
+				// le balayage d'une liste de secteur (FUN_0046c4b0) sur un monde d'essai
+				struct Ent : V::EntiteBalayee { V::VolumeBalaye vol; bool aVol = true; float fraction = 0.5f; int touche = 1; float avant[3] = {0, 1, 0}; };
+				struct Monde {
+					Ent *piscines[10][8] = {}; uint32 noeuds[8] = {}; uint16 code = 7; float pas = 2.0f;
+					bool sansPietons = false, ignPieton = false, ignG2 = false, ignLie = false, bit = true, spheres = true;
+					bool projIgnore = false, vehIgnore = false; int serre = -1;
+					std::string j; float rayonVu = 0.0f; int arg4Vu = -1, arg1Vu = -1;
+					uint16 Code(){ return code; } float Pas(){ return pas; }
+					float Rayon(Ent *){ return 1.0f; }
+					void Centre(Ent *, float *c){ c[0] = 1; c[1] = 2; c[2] = 3; }
+					Ent *Entite(int p, int i){ return piscines[p][i]; }
+					const uint32 *Noeud(uint32 n){ return &noeuds[n]; }
+					bool SansPietons(){ return sansPietons; }
+					bool IgnorePieton(Ent *, Ent *){ j += "P"; return ignPieton; }
+					bool IgnoreSonGenre2(Ent *, Ent *){ j += "G"; return ignG2; }
+					bool IgnoreGenre2Lie(Ent *, Ent *){ j += "L"; return ignLie; }
+					bool BitDuModele(Ent *){ return bit; }
+					const V::VolumeBalaye *Volume(Ent *e){ return e->aVol ? &e->vol : nullptr; }
+					bool Spheres(Ent *, const float *c, float r){ rayonVu = r; return spheres && c[0] == 1 && c[2] == 3; }
+					bool ProjectileIgnore(Ent *, Ent *){ j += "p"; return projIgnore; }
+					bool VehiculeIgnore(Ent *, Ent *){ j += "v"; return vehIgnore; }
+					bool ModeleSerre(int mo){ return mo == serre; }
+					void Avant(Ent *e, float *a){ a[0] = e->avant[0]; a[1] = e->avant[1]; a[2] = e->avant[2]; }
+					int Tester(Ent *, int a1, Ent *e, V::ContactBalaye *c, bool a4){ j += "T"; arg1Vu = a1; arg4Vu = a4; c->fraction = e->fraction; return e->touche; }
+					void Lier(const void *){ j += "+"; } void Delier(const void *){ j += "-"; }
+				};
+				auto entite = [](int genre){ Ent e; e.o108 = (uint8)(0x40 | genre); e.o20 = 1; e.o1c = 1; e.vol.o1c = 1; return e; };
+				auto mot = [](int piscine, int indice, int suivant){ return (uint32)piscine | (uint32)indice << 4 | (uint32)suivant << 18; };
+				Monde m; Ent moi = entite(4), a = entite(1), b = entite(1), c = entite(1);
+				moi.oc4 = 1; moi.o28 = 1; a.fraction = 0.6f; b.fraction = 0.25f; c.fraction = 0.25f;
+				m.piscines[7][5] = &a; m.piscines[7][6] = &b; m.piscines[2][1] = &c; m.piscines[3][0] = &moi;
+				// la liste : le nœud 0 (a) → 3 (b) → 1 (moi) → 2 (c) → fin
+				m.noeuds[0] = mot(7, 5, 3); m.noeuds[3] = mot(7, 6, 1); m.noeuds[1] = mot(3, 0, 2); m.noeuds[2] = mot(2, 1, 0x3fff);
+				V::ContactBalaye meilleur;
+				VERIF(!V::BalayerListe(&moi, 42, (const uint32 *)nullptr, &meilleur, false, m) && m.j.empty());   // liste vide
+				VERIF(V::BalayerListe(&moi, 42, &m.noeuds[0], &meilleur, true, m));
+				// a touche (0,6 < FLT_MAX : lié au local, puis au meilleur par la copie ; le second lien du meilleur, déjà elle, ne fait
+				// rien ; le local défait), b touche (0,25 < 0,6 : a délié du meilleur, b lié), moi passée, c à égalité : lié au local seulement
+				VERIF(m.j == "T++-T+-+-T+-" && meilleur.entite == &b && meilleur.fraction == 0.25f && m.arg1Vu == 42 && m.arg4Vu == 1);
+				VERIF(a.o10a == 7 && b.o10a == 7 && c.o10a == 7 && moi.o10a == 7 && m.rayonVu == 1.0f);
+				m.j.clear(); V::ContactBalaye m2;
+				VERIF(!V::BalayerListe(&moi, 42, &m.noeuds[0], &m2, false, m) && m.j.empty());                    // le même code : toutes déjà vues
+				auto relance = [&](V::ContactBalaye *best, bool a4 = false){ m.code++; m.j.clear(); return V::BalayerListe(&moi, 42, &m.noeuds[2], best, a4, m); };
+				// le rayon : +0x28 nul, la norme de la vitesse (5) fois le pas (2)
+				moi.o28 = 0; moi.vitesse[0] = 3.0f; moi.vitesse[1] = 4.0f; { V::ContactBalaye k; VERIF(relance(&k) && m.rayonVu == 11.0f); } moi.o28 = 1;
+				// le filtre d'entrée
+				{ V::ContactBalaye k; c.o20 = 0; VERIF(!relance(&k)); c.o100 = 1; VERIF(relance(&k)); c.o100 = 0; c.o20 = 1; }
+				{ V::ContactBalaye k; c.o1c = 0; VERIF(!relance(&k)); c.o60 = 1; VERIF(relance(&k)); c.o60 = 0; c.o1c = 1; }
+				{ V::ContactBalaye k; m.bit = false; VERIF(!relance(&k)); m.bit = true; c.of4 = 1; VERIF(!relance(&k)); c.o100 = 1; VERIF(relance(&k)); c.of4 = 0; c.o100 = 0; }
+				// le volume du modèle de collision, puis les sphères
+				{ V::ContactBalaye k; c.aVol = false; VERIF(!relance(&k)); c.aVol = true; c.vol.o1c = 0; VERIF(!relance(&k)); c.vol.o1e = 1; VERIF(relance(&k)); }
+				{ V::ContactBalaye k; c.vol.o1e = 0; c.vol.o1f = 1; VERIF(relance(&k)); c.vol.o18 = 1; VERIF(!relance(&k)); c.vol.o18 = 0; }
+				{ V::ContactBalaye k; m.spheres = false; VERIF(!relance(&k) && m.j.empty()); m.spheres = true; }
+				// la méthode +0xa4 rend 0 : rien de lié, rien de touché
+				{ V::ContactBalaye k; c.touche = 0; VERIF(!relance(&k) && m.j == "T" && k.entite == nullptr); c.touche = 1; }
+				// un projectile qui balaie : le piéton écarté par son filtre, le véhicule par le sien, le modèle serré tourné du même côté
+				{ V::ContactBalaye k; c.o108 = 3; VERIF(relance(&k) && m.j == "pT++-"); m.projIgnore = true; V::ContactBalaye k2; VERIF(!relance(&k2) && m.j == "p"); m.projIgnore = false; }
+				{ V::ContactBalaye k; c.o108 = 2; VERIF(relance(&k) && m.j == "vT++-"); m.vehIgnore = true; V::ContactBalaye k2; VERIF(!relance(&k2) && m.j == "v"); m.vehIgnore = false; c.o108 = 1; }
+				{ V::ContactBalaye k; moi.o10e = 300; c.o10e = 300; VERIF(relance(&k)); m.serre = 300; V::ContactBalaye k2; VERIF(!relance(&k2) && m.j.empty());
+				  c.avant[0] = 1; c.avant[1] = 0; V::ContactBalaye k3; VERIF(relance(&k3)); c.o10e = 301; c.avant[0] = 0; c.avant[1] = 1; V::ContactBalaye k4; VERIF(relance(&k4)); m.serre = -1; }
+				// un piéton qui balaie : jamais un projectile ; un piéton selon l'octet, arg4 et son filtre ; une entité de genre 2 selon les deux siens
+				moi.oc4 = 0; moi.o108 = 3;
+				{ V::ContactBalaye k; c.oc4 = 1; VERIF(!relance(&k) && m.j.empty()); c.oc4 = 0; c.o108 = 3; VERIF(relance(&k) && m.j == "PT++-"); }
+				{ V::ContactBalaye k; m.sansPietons = true; VERIF(!relance(&k) && m.j.empty()); m.sansPietons = false; VERIF(!relance(&k, true) && m.j.empty());
+				  m.ignPieton = true; VERIF(!relance(&k) && m.j == "P"); m.ignPieton = false; }
+				{ V::ContactBalaye k; c.o108 = 2; VERIF(relance(&k) && m.j == "GLT++-"); m.ignG2 = true; V::ContactBalaye k2; VERIF(!relance(&k2) && m.j == "G");
+				  m.ignG2 = false; m.ignLie = true; VERIF(!relance(&k2) && m.j == "GL"); m.ignLie = false; }
+				// une entité de genre 2 qui balaie : jamais un projectile
+				moi.o108 = 2; { V::ContactBalaye k; c.o108 = 1; c.oc4 = 1; VERIF(!relance(&k) && m.j.empty()); c.oc4 = 0; VERIF(relance(&k) && m.j == "T++-"); }
+				// l'entité qui balaie elle-même
+				{ V::ContactBalaye k; m.code++; m.j.clear(); VERIF(!V::BalayerListe(&c, 42, &m.noeuds[2], &k, false, m) && m.j.empty()); }
+			}
 			bool remis = false;
 			VERIF(V::CodeDeBalayage(7, &remis) == 8 && !remis && V::CodeDeBalayage(0xfffe) == 0xffff && V::CodeDeBalayage(0xffff, &remis) == 1 && remis);
 			float avantChute[3] = {1.0f, 2.0f, 4.05f}, pos[3] = {1.0f, 2.0f, 3.0f};
