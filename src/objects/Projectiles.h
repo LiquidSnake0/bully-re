@@ -469,6 +469,16 @@ struct CVolProjectile {
 		float d2 = dy * dy + dx * dx + dz * dz;
 		return d2 < rayon * rayon;
 	}
+	// FUN_00465a50(centre, rayon) (méthode d'une entité, lue à l'assembleur de 0x465a50 à 0x465af1, 162 octets, ret 8 ; le lancer sur
+	// une liste de secteur, FUN_00563aa0, l'appelle sur chaque entité avant son test) : le même test que FUN_00465bc0, sans la vitesse.
+	// Le centre de la sphère du modèle de collision (FUN_0051ae00) passe dans le monde par la matrice de l'entité (FUN_0046dbd0,
+	// FUN_0041a850, sans la branche d'une entité sans matrice), le rayon donné grandit du seul rayon du modèle (+0xc, fadd de
+	// l'argument) : ni le +0xf0 ni la vitesse ne sont lus. Le carré de l'écart (y² + x², puis + z²) est rangé en simple précision
+	// dans l'argument du rayon (fstp) puis comparé au carré du rayon (fcompp, test ah,5, jp) : vrai quand il est strictement dessous,
+	// l'égalité rend faux, comme FUN_00465bc0.
+	static bool SphereTouche(const float *centreMonde, float rayonModele, const float *centre, float rayon) {
+		return SpheresSeTouchent(centreMonde, rayonModele, false, nullptr, centre, rayon);
+	}
 	// Les trois filtres de piéton du balayage d'une liste de secteur (0046c4b0 les appelle quand l'entité qui balaie est un piéton,
 	// avant le test des sphères : un filtre vrai, et l'entité de la liste est passée). Trois méthodes du piéton (ecx), un argument,
 	// ret 4, lues à l'assembleur en entier. Ce qu'elles lisent d'une entité, sous le nom de son offset (le sens des champs n'est pas
@@ -686,7 +696,7 @@ struct CVolProjectile {
 	// (FUN_0044a290), quatorze du nœud suivant (0x3fff : la fin ; le mot 0xc0f788 + 4 × suivant), lu avant tout filtre. Ce qu'elle
 	// lit du lancer, sous le nom de son offset (ce qu'ils veulent dire est supposé : 00563f30 n'est pas lue) :
 	//  +0x0  une entité : un piéton que FUN_004761a0 écarte pour elle est passé (supposé : celle qui lance) ;
-	//  +0x4  trois réels : le centre du test des sphères (00465a50, méthode de l'entité, avec le rayon donné) et le premier
+	//  +0x4  trois réels : le centre du test des sphères (FUN_00465a50, `SphereTouche`, méthode de l'entité, avec le rayon donné) et le premier
 	//        argument du test ; +0x10 trois réels et +0x1c un réel, ses deuxième et troisième arguments (supposé : le départ,
 	//        la direction et la longueur) ;
 	//  +0x20 des drapeaux, passés au test ; le bit 0x80 : le filtre +0x44 (cdecl, l'entité ; vrai : passée) est appelé ;

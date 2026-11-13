@@ -540,6 +540,11 @@ main(void)
 				VERIF(!V::SpheresSeTouchent(c1, 1.0f, true, v1, c2, 3.0f));                 // 1 + 3 + 1 = 5 : l'égalité encore
 				float c3[3] = {0.0f, 0.0f, 12.0f};
 				VERIF(V::SpheresSeTouchent(c3, 6.0f, false, v0, c2, 7.01f) && !V::SpheresSeTouchent(c3, 6.0f, false, v0, c2, 6.99f));   // 13 m, avec le z
+				// le test des sphères du lancer (FUN_00465a50) : le même, sans la vitesse
+				VERIF(!V::SphereTouche(c1, 2.0f, c2, 3.0f) && V::SphereTouche(c1, 2.0f, c2, 3.01f));                     // l'égalité rend faux
+				VERIF(V::SphereTouche(c3, 6.0f, c2, 7.01f) && !V::SphereTouche(c3, 6.0f, c2, 6.99f));
+				VERIF(V::SpheresSeTouchent(c1, 2.0f, true, v1, c2, 3.0f) && !V::SphereTouche(c1, 2.0f, c2, 3.0f));         // la vitesse qui comptait pour 00465bc0 ne compte pas
+				printf("  le test des sphères du lancer (FUN_00465a50) : 5 m d'écart, 2 + 3 m de rayons rendent faux, 2 + 3,01 m vrai, sans la vitesse\n");
 			}
 			{
 				// les trois filtres de piéton du balayage d'une liste (FUN_004760b0, FUN_00476160, FUN_00476270)
