@@ -45,6 +45,9 @@
 #include "../src/objects/Collectibles.h"
 #include "../src/objects/Ramassages.h"
 #include "../src/core/IplFile.h"
+#include "../src/collision/ColModel.h"
+#include "../src/collision/Marche.h"
+#include "../src/gamebryo/NifTransform.h"
 #include "../src/anim/Hxd.h"
 #include "../src/anim/AnimGroups.h"
 #include "../src/core/ConditionListe.h"
@@ -159,7 +162,29 @@ struct CTypeProjectile { bool lu = false; int32 vie = 0; float degatsMin = 0, de
                          std::string effetPres;   // +0xa8 (168), l'effet du passage près du joueur (FUN_004d2290)
                          bool o7c = false;        // +0x7c (124) : l'octet +0x20a du projectile vaut 7 au lieu de 6 (FUN_004d4c40, FUN_004cf350)
                          uint32 dureePoussee = 0; float poussee = 0, portance = 0, delaiPoussee = 0;   // +0xf0, +0xf8, +0xfc, +0x100 (FUN_004d1ec0)
-                         float elasticite = CVolProjectile::kElasticite; };   // +0x5c (92), que FUN_004d4c40 pose en +0x164 du projectile
+                         float elasticite = CVolProjectile::kElasticite;      // +0x5c (92), que FUN_004d4c40 pose en +0x164 du projectile
+                         // Les bornes de la vitesse de départ (FUN_0065f050, CViseeTir::VitesseDepart) : v.z au départ (+0x68, +0x6c), w.z
+                         // à l'arrivée (+0x70, +0x74), l'angle de la plongée (+0x78) et la dispersion (+0x120). Une fiche sans le champ
+                         // garde -1, la borne sans effet, et une dispersion nulle (supposé : les valeurs par défaut de la fiche ne sont
+                         // pas lues).
+                         float monteeMin = -1.0f, monteeMax = -1.0f, arriveeMin = -1.0f, arriveeMax = -1.0f, angleArrivee = -1.0f, dispersion = 0.0f;
+                         std::string freinage; }; // +0x12c (300) : le nom de la fiche du freinage (00680140)
+// Le freinage d'un projectile dont l'octet +0x20a vaut 7 (FUN_004cf350, CVolProjectile::Freiner). Sa fiche (00680140, 0072ae00 et
+// 006838d0, lues au décompilé ; les deux noms, lus à l'assembleur de 0x618052 à 0x61807a, où 005fa730 les pose) : celle du chemin
+// { « DodgeballPhysics » (DAT_01b65374), le nom +0x12c de la fiche du projectile } sous l'arbre des réglages (DAT_020c8874), de la
+// classe « DodgeballPhysicsButes » (DAT_01b65378), résolue par FUN_0072ad50 ; à défaut, ou sans fiche de projectile, celle de
+// DAT_020c888c, la piste DodgeballPhysicsButes du nœud Globals (0072ae00). +0x18 (24) : le seuil d'arrêt ; +0x1c (28) : le seuil
+// à partir duquel le facteur est +0x20 (32) ; +0x24 (36) : le facteur en dessous. 006838d0 rend faux tant que l'objet du jeu de
+// ballon (DAT_01b89150) est nul, donc hors de ce mini-jeu : le freinage vaut alors pour tout projectile de ce genre.
+struct CFicheFreinage { bool lue = false; float seuilArret = 0.0f, seuilVite = 0.0f, facteurVite = 1.0f, facteurLent = 1.0f; };
+static CFicheFreinage freinageDefaut;
+static std::map<int32, CFicheFreinage> freinages;   // par modèle d'arme, quand la fiche de son projectile en nomme une
+static const CFicheFreinage &
+Freinage(int32 arme)
+{
+	auto it = freinages.find(arme);
+	return it == freinages.end() ? freinageDefaut : it->second;
+}
 static std::map<int32, CTypeProjectile> typesProjectiles;   // par modèle d'arme (le +0x80 de son type)
 static CTypeProjectile projectileDefaut;
 static const CTypeProjectile &
@@ -177,8 +202,15 @@ LireTypeProjectile(const CActionTrack &t, const std::map<uint16, std::string> &c
 	a.degatsMin = CActionBank::ButesReel(t, 76); a.degatsMax = CActionBank::ButesReel(t, 80);
 	a.vitesseMin = CActionBank::ButesReel(t, 96); a.vitesseMax = CActionBank::ButesReel(t, 100);
 	a.gravite = CActionBank::ButesReel(t, 128);
+	if(t.Champ(104)) a.monteeMin = CActionBank::ButesReel(t, 104);
+	if(t.Champ(108)) a.monteeMax = CActionBank::ButesReel(t, 108);
+	if(t.Champ(112)) a.arriveeMin = CActionBank::ButesReel(t, 112);
+	if(t.Champ(116)) a.arriveeMax = CActionBank::ButesReel(t, 116);
+	if(t.Champ(120)) a.angleArrivee = CActionBank::ButesReel(t, 120);
+	if(t.Champ(288)) a.dispersion = CActionBank::ButesReel(t, 288);
 	{ auto ip = chaines.find(168); if(ip != chaines.end()) a.effetPres = ip->second; }
 	{ const CActionAttribut *o = t.Champ(124); a.o7c = o && o->valeur[0]; }
+	{ auto ifr = chaines.find(300); if(ifr != chaines.end()) a.freinage = ifr->second; }
 	// La poussée (FUN_004d1ec0) : sa durée (+0xf0 = 240, que la création copie au +0x10 de l'entrée : supposé, la création n'étant
 	// pas relue), le facteur le long de la vitesse (+0xf8), la portance (+0xfc) et la part de la durée avant l'extinction (+0x100).
 	a.dureePoussee = t.Mot(240); a.poussee = CActionBank::ButesReel(t, 248); a.portance = CActionBank::ButesReel(t, 252);
@@ -223,6 +255,7 @@ struct CProjectileOutil { bool actif = false; int32 modele = -1; int tireur = -1
                           float moyenne[3] = {0, 0, 0}; uint8 repos = 0; bool pose = false;
                           bool pousse = false;     // la poussée de FUN_004d1ec0 a déjà été dite
                           bool presJoue = false;   // le bit 0x1 de +0x22d : l'effet du passage près du joueur est joué (FUN_004d2290)
+                          bool sorti = false;      // la première image du vol est passée (le monde ne la compte pas : voir AvancerProjectiles)
                           float echelle = 1.0f; }; // l'échelle de temps +0x154 (1 par le constructeur de CPhysical ; FUN_004d2090)
 static CProjectileOutil projectiles[CPlacesProjectiles::kTaille];
 static CPlacesProjectiles placesProjectiles;
@@ -2838,6 +2871,29 @@ ChargerArmes(void)
 		   CActionBank::ButesChemin("Global_Weapons.cat", {ActionHash("Weapons"), ActionHash("Projectiles"), ActionHash(a.second.nomProjectile.c_str())},
 		                            ActionHash("ProjectileButes"), t, &ch))
 			typesProjectiles[a.first] = LireTypeProjectile(t, ch);
+	{
+		auto lire = [](const CActionTrack &x){
+			CFicheFreinage f; f.lue = true;
+			f.seuilArret = CActionBank::ButesReel(x, 24); f.seuilVite = CActionBank::ButesReel(x, 28);
+			f.facteurVite = CActionBank::ButesReel(x, 32); f.facteurLent = CActionBank::ButesReel(x, 36);
+			return f;
+		};
+		CActionTrack tf;
+		if(CActionBank::ButesChemin("Globals.cat", {ActionHash("GlobalsBank"), ActionHash("Globals")}, ActionHash("DodgeballPhysicsButes"), tf))
+			freinageDefaut = lire(tf);
+		int genre7 = 0, nommees = 0;
+		for(const auto &a : typesProjectiles){
+			if(a.second.o7c) genre7++;
+			if(a.second.freinage.empty()) continue;
+			if(CActionBank::ButesChemin("Globals.cat", {ActionHash("GlobalsBank"), ActionHash("Globals"), ActionHash("DodgeballPhysics"),
+			                                            ActionHash(a.second.freinage.c_str())}, ActionHash("DodgeballPhysicsButes"), tf)){
+				freinages[a.first] = lire(tf); nommees++;
+			}
+		}
+		if(freinageDefaut.lue)
+			printf("le freinage des projectiles (DodgeballPhysicsButes de Globals) : arrêt sous %g m par pas, × %g dès %g m par pas, × %g en dessous ; %d fiches de genre 7, %d fiches de freinage nommées\n",
+			       freinageDefaut.seuilArret, freinageDefaut.facteurVite, freinageDefaut.seuilVite, freinageDefaut.facteurLent, genre7, nommees);
+	}
 	armes.sansFin[0] = modeles.Index("marble"); armes.sansFin[1] = modeles.Index("supermarble"); armes.sansFin[2] = modeles.Index("RubBand");
 	// DAT_00a136b8 et les quatre modèles que FUN_00541ae0 traite à part (InitModelIndices, la table des noms 0xa136e8).
 	if(!modeles.objets.empty()) objetsJoueur.premier = modeles.objets.begin()->first;
@@ -2897,9 +2953,11 @@ NoterObjet(const CIplSpec &e)
 	return 0;
 }
 
+static std::vector<CIplInst> placementsMonde;   // toutes les entrées inst des .ipb, pour la collision du monde (CollisionDuMonde)
 static int32
 NoterInstance(const CIplInst &e)
 {
+	placementsMonde.push_back(e);
 	if(collectibles.Indice(e.unk116) < 0) return 0;
 	CCollectiblePose c;
 	c.modele = e.modelId; c.pos = e.pos; c.zone = (int8)lroundf(e.unk68); c.hache = e.unk116; c.placement = placementCourant;
@@ -6373,13 +6431,21 @@ Tirer(int ped, float charge, float degatsPiste = -1.0f, float facteurAvance = 1.
 	}
 	float vitesse = tp.vitesseMin + charge * (tp.vitesseMax - tp.vitesseMin);
 	if(vitesse < 0.01f) vitesse = 0.01f;
-	float dx = cible.x - depart.x, dy = cible.y - depart.y, dz = cible.z - depart.z;
-	float T = sqrtf(dx * dx + dy * dy + dz * dz) / vitesse;
-	if(T <= 0.01f) T = 0.01f;
-	float g = tp.gravite * -0.008f;
+	// La vitesse de départ (FUN_0065f050, CViseeTir::VitesseDepart) : la durée du vol est la distance à plat sur l'allure, allongée
+	// tant que les bornes de la fiche ne sont pas tenues. La dispersion (+0x120) : l'outil ne rejoue pas le hasard du moteur, les
+	// trois tirages valent leur moyenne, 0 (supposé, comme pour l'imprécision de FUN_0065eb40).
+	CViseeTir::FicheVitesse fv;
+	fv.allureMin = tp.vitesseMin; fv.allureMax = tp.vitesseMax; fv.gravite = tp.gravite;
+	fv.monteeMin = tp.monteeMin; fv.monteeMax = tp.monteeMax; fv.arriveeMin = tp.arriveeMin; fv.arriveeMax = tp.arriveeMax;
+	fv.angle = tp.angleArrivee; fv.dispersion = tp.dispersion;
+	int essaisVol = 0; float dureeVol = 0.0f;
+	CVector v0 = CViseeTir::VitesseDepart(depart, cible, charge, tp.lu ? &fv : nullptr, joueur, 0.0f, []{ return 0.0f; }, &essaisVol, &dureeVol);
+	if(essaisVol > 1)
+		printf("%6.2f s  le tir du piéton %d allonge son vol : %d essais, %.2f pas (bornes de la fiche : montée %.3f à %.3f, arrivée %.3f à %.3f, angle %.1f)\n",
+		       maintenant / 1000.0, ped, essaisVol, dureeVol, tp.monteeMin, tp.monteeMax, tp.arriveeMin, tp.arriveeMax, tp.angleArrivee);
 	CProjectileOutil q;
 	q.actif = true; q.modele = munition; q.tireur = ped; q.pos = depart; q.gravite = tp.gravite;   // FUN_004d4c40 : +0x80 de la fiche → +0x230
-	q.vitesse = CVector(dx / T, dy / T, (dz - 0.5f * g * T * T) / T);
+	q.vitesse = v0;
 	q.degats = CChargeArme::Degats(true, tp.degatsMin, tp.degatsMax, charge, degatsPiste, pietons.StatLue(ped, 0x1f, 100));
 	// La vie (CPlacesProjectiles::Vie, FUN_004d4c40 : la vie du tireur, +0x1cc0 × 1000, ou celle de la fiche, moins le temps depuis
 	// l'allumage de la mèche de l'objet arme, +0x140, que l'outil n'allume pas ; 1 pour 0 ; gardée en +0xc de l'entrée) ; 0, un
@@ -6437,6 +6503,112 @@ AppliquerTirs(int ped, CActionController &c)
 }
 
 // Le segment a → b passe-t-il dans la sphère (c, r) ? La fraction du segment au point le plus proche, dans `u`.
+// La collision du monde sous les projectiles : les volumes des .col de Stream/World.img (CColLoader, src/collision/ColModel.h), posés
+// par les entrées inst des .ipb (la matrice du placement, NifFromPlacement) dans un CMondeCollision (src/collision/Marche.h), comme
+// le font outils/scene.h et outils/visite.cpp. Ce n'est pas le balayage du moteur (le déplacement d'un CPhysical balaie son modèle
+// de collision contre ceux des entités des secteurs) : l'outil lance le trajet du centre du projectile, sans son rayon, contre les
+// triangles, les boîtes et les sphères des placements de la zone visible (le +0x44 de l'entrée, arrondi : la zone de l'entité).
+// Les volumes sont bâtis à la première demande d'une zone (au premier projectile en vol) ; LANCER_SANS_MONDE=1 les coupe.
+static std::map<std::string, CColModel *> colsMonde;
+static std::map<int, CMondeCollision> collisionsMonde;
+// Le placement de chaque volume d'une zone : le premier triangle et la première sphère de chaque placement posé, et son nom.
+struct CPlacementMonde { size_t triangle, sphere; std::string nom; CVector pos; };
+static std::map<int, std::vector<CPlacementMonde>> placementsPoses;
+static const CPlacementMonde *
+PlacementDuVolume(int zone, int32 volume)
+{
+	const std::vector<CPlacementMonde> &v = placementsPoses[zone];
+	const CPlacementMonde *r = nil;
+	for(const CPlacementMonde &q : v){
+		if(volume >= 0 ? q.triangle > (size_t)volume : q.sphere > (size_t)(-1 - volume)) break;
+		r = &q;
+	}
+	return r;
+}
+// Le nom d'un modèle par son indice (la table de MODELENUM, à l'envers), en minuscules ; vide sans modèle.
+static std::string
+NomDeModeleMonde(int32 id)
+{
+	static std::map<int32, std::string> parIndice;
+	if(parIndice.empty()) for(const auto &x : modeles.parNom) parIndice.emplace(x.second, x.first);
+	auto it = parIndice.find(id);
+	return it == parIndice.end() ? std::string() : it->second;
+}
+static void
+GarderColMonde(int32 id, const char *nom, CColModel *m, uint8)
+{
+	std::string k = nom && nom[0] ? std::string(nom) : NomDeModeleMonde(id);
+	for(char &c : k) c = (char)tolower((unsigned char)c);
+	if(k.empty() || colsMonde.count(k)){ m->RemoveCollisionVolumes(); free(m); return; }
+	colsMonde[k] = m;
+}
+static const CMondeCollision *
+CollisionDuMonde(int zone)
+{
+	static const bool coupe = getenv("LANCER_SANS_MONDE") != nil;
+	if(coupe) return nil;
+	auto dj = collisionsMonde.find(zone);
+	if(dj != collisionsMonde.end()) return &dj->second;
+	static bool lues = false;
+	if(!lues){
+		lues = true;
+		// L'image du monde est déjà ouverte par l'outil (les groupes d'animations, les objets) : la table de CdStream n'a que huit
+		// places, que les banques d'actions prennent encore en cours de mission ; l'outil reprend donc la place déjà prise.
+		int32 monde = -1;
+		for(int32 i = 0; i < CdStream::ms_numImages && monde < 0; i++)
+			if(strcasecmp(CdStream::ms_images[i].m_path, "Stream\\World.img") == 0) monde = i;
+		if(monde < 0) monde = CdStream::AddImage("Stream\\World.img");
+		if(monde >= 0){
+			CColLoader::ms_handler = GarderColMonde;
+			const CdImage &img = CdStream::ms_images[monde];
+			int fichiers = 0;
+			for(int32 i = 0; i < img.m_numEntries; i++){
+				const CDirectoryEntry &d = img.m_entries[i];
+				size_t n = strlen(d.name);
+				if(n < 4 || strcasecmp(d.name + n - 4, ".col") != 0) continue;
+				std::vector<uint8> buf(d.size * CDSTREAM_SECTOR_SIZE);
+				int32 fd = CFileMgr::OpenFile("Stream\\World.img", "rb", 1);
+				CFileMgr::Seek(fd, d.offset * CDSTREAM_SECTOR_SIZE, 0);
+				bool ok = CFileMgr::ReadExact(fd, buf.data(), (uint32)buf.size());
+				CFileMgr::CloseFile(fd);
+				if(ok){ CColLoader::LoadCollisionFile(buf.data(), (uint32)buf.size(), 0); fichiers++; }
+			}
+			CColLoader::ms_handler = nil;
+			printf("%6.2f s  la collision du monde : %zu modèles de collision dans %d .col de Stream/World.img\n", maintenant / 1000.0, colsMonde.size(), fichiers);
+		}
+	}
+	CMondeCollision &m = collisionsMonde[zone];
+	int poses = 0, sans = 0;
+	for(const CIplInst &e : placementsMonde){
+		if((int)lroundf(e.unk68) != zone) continue;
+		std::string k = e.name[0] ? std::string(e.name) : NomDeModeleMonde(e.modelId);
+		for(char &c : k) c = (char)tolower((unsigned char)c);
+		auto it = colsMonde.find(k);
+		if(it == colsMonde.end() || it->second->pColData == nil){ sans++; continue; }
+		const CCollisionData &c = *it->second->pColData;
+		NifTransform t = NifFromPlacement(e.pos, e.scale, e.rot);
+		placementsPoses[zone].push_back({m.tri.size() / 3, m.sphCentre.size(), k, e.pos});
+		for(int32 i = 0; i < c.numTriangles; i++){
+			const CColTriangle &tr = c.triangles[i];
+			m.AjouterTriangle(NifApply(t, c.vertices[tr.a].Get()), NifApply(t, c.vertices[tr.b].Get()), NifApply(t, c.vertices[tr.c].Get()));
+		}
+		for(int32 i = 0; i < c.numBoxes; i++){
+			const CColBox &bx = c.boxes[i]; CVector k8[8];
+			for(int j = 0; j < 8; j++) k8[j] = NifApply(t, CVector(j & 1 ? bx.max.x : bx.min.x, j & 2 ? bx.max.y : bx.min.y, j & 4 ? bx.max.z : bx.min.z));
+			m.AjouterBoite(k8);
+		}
+		for(int32 i = 0; i < c.numSpheres; i++){
+			float sc = fmaxf(fmaxf(fabsf(e.scale.x), fabsf(e.scale.y)), fabsf(e.scale.z)); if(sc <= 0) sc = 1;
+			m.AjouterSphere(NifApply(t, c.spheres[i].center), c.spheres[i].radius * sc);
+		}
+		poses++;
+	}
+	m.Indexer();
+	printf("%6.2f s  la collision du monde, zone %d : %d placements posés (%d sans volume), %zu triangles, %zu sphères\n", maintenant / 1000.0, zone,
+	       poses, sans, m.tri.size() / 3, m.sphCentre.size());
+	return &m;
+}
+
 static bool
 SegmentDansSphere(const CVector &a, const CVector &b, const CVector &c, float r, float *u)
 {
@@ -6554,17 +6726,18 @@ ExploserProjectile(int place, const CProjectileOutil &q, const CVector &pt, cons
 }
 
 // Le choc d'un projectile de l'outil (FUN_004d3860, CChocProjectile) à un contact avec un piéton (genre 3) ou un objet (genre 4).
-// L'outil n'a ni stimuli, ni effets, et ses explosions ne balaient pas : chaque étape du choc est dite au journal. Il n'a pas non plus la
-// normale ni la surface du contact : la normale est supposée de face (z nul : un +0x8d seul n'explose pas) et la surface 0 ; le
-// +0x3c de DAT_020c8704 (FUN_004a8350, pour la balle de baseball) n'est pas suivi : 0. Le premier contact au sol (FUN_004d3370,
-// l'octet +0x18) attend un sol.
+// L'outil n'a ni stimuli, ni effets, et ses explosions ne balaient pas : chaque étape du choc est dite au journal. Contre un piéton
+// ou un objet il n'a pas la normale du contact : elle est supposée de face (z nul : un +0x8d seul n'explose pas) ; contre le monde
+// (genre 1, un bâtiment) c'est celle du triangle touché. La surface du contact n'est pas lue (0) ; le +0x3c de DAT_020c8704
+// (FUN_004a8350, pour la balle de baseball) n'est pas suivi : 0. Le premier contact au sol (CChocProjectile::PremierSol : l'octet
+// +0x18 de l'entrée, puis FUN_004d3370, une animation de l'objet du projectile, non suivie) est dit au journal.
 static void
-ChoquerProjectile(int place, CProjectileOutil &q, int genre, const CVector &pt, bool journalEnBoite, bool fort)
+ChoquerProjectile(int place, CProjectileOutil &q, int genre, const CVector &pt, bool journalEnBoite, bool fort, float normaleZ = 0.0f)
 {
 	const CTypeProjectile &tp = TypeProjectile(q.modele);
 	double t = maintenant / 1000.0;
 	if(tp.o40) printf("%6.2f s  choc du projectile %d : le stimulus %d naît du projectile (non suivi)\n", t, place, tp.stimulus);
-	if(CChocProjectile::Explose(tp.o8c, tp.o8d, tp.o8e, 0.0f, genre, false) && placesProjectiles.Exploser(place)) ExploserProjectile(place, q, pt, "choc");
+	if(CChocProjectile::Explose(tp.o8c, tp.o8d, tp.o8e, normaleZ, genre, false) && placesProjectiles.Exploser(place)) ExploserProjectile(place, q, pt, "choc");
 	if(CChocProjectile::StimulusDeLObjet(true, q.degats, genre, 0, journalEnBoite))
 		printf("%6.2f s  choc du projectile %d : le stimulus 2 naît du tireur %d sur %g m (non suivi)\n", t, place, q.tireur, tp.rayon);
 	if(q.modele == modeles.Index("RBandBall")) q.impacts &= ~7u;
@@ -6572,6 +6745,10 @@ ChoquerProjectile(int place, CProjectileOutil &q, int genre, const CVector &pt, 
 	const char *effet = CChocProjectile::Effet(tp.effet.empty() ? nil : tp.effet.c_str(), fort, q.modele == modeles.Index("baseball"), true, genre, 0, &compte);
 	if(compte) q.impacts = CChocProjectile::Compter(q.impacts);
 	if(effet) printf("%6.2f s  choc du projectile %d : effet %s (%d, impact %u ; non joué)\n", t, place, effet, tp.c4, q.impacts & 7);
+	if(CChocProjectile::PremierSol(placesProjectiles.auSol[place], normaleZ)){
+		placesProjectiles.auSol[place] = true;
+		printf("%6.2f s  choc du projectile %d : premier contact au sol (normale z %.2f)\n", t, place, normaleZ);
+	}
 }
 
 static void
@@ -6629,6 +6806,12 @@ AvancerProjectiles(float pas)
 		// vitesse angulaire du projectile (nulle ici), ni +0x34 et +0xb0 (nuls, supposé).
 		{
 			float pt[3] = {q.pos.x, q.pos.y, q.pos.z}, v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z}, w[3] = {0.0f, 0.0f, 0.0f}, mw[3] = {0.0f, 0.0f, 0.0f};
+			// Avant lui le freinage du contrôle de l'objet (FUN_004cf350) : pour un projectile dont l'octet +0x20a vaut 7 (l'octet +0x7c
+			// de sa fiche), les deux vitesses fois le facteur de sa fiche de freinage, à chaque image.
+			if(tq.o7c){
+				const CFicheFreinage &ff = Freinage(q.modele);
+				if(ff.lue) CVolProjectile::Freiner(v, w, ff.seuilArret, ff.seuilVite, ff.facteurVite, ff.facteurLent);
+			}
 			if(CVolProjectile::Controler(v, w, q.moyenne, mw, &q.repos, true, false, CVolProjectile::kAir, pas)){
 				// La méthode +0x1c(1) d'un projectile (FUN_004d1560, lue de 0x4d1560 à 0x4d1666 : avec l'octet +0x15 de son entrée elle
 				// redresse d'abord sa matrice, l'axe z vers le haut, ce que l'outil ne suit pas), puis la mise au repos d'un objet
@@ -6681,6 +6864,31 @@ AvancerProjectiles(float pas)
 			float u;
 			if(!objets[i].detruit && SegmentDansSphere(avant, q.pos, objets[i].pos, 0.5f, &u) && u < mieux){ mieux = u; objet = (int)i; touche = -1; centre = objets[i].pos; }
 		}
+		// Le monde : le trajet de l'image dans la collision de la zone visible (CollisionDuMonde). Il passe devant un piéton ou un
+		// objet quand le trajet le croise avant d'entrer dans leur sphère.
+		bool monde = false; float fMonde = 2.0f; CVector nMonde(0.0f, 0.0f, 1.0f); int32 vMonde = -1;
+		{
+			float entree = 2.0f;
+			if(objet >= 0 || touche >= 0){
+				float rayon = touche >= 0 ? 0.35f : 0.5f;
+				CVector d(q.pos.x - avant.x, q.pos.y - avant.y, q.pos.z - avant.z);
+				float l2 = d.x * d.x + d.y * d.y + d.z * d.z;
+				entree = mieux;
+				if(l2 > 0.0f){
+					float tc = ((centre.x - avant.x) * d.x + (centre.y - avant.y) * d.y + (centre.z - avant.z) * d.z) / l2;
+					float px = avant.x + d.x * tc - centre.x, py = avant.y + d.y * tc - centre.y, pz = avant.z + d.z * tc - centre.z;
+					float reste = rayon * rayon - (px * px + py * py + pz * pz);
+					if(reste >= 0.0f){ entree = tc - sqrtf(reste / l2); entree = entree < 0.0f ? 0.0f : entree > 1.0f ? 1.0f : entree; }
+				}
+			}
+			// Supposé : le trajet de la première image du vol ne compte pas le monde. Le moteur fait partir le projectile de la
+			// douille « Muzzle » de l'arme ou de l'os de la main (le départ de 0065e880, pas recréé : l'outil n'a ni os ni
+			// douilles), devant le tireur ; l'outil le fait partir du point du tireur, qui peut se tenir dans un volume du monde
+			// (dans l'arbre de 1_04, le tir de 73,36 s part dans le volume de « treeclimbbranch » et en touchait la face à 27 cm).
+			const CMondeCollision *m = q.sorti ? CollisionDuMonde(zones.zoneVisible) : nil;
+			q.sorti = true;
+			if(m && m->Trajet(avant, q.pos, &fMonde, &nMonde, &vMonde) && fMonde < entree){ monde = true; objet = -1; touche = -1; }
+		}
 		// Le contact (FUN_0046ad90) : sur un piéton le coup puis le choc (FUN_004d3860) ; sur un objet le choc puis le coup. Le
 		// projectile reste dans le monde : il recule au point du contact et rebondit (FUN_0046ca40, plus bas). L'octet « fort » du
 		// choc vient du coup et de la vitesse d'avant le rebond (en mètres par pas, l'unité de +0x124).
@@ -6704,17 +6912,43 @@ AvancerProjectiles(float pas)
 			bool fort = CContactProjectile::Fort(3, q.contacts, rbandball, allure);
 			q.contacts++;
 			ChoquerProjectile(place, q, 3, a, false, fort);
+		}else if(monde){
+			// Le contact avec un bâtiment (FUN_0046ad90, l'entité touchée de genre 1) : le choc (FUN_004d3860) avec la normale du
+			// contact, puis la marque de la fiche (CContactProjectile::MarqueDuBatiment : +0x150, ou +0x152 sur un mur), puis le
+			// repos de la fin du contact (CContactProjectile::AuRepos : sous un carré de vitesse de 1e-4, ou 1e-10 pour le genre 7,
+			// sur une normale au z au-dessus de 0,8 ; les vitesses à 0, le compteur +0x180 à 10, la méthode +0x1c(1)). Le rebond
+			// vient après (FUN_0046ca40 appelle la paire FUN_0046b720 en 0x46cd93, avant son recul de 0x46cd98).
+			const CTypeProjectile &tp = TypeProjectile(q.modele);
+			CVector pm(avant.x + (q.pos.x - avant.x) * fMonde, avant.y + (q.pos.y - avant.y) * fMonde, avant.z + (q.pos.z - avant.z) * fMonde);
+			const CPlacementMonde *pl = PlacementDuVolume(zones.zoneVisible, vMonde);
+			printf("%6.2f s  le projectile %d touche le monde (%s) en (%.2f, %.2f, %.2f), normale (%.2f, %.2f, %.2f), à %.3f m par pas\n", maintenant / 1000.0, place,
+			       pl ? pl->nom.c_str() : "?", pm.x, pm.y, pm.z, nMonde.x, nMonde.y, nMonde.z, allure);
+			bool fort = CContactProjectile::Fort(1, q.contacts, rbandball, allure);
+			q.contacts++;
+			ChoquerProjectile(place, q, 1, pm, false, fort, nMonde.z);
+			PoserMarque(CContactProjectile::MarqueDuBatiment(nMonde.z) ? tp.marqueMur : tp.marque, pm);
+			if(CContactProjectile::AuRepos(allure * allure, nMonde.z, tp.o7c)){
+				uint32 o28 = 0, ob0 = 0;
+				CVolProjectile::Reposer(1, tp.o7c, &o28, &ob0, &q.repos);
+				float f = CVolProjectile::Recul(fMonde);
+				q.pos = CVector(avant.x + (q.pos.x - avant.x) * f, avant.y + (q.pos.y - avant.y) * f, avant.z + (q.pos.z - avant.z) * f);
+				q.vitesse = CVector(0.0f, 0.0f, 0.0f); q.pose = o28 != 0 || ob0 != 0;
+				printf("%6.2f s  le projectile %d est au repos en (%.2f, %.2f, %.2f) (posé par son contact)\n", maintenant / 1000.0, place, q.pos.x, q.pos.y, q.pos.z);
+				continue;
+			}
 		}
 		// Le rebond (FUN_0046ca40, après le contact) : le projectile recule à la fraction du contact moins 0,005, puis sa vitesse se
 		// renverse le long de la normale : 0,75 et 0,75 contre un piéton, l'élasticité de la fiche (+0x5c) sinon. Le contact est
 		// le point où le trajet de l'image entre dans la sphère de l'outil (et non le point le plus proche du centre, qui sert au
 		// choc : sa normale serait perpendiculaire au vol), et la normale va du centre à ce point (supposé : le moteur prend le
 		// contact et la normale de son modèle de collision) ; le +0xf0 de l'entité touchée n'est pas suivi (nul).
-		if((objet >= 0 || touche >= 0) && q.actif){
-			float rayon = touche >= 0 ? 0.35f : 0.5f, entree = mieux;
+		// Contre le monde, la fraction est celle du trajet au triangle touché et la normale celle du triangle, tournée contre le vol
+		// (le +0xf0 d'un bâtiment n'est pas suivi : nul, supposé).
+		if((objet >= 0 || touche >= 0 || monde) && q.actif){
+			float rayon = touche >= 0 ? 0.35f : 0.5f, entree = monde ? fMonde : mieux;
 			CVector d(q.pos.x - avant.x, q.pos.y - avant.y, q.pos.z - avant.z);
 			float l2 = d.x * d.x + d.y * d.y + d.z * d.z;
-			if(l2 > 0.0f){
+			if(l2 > 0.0f && !monde){
 				float tc = ((centre.x - avant.x) * d.x + (centre.y - avant.y) * d.y + (centre.z - avant.z) * d.z) / l2;
 				float px = avant.x + d.x * tc - centre.x, py = avant.y + d.y * tc - centre.y, pz = avant.z + d.z * tc - centre.z;
 				float reste = rayon * rayon - (px * px + py * py + pz * pz);
@@ -6724,7 +6958,9 @@ AvancerProjectiles(float pas)
 			float f = CVolProjectile::Recul(entree);
 			q.pos = CVector(avant.x + d.x * f, avant.y + d.y * f, avant.z + d.z * f);
 			float n[3] = {e0.x - centre.x, e0.y - centre.y, e0.z - centre.z}, v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z};
+			if(monde){ n[0] = nMonde.x; n[1] = nMonde.y; n[2] = nMonde.z; }
 			float e = TypeProjectile(q.modele).elasticite;
+			std::string surQuoi = touche >= 0 ? "le piéton " + std::to_string(touche) : monde ? std::string("le monde") : "l'objet " + std::to_string(objet);
 			// Deux modèles à part : la fléchette (« dart », DAT_00bf44dc) se plante au lieu de rebondir, et le frisbee (« Wfrisbee »,
 			// DAT_00bf439c) est dévié après son rebond (FUN_0046ca40, de 0x46cf6f à 0x46d0d2 et de 0x46d231 à 0x46d2f6). La table
 			// des noms de modèles (0xa136e8, FUN_0043f1e0 qui la lit, FUN_0043f220 qui écrit l'indice) donne aussi « WFtBomb » à
@@ -6733,15 +6969,15 @@ AvancerProjectiles(float pas)
 				float pq[3] = {q.pos.x, q.pos.y, q.pos.z};
 				CVolProjectile::Planter(pq, v);
 				q.pos = CVector(pq[0], pq[1], pq[2]); q.vitesse = CVector(0.0f, 0.0f, 0.0f); q.pose = true;
-				printf("%6.2f s  le projectile %d (une fléchette) se plante dans %s %d en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, place,
-				       touche >= 0 ? "le piéton" : "l'objet", touche >= 0 ? touche : objet, q.pos.x, q.pos.y, q.pos.z);
+				printf("%6.2f s  le projectile %d (une fléchette) se plante dans %s en (%.2f, %.2f, %.2f)\n", maintenant / 1000.0, place,
+				       surQuoi.c_str(), q.pos.x, q.pos.y, q.pos.z);
 				continue;
 			}
 			CVolProjectile::Rebondir(v, n, touche >= 0, false, e);
 			if(q.modele >= 0 && q.modele == modeles.Index("Wfrisbee") && CVolProjectile::Devier(v, n, false))
 				printf("%6.2f s  le projectile %d (un frisbee) est dévié par le contact\n", maintenant / 1000.0, place);
-			printf("%6.2f s  le projectile %d rebondit sur %s %d : vitesse (%.3f, %.3f, %.3f) → (%.3f, %.3f, %.3f) m par pas, coefficient %g\n", maintenant / 1000.0, place,
-			       touche >= 0 ? "le piéton" : "l'objet", touche >= 0 ? touche : objet, q.vitesse.x, q.vitesse.y, q.vitesse.z, v[0], v[1], v[2], touche >= 0 ? CVolProjectile::kNormalPieton : e);
+			printf("%6.2f s  le projectile %d rebondit sur %s : vitesse (%.3f, %.3f, %.3f) → (%.3f, %.3f, %.3f) m par pas, coefficient %g\n", maintenant / 1000.0, place,
+			       surQuoi.c_str(), q.vitesse.x, q.vitesse.y, q.vitesse.z, v[0], v[1], v[2], touche >= 0 ? CVolProjectile::kNormalPieton : e);
 			q.vitesse = CVector(v[0], v[1], v[2]);
 		}
 	}
@@ -7966,6 +8202,7 @@ main(int argc, char **argv)
 	std::vector<std::pair<uint32, std::string>> gestes;    // --jouer CHEMIN@s : le joueur joue ce nœud d'action à s secondes (la manette : parer, frapper)
 	std::vector<std::pair<uint32, int>> visees;           // --viser PIETON@s : le joueur verrouille ce piéton à s secondes
 	std::vector<std::pair<uint32, int>> choixArmes;       // --arme ARME@s : le joueur choisit cette arme au HUD à s secondes
+static std::vector<std::pair<uint32, int32>> dons;   // --donner ARME@s
 	std::vector<std::pair<uint32, std::string>> objetsVises;   // --viser-objet NOM@s : le joueur vise cet objet (le nom de l'instance)
 	std::vector<uint32> tirsManette;                       // --tirer @s1,s2… : le joueur tire avec l'arme en main
 	std::vector<uint32> prises;                            // --ramasser @s1,s2… : le joueur ramasse ce qui est à ses pieds
@@ -8052,6 +8289,12 @@ main(int argc, char **argv)
 			// composant HUDWeapons) ; la condition WeaponDesiredIsFocusWeapon en fait l'arme voulue, Weapons/SelectActions la prend.
 			std::string e = argv[++i]; size_t at = e.find('@');
 			choixArmes.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), atoi(e.c_str())});
+		}
+		else if(strcmp(argv[i], "--donner") == 0 && i + 1 < argc){
+			// --donner ARME@s : une arme posée dans l'inventaire du joueur, comme GiveWeaponToPlayer (FUN_0045ccb0), ou en main si elle ne se
+			// range pas (la balle 302), comme après un ramassage : pour les essais hors mission (une balle qui n'explose pas au contact).
+			std::string e = argv[++i]; size_t at = e.find('@');
+			dons.push_back({(uint32)(at == std::string::npos ? 2000 : atof(e.c_str() + at + 1) * 1000), atoi(e.c_str())});
 		}
 		else if(strcmp(argv[i], "--suivre") == 0 && i + 1 < argc){
 			std::string e = argv[++i]; size_t at = e.find('@'), v = e.find(',');
@@ -8458,6 +8701,22 @@ main(int argc, char **argv)
 			else if(objetVise < 0) printf("%6.2f s  le joueur ne trouve pas d'objet à viser nommé %s\n", maintenant / 1000.0, e.second.c_str());
 			else printf("%6.2f s  le joueur vise l'objet %d (%s, modèle %d)\n", maintenant / 1000.0, objetVise, e.second.c_str(), ObjetParPoignee(objetVise)->modele);
 			e.second.clear();
+		}
+		for(auto &e : dons) if(e.second >= 0 && maintenant >= e.first){
+			CScriptPed *j = pietons.Acceder(SCRIPT_PED_JOUEUR);
+			if(armes.Type(e.second).inventaire != 0){
+				inventaire.Donner(armes, SCRIPT_PED_JOUEUR, e.second, false);
+				printf("%6.2f s  le joueur reçoit l'arme %d : %d munitions\n", maintenant / 1000.0, e.second, inventaire.Munitions(armes, SCRIPT_PED_JOUEUR, e.second));
+			}else{   // une arme qui ne se range pas : en main, comme après son ramassage (PropPickup puis PropAttach, voir Ramasser)
+				if(j->armeTenue != -1){ j->armePassage = j->armeTenue; LacherArme(SCRIPT_PED_JOUEUR); }
+				j->armePassage = e.second;
+				CActionController::PisteArme d{0.0f, CActionController::ARME_ATTACHER, 0, true, true};
+				CActionController &c = controleurs[SCRIPT_PED_JOUEUR];
+				c.pistesArmeLancees.push_back(d);
+				AppliquerArmes(SCRIPT_PED_JOUEUR, c);
+				printf("%6.2f s  le joueur reçoit l'arme %d en main : il tient %d\n", maintenant / 1000.0, e.second, j->armeTenue);
+			}
+			e.second = -1;
 		}
 		for(auto &e : choixArmes) if(e.second >= -1 && maintenant >= e.first){
 			if(controleJoueur != 1) printf("%6.2f s  la manette est coupée : le joueur ne choisit pas l'arme %d\n", maintenant / 1000.0, e.second);

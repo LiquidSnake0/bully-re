@@ -268,6 +268,53 @@ main(void)
 		r = CViseeTir::PointDevant(d, av, 20.0f, 2.0f, &v, 0.5f);
 		VERIF(r.x == 6.0f && r.y == 22.0f && r.z == 2.0f);
 	}
+	// La vitesse de départ (FUN_0065f050) : la durée du vol à plat, la parabole, les bornes de la fiche et la dispersion.
+	{
+		typedef CViseeTir V;
+		int n = 0; float T = 0.0f; int tires = 0;
+		auto zero = [&]{ tires++; return 0.5f; };
+		CVector d(0, 0, 0), c(8, 6, 3);
+		CVector v = V::VitesseDepart(d, c, 0.0f, nullptr, false, 0.0f, zero, &n, &T);   // sans fiche : 0,4 m par pas, G = −0,008, un essai
+		VERIF(n == 1 && T == 25.0f && tires == 0);                                       // 10 m à plat (le z n'y entre pas) / 0,4
+		VERIF(fabsf(v.x - 0.32f) < 1e-6f && fabsf(v.y - 0.24f) < 1e-6f && fabsf(v.z - (3.0f + 0.004f * 625.0f) / 25.0f) < 1e-6f);
+		V::FicheVitesse f; f.allureMin = 0.5f; f.allureMax = 1.0f; f.gravite = 0.5f;
+		v = V::VitesseDepart(d, c, 1.0f, &f, false, 0.0f, zero, &n, &T);                 // la charge pleine : 1 m par pas, T = 10
+		VERIF(n == 1 && T == 10.0f && fabsf(v.x - 0.8f) < 1e-6f && fabsf(v.z - (3.0f + 0.002f * 100.0f) / 10.0f) < 1e-6f && tires == 0);
+		f.allureMin = f.allureMax = 0.001f;                                              // sous 0,01 : 0,01
+		v = V::VitesseDepart(d, c, 0.0f, &f, false, 0.0f, zero, &n, &T);
+		VERIF(n == 1 && fabsf(T - 1000.0f) < 0.01f);
+		v = V::VitesseDepart(d, CVector(0, 0, 5), 0.0f, nullptr, false, 0.0f, zero, &n, &T);   // à la verticale : T = 0,01 au moins
+		VERIF(T == 0.01f && v.x == 0.0f && v.z > 499.0f);
+		// l'angle d'arrivée : à 1 m par pas sur 10 m, w.z = 0,32 − 0,04 = 0,28 (le tir monte encore) ; avec 10° demandés, T s'allonge
+		// de (T + 1) × 1,06 jusqu'à ce que la plongée y soit
+		f = V::FicheVitesse(); f.allureMin = f.allureMax = 1.0f; f.gravite = 0.5f; f.angle = 10.0f;
+		v = V::VitesseDepart(d, c, 0.0f, &f, false, 0.0f, zero, &n, &T);
+		VERIF(n > 1 && n < 20 && T > 10.0f);
+		{
+			float wz = v.z + T * -0.004f, plat = sqrtf(v.x * v.x + v.y * v.y);
+			VERIF(atanf(-wz / plat) * 180.0f / 3.1415927f >= 10.0f);
+			float T0 = 10.0f; for(int k = 1; k < n; k++){ T0 = (float)((double)T0 + 1.0); T0 = (float)((double)T0 * 1.059999942779541); }
+			VERIF(T == T0);
+		}
+		f.angle = 89.99f; f.arriveeMin = 5.0f;                                           // jamais bon : le vingtième essai est gardé
+		v = V::VitesseDepart(d, c, 0.0f, &f, false, 0.0f, zero, &n, &T);
+		VERIF(n == 20);
+		f = V::FicheVitesse(); f.allureMin = f.allureMax = 1.0f; f.monteeMax = 0.3f;     // v.z = 0,3 + 0,02 = 0,32 dépasse +0x6c
+		v = V::VitesseDepart(d, c, 0.0f, &f, false, 0.0f, zero, &n, &T);
+		VERIF(n > 1 && v.z <= 0.3f);
+		f = V::FicheVitesse(); f.allureMin = f.allureMax = 1.0f; f.monteeMin = 0.1f;     // v.z sous +0x68 : le vol s'allonge
+		v = V::VitesseDepart(d, CVector(8, 6, 0), 0.0f, &f, false, 0.0f, zero, &n, &T);   // à plat : v.z = 0,004 T, 0,04 à T = 10
+		VERIF(n == 9 && v.z >= 0.1f && T > 25.0f && tires == 0);
+		// la dispersion : trois tirages, le premier en z, le troisième en x ; le joueur × (1 − la précision)
+		f = V::FicheVitesse(); f.allureMin = f.allureMax = 1.0f; f.gravite = 0.0f; f.dispersion = 0.1f;
+		float suite[3] = {1.0f, -1.0f, 0.5f}; int k = 0;
+		auto tir = [&]{ return suite[k++]; };
+		v = V::VitesseDepart(d, c, 0.0f, &f, false, 0.0f, tir, &n, &T);
+		VERIF(k == 3 && fabsf(v.x - 0.85f) < 1e-6f && fabsf(v.y - 0.5f) < 1e-6f && fabsf(v.z - 0.4f) < 1e-6f);
+		k = 0;
+		v = V::VitesseDepart(d, c, 0.0f, &f, true, 0.75f, tir, &n, &T);
+		VERIF(k == 3 && fabsf(v.x - 0.8125f) < 1e-6f && fabsf(v.y - 0.575f) < 1e-6f && fabsf(v.z - 0.325f) < 1e-6f);
+	}
 	// L'imprécision (FUN_0065eb40) et la précision du verrou (FUN_004d5cd0).
 	{
 		typedef CViseeTir V;
@@ -415,6 +462,105 @@ main(void)
 		VERIF(!V::Controler(rv, rw, rmv, rmw, &rc, true, false, V::kAir, 1.0f) && rc == 0 && rmv[0] == 0.003f);
 		// Le rebond (FUN_0046ca40) : le recul au contact, puis la vitesse renversée le long de la normale.
 		VERIF(fabsf(V::Recul(0.5f) - 0.495f) < 1e-7f && V::Recul(0.0f) < 0.0f);
+		// Le début du déplacement : l'entité immobile, le partage de la chute ; le balayage d'un secteur (FUN_0046c970) et des
+		// secteurs ; la sortie : la pose après la chute et la distance parcourue.
+		{
+			float nul[3] = {0, 0, 0}, vz[3] = {0, 0, -0.01f};
+			VERIF(V::Immobile(nul, nul, 0x08) && !V::Immobile(nul, nul, 0x03) && !V::Immobile(vz, nul, 0x08) && !V::Immobile(nul, vz, 0xf8));
+			float z = 4.0f;
+			VERIF(V::PartagerChute(4.0f, &z, 0) == 0.0f && z == 4.0f);                    // à plat : pas de partage
+			z = 4.5f; VERIF(V::PartagerChute(4.0f, &z, 0) == 0.0f && z == 4.5f);          // en montée non plus
+			z = 3.0f; VERIF(V::PartagerChute(4.0f, &z, 1) == 0.0f && z == 3.0f);          // ni pour un projectile (+0xc4)
+			float chute = V::PartagerChute(4.0f, &z, 0);
+			VERIF(fabsf(chute + 1.05f) < 1e-6f && fabsf(z - 4.05f) < 1e-6f);
+			VERIF(V::Recul(1.0f) == (float)(1.0 - (double)0.005f));
+			V::ContactBalaye m;
+			VERIF(m.fraction == 3.4028234663852886e+38f && sizeof(float) * 3 == sizeof(m.point));
+			float fr[4] = {0.8f, 0.3f, 0.5f, 0.1f}; int vus = 0;
+			auto liste = [&](int i, V::ContactBalaye *c){ vus |= 1 << i; if(i == 0) return false; c->fraction = fr[i]; c->point[0] = (float)i; return true; };
+			VERIF(V::BalayerSecteur(&m, false, liste) && vus == 7 && m.fraction == 0.3f && m.point[0] == 1.0f);   // sans la quatrième liste
+			vus = 0;
+			VERIF(V::BalayerSecteur(&m, true, liste) && vus == 15 && m.fraction == 0.1f && m.point[0] == 3.0f);   // avec elle
+			VERIF(!V::BalayerSecteur(&m, true, liste) && m.fraction == 0.1f);            // l'égalité ne remplace pas
+			V::ContactBalaye m2; float fs[3] = {0.6f, 0.2f, 0.2f};
+			auto sect = [&](int i, V::ContactBalaye *c){ if(i == 0) return false; if(fs[i] < c->fraction){ c->fraction = fs[i]; c->point[1] = (float)i; return true; } return false; };
+			VERIF(V::BalayerSecteurs(3, &m2, sect) && m2.fraction == 0.2f && m2.point[1] == 1.0f);
+			V::ContactBalaye m3;
+			VERIF(!V::BalayerSecteurs(1, &m3, sect) && m3.fraction == 3.4028234663852886e+38f);
+			{
+				V::ContactBalaye a, b; int e1 = 1, e2 = 2; std::string liens;
+				auto del = [&](const void *e){ liens += e == &e1 ? "-1" : "-2"; };
+				auto lie = [&](const void *e){ liens += e == &e1 ? "+1" : "+2"; };
+				b.entite = &e1; b.point[2] = 3.0f; b.normale[1] = -1.0f; b.o1c = 7; b.o20 = 8; b.o22 = 9; b.fraction = 0.25f;
+				VERIF(&a.Copier(b, del, lie) == &a && liens == "+1" && a.entite == &e1 && a.point[2] == 3.0f && a.normale[1] == -1.0f);
+				VERIF(a.o1c == 7 && a.o20 == 8 && a.o22 == 9 && a.fraction == 0.25f);
+				a.Copier(b, del, lie); VERIF(liens == "+1");                               // la même référence : ni déliée ni liée
+				b.entite = &e2; a.Copier(b, del, lie); VERIF(liens == "+1-1+2");           // l'ancienne déliée, puis la nouvelle liée
+				b.entite = nullptr; a.Copier(b, del, lie); VERIF(liens == "+1-1+2-2" && a.entite == nullptr);
+			}
+			{
+				// la sphère englobante d'une entité contre celle d'un balayage (FUN_00465bc0)
+				float c1[3] = {0.0f, 0.0f, 0.0f}, c2[3] = {3.0f, 4.0f, 0.0f}, v0[3] = {0.0f, 0.0f, 0.0f}, v1[3] = {-0.25f, 0.5f, -0.25f};
+				VERIF(!V::SpheresSeTouchent(c1, 2.0f, false, v0, c2, 3.0f));                // 5 m d'écart, 5 m de rayons : l'égalité rend faux
+				VERIF(V::SpheresSeTouchent(c1, 2.0f, false, v0, c2, 3.01f));
+				VERIF(!V::SpheresSeTouchent(c1, 2.0f, false, v1, c2, 3.0f));                // la vitesse d'une entité immobile ne compte pas
+				VERIF(V::SpheresSeTouchent(c1, 2.0f, true, v1, c2, 3.0f));                  // mobile : le rayon grandit de 1 (0,5 + 0,25 + 0,25)
+				VERIF(!V::SpheresSeTouchent(c1, 1.0f, true, v1, c2, 3.0f));                 // 1 + 3 + 1 = 5 : l'égalité encore
+				float c3[3] = {0.0f, 0.0f, 12.0f};
+				VERIF(V::SpheresSeTouchent(c3, 6.0f, false, v0, c2, 7.01f) && !V::SpheresSeTouchent(c3, 6.0f, false, v0, c2, 6.99f));   // 13 m, avec le z
+			}
+			{
+				// les trois filtres de piéton du balayage d'une liste (FUN_004760b0, FUN_00476160, FUN_00476270)
+				typedef V::EntiteFiltree E;
+				E p, q, v;                                                                   // deux piétons et une entité de genre 2
+				p.o108 = 3; q.o108 = 0x1b; v.o108 = 2; p.o133c = 1; q.o133c = 1;
+				VERIF(!V::IgnorePieton(p, v, nullptr));                                      // l'autre n'est pas un piéton
+				VERIF(!V::IgnorePieton(p, q, nullptr));                                      // deux piétons ordinaires : ils se touchent
+				VERIF(V::IgnorePieton(p, p, nullptr) && V::IgnorePieton(p, q, &q));          // lui-même ; le piéton de 0xc2b118
+				p.o1e25 = true; VERIF(V::IgnorePieton(p, v, nullptr)); p.o1e25 = false;      // l'octet +0x1e25 passe avant le genre
+				q.o1e25 = true; VERIF(V::IgnorePieton(p, q, nullptr)); q.o1e25 = false;
+				p.o1520 = 1; VERIF(V::IgnorePieton(p, q, nullptr)); p.o1520 = 0;
+				q.o1c98 = true; VERIF(V::IgnorePieton(p, q, nullptr)); q.o1c98 = false;
+				q.o133c = 0; VERIF(V::IgnorePieton(p, q, nullptr)); q.o133c = 1;
+				q.o1554 = &v; VERIF(V::IgnorePieton(p, q, nullptr)); q.o1554 = nullptr;
+				p.o155c = &q; VERIF(!V::IgnorePieton(p, q, nullptr));                        // le lien +0x155c d'un seul côté
+				q.o155c = &p; VERIF(V::IgnorePieton(p, q, nullptr));                         // des deux côtés
+				q.o1500 = 1; VERIF(!V::IgnorePieton(p, q, nullptr)); q.o1500 = 0;            // sauf si un +0x1500 n'est pas nul
+				VERIF(!V::IgnoreSonGenre2(p, &v) && V::IgnoreSonGenre2(p, nullptr));         // +0x1554 nul : l'entité nulle « égale »
+				p.o1554 = &v; VERIF(V::IgnoreSonGenre2(p, &v) && !V::IgnoreSonGenre2(p, nullptr)); p.o1554 = &q;
+				v.o450 = &p; VERIF(!V::IgnoreSonGenre2(p, &v)); v.o454 = 1; VERIF(V::IgnoreSonGenre2(p, &v));
+				v.o454 = -1; VERIF(!V::IgnoreSonGenre2(p, &v)); v.o454 = 1; v.o108 = 3; VERIF(!V::IgnoreSonGenre2(p, &v)); v.o108 = 2;
+				p.o430 = &v; VERIF(V::IgnoreGenre2Lie(p, &v));                               // +0x13b8 nul et +0x430 == l'entité
+				p.o13b8 = 1; VERIF(!V::IgnoreGenre2Lie(p, &v));
+				v.o46c = 1; v.o108 = 0x3a; VERIF(V::IgnoreGenre2Lie(p, &v)); v.o108 = 0x42; VERIF(!V::IgnoreGenre2Lie(p, &v));
+				p.o1310 = 0xd; p.o1e94 = &q; VERIF(V::IgnoreGenre2Lie(p, &q) && !V::IgnoreGenre2Lie(p, &v));
+				E w; VERIF(V::IgnoreGenre2Lie(w, nullptr));                                  // +0x13b8 nul, +0x430 nul et entité nulle : vrai
+			}
+			{
+				// la référence d'un contact seule (FUN_0045f0a0) et la règle des deux projectiles de même modèle (une part de 0046c4b0)
+				V::ContactBalaye a; int e1 = 1, e2 = 2; std::string liens;
+				auto del = [&](const void *e){ liens += e == &e1 ? "-1" : "-2"; };
+				auto lie = [&](const void *e){ liens += e == &e1 ? "+1" : "+2"; };
+				a.point[0] = 4.0f; a.fraction = 0.25f;
+				a.LierEntite(nullptr, del, lie); VERIF(liens.empty());                       // déjà nulle : rien
+				a.LierEntite(&e1, del, lie); VERIF(liens == "+1" && a.entite == &e1 && a.point[0] == 4.0f && a.fraction == 0.25f);
+				a.LierEntite(&e1, del, lie); VERIF(liens == "+1");                           // la même : ni déliée ni liée
+				a.LierEntite(&e2, del, lie); VERIF(liens == "+1-1+2" && a.entite == &e2);
+				a.LierEntite(nullptr, del, lie); VERIF(liens == "+1-1+2-2" && a.entite == nullptr);
+				float v[3] = {0.0f, 1.0f, 0.0f}, v29[3] = {0.4848096f, 0.8746197f, 0.0f}, v31[3] = {0.5150381f, 0.8571673f, 0.0f};
+				float oppose[3] = {0.0f, -1.0f, 0.0f}, nul[3] = {0.0f, 0.0f, 0.0f}, v2[3] = {0.0f, 3.0f, 0.0f};
+				VERIF(V::MemeSens(v, v) && V::MemeSens(v, v2));                              // parallèles, quelle que soit la norme
+				VERIF(V::MemeSens(v, v29) && !V::MemeSens(v, v31));                          // 29° : 0,8746 ; 31° : 0,8572 ; le seuil : 0,866
+				VERIF(!V::MemeSens(v, oppose) && !V::MemeSens(v, nul));                      // opposés ; 0 / 0, non ordonné : le contact reste
+			}
+			bool remis = false;
+			VERIF(V::CodeDeBalayage(7, &remis) == 8 && !remis && V::CodeDeBalayage(0xfffe) == 0xffff && V::CodeDeBalayage(0xffff, &remis) == 1 && remis);
+			float avantChute[3] = {1.0f, 2.0f, 4.05f}, pos[3] = {1.0f, 2.0f, 3.0f};
+			VERIF(!V::PoserApresChute(avantChute, pos, false, 0.5f) && pos[2] == 3.0f);
+			VERIF(V::PoserApresChute(avantChute, pos, true, 0.5f) && fabsf(pos[2] - (4.05f - 1.05f * 0.495f)) < 1e-6f && pos[0] == 1.0f);
+			float debut[3] = {0, 0, 0}, fin[3] = {2.0f, 3.0f, 6.0f};
+			VERIF(V::Distance(debut, fin) == 7.0f && V::Distance(fin, fin) == 0.0f);
+		}
 		// Sur un sol (normale en z), élasticité 0,5 : la chute de 2 devient une montée de 1, le glissement de 4 tombe à 2.
 		float bv[3] = {4.0f, 0.0f, -2.0f}, bn[3] = {0.0f, 0.0f, 3.0f};
 		V::Rebondir(bv, bn, false, false, 0.5f);

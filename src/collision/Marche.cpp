@@ -174,6 +174,53 @@ CMondeCollision::Repousser(CVector &centre, float rayon) const
 	return contacts;
 }
 
+bool
+CMondeCollision::Trajet(const CVector &a, const CVector &b, float *fraction, CVector *normale, int32 *volume) const
+{
+	CVector d = Sub(b, a);
+	bool trouve = false; float mieux = 2.0f; CVector n(0.0f, 0.0f, 1.0f); int32 quel = -1;
+	std::vector<int32> cand;
+	bool grille = gNx > 0;
+	if(grille) Candidats(fminf(a.x, b.x), fminf(a.y, b.y), fmaxf(a.x, b.x), fmaxf(a.y, b.y), cand);
+	size_t nb = grille ? cand.size() : tri.size() / 3;
+	for(size_t k = 0; k < nb; k++){
+		size_t i = grille ? (size_t)cand[k] : k * 3;
+		const CVector &p0 = tri[i], &p1 = tri[i+1], &p2 = tri[i+2];
+		// Möller et Trumbore : le trajet coupe le plan du triangle en a + t d, de coordonnées (u, v) dans le triangle.
+		CVector e1 = Sub(p1, p0), e2 = Sub(p2, p0);
+		CVector h(d.y * e2.z - d.z * e2.y, d.z * e2.x - d.x * e2.z, d.x * e2.y - d.y * e2.x);
+		float det = Dot(e1, h);
+		if(fabsf(det) < 1e-12f) continue;                // trajet parallèle au triangle
+		CVector s = Sub(a, p0);
+		float u = Dot(s, h) / det;
+		if(u < 0.0f || u > 1.0f) continue;
+		CVector q(s.y * e1.z - s.z * e1.y, s.z * e1.x - s.x * e1.z, s.x * e1.y - s.y * e1.x);
+		float v = Dot(d, q) / det;
+		if(v < 0.0f || u + v > 1.0f) continue;
+		float t = Dot(e2, q) / det;
+		if(t < 0.0f || t > 1.0f || t >= mieux) continue;
+		CVector m(e1.y * e2.z - e1.z * e2.y, e1.z * e2.x - e1.x * e2.z, e1.x * e2.y - e1.y * e2.x);
+		float l = sqrtf(Dot(m, m));
+		if(l < 1e-12f) continue;                         // triangle sans surface
+		m = Mul(m, (Dot(m, d) > 0.0f ? -1.0f : 1.0f) / l);
+		mieux = t; n = m; trouve = true; quel = (int32)(i / 3);
+	}
+	float l2 = Dot(d, d);
+	for(size_t i = 0; i < sphCentre.size() && l2 > 0.0f; i++){
+		CVector c = Sub(a, sphCentre[i]);
+		float r = sphRayon[i], bq = Dot(c, d), cq = Dot(c, c) - r * r;
+		if(cq <= 0.0f) continue;                         // départ dans la sphère
+		float disc = bq * bq - l2 * cq;
+		if(disc < 0.0f) continue;
+		float t = (-bq - sqrtf(disc)) / l2;
+		if(t < 0.0f || t > 1.0f || t >= mieux) continue;
+		CVector m = Add(c, Mul(d, t));
+		mieux = t; n = Mul(m, 1.0f / r); trouve = true; quel = -1 - (int32)i;
+	}
+	if(trouve){ *fraction = mieux; *normale = n; if(volume) *volume = quel; }
+	return trouve;
+}
+
 void
 CMarcheur::Avancer(const CMondeCollision &m, float dx, float dy, float dt)
 {

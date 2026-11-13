@@ -1500,3 +1500,74 @@ en échec plutôt que de les masquer.
   au rebond (les coordonnées des chocs, puis vingt et une lignes de rebond dans `1_04` et trois dans `1_03` aux briques).
 - **Bilan** : 1 256 fonctions recréées (8,0 % du code), contre 1 243 (7,9 %) ; 2 196 comprises (12,6 %), contre 2 181 (12,5 %) ; dix
   commits (neuf de moteur et la documentation).
+
+## 12.11.2026, séance 2 (de 23 h 47 à 01 h 16)
+
+- **Le sol sous les projectiles de l'outil des missions** (`CMondeCollision::Trajet`, `src/collision/Marche.h` et `Marche.cpp` ;
+  `AvancerProjectiles` dans `outils/lancer_lua.cpp`) : `Trajet(a, b, &fraction, &normale, &volume)` rend le premier volume que
+  croise le segment d'une image (triangles des deux côtés, la normale tournée contre le trajet ; sphères à leur entrée). Ce n'est
+  pas le balayage du moteur, c'est le sol qui manquait. L'outil charge les 488 .col de `Stream/World.img` (3 862 modèles de
+  collision) et pose les volumes des placements « inst » de la zone visible : zone 0, 3 243 placements posés (164 sans volume),
+  97 905 triangles, 863 sphères, grille de 4 m (`LANCER_SANS_MONDE=1` la coupe). Un projectile qui croise le monde avant une
+  sphère écrit « le projectile N touche le monde (placement) en (…), normale (…), à … m par pas », puis le choc de sa fiche, la
+  marque, le repos par le contact ou le recul et le rebond avec la vraie normale. **Essayé et écarté** : un `AddImage` de plus
+  pour l'image du monde (la table de `CdStream` n'a que huit places : à 34,02 s de `1_04` l'arbre `Act/Props/pxTree.act` ne se
+  chargeait plus) → l'image déjà ouverte est reprise dans la table ; compter le monde dès la première image du vol (le tir de
+  73,36 s de `1_04`, depuis l'arbre, touchait à 27 cm de son départ le volume « treeclimbbranch » où se tient le joueur, et la
+  mission ne finissait plus) → **supposé** : la première image du vol ne compte pas le monde (le moteur part de la douille
+  « Muzzle » ou de l'os de la main, que l'outil n'a pas). Une option de plus : `--donner ARME@s`. L'essai hors mission
+  (`lancer_lua 40 --mission 1_04 --sans-cinematiques --entrer _1_04_PARKING@10 --donner 302@15 --tirer @16.6`) montre enfin le
+  repos : la balle part à 16,63 s, touche un mur à 17,06 s, le sol à 17,39 s (« premier contact au sol ») et s'arrête à 18,02 s.
+  Dans les missions : deux lignes de plus (`1_04` à 17,39 s, `1_03` aux briques à 122,66 s), temps inchangés.
+- **La vitesse de départ d'un tir** (`FUN_0065f050`, lue de 0x65f050 à 0x65f4c4 ; `CViseeTir::VitesseDepart`, `FicheVitesse`
+  dans `src/peds/Armes.h`) : la gravité est le +0x80 de la fiche × −0,008, l'allure +0x60 + charge × (+0x64 − +0x60), la durée du
+  vol **la distance à plat** divisée par l'allure (le z n'y entre pas) ; jusqu'à vingt essais, la durée passant à (T + 1) × 1,06
+  tant que la vitesse de départ, la vitesse d'arrivée et l'angle de plongée ne tiennent pas dans les bornes +0x68 à +0x78 de la
+  fiche (une borne à −1 est sans effet) ; puis la dispersion +0x120. **C'est la réponse au troisième point du chantier** : la
+  parabole continue de la visée de l'outil est bien celle du moteur ; ce qui différait, c'est la durée du vol (l'outil la tirait de
+  la distance dans l'espace) et les bornes, que l'outil ne lisait pas (champs 104 à 120 et 288 : toutes à −1 sauf un angle de 35°
+  sur une fiche ; dispersion 0 sauf 0,07 sur la fiche « bRocket »). `1_03` aux briques finit à **147,97 s** au lieu de 148,04 s
+  (la deuxième brique touche Davis à 125,27 s au lieu de 125,30 s) ; dans `1_04` les rebonds des vitres passent de 0,840, 0,857
+  et 0,860 à 0,847, 0,864 et 0,867 m par pas (12 lignes). `FUN_0065e880` (la douille « Muzzle ») reste non recréée : l'outil n'a
+  ni os ni douilles.
+- **Le freinage dans l'outil** (`FUN_004cf350` déjà recréée ; `CFicheFreinage`, `Freinage(arme)` dans `outils/lancer_lua.cpp`) :
+  la fiche « DodgeballPhysicsButes » est lue dans `Globals.cat` (le chemin « DodgeballPhysics » + le nom +0x12c de la fiche du
+  projectile, le champ 300 ; à défaut la piste du nœud Globals ; noms lus à l'assembleur de 0x618052 à 0x61807a) et
+  `CVolProjectile::Freiner` passe avant `Controler` pour un projectile de genre 7. Par défaut : arrêt sous 0,0015 m par pas,
+  × 0,998 dès 0,05 m par pas, × 0,985 en dessous ; 17 fiches de genre 7, 12 fiches nommées. Dans `1_04`, 192 lignes changent (les
+  vitres à 0,837, 0,854 et 0,857 m par pas ; le tir sur le piéton 10 à 74,12 s au lieu de 74,08 s), temps inchangés ; l'essai hors
+  mission s'arrête à 17,98 s en (175,48, 7,95, 5,48) au lieu de 18,02 s.
+- **L'entourage du balayage** (`FUN_0046c970`, lue de 0x46c970 à 0x46ca3f ; `FUN_0046a920`, de 0x46a920 à 0x46a99b ; le début de
+  `0046ca40`, de son premier octet à 0x46cd98, et sa sortie ; `CVolProjectile::Immobile`, `PartagerChute`, `ContactBalaye`,
+  `BalayerSecteur`, `BalayerSecteurs`, `CodeDeBalayage`, `PoserApresChute`, `Distance`, `Recul` à la constante exacte
+  0.004999999888241291) : le balayage d'un secteur garde le contact de plus petite fraction parmi ses listes, l'affectation d'un
+  contact délie l'ancienne entité et lie la nouvelle. Tests seulement, 0 ligne changée dans les missions.
+- **Le test des sphères** (`FUN_00465bc0`, lue de 0x465bc0 à 0x465cb9 ; `CVolProjectile::SpheresSeTouchent`) : avant le vrai
+  test de collision, le balayage d'une liste écarte l'entité dont la sphère englobante ne touche pas celle du balayage ; le rayon
+  grandit de |vx| + |vy| + |vz| pour une entité au +0xf0 non nul ; l'égalité rend faux. Tests seulement.
+- **Les trois filtres de piéton** (`FUN_004760b0`, lue de 0x4760b0 à 0x476152 ; `FUN_00476160`, de 0x476160 à 0x476198 ;
+  `FUN_00476270`, de 0x476270 à 0x4762ba ; `CVolProjectile::EntiteFiltree`, `IgnorePieton`, `IgnoreSonGenre2`,
+  `IgnoreGenre2Lie`) : ce que le balayage d'une liste écarte quand c'est un piéton qui balaie. Les champs gardent le nom de leur
+  offset, leur sens n'est pas lu. Tests seulement.
+- **La référence d'un contact et deux projectiles de même modèle** (`FUN_0045f0a0`, lue de 0x45f0a0 à 0x45f0d2 ;
+  `ContactBalaye::LierEntite` ; une part de `0046c4b0`, de 0x46c71b à 0x46c7b4 ; `CVolProjectile::MemeSens`) : deux projectiles
+  du même modèle (un des trois de DAT_00bf435c, DAT_00bf4358, DAT_00bf4354, noms non lus) qui volent à moins de 30° l'un de
+  l'autre (cosinus strictement au-dessus du double 0x90c730, 0,866) se traversent. Tests seulement.
+- **Le balayage d'une liste est lu, pas recréé** : la fonction `0046c4b0` (de 0x46c4b0 à 0x46c877) est lue en entier à
+  l'assembleur ; son test de collision est la méthode +0xa4 de la vtable de l'entité qui balaie (`0046a340` pour un `CProjectile`, le mot
+  lu dans le binaire), non lue. La lecture complète est
+  dans `docs/suite.md` : c'est le premier point de la suite. La glissade des autres `CPhysical` (de 0x46ce71 à 0x46cf6f) et le
+  balayage d'une explosion (`004629d0`) ne sont pas commencés.
+- **Moins de commits que demandé** : sept commits de moteur au lieu de huit ou neuf. La première heure est partie dans le premier
+  commit (l'`AddImage` de trop et la règle de la première image, trouvés aux missions qui ne finissaient plus), et chaque
+  vérification complète (build, tests, huit exécutions) prend six minutes.
+- **Les comptes des README** : chaque commit est parti d'un arbre qui ne contenait que lui, les adresses ajoutées au compte
+  listées avant chaque commit. **Appris** : le compte prend aussi, dans `src`, la forme `0x…` du premier octet d'une fonction, pas
+  seulement `FUN_…` (deux commentaires reformulés avant l'envoi). Écrites sans préfixe pour ne pas être comptées : `0046ca40`,
+  `0046c4b0`, `0051ae00`, `00465690`, `00465680`, `0065e880`.
+- **REA amont** : déjà relevé cette nuit (1 320 commits en attente), pas refait.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques **147,97 s**, 148,04 s avant : la durée du vol
+  tirée de la distance à plat), `1_04` à 82,53 s, `1_05` à 180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s. Les journaux ne
+  changent qu'aux trois premiers commits.
+- **Bilan** : 1 264 fonctions recréées (8,0 % du code), contre 1 256 (8,0 %) ; 2 203 comprises (12,7 %), contre 2 196 (12,6 %) ;
+  huit commits (sept de moteur et la documentation).

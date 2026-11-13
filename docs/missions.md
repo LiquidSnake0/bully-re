@@ -565,6 +565,12 @@ points, `cbDavisHit`) ; `T_BossBattleTutorial` affiche `1_03_T02` quand le joueu
 contre un piéton) à 123,72 s, 125,30 s et 127,22 s, explosent à leur contact et sont détruites à l'image suivante. Les points ôtés
 et la fin à 148,04 s sont inchangés.
 
+**La durée du vol des briques** (12.11, séance 2) : la vitesse de départ d'un tir est celle du moteur (`CViseeTir::VitesseDepart`,
+`FUN_0065f050` : la durée du vol tirée de la distance à plat, pas de la distance dans l'espace). La première brique touche Davis à
+123,72 s en (128,86, 29,86, 9,50) au lieu de (128,88, 29,71, 9,57), la deuxième à 125,27 s au lieu de 125,30 s, et la mission aux
+briques finit réussie à **147,97 s** au lieu de 148,04 s. La collision du monde (`CMondeCollision::Trajet`) ajoute deux lignes à
+122,66 s (son chargement, à la première image du premier projectile) ; aucune brique ne touche le monde avant Davis.
+
 ## `1_04` (« The Slingshot ») (05.11.2026)
 
 `1_04` s'enchaîne après `1_03`. Lancée seule (`build/outils/lancer_lua 120 --mission 1_04 --sans-cinematiques`), `MissionSetup` finit à
@@ -653,6 +659,19 @@ la fonction `0046ca40`). La mission écrit vingt et un rebonds : sur les trois v
 l'élasticité de la fiche de la bille ; à 17,52 s la vitesse (-0,186, 0,840, 0,086) devient (0,052, -0,236, -0,096) m par pas), puis
 dix-huit sur les piétons 5 à 10, de 74,08 s à 78,11 s (coefficient 0,75). Chaque bille explose à son contact (rayon 0,001 m) et est
 détruite à l'image suivante : aucune ne vole après son rebond. La mission finit réussie à 82,53 s, inchangée.
+
+**Le sol, la vitesse de départ et le freinage** (12.11, séance 2) : l'outil a la collision du monde (`CMondeCollision::Trajet` ;
+zone 0 : 3 243 placements posés, 97 905 triangles, 863 sphères ; deux lignes « la collision du monde » à 17,39 s, la première image
+de la première bille). La première image d'un vol ne compte pas le monde (supposé : le moteur part de la douille de l'arme, l'outil
+du point du tireur, qui se tient dans le volume « treeclimbbranch » au tir de 73,36 s). Avec la vitesse de départ du moteur
+(`FUN_0065f050`) puis le freinage d'un projectile de genre 7 (la fiche « DodgeballPhysicsButes » de `Globals.cat` ; la bille, sans
+nom de fiche, prend celle par défaut : × 0,998 par image dès 0,05 m par pas), les trois vitres sont touchées aux mêmes instants
+(17,52 s, 19,50 s et 21,52 s) à 0,837, 0,854 et 0,857 m par pas (0,840, 0,857 et 0,860 avant) ; le tir sur le piéton 10 arrive à
+74,12 s au lieu de 74,08 s ; les explosions de 75,04, 75,87 et 76,66 s sont en y −92,15 m. La mission écrit toujours vingt et un
+rebonds et finit réussie à 82,53 s, inchangée. Aucune bille de la mission ne touche le monde : toutes explosent sur une vitre ou
+un piéton. **Hors mission**, le repos se voit enfin : `build/outils/lancer_lua 40 --mission 1_04 --sans-cinematiques --entrer
+_1_04_PARKING@10 --donner 302@15 --tirer @16.6` tire la balle 302 à 16,63 s ; elle touche le mur « nogo_tschoolnop » à 17,06 s, le
+sol « fgrd_sc1b18 » à 17,36 s (« premier contact au sol ») et « est au repos » à 17,98 s en (175,48, 7,95, 5,48).
 
 ## `1_05` (« Save Algie ») (06.11.2026)
 
