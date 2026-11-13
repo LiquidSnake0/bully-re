@@ -536,6 +536,23 @@ main(void)
 				p.o1310 = 0xd; p.o1e94 = &q; VERIF(V::IgnoreGenre2Lie(p, &q) && !V::IgnoreGenre2Lie(p, &v));
 				E w; VERIF(V::IgnoreGenre2Lie(w, nullptr));                                  // +0x13b8 nul, +0x430 nul et entité nulle : vrai
 			}
+			{
+				// la référence d'un contact seule (FUN_0045f0a0) et la règle des deux projectiles de même modèle (une part de 0046c4b0)
+				V::ContactBalaye a; int e1 = 1, e2 = 2; std::string liens;
+				auto del = [&](const void *e){ liens += e == &e1 ? "-1" : "-2"; };
+				auto lie = [&](const void *e){ liens += e == &e1 ? "+1" : "+2"; };
+				a.point[0] = 4.0f; a.fraction = 0.25f;
+				a.LierEntite(nullptr, del, lie); VERIF(liens.empty());                       // déjà nulle : rien
+				a.LierEntite(&e1, del, lie); VERIF(liens == "+1" && a.entite == &e1 && a.point[0] == 4.0f && a.fraction == 0.25f);
+				a.LierEntite(&e1, del, lie); VERIF(liens == "+1");                           // la même : ni déliée ni liée
+				a.LierEntite(&e2, del, lie); VERIF(liens == "+1-1+2" && a.entite == &e2);
+				a.LierEntite(nullptr, del, lie); VERIF(liens == "+1-1+2-2" && a.entite == nullptr);
+				float v[3] = {0.0f, 1.0f, 0.0f}, v29[3] = {0.4848096f, 0.8746197f, 0.0f}, v31[3] = {0.5150381f, 0.8571673f, 0.0f};
+				float oppose[3] = {0.0f, -1.0f, 0.0f}, nul[3] = {0.0f, 0.0f, 0.0f}, v2[3] = {0.0f, 3.0f, 0.0f};
+				VERIF(V::MemeSens(v, v) && V::MemeSens(v, v2));                              // parallèles, quelle que soit la norme
+				VERIF(V::MemeSens(v, v29) && !V::MemeSens(v, v31));                          // 29° : 0,8746 ; 31° : 0,8572 ; le seuil : 0,866
+				VERIF(!V::MemeSens(v, oppose) && !V::MemeSens(v, nul));                      // opposés ; 0 / 0, non ordonné : le contact reste
+			}
 			bool remis = false;
 			VERIF(V::CodeDeBalayage(7, &remis) == 8 && !remis && V::CodeDeBalayage(0xfffe) == 0xffff && V::CodeDeBalayage(0xffff, &remis) == 1 && remis);
 			float avantChute[3] = {1.0f, 2.0f, 4.05f}, pos[3] = {1.0f, 2.0f, 3.0f};

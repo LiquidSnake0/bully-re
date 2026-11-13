@@ -328,6 +328,16 @@ struct CVolProjectile {
 			o1c = c.o1c; o20 = c.o20; o22 = c.o22; fraction = c.fraction;
 			return *this;
 		}
+		// FUN_0045f0a0(entité) (lue à l'assembleur de 0x45f0a0 à 0x45f0d2, ret 4) : la référence +0xc seule, du même geste que dans
+		// l'affectation : rien si c'est déjà elle ; sinon l'ancienne, non nulle, est déliée (00465690), la nouvelle posée puis, non
+		// nulle, liée (00465680). Le balayage d'une liste (0046c4b0) s'en sert deux fois : sur son contact local dès que la méthode
+		// +0xa4 a rendu un contact, puis sur le meilleur contact après l'affectation.
+		template<class D, class L> void LierEntite(const void *e, D &&delier, L &&lier) {
+			if(e == entite) return;
+			if(entite) delier(entite);
+			entite = e;
+			if(e) lier(e);
+		}
 	};
 	// FUN_0046c970(listes, secteur, meilleur, arg4, quatrième) (lue à l'assembleur de 0x46c970 à 0x46ca3f, ret 0x14) : le balayage
 	// d'un secteur. Les quatre listes du secteur (quatre mots de suite ; la quatrième, de rang 3, seulement quand l'octet du
@@ -440,6 +450,21 @@ struct CVolProjectile {
 		if(p.o13b8 == 0 && p.o430 == e) return true;
 		if(p.o1310 == 0xd && e == p.o1e94) return true;
 		return e == p.o430 && e != nullptr && e->o46c == 1 && (e->o108 & 0xf8) == 0x38;
+	}
+	// La règle de deux projectiles de même modèle dans le balayage d'une liste (une part de 0046c4b0, lue à l'assembleur de 0x46c71b
+	// à 0x46c7b4, non comptée) : quand l'entité qui balaie est un projectile (+0xc4 non nul) et que l'entité de la liste a le même
+	// modèle (+0x10e), un des trois modèles DAT_00bf435c, DAT_00bf4358 ou DAT_00bf4354 (leurs noms ne sont pas lus dans la table
+	// 0xa136e8), le produit scalaire des deux vitesses (FUN_004144f0, sur les vecteurs que rend FUN_00415350 : la vitesse, supposé)
+	// est divisé par le produit des deux normes (FUN_0040df90 ; le produit puis le quotient arrondis en simple précision). Quand ce
+	// cosinus est strictement au-dessus du double 0x90c730 (0.8659999966621399 ; fcomp, test ah,0x41, jne), les deux projectiles
+	// ne se touchent pas : deux projectiles du même modèle qui volent à moins de 30° l'un de l'autre se traversent. Une vitesse
+	// nulle (0 / 0, non ordonné) garde le contact.
+	static bool MemeSens(const float *v, const float *autre) {
+		double normeAutre = Norme(autre);
+		float scalaire = v[2] * autre[2] + v[0] * autre[0] + v[1] * autre[1];
+		float normes = (float)((double)Norme(v) * normeAutre);
+		float cosinus = scalaire / normes;
+		return (double)cosinus > 0.8659999966621399;
 	}
 	// Puis il rebondit, au premier tour de la boucle des contacts (les autres CPhysical glissent le long de la normale et refont
 	// jusqu'à trois tours). La normale du contact, dont le z positif est mis à 0 quand l'entité touchée a un +0xf0 (`aPlat` ; fldz,
