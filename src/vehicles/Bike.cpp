@@ -24,10 +24,10 @@ CBike::SetModelIndex(int16 id, int32 flags)
 	m_pSkeleton->owner = this;
 	m_pSkeleton->extraA = &m_bikeExtraA;                     // +0x5b8
 	m_pSkeleton->extraB = &m_bikeExtraB;                     // +0x5c4
-	m_pHandlebars  = m_pSkeleton->FindNode("Handlebars");    // 0x68e380
-	m_pFrontWheel  = m_pSkeleton->FindNode("Front_Wheel");
-	m_pRearWheel   = m_pSkeleton->FindNode("Rear_Wheel");
-	m_pFrontMud    = m_pSkeleton->FindNode("Front_Mud");
+	m_nHandlebars  = CVehicleSkeleton::FindNode(m_pSkeleton, "Handlebars");    // FUN_0068e380, 0x912d90
+	m_nFrontWheel  = CVehicleSkeleton::FindNode(m_pSkeleton, "Front_Wheel");   // 0x912d84
+	m_nRearWheel   = CVehicleSkeleton::FindNode(m_pSkeleton, "Rear_Wheel");    // 0x912d78
+	m_nFrontMud    = CVehicleSkeleton::FindNode(m_pSkeleton, "Front_Mud");     // 0x912d6c
 }
 
 // 0x004b95d0, slot 7. Sens exact à confirmer par les appelants.

@@ -13,7 +13,10 @@ struct CVehicleSkeleton {
 	uint8 pad[0x98];
 	void *extraA;             // +0xa4
 	void *extraB;             // +0xa8
-	void *FindNode(const char *name);   // 0x68e380
+	// FUN_0068e380(squelette, nom) : cdecl (push nom, push squelette, add esp après les quatre appels de SetModelIndex), le rang
+	// de l'os qui porte ce nom, ou −1, pas un pointeur ; recréée par CHxdFile::OsParNom (anim/Hxd.h), le dictionnaire étant le
+	// +0x10 du +0x94 du squelette.
+	static int32 FindNode(CVehicleSkeleton *skeleton, const char *name);
 };
 
 class CVisibilityPlugins
@@ -48,8 +51,8 @@ public:
 	void *m_aBikeNodes[8];        // +0x580 : nœuds Gamebryo des composants (GetComponentWorldPosition)
 	uint8 m_bikeExtraA[12];       // +0x5b8
 	uint8 m_bikeExtraB[12];       // +0x5c4
-	void *m_pHandlebars;          // +0x784
-	void *m_pFrontWheel;          // +0x788
-	void *m_pRearWheel;           // +0x78c
-	void *m_pFrontMud;            // +0x790
+	int32 m_nHandlebars;          // +0x784, rangs d'os (FindNode) : quatre mots copiés de eax après chaque appel
+	int32 m_nFrontWheel;          // +0x788
+	int32 m_nRearWheel;           // +0x78c
+	int32 m_nFrontMud;            // +0x790
 };
