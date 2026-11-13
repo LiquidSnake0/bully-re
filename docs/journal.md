@@ -1643,3 +1643,59 @@ en échec plutôt que de les masquer.
   journal ne change dans les huit exécutions, à aucun commit, branchement du balayage dans l'outil compris.
 - **Bilan** : 1 286 fonctions recréées (8,1 % du code), contre 1 264 (8,0 %) ; 2 223 comprises (12,7 %), contre 2 203 (12,7 %) ;
   huit commits (sept de moteur et la documentation).
+
+## 13.11.2026, séance 2 (de 03 h 05 à 04 h 18)
+
+- **Le test général de collision est recréé d'une pièce** (`FUN_0056c770`, 4 610 octets, lu à l'assembleur de 0x56c770 à
+  0x56d970 ; `CCollisionBalayee::TestGeneral`, `src/collision/Balayes.h`, nouveau) : c'était le premier point de la suite, celui
+  des deux tests fins que choisit la méthode +0xa4 d'un `CProjectile` (`FUN_0046a340`). Deux modèles, le premier qui se déplace
+  de m1 à m2, le second de m4 à m5 ; pour chaque sphère du premier, les sphères du second (bit 1), ses boîtes (bit 2) et ses
+  triangles (bit 8), dans l'espace du second ; la plus petite fraction gagne, strictement. Les données d'un modèle (+0x38) sont
+  maintenant connues : les sphères en +0x0 (0x14 octets), les boîtes en +0x8 (0x24), les sommets en +0xc, les triangles en +0x10
+  (8 octets), l'arbre en +0x14, les comptes en +0x1c (16 bits), +0x1e et +0x1f (8 bits) ; `src/collision/ColModel.h` les disait
+  « non retrouvées ». 13 vérifications dans `test_marche`.
+- **Tout ce qu'il appelle, recréé avant lui** : les matrices (`FUN_0045d3b0`, `FUN_00414560`, `FUN_00413620`, `FUN_00413780`),
+  les sommets compressés (`FUN_0056e530`), deux sphères qui se déplacent (`FUN_00576a00`, 894 octets) ; une sphère contre un
+  triangle (`FUN_00575510`, 2 205 octets) avec ses sept pièces et ce qu'elles appellent (`FUN_00414ad0`, `FUN_00414cc0`, `FUN_00574fe0`, `FUN_00575100`,
+  `FUN_00575140`, `FUN_005751a0`, `FUN_00575260`, `FUN_00575310`, `FUN_00574dc0`) ; une sphère contre une boîte (`FUN_00576660`,
+  900 octets), sa face à quatre coins (`FUN_00575db0`, 2 214 octets, lue en regard de `00575510`) et le point dans un polygone
+  (`FUN_00574f90`) ; le point dans une boîte (`FUN_00565ad0`). La fraction que rend `00575510` est une distance le long du
+  déplacement normalisé, que le test général divise par sa longueur. **La normale d'un triangle est (v2 − v0) × (v1 − v0)**
+  (`FUN_004145e0` est a × b) et **un triangle n'est touché que de face** : un projectile qui arrive par l'arrière le traverse.
+- **Le test fin contre un piéton** (`FUN_00469f70`, 966 octets ; `TestPieton`) : les sphères du projectile contre celles du
+  modèle du piéton ; la sphère 0 touchée donne la fraction, puis le déplacement est allongé cent fois et seule la sphère 3 donne
+  le point, la normale et le rang. Avec lui les deux tests fins de `FUN_0046a340` sont recréés ; le modèle du piéton, que prépare
+  `00572680` sur six os du squelette, ne l'est pas (l'outil n'a pas d'os).
+- **Le monde de l'outil passe par le test général** (`outils/lancer_lua.cpp` : `CVueMonde`, `VueDuMonde`, `TesterMonde`) au lieu
+  de `CMondeCollision::Trajet` : la collision de la zone est vue comme un seul modèle posé à l'identité ; la grille de l'outil
+  remplace l'arbre de partition ; les boîtes du monde, déjà en triangles, tournent dans le sens du binaire. Les mêmes contacts
+  aux mêmes instants dans l'essai hors mission : seules 16 lignes changent, par le signe d'une composante nulle de la normale.
+- **La méthode +0xa4 branchée dans l'outil** : `CBalayageOutil::Tester` passe par `FUN_0046a340` (`TesterCollision`) ; la
+  collision de la zone note la surface de chaque triangle (`CMondeCollision::surface`). **Le mur « nogo_tschoolnop » porte la
+  surface 0x41** : dans l'essai hors mission, la balle 302 le traverse à 17,06 s, touche le sol « fgrd_nd_sc1op » à 17,19 s en
+  (175,48, 12,08, 6,07) et est au repos à 17,85 s en (175,49, 12,66, 6,07), au lieu de rebondir sur le mur et de s'arrêter à
+  17,98 s en (175,48, 7,95, 5,48) ; 17 rebonds, 40 lignes de projectile au lieu de 37.
+- **Le projectile reçoit son modèle de collision** (`SpheresDuProjectile`) : les .col de `Stream/World.img` contiennent ceux
+  des projectiles (baseball.col, marble.col, BRICK.col…) ; la balle 302 a une sphère de 0,055 m, la bille 304 une de 0,025 m,
+  la brique 311 une de 0,129 m, au centre du modèle. Dans l'essai hors mission, le centre de la balle s'arrête 5,5 cm au-dessus
+  du sol (au repos à 17,85 s en (175,49, 12,52, 6,13)) ; dans `1_03` aux briques, la brique de 0,129 m touche une surface 0x41
+  à 127,08 s et la traverse.
+- **Dans les sept missions, aucun projectile ne touche le monde** : les rebonds de `1_04` et de `1_03` aux briques sont sur des
+  objets et des piétons. Aucune ligne de journal ne change à aucun commit, sauf au huitième : la ligne du modèle de la bille dans `1_04`, celles du modèle de la brique et de sa traversée
+  dans `1_03` aux briques (des lignes ajoutées ; aucune ligne d'avant ne change).
+- **Une erreur dans un message** : celui du septième commit (b554023) dit que la balle « rebondit treize fois sur place » après
+  avoir touché le sol ; c'est seize fois (dix-sept rebonds en tout, 40 lignes de projectile).
+  Celui du huitième commit (58f2b05) dit que 16 lignes de projectile de l'essai changent par leur point : c'est 18 (les dix-sept
+  contacts et la ligne du repos), et une ligne s'ajoute (le modèle de la balle).
+- **Non fait, écrit en tête de la suite** : le modèle de collision des objets cassables (il manque leur matrice dans l'outil),
+  celui d'un piéton (`00572680`, bloqué sans os), l'arbre de partition d'un modèle (`005616a0`, `00561750`), puis ce qui restait
+  du 13.11, séance 1 (composer `0046ca40`, le départ du tir, le contrôle, les références d'entité) et le balayage d'une explosion.
+- **Les comptes des README** : chaque commit est parti d'un arbre qui ne contenait que lui, les adresses ajoutées au compte
+  listées avant chaque commit (le script du dossier temporaire voit maintenant un fichier neuf, ajouté par `git add -N`). Écrites
+  sans préfixe pour ne pas être comptées : `00572680`, `005616a0`, `00561750`, `00561080`, `005615a0` (et `00576660` jusqu'à sa
+  recréation, au quatrième commit).
+- **REA amont** : déjà relevé cette nuit, pas refait.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 147,97 s), `1_04` à 82,53 s, `1_05` à
+  180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout**.
+- **Bilan** : 1 307 fonctions recréées (6,3 % des fonctions, 8,4 % du code), contre 1 286 (6,2 %, 8,1 %) ; 2 240 comprises
+  (13,0 % du code), contre 2 223 (12,7 %) ; neuf commits (huit de moteur et la documentation).

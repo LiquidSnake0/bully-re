@@ -17,6 +17,10 @@ struct CMondeCollision {
 	std::vector<CVector> tri;           // 3 sommets par triangle, en coordonnées monde
 	std::vector<CVector> sphCentre;
 	std::vector<float> sphRayon;
+	// La surface de chaque triangle (l'octet +6 d'un triangle des .col, +0x20 d'une boîte, douze fois), quand l'appelant la
+	// donne après AjouterTriangle ou AjouterBoite ; un triangle sans surface notée vaut 0. Rien ici ne s'en sert.
+	std::vector<uint8> surface;
+	uint8 Surface(size_t triangle) const { return triangle < surface.size() ? surface[triangle] : 0; }
 
 	void AjouterTriangle(const CVector &a, const CVector &b, const CVector &c);
 	// Boîte déjà transformée : ses 8 coins dans l'ordre des bits (x, y, z).
