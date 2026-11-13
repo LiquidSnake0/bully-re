@@ -682,6 +682,15 @@ instants, vingt et un rebonds, réussie à 82,53 s ; l'essai hors mission ci-des
 mission ne recroise son tireur : la ligne « le projectile N traverse son tireur, le piéton P : le balayage l'écarte
 (FUN_004761a0) » n'y sort pas.
 
+Le 13.11 (séance 2), le monde de l'outil passe par le test général de collision du binaire (`FUN_0056c770`, `TesterMonde`) et le
+test d'un projectile par la méthode +0xa4 d'un `CProjectile` (`FUN_0046a340`) : un contact de surface 0x41 n'en est pas un. Dans
+l'essai hors mission ci-dessus, **le mur « nogo_tschoolnop » porte la surface 0x41** : la balle 302 le traverse à 17,06 s (« le
+projectile 0 traverse une surface 0x41 du monde (FUN_0046a340) »), touche le sol « fgrd_nd_sc1op » à 17,19 s en (175,48, 12,08,
+6,07) (« premier contact au sol ») et « est au repos » à 17,85 s en (175,49, 12,66, 6,07) ; avec son modèle de collision (une
+sphère de 0,055 m), son centre s'arrête à 5,5 cm au-dessus du sol, en (175,49, 12,52, 6,13), au même instant. La mission elle-même
+ne gagne qu'une ligne, celle du modèle de collision de la bille (une sphère de 0,025 m) : aucun de ses projectiles ne touche le
+monde (ses rebonds sont sur les vitres et les piétons), réussie à 82,53 s.
+
 ## `1_05` (« Save Algie ») (06.11.2026)
 
 `1_05` s'enchaîne après `1_04`. Lancée seule (`build/outils/lancer_lua 90 --mission 1_05 --sans-cinematiques`), elle bouclait
