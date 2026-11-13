@@ -37,7 +37,7 @@ static int32 g_n;
 static void Garder(int32 id, const char *name, CColModel *m, uint8) { if(g_n < 400){ g_ids[g_n] = id; strcpy(g_names[g_n], name); g_models[g_n++] = m; } else { m->RemoveCollisionVolumes(); free(m); } }
 // L'arbre d'un modèle : sa racine contient-elle tous les sommets, et le parcours (FUN_005616a0, FUN_00561750) rend-il chaque
 // triangle pour une sphère de 5 cm posée au centre du triangle, sans rendre de rang au-delà des triangles ?
-static int32 g_arbres, g_essais, g_manques, g_horsRacine, g_horsRang;
+static int32 g_arbres, g_essais, g_manques, g_horsRacine, g_horsRang, g_manques3;
 static void
 EssayerArbre(const CCollisionData &c)
 {
@@ -62,6 +62,10 @@ EssayerArbre(const CCollisionData &c)
 		}
 		g_essais++;
 		if(!vu) g_manques++;
+		// le mode 3 (la sphère vue en x et y, FUN_005641c0) rend aussi le triangle
+		bool vu3 = false; tours = 0;
+		for(uint16 r = p.Debut(&d, centre, 0.05f, true); r != 0xffff && tours < 4 * c.numTriangles + 64; r = p.Suivant(), tours++) if(r == k) vu3 = true;
+		if(!vu3) g_manques3++;
 	}
 }
 static void Vider(void) { for(int32 i = 0; i < g_n; i++){ g_models[i]->RemoveCollisionVolumes(); free(g_models[i]); } g_n = 0; }
@@ -127,11 +131,11 @@ main(void)
 	}
 	printf("%d fichiers .col, %d modèles, %d incohérents\n", fichiers, modeles, mauvais);
 	VERIF(fichiers == 488 && mauvais == 0);
-	printf("arbres de partition : %d modèles, %d triangles essayés, %d non rendus, %d sommets hors de la racine, %d rangs au-delà des triangles\n",
-	       g_arbres, g_essais, g_manques, g_horsRacine, g_horsRang);
+	printf("arbres de partition : %d modèles, %d triangles essayés, %d non rendus (%d en x et y), %d sommets hors de la racine, %d rangs au-delà des triangles\n",
+	       g_arbres, g_essais, g_manques, g_manques3, g_horsRacine, g_horsRang);
 	// Deux modèles sur 772 ont un arbre qui ne couvre pas tous leurs triangles (l'un, de 12 triangles, a une feuille qui donne les
 	// rangs 2 573 et 2 574) : ce sont leurs données, que le binaire parcourt de même (supposé) ; le compte est gardé tel quel.
-	VERIF(g_arbres == 772 && g_essais == 131022 && g_manques == 5 && g_horsRacine == 0 && g_horsRang == 4);
+	VERIF(g_arbres == 772 && g_essais == 131022 && g_manques == 5 && g_manques3 == 5 && g_horsRacine == 0 && g_horsRang == 4);
 	printf(echecs ? "%d échec(s)\n" : "tout passe\n", echecs);
 	return echecs != 0;
 }

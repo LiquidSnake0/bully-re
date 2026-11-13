@@ -80,13 +80,36 @@ struct CArbreCollision {
 		}
 		return true;
 	}
+	// FUN_005641c0(min, max, point) (cdecl, lue à l'assembleur de 0x5641c0 à 0x5645a8, 1 001 octets) : le carré de la distance du
+	// point à la boîte en x et y seulement. Neuf cas, selon que le x du point est sous le min (strictement), dans la boîte (sous le
+	// max ou égal) ou au-delà, et de même en y ; chaque différence, chaque carré et la somme sont arrondis à float (fstp, fld) :
+	// ici, des calculs en float. Dans la boîte : 0 (fldz).
+	static float Distance2D(const float *mn, const float *mx, const float *p) {
+		if(p[0] < mn[0]) {
+			float dx = p[0] - mn[0];
+			if(p[1] < mn[1]) { float dy = p[1] - mn[1]; float a = dx * dx, b = dy * dy; return a + b; }
+			if(mx[1] < p[1]) { float dy = p[1] - mx[1]; float a = dx * dx, b = dy * dy; return a + b; }
+			return dx * dx;
+		}
+		if(p[0] <= mx[0]) {
+			if(p[1] < mn[1]) { float dy = p[1] - mn[1]; return dy * dy; }
+			if(mx[1] < p[1]) { float dy = p[1] - mx[1]; return dy * dy; }
+			return 0.0f;
+		}
+		float dx = p[0] - mx[0];
+		if(p[1] < mn[1]) { float dy = p[1] - mn[1]; float a = dx * dx, b = dy * dy; return a + b; }
+		if(mx[1] < p[1]) { float dy = p[1] - mx[1]; float a = dx * dx, b = dy * dy; return a + b; }
+		return dx * dx;
+	}
 	// 00561080 (fastcall : le min de la boîte du nœud dans eax, le max dans ecx, le rang du nœud dans bx ; lue à l'assembleur en
 	// entier, jusqu'à 0x56159f, 1 311 octets ; recréée pour le mode 1 seulement, d'où sa forme sans préfixe) : les deux boîtes filles du nœud, chacune la boîte du nœud avec ses coupes (les longueurs
 	// max − min arrondies à float, la coupe en double puis arrondie à float), puis chaque boîte que touche la sphère va sur la pile :
-	// la seconde d'abord (le rang | 0x8000), puis la première (le rang). Seul le mode 1 est recréé (une sphère, FUN_00564a00) : le
-	// mode 2 essaie la seconde forme posée en 0xcf2194 par une fonction non lue (00564d40 sur la boîte), le mode 3 la sphère en x et
-	// y seulement puis la distance de 005641c0 (1 001 octets, non lue) contre le carré du rayon ; le test général ne demande que le
-	// mode 1 (son 005616a0 reçoit un dernier argument nul, à 0x56d1a9). Dans ces deux modes, l'outil n'empile rien.
+	// la seconde d'abord (le rang | 0x8000), puis la première (le rang). Le mode 1 : FUN_00564a00 (le test général ne demande que
+	// lui : son 005616a0 reçoit un dernier argument nul, à 0x56d1a9). Le mode 3 : la sphère vue en x et y, le carré du rayon arrondi
+	// à float (calculé seulement en mode 3, 0 sinon) ; chaque boîte, la seconde puis la première, n'est gardée que si min < centre +
+	// rayon et centre − rayon < max en x puis en y (la somme et la différence sans arrondi ; test ah,5, jp, puis test ah,0x41, jne :
+	// l'égalité et un NaN écartent) et si FUN_005641c0 (le centre en x et y copié sur la pile) est strictement sous le carré du rayon. Le mode 2 (00564d40 sur une forme posée en 0xcf2194
+	// par 00561700, 2 605 octets) n'est pas recréé : l'outil n'empile rien.
 	void Descendre(uint16 n, const float *pmn, const float *pmx) {
 		float d[3], b1mn[3], b1mx[3], b2mn[3], b2mx[3];
 		for(int i = 0; i < 3; i++) {
@@ -103,9 +126,18 @@ struct CArbreCollision {
 			float c = (float)((double)pmn[i] + ((double)x[4 + i] * d[i]) / 255.0);
 			if(f & (8 << i)) b1mx[i] = c; else b2mx[i] = c;
 		}
-		if(mode != 1) return;
-		if(SphereBoite(sphere, b2mn, b2mx)) Empiler((uint16)(n | 0x8000), b2mn, b2mx);
-		if(SphereBoite(sphere, b1mn, b1mx)) Empiler(n, b1mn, b1mx);
+		if(mode == 1) {
+			if(SphereBoite(sphere, b2mn, b2mx)) Empiler((uint16)(n | 0x8000), b2mn, b2mx);
+			if(SphereBoite(sphere, b1mn, b1mx)) Empiler(n, b1mn, b1mx);
+			return;
+		}
+		if(mode != 3) return;
+		float r2 = sphere[3] * sphere[3], c[2] = {sphere[0], sphere[1]};
+		double cx = sphere[0], cy = sphere[1], r = sphere[3];
+		if(b2mn[0] < cx + r && cx - r < b2mx[0] && b2mn[1] < cy + r && cy - r < b2mx[1] && Distance2D(b2mn, b2mx, c) < r2)
+			Empiler((uint16)(n | 0x8000), b2mn, b2mx);
+		if(b1mn[0] < cx + r && cx - r < b1mx[0] && b1mn[1] < cy + r && cy - r < b1mx[1] && Distance2D(b1mn, b1mx, c) < r2)
+			Empiler(n, b1mn, b1mx);
 	}
 	void Empiler(uint16 n, const float *mn, const float *mx) {
 		if(haut >= 32) return;   // le binaire écrirait au-delà de 0xcf26b8 (supposé : jamais)
