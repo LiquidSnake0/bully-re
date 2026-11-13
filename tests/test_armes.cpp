@@ -509,6 +509,33 @@ main(void)
 				float c3[3] = {0.0f, 0.0f, 12.0f};
 				VERIF(V::SpheresSeTouchent(c3, 6.0f, false, v0, c2, 7.01f) && !V::SpheresSeTouchent(c3, 6.0f, false, v0, c2, 6.99f));   // 13 m, avec le z
 			}
+			{
+				// les trois filtres de piéton du balayage d'une liste (FUN_004760b0, FUN_00476160, FUN_00476270)
+				typedef V::EntiteFiltree E;
+				E p, q, v;                                                                   // deux piétons et une entité de genre 2
+				p.o108 = 3; q.o108 = 0x1b; v.o108 = 2; p.o133c = 1; q.o133c = 1;
+				VERIF(!V::IgnorePieton(p, v, nullptr));                                      // l'autre n'est pas un piéton
+				VERIF(!V::IgnorePieton(p, q, nullptr));                                      // deux piétons ordinaires : ils se touchent
+				VERIF(V::IgnorePieton(p, p, nullptr) && V::IgnorePieton(p, q, &q));          // lui-même ; le piéton de 0xc2b118
+				p.o1e25 = true; VERIF(V::IgnorePieton(p, v, nullptr)); p.o1e25 = false;      // l'octet +0x1e25 passe avant le genre
+				q.o1e25 = true; VERIF(V::IgnorePieton(p, q, nullptr)); q.o1e25 = false;
+				p.o1520 = 1; VERIF(V::IgnorePieton(p, q, nullptr)); p.o1520 = 0;
+				q.o1c98 = true; VERIF(V::IgnorePieton(p, q, nullptr)); q.o1c98 = false;
+				q.o133c = 0; VERIF(V::IgnorePieton(p, q, nullptr)); q.o133c = 1;
+				q.o1554 = &v; VERIF(V::IgnorePieton(p, q, nullptr)); q.o1554 = nullptr;
+				p.o155c = &q; VERIF(!V::IgnorePieton(p, q, nullptr));                        // le lien +0x155c d'un seul côté
+				q.o155c = &p; VERIF(V::IgnorePieton(p, q, nullptr));                         // des deux côtés
+				q.o1500 = 1; VERIF(!V::IgnorePieton(p, q, nullptr)); q.o1500 = 0;            // sauf si un +0x1500 n'est pas nul
+				VERIF(!V::IgnoreSonGenre2(p, &v) && V::IgnoreSonGenre2(p, nullptr));         // +0x1554 nul : l'entité nulle « égale »
+				p.o1554 = &v; VERIF(V::IgnoreSonGenre2(p, &v) && !V::IgnoreSonGenre2(p, nullptr)); p.o1554 = &q;
+				v.o450 = &p; VERIF(!V::IgnoreSonGenre2(p, &v)); v.o454 = 1; VERIF(V::IgnoreSonGenre2(p, &v));
+				v.o454 = -1; VERIF(!V::IgnoreSonGenre2(p, &v)); v.o454 = 1; v.o108 = 3; VERIF(!V::IgnoreSonGenre2(p, &v)); v.o108 = 2;
+				p.o430 = &v; VERIF(V::IgnoreGenre2Lie(p, &v));                               // +0x13b8 nul et +0x430 == l'entité
+				p.o13b8 = 1; VERIF(!V::IgnoreGenre2Lie(p, &v));
+				v.o46c = 1; v.o108 = 0x3a; VERIF(V::IgnoreGenre2Lie(p, &v)); v.o108 = 0x42; VERIF(!V::IgnoreGenre2Lie(p, &v));
+				p.o1310 = 0xd; p.o1e94 = &q; VERIF(V::IgnoreGenre2Lie(p, &q) && !V::IgnoreGenre2Lie(p, &v));
+				E w; VERIF(V::IgnoreGenre2Lie(w, nullptr));                                  // +0x13b8 nul, +0x430 nul et entité nulle : vrai
+			}
 			bool remis = false;
 			VERIF(V::CodeDeBalayage(7, &remis) == 8 && !remis && V::CodeDeBalayage(0xfffe) == 0xffff && V::CodeDeBalayage(0xffff, &remis) == 1 && remis);
 			float avantChute[3] = {1.0f, 2.0f, 4.05f}, pos[3] = {1.0f, 2.0f, 3.0f};

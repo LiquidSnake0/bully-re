@@ -398,6 +398,49 @@ struct CVolProjectile {
 		float d2 = dy * dy + dx * dx + dz * dz;
 		return d2 < rayon * rayon;
 	}
+	// Les trois filtres de piéton du balayage d'une liste de secteur (0046c4b0 les appelle quand l'entité qui balaie est un piéton,
+	// avant le test des sphères : un filtre vrai, et l'entité de la liste est passée). Trois méthodes du piéton (ecx), un argument,
+	// ret 4, lues à l'assembleur en entier. Ce qu'elles lisent d'une entité, sous le nom de son offset (le sens des champs n'est pas
+	// lu : aucun nom n'est donné) :
+	struct EntiteFiltree {
+		unsigned char o108 = 0;                                            // l'octet +0x108 ; ses trois bits bas : le genre (3, un piéton)
+		const EntiteFiltree *o450 = nullptr;                               // d'une entité de genre 2 : +0x450, l'octet signé +0x454, +0x46c
+		signed char o454 = 0;
+		unsigned o46c = 0;
+		bool o1e25 = false, o1c98 = false;                                 // d'un piéton : les octets +0x1e25 et +0x1c98
+		unsigned o1520 = 0, o133c = 0, o1500 = 0, o13b8 = 0, o1310 = 0;    //              les mots +0x1520, +0x133c, +0x1500, +0x13b8, +0x1310
+		const EntiteFiltree *o1554 = nullptr, *o155c = nullptr, *o430 = nullptr, *o1e94 = nullptr;   // les pointeurs +0x1554, +0x155c, +0x430, +0x1e94
+	};
+	// FUN_004760b0(autre) (de 0x4760b0 à 0x476152) : le piéton ne touche-t-il pas cet autre piéton ? Vrai d'emblée si son octet
+	// +0x1e25 n'est pas nul (avant même le genre de l'autre) ; faux si l'autre n'est pas un piéton ; vrai si c'est lui-même, si son
+	// +0x1520 n'est pas nul, si son octet +0x1c98 n'est pas nul, si son +0x133c est nul, si l'octet +0x1e25 ou +0x1c98 de l'autre
+	// n'est pas nul, si le +0x133c de l'autre est nul, si le +0x1554 de l'autre n'est pas nul, ou si l'autre est le piéton du mot
+	// 0xc2b118 (`exclu` ; le joueur, supposé) ; sinon vrai seulement quand les deux +0x155c se désignent l'un l'autre et que les deux
+	// +0x1500 sont nuls.
+	static bool IgnorePieton(const EntiteFiltree &p, const EntiteFiltree &autre, const EntiteFiltree *exclu) {
+		if(p.o1e25) return true;
+		if((autre.o108 & 7) != 3) return false;
+		if(&autre == &p || p.o1520 != 0 || p.o1c98 || p.o133c == 0 || autre.o1e25 || autre.o1c98 || autre.o133c == 0 ||
+		   autre.o1554 != nullptr || &autre == exclu)
+			return true;
+		return p.o155c != nullptr && p.o1500 == 0 && autre.o155c != nullptr && autre.o1500 == 0 && p.o155c == &autre && autre.o155c == &p;
+	}
+	// FUN_00476160(e) (de 0x476160 à 0x476198 ; 0046c4b0 ne l'appelle que pour une entité de genre 2) : vrai si le +0x1554 du piéton
+	// est cette entité (la comparaison passe avant le test du pointeur nul : une entité nulle « égale » un +0x1554 nul) ; sinon vrai si
+	// l'entité est de genre 2, que son +0x450 est le piéton et que son octet signé +0x454 est strictement positif (jg).
+	static bool IgnoreSonGenre2(const EntiteFiltree &p, const EntiteFiltree *e) {
+		if(p.o1554 == e) return true;
+		return e != nullptr && (e->o108 & 7) == 2 && e->o450 == &p && e->o454 > 0;
+	}
+	// FUN_00476270(e) (de 0x476270 à 0x4762ba ; même appelant, même cas) : vrai si le +0x13b8 du piéton est nul et que son +0x430
+	// est l'entité ; ou si son +0x1310 vaut 0xd et que l'entité est son +0x1e94 ; ou si l'entité est son +0x430, que le +0x46c de
+	// l'entité vaut 1 et que les cinq bits hauts de son octet +0x108 valent 0x38. Le binaire lit ce +0x46c sans tester le pointeur
+	// (une entité nulle égale à un +0x430 nul le ferait lire à l'adresse 0x46c) : ici le cas rend faux.
+	static bool IgnoreGenre2Lie(const EntiteFiltree &p, const EntiteFiltree *e) {
+		if(p.o13b8 == 0 && p.o430 == e) return true;
+		if(p.o1310 == 0xd && e == p.o1e94) return true;
+		return e == p.o430 && e != nullptr && e->o46c == 1 && (e->o108 & 0xf8) == 0x38;
+	}
 	// Puis il rebondit, au premier tour de la boucle des contacts (les autres CPhysical glissent le long de la normale et refont
 	// jusqu'à trois tours). La normale du contact, dont le z positif est mis à 0 quand l'entité touchée a un +0xf0 (`aPlat` ; fldz,
 	// fcom, test ah,5, jp), est normalisée (0x414cc0, supposée). Contre un piéton (le genre de l'entité touchée, +0x108 & 7, vaut 3)
