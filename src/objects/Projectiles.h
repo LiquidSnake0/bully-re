@@ -8,6 +8,9 @@
 
 struct CPlacesProjectiles {
 	enum { kTaille = 32 };
+	// FUN_004d3360(i) (lue à l'assembleur de 0x4d3360 à 0x4d336c, 13 octets, cdecl) : l'adresse de l'entrée i de la table, 0xc3a038 +
+	// i × 0x34 (imul eax,eax,0x34 ; add eax,0xc3a038). L'indice d'un projectile est son +0x238 ; le tireur est le +4 de l'entrée.
+	static uint32 AdresseEntree(int32 i) { return (uint32)(i * 0x34) + 0xc3a038u; }
 	bool actif[kTaille] = {};
 	uint32 creation[kTaille] = {};
 	bool explose[kTaille] = {};   // l'octet +0x16 (0xc3a04e) : FUN_004d37d0 a fait son explosion
@@ -465,6 +468,54 @@ struct CVolProjectile {
 		float normes = (float)((double)Norme(v) * normeAutre);
 		float cosinus = scalaire / normes;
 		return (double)cosinus > 0.8659999966621399;
+	}
+	// Le ballon prisonnier, que les filtres d'un projectile interrogent. FUN_006838d0() (lue à l'assembleur de 0x6838d0 à 0x6838e1,
+	// 18 octets) : faux quand l'objet du mot DAT_01b89150 est nul ; sinon elle saute dans FUN_0067b0f0 (de 0x67b0f0 à 0x67b0fb, 12
+	// octets) : le bit 0x100 du mot +0x17dc de cet objet (shr eax,8 ; and al,1). Supposé : « une partie de ballon prisonnier est en
+	// cours » (l'objet est celui des pistes Dodgeball… de l'arbre d'actions ; le sens du bit n'est pas lu).
+	static bool BallonActif(bool objet, uint32 o17dc) { return objet && ((o17dc >> 8) & 1) != 0; }
+	// FUN_00683a10(piéton) (de 0x683a10 à 0x683a27, 24 octets, cdecl) : faux sans l'objet DAT_01b89150, sinon FUN_00680b60(piéton),
+	// méthode de cet objet (de 0x680b60 à 0x680bab, 76 octets, ret 4) : faux quand FUN_006838d0 rend faux, quand le piéton est nul ou
+	// n'est pas un piéton (+0x108 & 7 != 3) ; sinon le réel que rend 0067b100(objet, piéton) (non lue : `valeur`), arrondi en simple
+	// précision, est comparé au réel 0xb9da80 (0,5 dans le binaire ; une donnée, pas une constante) : vrai quand 0,5 est strictement
+	// sous la valeur (fld la valeur, fld 0,5, fcompp, test ah,1, je : non ordonné, vrai aussi).
+	static bool JoueurDeBallon(bool actif, const EntiteFiltree *p, float valeur) {
+		if(!actif || p == nullptr || (p->o108 & 7) != 3) return false;
+		return !(0.5f >= valeur);
+	}
+	// FUN_004761a0(projectile) (méthode du piéton, lue à l'assembleur de 0x4761a0 à 0x476269, 202 octets, ret 4 ; le balayage d'une
+	// liste de secteur, 0046c4b0, l'appelle sur chaque piéton de la liste quand l'entité qui balaie est un projectile, +0xc4 non
+	// nul : vrai, et le piéton est passé) : ce projectile ne touche-t-il pas ce piéton ? Faux pour une entité dont le +0xc4 est nul
+	// (le binaire lit alors son genre et son modèle sans rien en faire). Vrai quand le +0xfc du piéton n'est pas nul. Puis, pendant
+	// le ballon prisonnier seulement (FUN_006838d0) : vrai pour un projectile bas et lent, dont le z (le +0x38 de sa matrice +0x14,
+	// ou son +0xc sans matrice) moins celui du piéton, moins 0,1847944 (le double 0x90c720), est strictement sous 0,5
+	// (_DAT_009055a0 : fcomp, test ah,5, jp) et dont la vitesse (FUN_0040df90 sur +0x124) est strictement sous 0,1 (le double
+	// 0x900128 : test ah,5, jnp) ; sinon vrai quand FUN_00683a10(piéton) rend vrai. Enfin, ballon ou non : vrai quand le piéton est
+	// le tireur du projectile (le +4 de l'entrée FUN_004d3360(projectile+0x238)). Un projectile ne touche donc jamais son tireur
+	// dans le balayage, quel que soit son âge. `joueurDeBallon` n'est lu que pendant le ballon, quand le projectile n'est pas bas et
+	// lent.
+	static bool ProjectileIgnore(bool oc4, bool ofc, bool ballon, float zProjectile, float zPieton, const float *vitesse,
+	                             bool joueurDeBallon, bool estLeTireur) {
+		if(!oc4) return false;
+		if(ofc) return true;
+		if(ballon){
+			float dz = zProjectile - zPieton;
+			dz = (float)((double)dz - 0.1847944);
+			if(dz < 0.5f && (double)Norme(vitesse) < 0.1) return true;
+			if(joueurDeBallon) return true;
+		}
+		return estLeTireur;
+	}
+	// FUN_00469f10(entité, projectile) (lue à l'assembleur de 0x469f10 à 0x469f63, 84 octets, cdecl ; 0046c4b0 l'appelle dans les
+	// deux sens : sur une entité de genre 2 de la liste quand un projectile balaie, et quand c'est une entité de genre 2 qui balaie
+	// et croise un projectile) : faux si l'entité n'est pas de genre 2 (+0x108 & 7) ou si le +0xc4 du projectile est nul ; vrai quand
+	// le tireur du projectile (le +4 de son entrée) est l'occupant de la place 0 de l'entité (FUN_004ce410(entité+0x1c4, 0) ; la
+	// comparaison ne teste pas le nul : un projectile sans tireur « égale » une place vide) ; sinon vrai quand le +0xfc de l'entité
+	// n'est pas nul. Le projectile de son conducteur ne touche donc pas un véhicule (genre 2 : un véhicule, supposé).
+	static bool VehiculeIgnore(int genre, bool oc4, const void *tireur, const void *place0, bool ofc) {
+		if(genre != 2 || !oc4) return false;
+		if(tireur == place0) return true;
+		return ofc;
 	}
 	// Puis il rebondit, au premier tour de la boucle des contacts (les autres CPhysical glissent le long de la normale et refont
 	// jusqu'à trois tours). La normale du contact, dont le z positif est mis à 0 quand l'entité touchée a un +0xf0 (`aPlat` ; fldz,

@@ -553,6 +553,31 @@ main(void)
 				VERIF(V::MemeSens(v, v29) && !V::MemeSens(v, v31));                          // 29° : 0,8746 ; 31° : 0,8572 ; le seuil : 0,866
 				VERIF(!V::MemeSens(v, oppose) && !V::MemeSens(v, nul));                      // opposés ; 0 / 0, non ordonné : le contact reste
 			}
+			{
+				// les deux filtres d'un projectile (FUN_004761a0, FUN_00469f10), le ballon prisonnier (FUN_006838d0, FUN_0067b0f0,
+				// FUN_00683a10, FUN_00680b60) et l'adresse d'une entrée de la table (FUN_004d3360)
+				VERIF(CPlacesProjectiles::AdresseEntree(0) == 0xc3a038u && CPlacesProjectiles::AdresseEntree(1) == 0xc3a06cu);
+				VERIF(CPlacesProjectiles::AdresseEntree(31) + 0x34 == 0xc3a6b8u);            // la fin de la table : l'objet de la première
+				VERIF(!V::BallonActif(false, 0x100) && V::BallonActif(true, 0x100) && !V::BallonActif(true, 0xfffffeffu) && V::BallonActif(true, 0x1ff));
+				V::EntiteFiltree pieton, vehicule; pieton.o108 = 3; vehicule.o108 = 2;
+				VERIF(V::JoueurDeBallon(true, &pieton, 0.51f) && !V::JoueurDeBallon(true, &pieton, 0.5f));   // 0,5 strictement sous la valeur
+				VERIF(!V::JoueurDeBallon(false, &pieton, 1.0f) && !V::JoueurDeBallon(true, nullptr, 1.0f) && !V::JoueurDeBallon(true, &vehicule, 1.0f));
+				VERIF(V::JoueurDeBallon(true, &pieton, std::nanf("")));                      // non ordonné : vrai
+				float lent[3] = {0.05f, 0.0f, 0.0f}, vif[3] = {0.0f, 0.3f, 0.0f};
+				VERIF(!V::ProjectileIgnore(false, true, true, 10.0f, 10.0f, lent, true, true));   // +0xc4 nul : jamais
+				VERIF(V::ProjectileIgnore(true, true, false, 12.0f, 10.0f, vif, false, false));  // le +0xfc du piéton
+				VERIF(!V::ProjectileIgnore(true, false, false, 10.0f, 10.0f, lent, true, false)); // hors ballon : ni bas et lent, ni joueur de ballon
+				VERIF(V::ProjectileIgnore(true, false, false, 12.0f, 10.0f, vif, false, true));  // le tireur, hors ballon
+				VERIF(V::ProjectileIgnore(true, false, true, 10.5f, 10.0f, lent, false, false)); // ballon : bas et lent
+				VERIF(!V::ProjectileIgnore(true, false, true, 10.5f, 10.0f, vif, false, false)); //          bas et vif
+				VERIF(!V::ProjectileIgnore(true, false, true, 10.69f, 10.0f, lent, false, false) && V::ProjectileIgnore(true, false, true, 10.68f, 10.0f, lent, false, false));
+				VERIF(V::ProjectileIgnore(true, false, true, 12.0f, 10.0f, vif, true, false));   //          le joueur de ballon
+				VERIF(V::ProjectileIgnore(true, false, true, 12.0f, 10.0f, vif, false, true));   //          le tireur, pendant le ballon
+				int a1 = 0, a2 = 0;
+				VERIF(!V::VehiculeIgnore(3, true, &a1, &a1, true) && !V::VehiculeIgnore(2, false, &a1, &a1, true));
+				VERIF(V::VehiculeIgnore(2, true, &a1, &a1, false) && !V::VehiculeIgnore(2, true, &a1, &a2, false) && V::VehiculeIgnore(2, true, &a1, &a2, true));
+				VERIF(V::VehiculeIgnore(2, true, nullptr, nullptr, false));                  // sans tireur et place vide : « égaux »
+			}
 			bool remis = false;
 			VERIF(V::CodeDeBalayage(7, &remis) == 8 && !remis && V::CodeDeBalayage(0xfffe) == 0xffff && V::CodeDeBalayage(0xffff, &remis) == 1 && remis);
 			float avantChute[3] = {1.0f, 2.0f, 4.05f}, pos[3] = {1.0f, 2.0f, 3.0f};
