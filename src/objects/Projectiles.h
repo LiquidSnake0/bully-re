@@ -4,7 +4,9 @@
 // Lu dans l'index le 07.11.2026 (FUN_004d4c40, la création ; FUN_004d4590, FUN_004d3f60, FUN_004d3dc0).
 #pragma once
 #include "../common.h"
+#include "../entities/References.h"
 #include <cmath>
+#include <cstring>
 
 struct CPlacesProjectiles {
 	enum { kTaille = 32 };
@@ -573,12 +575,47 @@ struct CVolProjectile {
 	static bool BallonActif(bool objet, uint32 o17dc) { return objet && ((o17dc >> 8) & 1) != 0; }
 	// FUN_00683a10(piéton) (de 0x683a10 à 0x683a27, 24 octets, cdecl) : faux sans l'objet DAT_01b89150, sinon FUN_00680b60(piéton),
 	// méthode de cet objet (de 0x680b60 à 0x680bab, 76 octets, ret 4) : faux quand FUN_006838d0 rend faux, quand le piéton est nul ou
-	// n'est pas un piéton (+0x108 & 7 != 3) ; sinon le réel que rend 0067b100(objet, piéton) (non lue : `valeur`), arrondi en simple
+	// n'est pas un piéton (+0x108 & 7 != 3) ; sinon le réel que rend FUN_0067b100(piéton) (ValeurDeBallon, plus bas : `valeur`), arrondi en simple
 	// précision, est comparé au réel 0xb9da80 (0,5 dans le binaire ; une donnée, pas une constante) : vrai quand 0,5 est strictement
 	// sous la valeur (fld la valeur, fld 0,5, fcompp, test ah,1, je : non ordonné, vrai aussi).
 	static bool JoueurDeBallon(bool actif, const EntiteFiltree *p, float valeur) {
 		if(!actif || p == nullptr || (p->o108 & 7) != 3) return false;
 		return !(0.5f >= valeur);
+	}
+	// Les joueurs du ballon prisonnier : l'objet du mot DAT_01b89150 tient neuf emplacements de 0x28c octets à partir de son +0x28
+	// (le dernier finit à +0x1714, sous le mot +0x17dc du bit lu plus haut) ; le premier mot d'un emplacement est le piéton, son
+	// +0x8 un réel. Supposé : neuf joueurs au plus ; le sens du réel n'est pas lu (rien ici ne l'écrit), seul son seuil de 0,5
+	// l'est. FUN_0067b0b0(piéton) (méthode de l'objet, lue à l'assembleur de 0x67b0b0 à 0x67b0e2, 51 octets, ret 4) : l'adresse
+	// de l'emplacement de ce piéton. Les neuf premiers mots sont comparés dans l'ordre ; au premier égal, le rang i ; aucun : −1,
+	// sans autre test, et l'adresse rendue est alors celle d'avant le premier emplacement (objet + 0x28 − 0x28c). PlaceDeBallon
+	// rend le décalage dans l'objet : 0x28 + i × 0x28c. `objet` est l'objet tel qu'il est en mémoire, ses piétons sur 32 bits.
+	static int32 PlaceDeBallon(const uint8 *objet, uint32 pieton) {
+		int32 i = 0;
+		for(; i < 9; i++){
+			uint32 mot;
+			memcpy(&mot, objet + 0x28 + i * 0x28c, 4);
+			if(mot == pieton) break;
+		}
+		if(i == 9) i = -1;
+		return i * 0x28c + 0x28;
+	}
+	// FUN_0067b100(piéton) (méthode de l'objet, lue à l'assembleur de 0x67b100 à 0x67b13f, 64 octets, ret 4) : le réel d'un
+	// joueur. La même recherche, refaite sur place : aucun emplacement, et elle rend 0,0 (fldz) ; sinon (le test du rang contre
+	// −1 qui suit, à 0x67b128, ne peut pas être vrai : le rang va de 0 à 8) FUN_0067b0b0 cherche une seconde fois et le réel +0x8
+	// de l'emplacement est rendu. Un piéton absent rend donc 0,0, sous le seuil : JoueurDeBallon est faux pour lui. Les
+	// emplacements vides ne sont pas distingués : un piéton nul trouverait le premier dont le mot est nul (FUN_00680b60 écarte le
+	// piéton nul avant d'appeler).
+	static float ValeurDeBallon(const uint8 *objet, uint32 pieton) {
+		int32 i = 0;
+		for(; i < 9; i++){
+			uint32 mot;
+			memcpy(&mot, objet + 0x28 + i * 0x28c, 4);
+			if(mot == pieton) break;
+		}
+		if(i == 9) return 0.0f;
+		float reel;
+		memcpy(&reel, objet + PlaceDeBallon(objet, pieton) + 0x8, 4);
+		return reel;
 	}
 	// FUN_004761a0(projectile) (méthode du piéton, lue à l'assembleur de 0x4761a0 à 0x476269, 202 octets, ret 4 ; le balayage d'une
 	// liste de secteur, 0046c4b0, l'appelle sur chaque piéton de la liste quand l'entité qui balaie est un projectile, +0xc4 non

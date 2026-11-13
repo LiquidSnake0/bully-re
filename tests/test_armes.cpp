@@ -7,6 +7,8 @@
 #include "../src/objects/Projectiles.h"
 #include "../src/core/Manette.h"
 #include <cmath>
+#include <vector>
+#include <cstring>
 #include <cstdio>
 #include <map>
 
@@ -593,6 +595,26 @@ main(void)
 				VERIF(V::JoueurDeBallon(true, &pieton, 0.51f) && !V::JoueurDeBallon(true, &pieton, 0.5f));   // 0,5 strictement sous la valeur
 				VERIF(!V::JoueurDeBallon(false, &pieton, 1.0f) && !V::JoueurDeBallon(true, nullptr, 1.0f) && !V::JoueurDeBallon(true, &vehicule, 1.0f));
 				VERIF(V::JoueurDeBallon(true, &pieton, std::nanf("")));                      // non ordonné : vrai
+				{
+					// les neuf emplacements des joueurs (FUN_0067b0b0, FUN_0067b100) : 0x28c octets chacun, à partir de +0x28
+					std::vector<uint8> ballon(0x17e0, 0);
+					auto poser = [&](int rang, uint32 p, float reel){
+						memcpy(&ballon[0x28 + rang * 0x28c], &p, 4); memcpy(&ballon[0x28 + rang * 0x28c + 8], &reel, 4); };
+					poser(0, 0x1000u, 0.25f); poser(3, 0x2000u, 0.75f); poser(8, 0x3000u, 0.5f);
+					VERIF(V::PlaceDeBallon(ballon.data(), 0x1000u) == 0x28 && V::PlaceDeBallon(ballon.data(), 0x2000u) == 0x28 + 3 * 0x28c);
+					VERIF(V::PlaceDeBallon(ballon.data(), 0x3000u) == 0x28 + 8 * 0x28c && 0x28 + 9 * 0x28c == 0x1714);   // le dernier, sous +0x17dc
+					VERIF(V::PlaceDeBallon(ballon.data(), 0x4000u) == 0x28 - 0x28c);          // absent : le rang −1, sans test
+					VERIF(V::ValeurDeBallon(ballon.data(), 0x1000u) == 0.25f && V::ValeurDeBallon(ballon.data(), 0x2000u) == 0.75f);
+					VERIF(V::ValeurDeBallon(ballon.data(), 0x3000u) == 0.5f && V::ValeurDeBallon(ballon.data(), 0x4000u) == 0.0f);   // absent : 0,0
+					poser(5, 0x1000u, 0.9f);                                                  // deux fois le même piéton : le premier rang gagne
+					VERIF(V::ValeurDeBallon(ballon.data(), 0x1000u) == 0.25f);
+					VERIF(V::PlaceDeBallon(ballon.data(), 0) == 0x28 + 0x28c);                // un piéton nul trouve le premier emplacement vide
+					// la chaîne entière de FUN_00680b60 : seul le joueur dont le réel passe 0,5 est un joueur de ballon
+					VERIF(V::JoueurDeBallon(true, &pieton, V::ValeurDeBallon(ballon.data(), 0x2000u)));
+					VERIF(!V::JoueurDeBallon(true, &pieton, V::ValeurDeBallon(ballon.data(), 0x1000u)));
+					VERIF(!V::JoueurDeBallon(true, &pieton, V::ValeurDeBallon(ballon.data(), 0x3000u)));   // 0,5 juste : non
+					VERIF(!V::JoueurDeBallon(true, &pieton, V::ValeurDeBallon(ballon.data(), 0x4000u)));   // pas un joueur
+				}
 				float lent[3] = {0.05f, 0.0f, 0.0f}, vif[3] = {0.0f, 0.3f, 0.0f};
 				VERIF(!V::ProjectileIgnore(false, true, true, 10.0f, 10.0f, lent, true, true));   // +0xc4 nul : jamais
 				VERIF(V::ProjectileIgnore(true, true, false, 12.0f, 10.0f, vif, false, false));  // le +0xfc du piéton
@@ -726,6 +748,39 @@ main(void)
 				moi.o108 = 2; { V::ContactBalaye k; c.o108 = 1; c.oc4 = 1; VERIF(!relance(&k) && m.j.empty()); c.oc4 = 0; VERIF(relance(&k) && m.j == "T++-"); }
 				// l'entité qui balaie elle-même
 				{ V::ContactBalaye k; m.code++; m.j.clear(); VERIF(!V::BalayerListe(&c, 42, &m.noeuds[2], &k, false, m) && m.j.empty()); }
+			}
+			{
+				// les références vers une entité (FUN_00450730, FUN_00450780, FUN_00465680, FUN_00465690)
+				struct Ent { CReferenceEntite *o118 = nullptr; };
+				CReferenceEntite maillons[3]; maillons[0].suivant = &maillons[1]; maillons[1].suivant = &maillons[2];
+				CReferenceEntite *libres = &maillons[0];
+				Ent e; void *ch1 = &e, *ch2 = &e, *ch3 = &e, *ch4 = &e;
+				CReferencesEntite::LierEntite(&e, &libres, &ch1);
+				VERIF(e.o118 == &maillons[0] && maillons[0].champ == &ch1 && maillons[0].suivant == nullptr && libres == &maillons[1]);
+				CReferencesEntite::LierEntite(&e, &libres, &ch1);                             // déjà lié : rien
+				VERIF(e.o118 == &maillons[0] && libres == &maillons[1]);
+				CReferencesEntite::LierEntite(&e, &libres, &ch2);                             // le nouveau passe en tête
+				VERIF(e.o118 == &maillons[1] && maillons[1].suivant == &maillons[0] && libres == &maillons[2]);
+				CReferencesEntite::LierEntite(&e, &libres, &ch3);
+				VERIF(e.o118 == &maillons[2] && libres == nullptr);
+				CReferencesEntite::LierEntite(&e, &libres, &ch4);                             // plus de maillon libre : rien, sans erreur
+				VERIF(e.o118 == &maillons[2] && libres == nullptr);
+				CReferencesEntite::DelierEntite(&e, &libres, &ch4);                           // un champ absent : rien
+				VERIF(e.o118 == &maillons[2] && libres == nullptr);
+				CReferencesEntite::DelierEntite(&e, &libres, &ch2);                           // au milieu : le lien d'avant le saute
+				VERIF(e.o118 == &maillons[2] && maillons[2].suivant == &maillons[0] && libres == &maillons[1] && maillons[1].suivant == nullptr);
+				VERIF(maillons[1].champ == &ch2);                                             // le +0x4 du maillon rendu n'est pas effacé
+				CReferencesEntite::DelierEntite(&e, &libres, &ch3);                           // en tête
+				VERIF(e.o118 == &maillons[0] && libres == &maillons[2] && maillons[2].suivant == &maillons[1]);
+				CReferencesEntite::DelierEntite(&e, &libres, &ch1);                           // le dernier : la liste est vide
+				VERIF(e.o118 == nullptr && libres == &maillons[0] && maillons[0].suivant == &maillons[2]);
+				// le contact d'un balayage par ces deux fonctions : lié à l'entité touchée, délié à sa fin
+				V::ContactBalaye k;
+				auto lier = [&](const void *x){ CReferencesEntite::LierEntite((Ent *)x, &libres, (void **)&k.entite); };
+				auto delier = [&](const void *x){ CReferencesEntite::DelierEntite((Ent *)x, &libres, (void **)&k.entite); };
+				k.LierEntite(&e, delier, lier);
+				VERIF(k.entite == &e && e.o118 == &maillons[0] && e.o118->champ == (void **)&k.entite);
+				k.Defaire(delier); VERIF(e.o118 == nullptr && libres == &maillons[0]);
 			}
 			bool remis = false;
 			VERIF(V::CodeDeBalayage(7, &remis) == 8 && !remis && V::CodeDeBalayage(0xfffe) == 0xffff && V::CodeDeBalayage(0xffff, &remis) == 1 && remis);
