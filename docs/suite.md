@@ -148,25 +148,38 @@ chantier. Un point fini passe en bas, avec son commit.
         (`AgrLireGroupe`, `HxdEtirer`, `src/anim/Agr.h`, `AgrHxd.h`, **non liés à lancer_lua**), `AgrRotation`,
         `AgrPositionOs` et `AgrMatrice` par os, et `NifWorldTransforms(f, out, pose, true, decalage)` ; le code modèle est dans
         `outils/scene.h` (lignes 215 à 280) et `outils/visite.cpp` (lignes 534 à 551). La CI ne bâtit pas lancer_lua.
-        `LANCER_SANS_OS` (variable d'environnement de l'outil) rend les trois sphères d'avant, pour comparer. **Un écart à
-        corriger** : `src/vehicles/Bike.h` déclare `void *FindNode(const char *name); // 0x68e380` sans corps ; à
-        l'assembleur `FUN_0068e380` est cdecl (squelette, nom) et rend un rang, pas un pointeur (c'est pourquoi le compte
-        n'a pas bougé au commit 3983d49 : l'adresse y était déjà) ;
-     1 bis. **les tests des deux autres parcours** d'une liste de secteur qui refont le modèle d'un piéton, recréés le 13.11
-        (séance 4) dans `src/objects/Projectiles.h`, **sans appelant dans l'outil** : `FUN_00563aa0` (`LancerSurListe`, le
-        parcours d'un « lancer » : champs +0x0 à +0x44 dans son commentaire) appelle le test `00569f10` (3 175 octets, non
-        lue, cdecl à dix arguments : le +0x4 du lancer, son +0x10, le réel +0x1c, la matrice de l'entité, le modèle, un
-        contact local, une distance locale, les drapeaux +0x20, 0xf et 1) et le test des sphères `00465a50` (162 octets, non
-        lue) ; sa seule appelante est `00563f30` (649 octets, non lue). `FUN_0045f520` (`VueSurListe`, avec le filtre
-        d'entrée `FUN_0041c3f0`, `Entre`) appelle le test `0056aee0` (1 165 octets, non lue, cdecl à sept arguments ; c'est
-        aussi une des appelantes du mode 2 de l'arbre, point 3) ; sa seule appelante, `FUN_00460f60` (`VueSurSecteur`),
-        est recréée aussi : la ligne sur les cinq listes d'un secteur, par les bits 1 (+0), 2 (+8), 4 (+0xc, **la liste des
-        piétons**, la seule qui reçoive les six sphères et les octets 0xc1ae74 et 0xc1ae75), 8 (+4) et 0x10 (+0x10) des
-        drapeaux ; la seule appelante de celle-ci est `00461d50` (2 444 octets, 34 appelants, non lue). Lire `00563f30` et
-        `00461d50` dirait ce que sont ce lancer et cette ligne (supposé : la ligne de vue) et qui les lance ;
-        les globales de `FUN_0045f520` (les octets 0xc1ae74, 0xc1ae75, 0xc1ae6c et 0xc1ae82, le mot 0xc1ae70, la
-        table 0xc1aa64 et son compte 0xc1ae68, le code 0xc1ae88) n'ont pas d'écrivain connu (`FUN_00460f60` ne fait que garder
-        et rendre 0xc1ae74 et 0xc1ae75) : chercher qui les écrit. Rien de cela ne change une mission tant que l'outil n'a ni lancer ni ligne de vue ;
+        `LANCER_SANS_OS` (variable d'environnement de l'outil) rend les trois sphères d'avant, pour comparer. C'est gros :
+        une séance entière, à ne pas entamer dans une séance courte. (L'écart de `src/vehicles/Bike.h` sur `FUN_0068e380`,
+        un pointeur au lieu d'un rang, est corrigé : 13.11, séance 5.) ;
+     1 bis. **les tests des deux autres parcours** d'une liste de secteur qui refont le modèle d'un piéton
+        (`src/objects/Projectiles.h`, **sans appelant dans l'outil**). **Le lancer est lu de sa construction à ses listes**
+        (13.11, séance 5, voir « Fait ») : `FUN_00562f10` (`ConstruireLancer`) le construit (le début en +0x4, la fin en +0x10,
+        le rayon en +0x1c, les drapeaux en +0x20, le meilleur contact en +0x34, le filtre en +0x44, les octets +0x41 et +0x42,
+        l'entité en +0x0 ; la sphère +0x24 à +0x30 englobe la boîte du trajet élargie du rayon), `FUN_00563f30`
+        (`LancerSurSecteurs`) le lance sur les secteurs du carré de cette sphère et les listes choisies par ses drapeaux,
+        `FUN_00563aa0` (`LancerSurListe`) sur une liste, avec le test des sphères `FUN_00465a50` (`SphereTouche`, centré au
+        début, de rayon la longueur du trajet plus le rayon). Dans l'ordre :
+        a. **le test `00569f10`** (3 175 octets, non lu ; cdecl à dix arguments : le début, la fin, le rayon, la matrice de
+           l'entité, le modèle, un contact local, une distance locale, les drapeaux, 0xf et 1 ; supposé : une capsule contre
+           le modèle de collision, puisque ses trois premiers arguments sont un trajet de sphère) : le dernier morceau du
+           lancer. Il sert aussi le modèle d'un piéton (les six sphères, quand +0x42 est levé) ;
+        b. **qui lance** : les cinq appelants de `FUN_00562f10` et de `FUN_00563f30` (les mêmes : 004fe060, 978 octets ;
+           00504350, 1 077 ; 00505600, 1 796 ; 00507b10, 624 ; 00680f50, 1 639) ne sont pas lus en entier. Seul l'appel de
+           00507b10 est lu (de 0x507b10 à 0x507c6d) : rayon 0,3 (0x911e30), drapeaux 0x8b (les listes +0, +8, +4 d'un secteur,
+           sans les piétons, et le filtre), le meilleur contact global 0xc216c0, le filtre `FUN_0045ed40` (`FiltreDuChemin`),
+           l'octet 0xc1ae8a levé autour, l'entité du mot 0xc3ce14 marquée du code suivant, le mot 0xc1ae70 mis à zéro ; vrai,
+           un point tiré du contact (00414a20, 00412850, non suivi) ; puis la chaîne « ConversationPath » (0x9146b0) cherchée
+           par 005ed1b0 sur le mot 0xd13cb4. Lire la suite de 00507b10 dirait à quoi sert ce chemin ;
+        c. **la ligne** : `FUN_0045f520` (`VueSurListe`, avec le filtre d'entrée `FUN_0041c3f0`, `Entre`) appelle le test
+           `0056aee0` (1 165 octets, non lu, cdecl à sept arguments ; c'est aussi une des appelantes du mode 2 de l'arbre,
+           point 3) ; sa seule appelante, `FUN_00460f60` (`VueSurSecteur`), est recréée : la ligne sur les cinq listes d'un
+           secteur, par les bits 1 (+0), 2 (+8), 4 (+0xc, **la liste des piétons**, la seule qui reçoive les six sphères et les
+           octets 0xc1ae74 et 0xc1ae75), 8 (+4) et 0x10 (+0x10) des drapeaux ; la seule appelante de celle-ci est `00461d50`
+           (2 444 octets, 34 appelants, non lue : elle dirait ce qu'est cette ligne, supposé la ligne de vue) ; les globales de
+           `FUN_0045f520` (les octets 0xc1ae74, 0xc1ae75, 0xc1ae6c et 0xc1ae82, le mot 0xc1ae70, la table 0xc1aa64 et son
+           compte 0xc1ae68, le code 0xc1ae88) n'ont pas d'écrivain connu, sauf le mot 0xc1ae70 (mis à zéro par 00507b10) et le
+           code 0xc1ae88 (monté par `FUN_00563f30` et par le déplacement) : chercher qui écrit les autres.
+        Rien de cela ne change une mission tant que l'outil n'a ni lancer ni ligne de vue ;
      2. **le monde par placements** : le binaire balaie les bâtiments des secteurs, chacun son modèle posé par sa matrice et
         parcouru par son arbre (`CArbreCollision`, mode 1) ; l'outil a fondu la zone en un seul modèle et sa grille (`CVueMonde`,
         `Candidats`). Les deux rendent au moins les triangles proches : les contacts devraient rester les mêmes, aux égalités de
@@ -340,6 +353,17 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- Le lancer, de sa construction à ses listes, et la déclaration de la moto (13.11, séance 5 ; e494b5c, 0b01249, e1ffb24, e62e584,
+  11ce5ad) : `FUN_00465a50` (`SphereTouche`, de 0x465a50 à 0x465af1, 162 octets) est le test des sphères de `FUN_00563aa0`, celui
+  de `FUN_00465bc0` sans la vitesse ; `FUN_00563f30` (`LancerSurSecteurs`, de 0x563f30 à 0x5641b8, 649 octets) remet le
+  meilleur à FLT_MAX, prend les secteurs du carré de la sphère +0x24 à +0x30 du lancer (le bas borné à 0, le haut à 35 : une
+  sphère hors du monde ne voit rien), monte le code 0xc1ae88 et appelle `FUN_00563aa0` sur les listes choisies par les bits de
+  +0x20 (1 : +0, 2 : +8, 4 : +0xc, 8 : +4, 0x10 : +0x10), avec le rayon |fin − début| + rayon ; `FUN_00562f10`
+  (`ConstruireLancer`, de 0x562f10 à 0x56315f, 592 octets, neuf arguments) construit le lancer et sa sphère, qui englobe la
+  boîte du trajet élargie du rayon (centre au milieu, rayon la demi-diagonale) ; `FUN_0045ed40` (`FiltreDuChemin`, 36 octets)
+  est le filtre du lancer de 00507b10 (une fiche de genre 1 au bit 0x80000 de son +0x28). Ce que cela corrige : +0x10 est la
+  fin du trajet, pas une direction. `src/vehicles/Bike.h` : `FUN_0068e380` est cdecl et rend un rang d'os, les quatre nœuds
+  de la moto (+0x784 à +0x790) sont des rangs (`int32`). Tout se voit dans `test_armes` ; aucune mission ne change.
 - Le modèle de collision d'un piéton et les trois parcours qui le refont (13.11, séance 4 ; 0cb74b1, 3983d49, a24dc5a, fa14a47, dfb291e) :
   `FUN_00572680` (`CModelePieton::Construire`, `src/collision/ModelePieton.h`, lue à l'assembleur de 0x572680 à 0x572c78)
   refait pour un piéton le modèle unique du mot 0xcf3138 : six sphères de 0x14 octets (0xcf3160) sur six os du squelette, les

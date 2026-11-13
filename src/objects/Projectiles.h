@@ -469,6 +469,16 @@ struct CVolProjectile {
 		float d2 = dy * dy + dx * dx + dz * dz;
 		return d2 < rayon * rayon;
 	}
+	// FUN_00465a50(centre, rayon) (méthode d'une entité, lue à l'assembleur de 0x465a50 à 0x465af1, 162 octets, ret 8 ; le lancer sur
+	// une liste de secteur, FUN_00563aa0, l'appelle sur chaque entité avant son test) : le même test que FUN_00465bc0, sans la vitesse.
+	// Le centre de la sphère du modèle de collision (FUN_0051ae00) passe dans le monde par la matrice de l'entité (FUN_0046dbd0,
+	// FUN_0041a850, sans la branche d'une entité sans matrice), le rayon donné grandit du seul rayon du modèle (+0xc, fadd de
+	// l'argument) : ni le +0xf0 ni la vitesse ne sont lus. Le carré de l'écart (y² + x², puis + z²) est rangé en simple précision
+	// dans l'argument du rayon (fstp) puis comparé au carré du rayon (fcompp, test ah,5, jp) : vrai quand il est strictement dessous,
+	// l'égalité rend faux, comme FUN_00465bc0.
+	static bool SphereTouche(const float *centreMonde, float rayonModele, const float *centre, float rayon) {
+		return SpheresSeTouchent(centreMonde, rayonModele, false, nullptr, centre, rayon);
+	}
 	// Les trois filtres de piéton du balayage d'une liste de secteur (0046c4b0 les appelle quand l'entité qui balaie est un piéton,
 	// avant le test des sphères : un filtre vrai, et l'entité de la liste est passée). Trois méthodes du piéton (ecx), un argument,
 	// ret 4, lues à l'assembleur en entier. Ce qu'elles lisent d'une entité, sous le nom de son offset (le sens des champs n'est pas
@@ -680,15 +690,16 @@ struct CVolProjectile {
 		if(n > 0 && oc4 && (uint8)contact->o22 == 0x41) return 0;
 		return n;
 	}
-	// FUN_00563aa0(&liste, rayon) (méthode d'un lancer, lue à l'assembleur de 0x563aa0 à 0x563d22, ret 8 ; 00563f30, non lue, est sa
-	// seule appelante) : le lancer sur une liste de secteur, l'autre parcours qui refait le modèle d'un piéton (FUN_00572680). La
+	// FUN_00563aa0(&liste, rayon) (méthode d'un lancer, lue à l'assembleur de 0x563aa0 à 0x563d22, ret 8 ; FUN_00563f30, plus bas,
+	// est sa seule appelante) : le lancer sur une liste de secteur, l'autre parcours qui refait le modèle d'un piéton (FUN_00572680). La
 	// liste est celle du balayage plus bas (FUN_0046c4b0) : un nœud est un mot, quatre bits de piscine, quatorze d'indice
 	// (FUN_0044a290), quatorze du nœud suivant (0x3fff : la fin ; le mot 0xc0f788 + 4 × suivant), lu avant tout filtre. Ce qu'elle
-	// lit du lancer, sous le nom de son offset (ce qu'ils veulent dire est supposé : 00563f30 n'est pas lue) :
+	// lit du lancer, sous le nom de son offset (ce qu'ils veulent dire est supposé, sauf ce que FUN_00563f30 en fait) :
 	//  +0x0  une entité : un piéton que FUN_004761a0 écarte pour elle est passé (supposé : celle qui lance) ;
-	//  +0x4  trois réels : le centre du test des sphères (00465a50, méthode de l'entité, avec le rayon donné) et le premier
-	//        argument du test ; +0x10 trois réels et +0x1c un réel, ses deuxième et troisième arguments (supposé : le départ,
-	//        la direction et la longueur) ;
+	//  +0x4  trois réels : le centre du test des sphères (FUN_00465a50, `SphereTouche`, méthode de l'entité, avec le rayon donné) et le premier
+	//        argument du test ; +0x10 trois réels et +0x1c un réel, ses deuxième et troisième arguments. FUN_00563f30 fait
+	//        de +0x10 un point (l'écart +0x10 − +0x4) et de +0x1c un rayon ajouté à la longueur de cet écart : supposé, le
+	//        départ, l'arrivée et l'épaisseur d'un trajet (une capsule ; 00569f10 n'est pas lue) ;
 	//  +0x20 des drapeaux, passés au test ; le bit 0x80 : le filtre +0x44 (cdecl, l'entité ; vrai : passée) est appelé ;
 	//  +0x34 le meilleur contact, +0x38 mis à 1 quand il est pris, +0x3c sa distance ;
 	//  +0x41 un octet : non nul, un contact de surface 0x41 (l'octet +0x22 du contact) ne compte pas ;
@@ -742,6 +753,92 @@ struct CVolProjectile {
 			}
 			local.Defaire(delier);
 		}
+	}
+	// FUN_00562f10(début, fin, rayon, drapeaux, meilleur, filtre, o41, o42, entité) (méthode d'un lancer, lue à l'assembleur de
+	// 0x562f10 à 0x56315f, 592 octets, ret 0x24 : neuf arguments ; cinq appelants, non lus) : le constructeur du lancer. Il met à zéro
+	// +0x4 à +0x18 et +0x24 à +0x2c, puis copie le début en +0x4, la fin en +0x10, le rayon en +0x1c, les drapeaux en +0x20, le
+	// meilleur contact en +0x34, le filtre en +0x44, les octets +0x41 et +0x42 et l'entité en +0x0 ; +0x38, +0x3c et +0x40 ne sont
+	// pas écrits (FUN_00563f30 écrit les deux premiers). La sphère du lancer (+0x24 à +0x30, celle dont FUN_00563f30 tire ses
+	// secteurs) englobe la boîte du trajet : par axe, le plus petit (fcom, test ah,0x41 : la fin quand elle n'est pas strictement
+	// au-dessus du début) et le plus grand (test ah,5, jp : la fin quand elle n'est pas strictement dessous) du début et de la fin,
+	// le premier moins le rayon, le second plus le rayon ; le centre, leur somme (FUN_00412850) fois 0,5 (le double 0x8ff1f8) ; le
+	// rayon, la longueur de leur écart (FUN_00414a20 ; la racine, 0x85c4d0, de |z² + (y² + x²)| rangée en simple précision) fois
+	// 0,5 : la demi-diagonale de la boîte. Rend le lancer. Ce que disent ces champs (supposé) : un trajet de sphère, du début à
+	// la fin, de ce rayon. Un appelant vu (00507b10, sur une chaîne « ConversationPath ») le construit avec le rayon 0,3 (le réel
+	// 0x911e30), les drapeaux 0x8b (les listes +0, +8 et +4 d'un secteur, sans les piétons, et le filtre), le meilleur contact
+	// global 0xc216c0, le filtre FUN_0045ed40 (`FiltreDuChemin`, plus bas), les octets et l'entité nuls, puis appelle FUN_00563f30.
+	template<class L, class C, class F, class E>
+	static L *ConstruireLancer(L *l, const float *debut, const float *fin, float rayon, uint32 drapeaux, C *meilleur, F filtre,
+	                           uint8 o41, uint8 o42, E *entite) {
+		for(int i = 0; i < 3; i++){ l->o4[i] = debut[i]; l->o10[i] = fin[i]; }
+		l->o1c = rayon;
+		l->o20 = drapeaux;
+		l->o34 = meilleur;
+		float mn[3], mx[3];
+		for(int i = 0; i < 3; i++){
+			float a = debut[i], b = fin[i];
+			mn[i] = b <= a ? b : a;
+			mx[i] = b >= a ? b : a;
+		}
+		for(int i = 0; i < 3; i++){ mn[i] = mn[i] - rayon; mx[i] = mx[i] + rayon; }
+		l->o24 = (float)((double)(mx[0] + mn[0]) * 0.5);
+		l->o28 = (float)((double)(mx[1] + mn[1]) * 0.5);
+		l->o2c = (float)((double)(mx[2] + mn[2]) * 0.5);
+		float e[3] = {mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]};
+		float d2 = e[2] * e[2] + (e[1] * e[1] + e[0] * e[0]);
+		float longueur = (float)sqrt((double)fabsf(d2));
+		l->o30 = (float)((double)longueur * 0.5);
+		l->o41 = o41;
+		l->o44 = filtre;
+		l->o42 = o42;
+		l->o0 = entite;
+		return l;
+	}
+	// FUN_0045ed40(entité) (cdecl, lue à l'assembleur de 0x45ed40 à 0x45ed63, 36 octets) : le filtre +0x44 du lancer de 00507b10
+	// (vrai : l'entité est passée, voir LancerSurListe). La fiche du modèle de l'entité (la table 0xc67738, à l'indice du mot
+	// signé +0x10e) : faux si son octet +0x8 ne vaut pas 1, sinon le bit 19 (0x80000) de son mot +0x28 (shr eax,0x13, and al,1).
+	// Ce que disent l'octet et le bit n'est pas lu (supposé : le genre de la fiche et un drapeau du modèle).
+	static bool FiltreDuChemin(uint8 genreFiche, uint32 ficheO28) {
+		if(genreFiche != 1) return false;
+		return ((ficheO28 >> 19) & 1) != 0;
+	}
+	// FUN_00563f30() (méthode d'un lancer, lue à l'assembleur de 0x563f30 à 0x5641b8, 649 octets, ret ; cinq appelants, non lus :
+	// 004fe060, 00504350, 00505600, 00507b10 et 00680f50) : le lancer sur les secteurs du monde, la seule appelante de
+	// FUN_00563aa0. Le meilleur est remis à zéro (+0x3c au réel 0x9009b8, FLT_MAX ; +0x38 à 0). Les secteurs sont ceux du carré
+	// d'une sphère du lancer (+0x24 et +0x28 son centre en x et en y, +0x30 son rayon ; +0x2c n'est pas lu) : en x de
+	// _ftol((+0x24 − +0x30) / 50 + 18) à _ftol((+0x30 + +0x24) / 50 + 18), en y de même avec +0x28 (les doubles 0x900aa0 et
+	// 0x900a98, la conversion de la grille de src/core/World.h), le bas mis à 0 s'il n'est pas strictement positif (fcom, test
+	// ah,0x41), le haut à 35 (le réel 0x900a94) s'il n'est pas strictement dessous (test ah,5, jp) ; le bas n'est pas borné en haut
+	// ni le haut en bas : une sphère hors du monde ne voit aucun secteur. Puis le code (le mot 0xc1ae88) monte de 1, ou repart à 1 après 0045d6f0 quand il a atteint 0xffff (la règle de `CodeDeBalayage`). Le rayon passé à chaque
+	// liste : la longueur de l'écart +0x10 − +0x4 (FUN_00414a20 ; la racine, 0x85c4d0, de |z² + (y² + x²)|, rangée en simple
+	// précision) plus +0x1c. Les rangées en y à l'extérieur, les secteurs en x à l'intérieur (0x14 octets le secteur, 0x2d0 la
+	// rangée, le tableau 0xc1b178) ; dans chaque secteur, FUN_00563aa0 sur les listes choisies par les bits de +0x20, dans l'ordre
+	// des bits : 1 la liste +0, 2 la liste +8, 4 la liste +0xc, 8 la liste +4, 0x10 la liste +0x10 (l'ordre de FUN_00460f60).
+	// Rend le mot +0x38 (1 quand un contact est pris). `m` ajoute à ce que lit `LancerSurListe` : PoserCode(c), EffacerCodes() et
+	// Liste(x, y, rang), le premier nœud d'une liste d'un secteur (nul : vide). Les calculs en double sont supposés équivalents à
+	// la précision étendue du binaire.
+	template<class L, class M>
+	static uint32 LancerSurSecteurs(L *l, M &m) {
+		l->o3c = 3.4028234663852886e+38f;
+		l->o38 = 0;
+		auto bas = [](double a){ int i = (int)(a / 50.0 + 18.0); return i > 0 ? i : 0; };
+		auto haut = [](double a){ int i = (int)(a / 50.0 + 18.0); return i < 35 ? i : 35; };
+		int x0 = bas((double)l->o24 - (double)l->o30), y0 = bas((double)l->o28 - (double)l->o30);
+		int x1 = haut((double)l->o30 + (double)l->o24), y1 = haut((double)l->o28 + (double)l->o30);
+		bool remis = false;
+		uint16 code = CodeDeBalayage(m.Code(), &remis);
+		if(remis) m.EffacerCodes();
+		m.PoserCode(code);
+		float d[3] = {l->o10[0] - l->o4[0], l->o10[1] - l->o4[1], l->o10[2] - l->o4[2]};
+		float d2 = d[2] * d[2] + (d[1] * d[1] + d[0] * d[0]);
+		float longueur = (float)sqrt((double)fabsf(d2));
+		float rayon = longueur + l->o1c;
+		static const struct { uint32 bit; int rang; } ordre[5] = {{1, 0}, {2, 2}, {4, 3}, {8, 1}, {0x10, 4}};
+		for(int y = y0; y <= y1; y++)
+			for(int x = x0; x <= x1; x++)
+				for(const auto &o : ordre)
+					if((l->o20 & o.bit) != 0) LancerSurListe(l, m.Liste(x, y, o.rang), rayon, m);
+		return l->o38;
 	}
 	// FUN_0041c3f0 (méthode d'une entité, lue à l'assembleur de 0x41c3f0 à 0x41c434, 69 octets) : le filtre d'entrée des parcours
 	// d'une liste de secteur, à part : +0x20 non nul, et +0x1c ou +0x60 non nul, et le bit du modèle (1 << l'octet 0xa147e0 dans

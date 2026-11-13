@@ -711,6 +711,11 @@ Réussie à 82,53 s, inchangée. Dans `1_03` aux briques, les modèles des piét
 Jimmy à 122,86 s ; les trois briques touchent le piéton 6 aux mêmes secondes, 123,72, 125,27 et 127,18 s (sphères 5, 0 et
 0), le point du choc et la direction du rebond changent ; réussie à 147,97 s, inchangée.
 
+Le 13.11 (séance 5), rien ne change dans les missions : le lancer (`FUN_00562f10`, `FUN_00563f30`, `FUN_00563aa0` et son test
+des sphères `FUN_00465a50`, le filtre `FUN_0045ed40`) est recréé sans appelant dans l'outil, et la correction de
+`src/vehicles/Bike.h` ne touche pas l'outil. Les sept missions gardent leurs temps et leurs journaux, ligne pour ligne, à
+chacun des cinq commits.
+
 ## `1_05` (« Save Algie ») (06.11.2026)
 
 `1_05` s'enchaîne après `1_04`. Lancée seule (`build/outils/lancer_lua 90 --mission 1_05 --sans-cinematiques`), elle bouclait

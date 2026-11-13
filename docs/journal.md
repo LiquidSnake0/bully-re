@@ -1789,3 +1789,42 @@ en échec plutôt que de les masquer.
   180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout**.
 - **Bilan** : 1 325 fonctions recréées (6,4 % des fonctions, 8,6 % du code), contre 1 314 (6,3 %, 8,5 %) ; 2 256 comprises
   (13,1 % du code), contre 2 247 (13,0 %). Cinq commits de moteur et celui-ci.
+
+## 13.11.2026, séance 5 (de 06 h 15 à 06 h 48)
+
+Séance courte (arrêt de tout à 7 h 45). **Le choix** : le point 1 de la suite (la pose des os d'un piéton par l'animation) ne
+tient pas un premier commit vérifié en vingt minutes (il faut lier `src/anim/Agr.h`, `AgrHxd.h` et le code de
+`outils/scene.h` à lancer_lua, et savoir quelle animation joue un piéton) : il n'est pas entamé. La séance prend le point 1
+bis, dans l'ordre écrit, par le lancer (son test des sphères, puis son appelante, puis son constructeur, puis son filtre), et
+la correction de `src/vehicles/Bike.h`.
+
+- **Le test des sphères du lancer** (e494b5c) : `FUN_00465a50` (`SphereTouche`, de 0x465a50 à 0x465af1, 162 octets, ret 8)
+  est le test de `FUN_00465bc0` sans la vitesse : le centre de la sphère du modèle dans le monde, le rayon donné plus celui du
+  modèle, vrai quand le carré de l'écart (rangé en simple précision) est strictement sous le carré du rayon.
+- **Le lancer sur les secteurs** (0b01249) : `FUN_00563f30` (`LancerSurSecteurs`, de 0x563f30 à 0x5641b8, 649 octets), la
+  seule appelante de `FUN_00563aa0` : le meilleur remis à FLT_MAX, les secteurs du carré de la sphère +0x24 à +0x30 du lancer
+  (le bas borné à 0, le haut à 35, et pas l'inverse : une sphère hors du monde ne voit aucun secteur), le code 0xc1ae88 monté,
+  les rangées en y dehors, les secteurs en x dedans, les listes par les bits de +0x20 dans l'ordre de `FUN_00460f60` ; le rayon
+  passé, |+0x10 − +0x4| + +0x1c. Ce que cela corrige : +0x10 est un point (la fin), pas une direction.
+- **Le constructeur du lancer** (e1ffb24) : `FUN_00562f10` (`ConstruireLancer`, de 0x562f10 à 0x56315f, 592 octets, ret
+  0x24) nomme tous les champs du lancer sauf +0x38 à +0x40 ; sa sphère englobe la boîte du trajet élargie du rayon. Une de ses
+  cinq appelantes, 00507b10, est lue autour de l'appel : rayon 0,3, drapeaux 0x8b (sans les piétons), le contact global
+  0xc216c0, la chaîne « ConversationPath » cherchée ensuite.
+- **La moto** (e62e584) : `FUN_0068e380` est cdecl et rend un rang ; `src/vehicles/Bike.h` le dit, et les quatre nœuds de
+  `CBike` (+0x784 à +0x790, « Handlebars », « Front_Wheel », « Rear_Wheel », « Front_Mud ») sont des `int32`.
+- **Le filtre du lancer de 00507b10** (11ce5ad) : `FUN_0045ed40` (`FiltreDuChemin`, de 0x45ed40 à 0x45ed63, 36 octets) : la fiche
+  du modèle, son octet +0x8 à 1 et le bit 19 de son mot +0x28.
+- **Ce qui se voit** : dans `test_armes` seulement (sans le jeu), sur le monde et le lancer d'essai : « le test des sphères du
+  lancer (FUN_00465a50) », « le lancer sur les secteurs (FUN_00563f30) : […] le rayon 35 = 5 + 30 », « le lancer construit
+  (FUN_00562f10) : de (3, 4, 0) à (0, 0, 0), rayon 1, la sphère au centre (1.5, 2.0, 0.0) de rayon 4.03 », « le filtre du
+  chemin (FUN_0045ed40) ». L'outil n'a pas de lancer : aucune ligne des journaux des huit exécutions ne change.
+- **Ce qui reste du lancer** : son test `00569f10` (3 175 octets) et ses cinq appelants ; la ligne (`0056aee0`, `00461d50`) ;
+  voir `docs/suite.md`, point 1 bis.
+- **Les comptes des README** : chaque commit est parti d'un arbre qui ne contenait que lui ; le compte n'a pas bougé au commit
+  de la moto (l'adresse 0x68e380 était déjà citée). Écrites sans préfixe pour ne pas être comptées : `00569f10`, `00507b10`
+  et les quatre autres appelants, `0045d6f0` (déjà citée par `src/core/World.h`), `0049a500`, `005ed1b0`.
+- **REA amont** : déjà relevé cette nuit, pas refait.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 147,97 s), `1_04` à 82,53 s, `1_05` à
+  180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout**.
+- **Bilan** : 1 329 fonctions recréées (6,4 % des fonctions, 8,6 % du code), contre 1 325 (6,4 %, 8,6 %) ; 2 260 comprises
+  (13,2 % du code), contre 2 256 (13,1 %). Cinq commits de moteur et celui-ci.
