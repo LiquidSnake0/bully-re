@@ -14,6 +14,7 @@
 // 16 bits, un vecteur.
 #pragma once
 #include "../common.h"
+#include "../core/ActionTree.h"
 #include <string>
 #include <vector>
 
@@ -47,6 +48,16 @@ public:
 	uint32 lus = 0;                    // octets consommés
 
 	bool Load(const uint8 *buf, uint32 n);
+	// FUN_0068e380(squelette, nom) (cdecl, lue à l'assembleur de 0x68e380 à 0x68e3d7, 88 octets) : le rang de l'os qui porte
+	// ce nom, ou −1. Le dictionnaire est le +0x10 du +0x94 du squelette (supposé : le HXD en mémoire) ; ses os sont comptés
+	// en +0x5c et rangés en +0x60, 12 octets chacun, le haché du nom en +4. Le nom cherché est haché par HashString
+	// (0x576d80, ActionHash) et le premier os du même haché l'emporte. Le binaire cherche ainsi « Jaw » et « Eyes » ; les
+	// rangs des fiches FightCollisionButes (FUN_00572680, collision/ModelePieton.h) sont des rangs de cette table.
+	int32 OsParNom(const char *nom) const {
+		uint32 h = ActionHash(nom);
+		for(int32 i = 0; i < (int32)os.size(); i++) if(ActionHash(os[i].c_str()) == h) return i;
+		return -1;
+	}
 	// Par hachage, comme FUN_006b1c00 (qui accepte aussi un nom, haché à la volée).
 	const CHxdAnim *Chercher(uint32 hachage) const {
 		for(const CHxdAnim &a : anims) if(a.hachage == hachage) return &a;

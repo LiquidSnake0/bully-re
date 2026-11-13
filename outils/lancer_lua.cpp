@@ -6971,11 +6971,15 @@ TesterObjet(const CObjetOutil &o, CVueObjet &d, int32 modele, const CVector &a, 
 // La fiche FightCollisionButes est celle du nœud GlobalsBank/Globals/FIGHTING/<nom du modèle> de Globals.cat (le chemin
 // « Fighting », haché du nom du modèle, de FUN_00572680 ; supposé : le +4 de la fiche du modèle est le haché de son nom), à défaut
 // celle de GlobalsBank/Globals (DAT_020c88a0, supposé).
+// Les noms des os de MAINPED.HXD, dans leur ordre : le rang d'un os dans une fiche FightCollisionButes est son rang ici.
+static std::vector<std::string> osDesPietons;
+
 struct CSqueletteOutil {
 	bool ok = false, dit = false, fichePropre = false;
 	enum { OS = 36 };   // les os de MAINPED.HXD (AGR_OS de src/anim/Agr.h)
 	int n = 0;
 	CVector os[OS];
+	std::string noeud[OS];   // le nom du nœud du .nif pris pour chaque os
 	std::string nom;
 	CModelePieton::Fiche fiche;
 };
@@ -7021,8 +7025,10 @@ SqueletteDuModele(int32 modele)
 			while(!pile.empty() && s.n < CSqueletteOutil::OS){
 				int32 x = pile.back(); pile.pop_back();
 				if(x < 0 || x >= f.numBlocks || f.blocks[x].kind != NIF_NODE || !f.blocks[x].data) continue;
-				s.os[s.n++] = mondes[x].t;
 				const NifNode *nd = (const NifNode*)f.blocks[x].data;
+				const char *nom = nd->name >= 0 ? f.String(nd->name) : nil;
+				s.noeud[s.n] = nom ? nom : "";
+				s.os[s.n++] = mondes[x].t;
 				for(int32 i = nd->numChildren - 1; i >= 0; i--) pile.push_back(nd->children[i]);
 			}
 			f.Free();
@@ -7062,9 +7068,14 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 	if(!s->dit){
 		s->dit = true;
 		const CModelePieton::Fiche &f = s->fiche;
-		printf("%6.2f s  le modèle de collision du piéton %d, de modèle %d (%s) : six sphères sur les os %d, %d, %d, %d, %d, %d de %s.nif (%d os, dans la pose du fichier, supposée), "
+		std::string os;
+		for(int k = 0; k < 6; k++){
+			int r = f.os[k];
+			os += (k ? ", " : "") + std::to_string(r) + " (" + (r >= 0 && r < (int)osDesPietons.size() ? osDesPietons[r] : std::string("?")) + ", le nœud " + (r >= 0 && r < s->n ? s->noeud[r] : std::string("?")) + ")";
+		}
+		printf("%6.2f s  le modèle de collision du piéton %d, de modèle %d (%s) : six sphères sur les os %s de %s.nif (%d os, dans la pose du fichier, supposée), "
 		       "de rayons %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m (la fiche FightCollisionButes %s), hautes de %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m ; l'englobante a %.2f m de rayon\n",
-		       maintenant / 1000.0, indice, p.modele, s->nom.c_str(), f.os[0], f.os[1], f.os[2], f.os[3], f.os[4], f.os[5], s->nom.c_str(), s->n,
+		       maintenant / 1000.0, indice, p.modele, s->nom.c_str(), os.c_str(), s->nom.c_str(), s->n,
 		       f.rayon[0], f.rayon[1], f.rayon[2], f.rayon[3], f.rayon[4], f.rayon[5], s->fichePropre ? "du modèle" : "par défaut",
 		       ped.spheres[0].centre[2], ped.spheres[1].centre[2], ped.spheres[2].centre[2], ped.spheres[3].centre[2], ped.spheres[4].centre[2], ped.spheres[5].centre[2], ped.rayon);
 	}
@@ -8363,6 +8374,9 @@ ChargerMissions(void)
 			if(k > 0 && mainped.Load(h, (uint32)k))
 				for(const CHxdAnim &a : mainped.anims) arbres.dureesAnimations[a.hachage & 0x7fffffff] = a.duree;
 			printf("%d durées d'animations lues dans MAINPED.HXD\n", (int)arbres.dureesAnimations.size());
+			// Les os : le binaire en cherche deux par leur nom (FUN_0068e380), « Jaw » et « Eyes ».
+			osDesPietons = mainped.os;
+			printf("%d os dans MAINPED.HXD ; par leur nom (FUN_0068e380), « Jaw » a le rang %d et « Eyes » le rang %d\n", (int)mainped.os.size(), mainped.OsParNom("Jaw"), mainped.OsParNom("Eyes"));
 			free(h);
 		}
 		CActionTrack pb;  // FUN_0072ae00 : PlayerButes → DAT_020c88b8 ; +0xac, +0xb0, +0xb4 : le facteur des coups du joueur
