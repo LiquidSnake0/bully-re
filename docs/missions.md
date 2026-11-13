@@ -700,6 +700,17 @@ sphère de 0,5 m cachait (« le projectile 0 traverse une surface 0x41 du monde 
 « treeclimbbranch » au départ (un triangle n'est touché que de face). Les vitres cassent, réussie à 82,53 s ; l'essai hors
 mission est inchangé (le repos à 17,85 s en (175,49, 12,52, 6,13)).
 
+Le 13.11 (séance 4), un piéton essayé par un projectile a le modèle de collision du binaire (`FUN_00572680`, `TesterPieton`) :
+six sphères sur six os, à la pose du fichier .nif (supposé), au lieu de trois sphères de 0,35 m. L'outil écrit le modèle de
+Gary à 17,36 s (au premier tir), ceux de dix piétons du terrain à 73,36 s (quatre ont leur fiche FightCollisionButes, les
+piétons 5, 6, 10 et 11 ; six la fiche par défaut, les piétons 1, 2, 3, 7, 8 et 9) et celui de Jimmy à 73,59 s, chacun avec
+le nom de ses six os (« 2 (Pelvis, le nœud Root Pelvis) »…). Les 18 rebonds d'une bille sur un piéton restent : le piéton 10
+à la sphère 5 (un mollet), les piétons 5 et 6 à la sphère 3 (le petit bassin), les piétons 7, 8 et 9 à la sphère 0 (le
+bassin) ; trois coups sur le piéton 8 viennent un pas plus tôt (75,04, 75,87 et 76,66 s au lieu de 75,08, 75,90 et 76,69 s).
+Réussie à 82,53 s, inchangée. Dans `1_03` aux briques, les modèles des piétons 6 (GN_Bully02) et 7 (Peter) à 122,63 s et de
+Jimmy à 122,86 s ; les trois briques touchent le piéton 6 aux mêmes secondes, 123,72, 125,27 et 127,18 s (sphères 5, 0 et
+0), le point du choc et la direction du rebond changent ; réussie à 147,97 s, inchangée.
+
 ## `1_05` (« Save Algie ») (06.11.2026)
 
 `1_05` s'enchaîne après `1_04`. Lancée seule (`build/outils/lancer_lua 90 --mission 1_05 --sans-cinematiques`), elle bouclait

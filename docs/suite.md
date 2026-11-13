@@ -122,7 +122,7 @@ chantier. Un point fini passe en bas, avec son commit.
    explosions (`FUN_004d2b40`, `FUN_004d2aa0`, `FUN_004d2690`), sa fin (`FUN_004d45e0`, `FUN_004d3dc0`) et les marques d'impact
    (`FUN_00560f70`, `FUN_00560f10`).
    Suite, dans l'ordre :
-   - la suite des armes : **les modèles de collision des entités dans l'outil**. État au 13.11, séance 3 (voir « Fait ») : le
+   - la suite des armes : **les modèles de collision des entités dans l'outil**. État au 13.11, séance 4 (voir « Fait ») : le
      test général `FUN_0056c770` (`CCollisionBalayee::TestGeneral`, `src/collision/Balayes.h`) sert au monde (`TesterMonde`, la
      collision de la zone vue comme un seul modèle posé à l'identité, la grille de l'outil au lieu de l'arbre) et **aux objets
      cassables** (`DonneesObjet`, `CVueObjet`, `TesterObjet` dans `outils/lancer_lua.cpp` : le .col de même nom, posé par la
@@ -131,16 +131,42 @@ chantier. Un point fini passe en bas, avec son commit.
      `FUN_005615a0`, `FUN_00564a00`, `FUN_005641c0`, la pose `FUN_00561790` qui remet les nœuds du fichier dans l'ordre de la
      mémoire, le constructeur `FUN_00561690`, et la descente `00561080` pour les modes 1 et 3). La règle supposée de la première
      image du vol (`q.sorti`) est retirée : le monde compte dès le premier pas. Restent supposés : la rotation du projectile (non
-     suivie), le test contre un piéton (trois sphères de 0,35 m), l'échelle d'un objet (non suivie : aucune dans les missions), le
+     suivie), la pose des os d'un piéton (celle du fichier : point 1), l'échelle d'un objet (non suivie : aucune dans les missions), le
      tri des entités proches (l'outil prend la sphère englobante du modèle de l'objet). Dans l'ordre :
-     1. **le modèle d'un piéton** : `00572680` (1 529 octets, regardée au décompilé seulement) pose six sphères sur six os du
-        squelette (+0x114 du piéton, des os de 0x34 octets, la position en +0x24 ; les rangs des os et les rayons dans une table
-        choisie par `PedIsFemale` et `FUN_005fa760`), et une sphère englobante, dans le mot 0xcf3138 (les données en
-        DAT_00cf3160) ; `TestPieton` (`FUN_00469f70`) attend une sphère 0 englobante et une sphère 3 où porte le coup.
-        **Bloqué** : l'outil n'a pas d'os. Ce qu'il faudrait : les matrices des os du squelette à chaque image, c'est-à-dire le
-        squelette du modèle du piéton (le .nif, que `src/gamebryo` lit déjà pour le rendu) posé par l'animation en cours (les
-        pistes des actions, que l'outil joue sans poser d'os) ; à défaut, poser les six sphères sur les os du squelette au repos
-        (la pose de liaison du .nif) serait un premier pas, à dire supposé ;
+     1. **la pose des os d'un piéton par l'animation** : ce qui reste du modèle d'un piéton. Le modèle est recréé
+        (`FUN_00572680`, `CModelePieton::Construire`, `src/collision/ModelePieton.h`, voir « Fait ») et branché dans l'outil
+        (`TesterPieton`, `SqueletteDuModele`, `CSqueletteOutil` dans `outils/lancer_lua.cpp`) : six sphères sur les os de la
+        fiche FightCollisionButes du modèle (Globals.cat, GlobalsBank/Globals/FIGHTING/<modèle> ; par défaut les os 2, 12, 16,
+        2, 4, 7 et les rayons 0,35, 0,35, 0,2, 0,1, 0,2, 0,2 m ; Jimmy : les os 2, 12, 18, 2, 4, 7 et les rayons 0,24, 0,24,
+        0,19, 0,1, 0,2, 0,2 m). **Supposé** : les os sont à la pose du fichier .nif (ses 36 nœuds sous « Dummy », dans l'ordre
+        des 36 os de MAINPED.HXD : vérifié par les noms sur les quinze modèles des missions, avec `FUN_0068e380`,
+        `CHxdFile::OsParNom`), tournée par le cap du piéton ; le binaire lit la pose de l'image (la table
+        [[squelette + 0x14] + 8] du +0x114 du piéton, des transformations de 0x34 octets, la position en +0x24). Un piéton
+        couché, accroupi ou le bras levé garde donc dans l'outil ses sphères debout. **Ce qu'il faudrait** : savoir quelle
+        animation joue un piéton de l'outil (le haché de la piste Animation du nœud d'action en cours, et son temps : l'outil
+        joue les actions sans poser d'os), puis `CHxdFile::Indice(haché, &groupe)`, le .agr du groupe dans World.img
+        (`AgrLireGroupe`, `HxdEtirer`, `src/anim/Agr.h`, `AgrHxd.h`, **non liés à lancer_lua**), `AgrRotation`,
+        `AgrPositionOs` et `AgrMatrice` par os, et `NifWorldTransforms(f, out, pose, true, decalage)` ; le code modèle est dans
+        `outils/scene.h` (lignes 215 à 280) et `outils/visite.cpp` (lignes 534 à 551). La CI ne bâtit pas lancer_lua.
+        `LANCER_SANS_OS` (variable d'environnement de l'outil) rend les trois sphères d'avant, pour comparer. **Un écart à
+        corriger** : `src/vehicles/Bike.h` déclare `void *FindNode(const char *name); // 0x68e380` sans corps ; à
+        l'assembleur `FUN_0068e380` est cdecl (squelette, nom) et rend un rang, pas un pointeur (c'est pourquoi le compte
+        n'a pas bougé au commit 3983d49 : l'adresse y était déjà) ;
+     1 bis. **les tests des deux autres parcours** d'une liste de secteur qui refont le modèle d'un piéton, recréés le 13.11
+        (séance 4) dans `src/objects/Projectiles.h`, **sans appelant dans l'outil** : `FUN_00563aa0` (`LancerSurListe`, le
+        parcours d'un « lancer » : champs +0x0 à +0x44 dans son commentaire) appelle le test `00569f10` (3 175 octets, non
+        lue, cdecl à dix arguments : le +0x4 du lancer, son +0x10, le réel +0x1c, la matrice de l'entité, le modèle, un
+        contact local, une distance locale, les drapeaux +0x20, 0xf et 1) et le test des sphères `00465a50` (162 octets, non
+        lue) ; sa seule appelante est `00563f30` (649 octets, non lue). `FUN_0045f520` (`VueSurListe`, avec le filtre
+        d'entrée `FUN_0041c3f0`, `Entre`) appelle le test `0056aee0` (1 165 octets, non lue, cdecl à sept arguments ; c'est
+        aussi une des appelantes du mode 2 de l'arbre, point 3) ; sa seule appelante, `FUN_00460f60` (`VueSurSecteur`),
+        est recréée aussi : la ligne sur les cinq listes d'un secteur, par les bits 1 (+0), 2 (+8), 4 (+0xc, **la liste des
+        piétons**, la seule qui reçoive les six sphères et les octets 0xc1ae74 et 0xc1ae75), 8 (+4) et 0x10 (+0x10) des
+        drapeaux ; la seule appelante de celle-ci est `00461d50` (2 444 octets, 34 appelants, non lue). Lire `00563f30` et
+        `00461d50` dirait ce que sont ce lancer et cette ligne (supposé : la ligne de vue) et qui les lance ;
+        les globales de `FUN_0045f520` (les octets 0xc1ae74, 0xc1ae75, 0xc1ae6c et 0xc1ae82, le mot 0xc1ae70, la
+        table 0xc1aa64 et son compte 0xc1ae68, le code 0xc1ae88) n'ont pas d'écrivain connu (`FUN_00460f60` ne fait que garder
+        et rendre 0xc1ae74 et 0xc1ae75) : chercher qui les écrit. Rien de cela ne change une mission tant que l'outil n'a ni lancer ni ligne de vue ;
      2. **le monde par placements** : le binaire balaie les bâtiments des secteurs, chacun son modèle posé par sa matrice et
         parcouru par son arbre (`CArbreCollision`, mode 1) ; l'outil a fondu la zone en un seul modèle et sa grille (`CVueMonde`,
         `Candidats`). Les deux rendent au moins les triangles proches : les contacts devraient rester les mêmes, aux égalités de
@@ -162,9 +188,19 @@ chantier. Un point fini passe en bas, avec son commit.
         piéton (`00432830` sur le cap du piéton et `004331c0` sur l'opposé d'un vecteur pointé par ebp, **non identifié** : le
         relire dans le début de la fonction) ; `00443950` et `00469320` de la sortie (non lues) ;
      5. le départ du tir : `FUN_0065f050` (la vitesse de départ) est recréée et branchée (`CViseeTir::VitesseDepart`) ; reste
-        `0065e880` (la douille « Muzzle » de l'arme ou l'os de la main, lue au décompilé seulement) : **bloqué**, l'outil n'a ni
-        os ni douilles ; il fait partir le projectile du point du tireur (la règle supposée de la première image, `q.sorti`, est retirée depuis
-        le 13.11, séance 3 : un triangle n'est touché que de face) ;
+        `0065e880` (461 octets, **lue en entier à l'assembleur** le 13.11, séance 4, de 0x65e880 à 0x65ea4a, ret 4 ; pas
+        recréée) : l'arme tenue (+0x1d0 du piéton), la position d'un os du squelette (+0x138) par `006c1030`, la douille
+        « Muzzle » de l'arme (la chaîne 0x9146a8 hachée par `FUN_005fa7b0`, puis `FUN_00467c30`), à défaut (0, 0, 1) par la
+        matrice du piéton ; puis `FUN_0041a850` avec le vecteur 0x1b65c3c. Lues avec elle : `006c1030` (80 octets, de 0x6c1030
+        à 0x6c107d, ret 0x10 : une méthode à quatre arguments (squelette, rang, &sortie, arg4) ; sortie nulle : rend 0x16 ;
+        sinon `006bf410`, puis la sortie reçoit la position +0x24 de la transformation et elle rend 0) et `006bf410`
+        (255 octets : si le bit 0x100 du +0x98 du squelette est nul et que la table +0x14 existe, la copie des 0x34 octets de
+        l'os dans [[squelette + 0x14] + 8] ; sinon l'os par `00464d50` sur le +0x94, sa rotation (méthode +4, un quaternion
+        mis en matrice par `00413b00`) et sa translation (méthode +0), composées par `00406810` avec la transformation du
+        parent ; trop d'objets manquent pour la recréer). **Bloqué** : le départ dépend de la pose animée (la main levée qui
+        tient l'arme : point 1) et des douilles du modèle de l'arme, que l'outil n'a pas ; il fait partir le projectile du
+        point du tireur (la règle supposée de la première image, `q.sorti`, est retirée depuis le 13.11, séance 3 : un
+        triangle n'est touché que de face) ;
      6. ce que le contrôle `FUN_004d2290` laisse non suivi : l'autre vol de l'octet +0x15 de l'entrée (la fonction `004d1810`,
         non lue ; le mode de DAT_01b65c14 à la création), les déclencheurs (`006d7220` sur 0x20c7e98), le son du modèle
         (`00598030` sur 0xcf5dc4 puis `0059a710` avec 3 000, ou 8 000 pour « WFtBomb », DAT_00bf4394), l'effet +0xa8 de la fiche
@@ -304,6 +340,22 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- Le modèle de collision d'un piéton et les trois parcours qui le refont (13.11, séance 4 ; 0cb74b1, 3983d49, a24dc5a, fa14a47, dfb291e) :
+  `FUN_00572680` (`CModelePieton::Construire`, `src/collision/ModelePieton.h`, lue à l'assembleur de 0x572680 à 0x572c78)
+  refait pour un piéton le modèle unique du mot 0xcf3138 : six sphères de 0x14 octets (0xcf3160) sur six os du squelette, les
+  rangs et les rayons pris dans la fiche FightCollisionButes du modèle (à défaut celle de Globals), ramenées au repère du piéton
+  (`FUN_00412670`, `FUN_004130d0`, `FUN_00571280`, `FUN_00570e40`), une sphère englobante (`FUN_0056ea30`) et une boîte de
+  (−R, −R, 0) à (R, R, R) (`FUN_005646e0`). La sphère 0 est sur le bassin, la 1 sur le haut de la colonne, la 2 sur la tête, la 3
+  de nouveau sur le bassin (0,1 m), les 4 et 5 sur les mollets : `TestPieton` (`FUN_00469f70`) n'attend pas une sphère 0
+  englobante, comme on le supposait. Dans l'outil, `TesterPieton` remplace les trois sphères de 0,35 m ; les os viennent du
+  .nif du modèle, à la pose du fichier (supposé). `FUN_0068e380` (`CHxdFile::OsParNom`, `src/anim/Hxd.h`) rend le rang d'un os
+  par son nom (« Jaw » 15, « Eyes » 18) ; l'outil nomme les os de chaque modèle. `FUN_00563aa0`
+  (`CVolProjectile::LancerSurListe`), `FUN_0045f520` (`VueSurListe`) et le filtre d'entrée `FUN_0041c3f0` (`Entre`), dans
+  `src/objects/Projectiles.h` : les deux autres parcours d'une liste de secteur qui appellent `FUN_00572680`, et
+  `FUN_00460f60` (`VueSurSecteur`), la ligne sur les cinq listes d'un secteur (la liste +0xc est celle des piétons) ; sans
+  appelant dans l'outil, vus dans `test_armes`. Dans `1_04` : le modèle de Gary à 17,36 s, ceux de dix piétons à 73,36 s et de Jimmy à
+  73,59 s ; les 18 rebonds sur un piéton restent (sphères 5, 3 ou 0 selon le piéton), trois sur le piéton 8 un pas plus tôt ;
+  dans `1_03` aux briques, trois briques sur le piéton 6 aux mêmes secondes (sphères 5, 0, 0). Temps inchangés.
 - Les objets cassables par le test général, l'arbre de partition d'un modèle et son parcours, la règle de la première image du vol
   retirée (13.11, séance 3 ; 0bb2a89, 4a4056e, 6bf6fa4, 9fa2ffd) : dans `outils/lancer_lua.cpp`, le monde compte dès le premier pas (`q.sorti` retiré) ; un
   objet cassable est son modèle de collision posé par la matrice de son placement (`DonneesObjet`, `CVueObjet`, `TesterObjet`,
