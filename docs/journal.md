@@ -1571,3 +1571,75 @@ en échec plutôt que de les masquer.
   changent qu'aux trois premiers commits.
 - **Bilan** : 1 264 fonctions recréées (8,0 % du code), contre 1 256 (8,0 %) ; 2 203 comprises (12,7 %), contre 2 196 (12,6 %) ;
   huit commits (sept de moteur et la documentation).
+
+## 13.11.2026, séance 1 (de 01 h 20 à 02 h 17)
+
+- **Le balayage d'une liste de secteur est recréé** (`FUN_0046c4b0`, 967 octets, lue de 0x46c4b0 à 0x46c877 ;
+  `CVolProjectile::BalayerListe`, `EntiteBalayee`, `VolumeBalaye` dans `src/objects/Projectiles.h`) : c'était le premier point de
+  la suite, le vrai test de collision du déplacement d'un `CPhysical`. Un gabarit sur ce qu'il appelle, dans l'ordre du binaire :
+  le rayon (celui de l'entité, plus la norme de sa vitesse fois le pas quand son +0x28 est nul) et le centre ; les nœuds de la
+  liste (la piscine, l'indice, le nœud suivant, 0x3fff à la fin) ; le code de balayage +0x10a (une entité n'est testée qu'une
+  fois) ; ce qu'un piéton et une entité de genre 2 ne testent jamais ; l'entité elle-même ; le filtre d'entrée ; le volume du
+  modèle de collision ; les sphères englobantes ; les trois jugements d'un projectile ; puis la méthode +0xa4, le contact local
+  lié à l'entité et copié dans le meilleur quand sa fraction est strictement plus petite. 39 vérifications dans `test_armes` sur
+  un monde d'essai.
+- **Ce qu'il appelle, lu et recréé avant lui** : les deux filtres d'un projectile, `FUN_004761a0` (202 octets : le piéton écarté,
+  dont **le tireur, toujours**) et `FUN_00469f10` (84 octets : l'entité de genre 2), avec le ballon prisonnier (`FUN_006838d0`,
+  `FUN_0067b0f0`, `FUN_00683a10`, `FUN_00680b60`) et l'entrée de la table des projectiles (`FUN_004d3360`) : `ProjectileIgnore`,
+  `VehiculeIgnore`, `BallonActif`, `JoueurDeBallon`, `CPlacesProjectiles::AdresseEntree` ; **la méthode +0xa4 d'un `CProjectile`,
+  `FUN_0046a340`** (228 octets, `TesterCollision`) avec `FUN_00447290` (`EstUnChien`) : elle choisit entre le test fin contre un
+  piéton (`00572680` puis `00469f70`, non lues) et le test général (`0056c770`, non lue) ; le centre du balayage (`FUN_00466b50`,
+  `FUN_004660b0`, `FUN_0046d700` : `DansLeMonde`, `PlacerSansMatrice`), le modèle de collision d'une entité (`FUN_0051ae00`,
+  `ModeleDeCollision`), son vecteur « avant » (`FUN_004ea210`, `Avant`), le contact neuf et sa fin (`FUN_00415e50`,
+  `FUN_004153b0`, `ContactBalaye::Defaire`). Les trois modèles de la règle des deux projectiles sont nommés, lus dans la table
+  0xa136e8 : « brocket », « potato », « ammo_scatter ».
+- **La glissade** (`0046ca40`, de 0x46ce71 à 0x46cf6a, avec le recul de 0x46cd98 à 0x46ce6b ; `Reculer`, `Glisser`,
+  `TourDeGlissade`, et `FUN_0041c390`, 83 octets, `PoserPosition`) : une entité qui n'est pas un projectile recule au contact
+  (l'écart fois la fraction moins 0,005), puis son reste de déplacement est ramené dans le plan du contact (le produit scalaire
+  de la normale et du reste changé de signe, plus 0,001, le double 0x900fa0) et la boucle des contacts repart ; au troisième
+  contact d'une image elle reste au recul. **`0046ca40` est maintenant lue en entier** (2 884 octets), recréée par morceaux et
+  pas d'une pièce : elle n'est pas au compte. Tests seulement.
+- **Le balayage branché dans l'outil des missions** (`outils/lancer_lua.cpp` : `CBalayageOutil`, `AvancerProjectiles`) : les
+  projectiles de l'outil passent par `BalayerListe` au lieu de ses trois boucles. À chaque image et pour chaque projectile,
+  l'outil fait une liste aux nœuds du binaire (les piétons vivants, les objets cassables qui restent, puis le monde de la zone,
+  une seule entité, absente à la première image du vol) ; le code recréé juge le code de balayage, le filtre d'entrée, le volume
+  et les trois jugements d'un projectile, dont `FUN_004761a0` : **un projectile ne touche plus jamais son tireur** (l'outil
+  l'épargnait 200 ms seulement, la règle du contact `FUN_0046ad90`). Le test lui-même reste celui de l'outil, **supposé** (le
+  segment de l'image contre trois sphères de 0,35 m pour un piéton, une de 0,5 m pour un objet, les triangles du monde) : les
+  deux tests fins ne sont pas lus. Aucune ligne ne change dans les huit
+  exécutions ni dans l'essai hors mission (la balle 302 au repos à 17,98 s) : `1_04` (110 lignes de projectile, 21 rebonds),
+  `1_03` aux briques (23 lignes) et l'essai (37 lignes) sortent les mêmes par le code recréé ; la ligne « traverse son tireur »
+  ne sort dans aucune (aucun trajet ne recroise le tireur après les 200 ms).
+- **Les références vers une entité** (`FUN_00450730`, 66 octets ; `FUN_00450780`, 56 octets ; `FUN_00465680` et `FUN_00465690`,
+  15 octets chacune ; `src/entities/References.h` : `CReferenceEntite`, `CReferencesEntite`) : la liste +0x118 d'une entité, des
+  maillons de 8 octets (le suivant, l'adresse du champ qui la désigne) pris à une réserve (le mot 0xc11d40) ; ce sont les deux
+  appels que le contact d'un balayage fait avec son champ +0xc. **Supposé** : la liste sert à remettre ces champs à nul quand
+  l'entité disparaît (le parcours n'est pas lu). Tests seulement.
+- **Les joueurs du ballon prisonnier** (`FUN_0067b0b0`, 51 octets ; `FUN_0067b100`, 64 octets ; `PlaceDeBallon`,
+  `ValeurDeBallon`) : l'objet du mot DAT_01b89150 tient neuf emplacements de 0x28c octets à partir de +0x28 (le piéton en +0, un
+  réel en +8) ; c'est le réel que `FUN_00680b60` compare à 0,5 : le bout de la chaîne de `FUN_004761a0`. Un piéton absent rend
+  0,0. Le sens du réel n'est pas lu. Tests seulement.
+- **Non fait, écrit en tête de la suite** : les deux tests fins que choisit `FUN_0046a340` (`00469f70` après `00572680`, et
+  `0056c770`, 4 610 octets), non lus : tant qu'ils ne le sont pas, le test lui-même reste celui de l'outil, supposé ; composer
+  `0046ca40` d'une pièce (il manque l'angle passé à `FUN_0046b720` pour un projectile contre un piéton, un vecteur pointé par
+  ebp non identifié) ; le départ du tir `0065e880`, toujours bloqué (ni os ni douilles) ; le balayage d'une explosion
+  (`004629d0`), pas commencé.
+- **Une erreur de test, au quatrième commit** : six attentes de `test_armes` sur l'ordre des liens et des déliens étaient
+  fausses (le second lien du meilleur contact, sur l'entité qu'il vient de copier, ne fait rien : `FUN_0045f0a0` sort quand
+  c'est déjà elle). Corrigées dans le test, les tests rejoués seuls ; le code recréé n'a pas changé.
+- **Moins de commits que demandé** : sept commits de moteur au lieu de huit ou neuf. Les références et les joueurs du ballon
+  prisonnier sont partis dans un seul commit (une vérification complète prend six minutes), pour que la séance soit fusionnée
+  avant 02 h 30, l'heure où la limite d'usage pouvait couper l'agent.
+- **Les comptes des README** : chaque commit est parti d'un arbre qui ne contenait que lui, les adresses ajoutées au compte
+  listées avant chaque commit (un script du dossier temporaire compare le diff de `src` au compte d'avant). Écrites sans préfixe
+  pour ne pas être comptées : `0046ca40`, `00469f70`, `0056c770`, `00572680`, `0065e880`.
+  **Une erreur dans un message** : celui du septième commit (f54307f) dit « six fonctions de plus au compte » ; c'est quatre
+  (`FUN_00450730`, `FUN_00450780`, `FUN_0067b0b0`, `FUN_0067b100`) : `FUN_00465680` et `FUN_00465690` étaient déjà citées dans
+  `src/peds` (`Armes.h`, `Patrouilles.h`, `ScriptPedPool.cpp`) sans être recréées ; elles le sont maintenant. Le compte des README,
+  lui, est juste (1 286). Le script du dossier temporaire ne voyait pas un fichier neuf non suivi (`References.h`).
+- **REA amont** : déjà relevé cette nuit, pas refait.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 147,97 s), `1_04` à 82,53 s, `1_05` à
+  180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout**. Aucune ligne de
+  journal ne change dans les huit exécutions, à aucun commit, branchement du balayage dans l'outil compris.
+- **Bilan** : 1 286 fonctions recréées (8,1 % du code), contre 1 264 (8,0 %) ; 2 223 comprises (12,7 %), contre 2 203 (12,7 %) ;
+  huit commits (sept de moteur et la documentation).

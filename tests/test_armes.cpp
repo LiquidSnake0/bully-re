@@ -7,6 +7,8 @@
 #include "../src/objects/Projectiles.h"
 #include "../src/core/Manette.h"
 #include <cmath>
+#include <vector>
+#include <cstring>
 #include <cstdio>
 #include <map>
 
@@ -474,6 +476,36 @@ main(void)
 			float chute = V::PartagerChute(4.0f, &z, 0);
 			VERIF(fabsf(chute + 1.05f) < 1e-6f && fabsf(z - 4.05f) < 1e-6f);
 			VERIF(V::Recul(1.0f) == (float)(1.0 - (double)0.005f));
+			{
+				// le recul et la glissade d'une entité qui n'est pas un projectile (0046ca40, de 0x46cd98 à 0x46cf6a)
+				float anc[3] = {0.0f, 0.0f, 0.0f}, pos[3] = {1.0f, 1.0f, 0.0f}, reste[3], mur[3] = {-1.0f, 0.0f, 0.0f};
+				V::Reculer(anc, pos, 0.5f, reste);
+				VERIF(fabsf(pos[0] - 0.495f) < 1e-6f && fabsf(pos[1] - 0.495f) < 1e-6f && pos[2] == 0.0f);
+				VERIF(fabsf(reste[0] - 0.505f) < 1e-6f && fabsf(reste[1] - 0.505f) < 1e-6f && reste[2] == 0.0f);
+				VERIF(fabsf(pos[0] + reste[0] - 1.0f) < 1e-6f);                                            // la part gardée et le reste font l'écart
+				V::Glisser(reste, mur);
+				// ce qui allait dans le mur est retiré, un millimètre l'en écarte, le long du mur rien ne change
+				VERIF(fabsf(reste[0] + 0.001f) < 1e-6f && fabsf(reste[1] - 0.505f) < 1e-6f && reste[2] == 0.0f);
+				float r2[3] = {0.0f, 0.0f, -1.0f}, sol[3] = {0.0f, 0.0f, 1.0f};
+				V::Glisser(r2, sol); VERIF(r2[0] == 0.0f && r2[1] == 0.0f && fabsf(r2[2] - 0.001f) < 1e-7f);
+				float r3[3] = {0.25f, 0.0f, 0.0f};                                            // parallèle au sol : le millimètre seul
+				V::Glisser(r3, sol); VERIF(r3[0] == 0.25f && r3[2] == (float)(double)0.001f);
+				float r4[3] = {3.0f, 0.0f, -4.0f}, pente[3] = {0.6f, 0.0f, 0.8f};             // une pente : le reste suit le plan
+				V::Glisser(r4, pente);
+				VERIF(fabsf(r4[0] * pente[0] + r4[2] * pente[2] - 0.001f) < 1e-5f);
+				// un tour entier : le long du mur jusqu'au bout, un millimètre et le recul en deçà
+				float p2[3] = {1.0f, 1.0f, 0.0f};
+				VERIF(V::TourDeGlissade(anc, p2, mur, 0.5f, 0) && fabsf(p2[0] - 0.494f) < 1e-6f && fabsf(p2[1] - 1.0f) < 1e-6f);
+				float p3[3] = {1.0f, 1.0f, 0.0f};
+				VERIF(V::TourDeGlissade(anc, p3, mur, 0.5f, 1) && fabsf(p3[0] - 0.494f) < 1e-6f);    // deuxième tour : elle glisse encore
+				float mat[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 7, 8, 9, 1}, plc[4] = {7, 8, 9, 0.5f};
+				V::PoserPosition(mat, plc, 1.0f, 2.0f, 3.0f);                                 // FUN_0041c390 : la matrice et le placement
+				VERIF(mat[12] == 1.0f && mat[13] == 2.0f && mat[14] == 3.0f && mat[15] == 1.0f && mat[0] == 1.0f);
+				VERIF(plc[0] == 1.0f && plc[1] == 2.0f && plc[2] == 3.0f && plc[3] == 0.5f);
+				V::PoserPosition(nullptr, plc, 4.0f, 5.0f, 6.0f); VERIF(plc[0] == 4.0f && plc[2] == 6.0f && mat[12] == 1.0f);
+				float p4[3] = {1.0f, 1.0f, 0.0f};
+				VERIF(!V::TourDeGlissade(anc, p4, mur, 0.5f, 2) && fabsf(p4[0] - 0.495f) < 1e-6f && fabsf(p4[1] - 0.495f) < 1e-6f);   // troisième : le recul seul
+			}
 			V::ContactBalaye m;
 			VERIF(m.fraction == 3.4028234663852886e+38f && sizeof(float) * 3 == sizeof(m.point));
 			float fr[4] = {0.8f, 0.3f, 0.5f, 0.1f}; int vus = 0;
@@ -552,6 +584,203 @@ main(void)
 				VERIF(V::MemeSens(v, v) && V::MemeSens(v, v2));                              // parallèles, quelle que soit la norme
 				VERIF(V::MemeSens(v, v29) && !V::MemeSens(v, v31));                          // 29° : 0,8746 ; 31° : 0,8572 ; le seuil : 0,866
 				VERIF(!V::MemeSens(v, oppose) && !V::MemeSens(v, nul));                      // opposés ; 0 / 0, non ordonné : le contact reste
+			}
+			{
+				// les deux filtres d'un projectile (FUN_004761a0, FUN_00469f10), le ballon prisonnier (FUN_006838d0, FUN_0067b0f0,
+				// FUN_00683a10, FUN_00680b60) et l'adresse d'une entrée de la table (FUN_004d3360)
+				VERIF(CPlacesProjectiles::AdresseEntree(0) == 0xc3a038u && CPlacesProjectiles::AdresseEntree(1) == 0xc3a06cu);
+				VERIF(CPlacesProjectiles::AdresseEntree(31) + 0x34 == 0xc3a6b8u);            // la fin de la table : l'objet de la première
+				VERIF(!V::BallonActif(false, 0x100) && V::BallonActif(true, 0x100) && !V::BallonActif(true, 0xfffffeffu) && V::BallonActif(true, 0x1ff));
+				V::EntiteFiltree pieton, vehicule; pieton.o108 = 3; vehicule.o108 = 2;
+				VERIF(V::JoueurDeBallon(true, &pieton, 0.51f) && !V::JoueurDeBallon(true, &pieton, 0.5f));   // 0,5 strictement sous la valeur
+				VERIF(!V::JoueurDeBallon(false, &pieton, 1.0f) && !V::JoueurDeBallon(true, nullptr, 1.0f) && !V::JoueurDeBallon(true, &vehicule, 1.0f));
+				VERIF(V::JoueurDeBallon(true, &pieton, std::nanf("")));                      // non ordonné : vrai
+				{
+					// les neuf emplacements des joueurs (FUN_0067b0b0, FUN_0067b100) : 0x28c octets chacun, à partir de +0x28
+					std::vector<uint8> ballon(0x17e0, 0);
+					auto poser = [&](int rang, uint32 p, float reel){
+						memcpy(&ballon[0x28 + rang * 0x28c], &p, 4); memcpy(&ballon[0x28 + rang * 0x28c + 8], &reel, 4); };
+					poser(0, 0x1000u, 0.25f); poser(3, 0x2000u, 0.75f); poser(8, 0x3000u, 0.5f);
+					VERIF(V::PlaceDeBallon(ballon.data(), 0x1000u) == 0x28 && V::PlaceDeBallon(ballon.data(), 0x2000u) == 0x28 + 3 * 0x28c);
+					VERIF(V::PlaceDeBallon(ballon.data(), 0x3000u) == 0x28 + 8 * 0x28c && 0x28 + 9 * 0x28c == 0x1714);   // le dernier, sous +0x17dc
+					VERIF(V::PlaceDeBallon(ballon.data(), 0x4000u) == 0x28 - 0x28c);          // absent : le rang −1, sans test
+					VERIF(V::ValeurDeBallon(ballon.data(), 0x1000u) == 0.25f && V::ValeurDeBallon(ballon.data(), 0x2000u) == 0.75f);
+					VERIF(V::ValeurDeBallon(ballon.data(), 0x3000u) == 0.5f && V::ValeurDeBallon(ballon.data(), 0x4000u) == 0.0f);   // absent : 0,0
+					poser(5, 0x1000u, 0.9f);                                                  // deux fois le même piéton : le premier rang gagne
+					VERIF(V::ValeurDeBallon(ballon.data(), 0x1000u) == 0.25f);
+					VERIF(V::PlaceDeBallon(ballon.data(), 0) == 0x28 + 0x28c);                // un piéton nul trouve le premier emplacement vide
+					// la chaîne entière de FUN_00680b60 : seul le joueur dont le réel passe 0,5 est un joueur de ballon
+					VERIF(V::JoueurDeBallon(true, &pieton, V::ValeurDeBallon(ballon.data(), 0x2000u)));
+					VERIF(!V::JoueurDeBallon(true, &pieton, V::ValeurDeBallon(ballon.data(), 0x1000u)));
+					VERIF(!V::JoueurDeBallon(true, &pieton, V::ValeurDeBallon(ballon.data(), 0x3000u)));   // 0,5 juste : non
+					VERIF(!V::JoueurDeBallon(true, &pieton, V::ValeurDeBallon(ballon.data(), 0x4000u)));   // pas un joueur
+				}
+				float lent[3] = {0.05f, 0.0f, 0.0f}, vif[3] = {0.0f, 0.3f, 0.0f};
+				VERIF(!V::ProjectileIgnore(false, true, true, 10.0f, 10.0f, lent, true, true));   // +0xc4 nul : jamais
+				VERIF(V::ProjectileIgnore(true, true, false, 12.0f, 10.0f, vif, false, false));  // le +0xfc du piéton
+				VERIF(!V::ProjectileIgnore(true, false, false, 10.0f, 10.0f, lent, true, false)); // hors ballon : ni bas et lent, ni joueur de ballon
+				VERIF(V::ProjectileIgnore(true, false, false, 12.0f, 10.0f, vif, false, true));  // le tireur, hors ballon
+				VERIF(V::ProjectileIgnore(true, false, true, 10.5f, 10.0f, lent, false, false)); // ballon : bas et lent
+				VERIF(!V::ProjectileIgnore(true, false, true, 10.5f, 10.0f, vif, false, false)); //          bas et vif
+				VERIF(!V::ProjectileIgnore(true, false, true, 10.69f, 10.0f, lent, false, false) && V::ProjectileIgnore(true, false, true, 10.68f, 10.0f, lent, false, false));
+				VERIF(V::ProjectileIgnore(true, false, true, 12.0f, 10.0f, vif, true, false));   //          le joueur de ballon
+				VERIF(V::ProjectileIgnore(true, false, true, 12.0f, 10.0f, vif, false, true));   //          le tireur, pendant le ballon
+				int a1 = 0, a2 = 0;
+				VERIF(!V::VehiculeIgnore(3, true, &a1, &a1, true) && !V::VehiculeIgnore(2, false, &a1, &a1, true));
+				VERIF(V::VehiculeIgnore(2, true, &a1, &a1, false) && !V::VehiculeIgnore(2, true, &a1, &a2, false) && V::VehiculeIgnore(2, true, &a1, &a2, true));
+				VERIF(V::VehiculeIgnore(2, true, nullptr, nullptr, false));                  // sans tireur et place vide : « égaux »
+			}
+			{
+				// la méthode +0xa4 d'un CProjectile (FUN_0046a340) et les trois chiens (FUN_00447290)
+				VERIF(V::EstUnChien(7, 7, 8, 9) && V::EstUnChien(8, 7, 8, 9) && V::EstUnChien(9, 7, 8, 9) && !V::EstUnChien(10, 7, 8, 9));
+				V::ContactBalaye c; std::string qui;
+				auto fin = [&]{ qui += "p"; return 1; };
+				auto gen = [&]{ qui += "m"; return 3; };
+				VERIF(V::TesterCollision(true, 3, 0, false, false, &c, fin, gen) == 1 && qui == "p");      // projectile contre piéton : le test fin
+				VERIF(V::TesterCollision(false, 3, 0, false, false, &c, fin, gen) == 3 && qui == "pm");    // pas un projectile : le test général
+				VERIF(V::TesterCollision(true, 1, 0, false, false, &c, fin, gen) == 3 && qui == "pmm");    // contre un bâtiment
+				VERIF(V::TesterCollision(true, 3, 1, false, false, &c, fin, gen) == 3 && qui == "pmmm");   // un piéton au +0xa4 non nul
+				VERIF(V::TesterCollision(true, 3, 0, true, false, &c, fin, gen) == 3 && qui == "pmmmm");   // le rat
+				VERIF(V::TesterCollision(true, 3, 0, false, true, &c, fin, gen) == 3 && qui == "pmmmmm");  // un chien
+				c.o22 = 0x41;
+				VERIF(V::TesterCollision(true, 3, 0, false, false, &c, fin, gen) == 0);                    // la surface 0x41 : un projectile la traverse
+				VERIF(V::TesterCollision(true, 1, 0, false, false, &c, fin, gen) == 0);
+				VERIF(V::TesterCollision(false, 1, 0, false, false, &c, fin, gen) == 3);                   // pas les autres entités
+				c.o22 = 0x341; VERIF(V::TesterCollision(true, 1, 0, false, false, &c, fin, gen) == 0);     // l'octet +0x22 seul, pas le +0x23
+				c.o22 = 0x40; VERIF(V::TesterCollision(true, 1, 0, false, false, &c, fin, gen) == 3);
+				VERIF(V::TesterCollision(true, 1, 0, false, false, &c, fin, [&]{ return 0x100; }) == 0);  // l'octet bas seul (movzx eax,al)
+				VERIF(V::TesterCollision(true, 1, 0, false, false, &c, fin, [&]{ return 0; }) == 0);
+			}
+			{
+				// le centre du balayage (FUN_00466b50, FUN_004660b0, FUN_0046d700), le modèle de collision (FUN_0051ae00, FUN_004ea210),
+				// le vecteur « avant » (FUN_00415350), le contact neuf et sa fin (FUN_00415e50, FUN_004153b0)
+				float pl[4] = {10.0f, 20.0f, 30.0f, 0.0f}, pt[3] = {1.0f, 2.0f, 3.0f}, o[3];
+				V::PlacerSansMatrice(o, pl, pt); VERIF(o[0] == 11.0f && o[1] == 22.0f && o[2] == 33.0f);            // cap nul : la somme
+				pl[3] = 1.5707964f; V::PlacerSansMatrice(o, pl, pt);                                                 // un quart de tour : (x, y) → (−y, x)
+				VERIF(fabsf(o[0] - 8.0f) < 1e-5f && fabsf(o[1] - 21.0f) < 1e-5f && o[2] == 33.0f);
+				V::PlacerSansMatrice(pt, pl, pt); VERIF(fabsf(pt[0] - 8.0f) < 1e-5f && fabsf(pt[1] - 21.0f) < 1e-5f);  // la sortie peut être le point
+				float q[3] = {1.0f, 2.0f, 3.0f}; int appels = 0;
+				V::DansLeMonde(true, pl, q, o, [&](float *l, const float *p0){ appels++; l[0] = p0[0] * 2; l[1] = p0[1] * 2; l[2] = p0[2] * 2; });
+				VERIF(appels == 1 && o[0] == 2.0f && o[1] == 4.0f && o[2] == 6.0f);
+				V::DansLeMonde(false, pl, q, o, [&](float *, const float *){ appels++; });
+				VERIF(appels == 1 && fabsf(o[0] - 8.0f) < 1e-5f && o[2] == 33.0f);
+				int oc = 0, o80 = 0;
+				VERIF(V::ModeleDeCollision(6, 1, &oc, &o80) == &o80 && V::ModeleDeCollision(6, 0, &oc, &o80) == &oc);
+				VERIF(V::ModeleDeCollision(4, 1, &oc, &o80) == &oc && V::ModeleDeCollision(6, 1, &oc, (int *)nullptr) == &oc);
+				float m[16] = {1, 2, 3, 0, 4, 5, 6, 0, 7, 8, 9, 0, 10, 11, 12, 1}, av[3];
+				V::Avant(m, 99.0f, av); VERIF(av[0] == 4.0f && av[1] == 5.0f && av[2] == 6.0f);                      // la deuxième ligne de la matrice
+				V::Avant(nullptr, 0.0f, av); VERIF(av[0] == 0.0f && av[1] == 1.0f && av[2] == 0.0f);                  // sans matrice, cap nul : +y
+				V::Avant(nullptr, 1.5707964f, av); VERIF(fabsf(av[0] + 1.0f) < 1e-6f && fabsf(av[1]) < 1e-6f && av[2] == 0.0f);
+				V::ContactBalaye neuf; int delies = 0;
+				VERIF(neuf.entite == nullptr && neuf.fraction == 3.4028234663852886e+38f && neuf.point[2] == 0.0f && neuf.normale[2] == 0.0f);
+				neuf.Defaire([&](const void *){ delies++; }); VERIF(delies == 0);
+				neuf.entite = &oc; neuf.Defaire([&](const void *e){ if(e == &oc) delies++; }); VERIF(delies == 1 && neuf.entite == &oc);
+			}
+			{
+				// le balayage d'une liste de secteur (FUN_0046c4b0) sur un monde d'essai
+				struct Ent : V::EntiteBalayee { V::VolumeBalaye vol; bool aVol = true; float fraction = 0.5f; int touche = 1; float avant[3] = {0, 1, 0}; };
+				struct Monde {
+					Ent *piscines[10][8] = {}; uint32 noeuds[8] = {}; uint16 code = 7; float pas = 2.0f;
+					bool sansPietons = false, ignPieton = false, ignG2 = false, ignLie = false, bit = true, spheres = true;
+					bool projIgnore = false, vehIgnore = false; int serre = -1;
+					std::string j; float rayonVu = 0.0f; int arg4Vu = -1, arg1Vu = -1;
+					uint16 Code(){ return code; } float Pas(){ return pas; }
+					float Rayon(Ent *){ return 1.0f; }
+					void Centre(Ent *, float *c){ c[0] = 1; c[1] = 2; c[2] = 3; }
+					Ent *Entite(int p, int i){ return piscines[p][i]; }
+					const uint32 *Noeud(uint32 n){ return &noeuds[n]; }
+					bool SansPietons(){ return sansPietons; }
+					bool IgnorePieton(Ent *, Ent *){ j += "P"; return ignPieton; }
+					bool IgnoreSonGenre2(Ent *, Ent *){ j += "G"; return ignG2; }
+					bool IgnoreGenre2Lie(Ent *, Ent *){ j += "L"; return ignLie; }
+					bool BitDuModele(Ent *){ return bit; }
+					const V::VolumeBalaye *Volume(Ent *e){ return e->aVol ? &e->vol : nullptr; }
+					bool Spheres(Ent *, const float *c, float r){ rayonVu = r; return spheres && c[0] == 1 && c[2] == 3; }
+					bool ProjectileIgnore(Ent *, Ent *){ j += "p"; return projIgnore; }
+					bool VehiculeIgnore(Ent *, Ent *){ j += "v"; return vehIgnore; }
+					bool ModeleSerre(int mo){ return mo == serre; }
+					void Avant(Ent *e, float *a){ a[0] = e->avant[0]; a[1] = e->avant[1]; a[2] = e->avant[2]; }
+					int Tester(Ent *, int a1, Ent *e, V::ContactBalaye *c, bool a4){ j += "T"; arg1Vu = a1; arg4Vu = a4; c->fraction = e->fraction; return e->touche; }
+					void Lier(const void *){ j += "+"; } void Delier(const void *){ j += "-"; }
+				};
+				auto entite = [](int genre){ Ent e; e.o108 = (uint8)(0x40 | genre); e.o20 = 1; e.o1c = 1; e.vol.o1c = 1; return e; };
+				auto mot = [](int piscine, int indice, int suivant){ return (uint32)piscine | (uint32)indice << 4 | (uint32)suivant << 18; };
+				Monde m; Ent moi = entite(4), a = entite(1), b = entite(1), c = entite(1);
+				moi.oc4 = 1; moi.o28 = 1; a.fraction = 0.6f; b.fraction = 0.25f; c.fraction = 0.25f;
+				m.piscines[7][5] = &a; m.piscines[7][6] = &b; m.piscines[2][1] = &c; m.piscines[3][0] = &moi;
+				// la liste : le nœud 0 (a) → 3 (b) → 1 (moi) → 2 (c) → fin
+				m.noeuds[0] = mot(7, 5, 3); m.noeuds[3] = mot(7, 6, 1); m.noeuds[1] = mot(3, 0, 2); m.noeuds[2] = mot(2, 1, 0x3fff);
+				V::ContactBalaye meilleur;
+				VERIF(!V::BalayerListe(&moi, 42, (const uint32 *)nullptr, &meilleur, false, m) && m.j.empty());   // liste vide
+				VERIF(V::BalayerListe(&moi, 42, &m.noeuds[0], &meilleur, true, m));
+				// a touche (0,6 < FLT_MAX : lié au local, puis au meilleur par la copie ; le second lien du meilleur, déjà elle, ne fait
+				// rien ; le local défait), b touche (0,25 < 0,6 : a délié du meilleur, b lié), moi passée, c à égalité : lié au local seulement
+				VERIF(m.j == "T++-T+-+-T+-" && meilleur.entite == &b && meilleur.fraction == 0.25f && m.arg1Vu == 42 && m.arg4Vu == 1);
+				VERIF(a.o10a == 7 && b.o10a == 7 && c.o10a == 7 && moi.o10a == 7 && m.rayonVu == 1.0f);
+				m.j.clear(); V::ContactBalaye m2;
+				VERIF(!V::BalayerListe(&moi, 42, &m.noeuds[0], &m2, false, m) && m.j.empty());                    // le même code : toutes déjà vues
+				auto relance = [&](V::ContactBalaye *best, bool a4 = false){ m.code++; m.j.clear(); return V::BalayerListe(&moi, 42, &m.noeuds[2], best, a4, m); };
+				// le rayon : +0x28 nul, la norme de la vitesse (5) fois le pas (2)
+				moi.o28 = 0; moi.vitesse[0] = 3.0f; moi.vitesse[1] = 4.0f; { V::ContactBalaye k; VERIF(relance(&k) && m.rayonVu == 11.0f); } moi.o28 = 1;
+				// le filtre d'entrée
+				{ V::ContactBalaye k; c.o20 = 0; VERIF(!relance(&k)); c.o100 = 1; VERIF(relance(&k)); c.o100 = 0; c.o20 = 1; }
+				{ V::ContactBalaye k; c.o1c = 0; VERIF(!relance(&k)); c.o60 = 1; VERIF(relance(&k)); c.o60 = 0; c.o1c = 1; }
+				{ V::ContactBalaye k; m.bit = false; VERIF(!relance(&k)); m.bit = true; c.of4 = 1; VERIF(!relance(&k)); c.o100 = 1; VERIF(relance(&k)); c.of4 = 0; c.o100 = 0; }
+				// le volume du modèle de collision, puis les sphères
+				{ V::ContactBalaye k; c.aVol = false; VERIF(!relance(&k)); c.aVol = true; c.vol.o1c = 0; VERIF(!relance(&k)); c.vol.o1e = 1; VERIF(relance(&k)); }
+				{ V::ContactBalaye k; c.vol.o1e = 0; c.vol.o1f = 1; VERIF(relance(&k)); c.vol.o18 = 1; VERIF(!relance(&k)); c.vol.o18 = 0; }
+				{ V::ContactBalaye k; m.spheres = false; VERIF(!relance(&k) && m.j.empty()); m.spheres = true; }
+				// la méthode +0xa4 rend 0 : rien de lié, rien de touché
+				{ V::ContactBalaye k; c.touche = 0; VERIF(!relance(&k) && m.j == "T" && k.entite == nullptr); c.touche = 1; }
+				// un projectile qui balaie : le piéton écarté par son filtre, le véhicule par le sien, le modèle serré tourné du même côté
+				{ V::ContactBalaye k; c.o108 = 3; VERIF(relance(&k) && m.j == "pT++-"); m.projIgnore = true; V::ContactBalaye k2; VERIF(!relance(&k2) && m.j == "p"); m.projIgnore = false; }
+				{ V::ContactBalaye k; c.o108 = 2; VERIF(relance(&k) && m.j == "vT++-"); m.vehIgnore = true; V::ContactBalaye k2; VERIF(!relance(&k2) && m.j == "v"); m.vehIgnore = false; c.o108 = 1; }
+				{ V::ContactBalaye k; moi.o10e = 300; c.o10e = 300; VERIF(relance(&k)); m.serre = 300; V::ContactBalaye k2; VERIF(!relance(&k2) && m.j.empty());
+				  c.avant[0] = 1; c.avant[1] = 0; V::ContactBalaye k3; VERIF(relance(&k3)); c.o10e = 301; c.avant[0] = 0; c.avant[1] = 1; V::ContactBalaye k4; VERIF(relance(&k4)); m.serre = -1; }
+				// un piéton qui balaie : jamais un projectile ; un piéton selon l'octet, arg4 et son filtre ; une entité de genre 2 selon les deux siens
+				moi.oc4 = 0; moi.o108 = 3;
+				{ V::ContactBalaye k; c.oc4 = 1; VERIF(!relance(&k) && m.j.empty()); c.oc4 = 0; c.o108 = 3; VERIF(relance(&k) && m.j == "PT++-"); }
+				{ V::ContactBalaye k; m.sansPietons = true; VERIF(!relance(&k) && m.j.empty()); m.sansPietons = false; VERIF(!relance(&k, true) && m.j.empty());
+				  m.ignPieton = true; VERIF(!relance(&k) && m.j == "P"); m.ignPieton = false; }
+				{ V::ContactBalaye k; c.o108 = 2; VERIF(relance(&k) && m.j == "GLT++-"); m.ignG2 = true; V::ContactBalaye k2; VERIF(!relance(&k2) && m.j == "G");
+				  m.ignG2 = false; m.ignLie = true; VERIF(!relance(&k2) && m.j == "GL"); m.ignLie = false; }
+				// une entité de genre 2 qui balaie : jamais un projectile
+				moi.o108 = 2; { V::ContactBalaye k; c.o108 = 1; c.oc4 = 1; VERIF(!relance(&k) && m.j.empty()); c.oc4 = 0; VERIF(relance(&k) && m.j == "T++-"); }
+				// l'entité qui balaie elle-même
+				{ V::ContactBalaye k; m.code++; m.j.clear(); VERIF(!V::BalayerListe(&c, 42, &m.noeuds[2], &k, false, m) && m.j.empty()); }
+			}
+			{
+				// les références vers une entité (FUN_00450730, FUN_00450780, FUN_00465680, FUN_00465690)
+				struct Ent { CReferenceEntite *o118 = nullptr; };
+				CReferenceEntite maillons[3]; maillons[0].suivant = &maillons[1]; maillons[1].suivant = &maillons[2];
+				CReferenceEntite *libres = &maillons[0];
+				Ent e; void *ch1 = &e, *ch2 = &e, *ch3 = &e, *ch4 = &e;
+				CReferencesEntite::LierEntite(&e, &libres, &ch1);
+				VERIF(e.o118 == &maillons[0] && maillons[0].champ == &ch1 && maillons[0].suivant == nullptr && libres == &maillons[1]);
+				CReferencesEntite::LierEntite(&e, &libres, &ch1);                             // déjà lié : rien
+				VERIF(e.o118 == &maillons[0] && libres == &maillons[1]);
+				CReferencesEntite::LierEntite(&e, &libres, &ch2);                             // le nouveau passe en tête
+				VERIF(e.o118 == &maillons[1] && maillons[1].suivant == &maillons[0] && libres == &maillons[2]);
+				CReferencesEntite::LierEntite(&e, &libres, &ch3);
+				VERIF(e.o118 == &maillons[2] && libres == nullptr);
+				CReferencesEntite::LierEntite(&e, &libres, &ch4);                             // plus de maillon libre : rien, sans erreur
+				VERIF(e.o118 == &maillons[2] && libres == nullptr);
+				CReferencesEntite::DelierEntite(&e, &libres, &ch4);                           // un champ absent : rien
+				VERIF(e.o118 == &maillons[2] && libres == nullptr);
+				CReferencesEntite::DelierEntite(&e, &libres, &ch2);                           // au milieu : le lien d'avant le saute
+				VERIF(e.o118 == &maillons[2] && maillons[2].suivant == &maillons[0] && libres == &maillons[1] && maillons[1].suivant == nullptr);
+				VERIF(maillons[1].champ == &ch2);                                             // le +0x4 du maillon rendu n'est pas effacé
+				CReferencesEntite::DelierEntite(&e, &libres, &ch3);                           // en tête
+				VERIF(e.o118 == &maillons[0] && libres == &maillons[2] && maillons[2].suivant == &maillons[1]);
+				CReferencesEntite::DelierEntite(&e, &libres, &ch1);                           // le dernier : la liste est vide
+				VERIF(e.o118 == nullptr && libres == &maillons[0] && maillons[0].suivant == &maillons[2]);
+				// le contact d'un balayage par ces deux fonctions : lié à l'entité touchée, délié à sa fin
+				V::ContactBalaye k;
+				auto lier = [&](const void *x){ CReferencesEntite::LierEntite((Ent *)x, &libres, (void **)&k.entite); };
+				auto delier = [&](const void *x){ CReferencesEntite::DelierEntite((Ent *)x, &libres, (void **)&k.entite); };
+				k.LierEntite(&e, delier, lier);
+				VERIF(k.entite == &e && e.o118 == &maillons[0] && e.o118->champ == (void **)&k.entite);
+				k.Defaire(delier); VERIF(e.o118 == nullptr && libres == &maillons[0]);
 			}
 			bool remis = false;
 			VERIF(V::CodeDeBalayage(7, &remis) == 8 && !remis && V::CodeDeBalayage(0xfffe) == 0xffff && V::CodeDeBalayage(0xffff, &remis) == 1 && remis);

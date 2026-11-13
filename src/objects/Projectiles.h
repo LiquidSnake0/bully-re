@@ -4,10 +4,15 @@
 // Lu dans l'index le 07.11.2026 (FUN_004d4c40, la création ; FUN_004d4590, FUN_004d3f60, FUN_004d3dc0).
 #pragma once
 #include "../common.h"
+#include "../entities/References.h"
 #include <cmath>
+#include <cstring>
 
 struct CPlacesProjectiles {
 	enum { kTaille = 32 };
+	// FUN_004d3360(i) (lue à l'assembleur de 0x4d3360 à 0x4d336c, 13 octets, cdecl) : l'adresse de l'entrée i de la table, 0xc3a038 +
+	// i × 0x34 (imul eax,eax,0x34 ; add eax,0xc3a038). L'indice d'un projectile est son +0x238 ; le tireur est le +4 de l'entrée.
+	static uint32 AdresseEntree(int32 i) { return (uint32)(i * 0x34) + 0xc3a038u; }
 	bool actif[kTaille] = {};
 	uint32 creation[kTaille] = {};
 	bool explose[kTaille] = {};   // l'octet +0x16 (0xc3a04e) : FUN_004d37d0 a fait son explosion
@@ -278,12 +283,62 @@ struct CVolProjectile {
 		if(genre7) *ob0 = repos; else *o28 = repos;
 		*compte = repos ? 10 : 0;
 	}
-	// La fonction 0046ca40 (le déplacement d'un CPhysical dans le monde, 2 884 octets, non recréée en entier ; ici sa part pour un projectile, +0xc4 non nul, lue à
-	// l'assembleur de 0x46cd98 à 0x46ce47 et de 0x46d0d7 à 0x46d22e ; le balayage d'une liste de secteur, 0046c4b0, n'est pas recréé). Au
+	// La fonction 0046ca40 (le déplacement d'un CPhysical dans le monde, 2 884 octets, lue en entier, recréée par morceaux et pas encore d'une pièce ; ici sa part pour un projectile, +0xc4 non nul, lue à
+	// l'assembleur de 0x46cd98 à 0x46ce47 et de 0x46d0d7 à 0x46d22e ; le balayage d'une liste de secteur, FUN_0046c4b0, est BalayerListe). Au
 	// contact le plus proche, à la fraction f du déplacement de l'image, le projectile est reposé à l'ancienne position plus le
 	// déplacement fois (f − 0,005) (le double 0x90c740, qui vaut 0,005 en simple précision : 0,004999999888241291), arrondi en
 	// simple précision.
 	static float Recul(float fraction) { return (float)((double)fraction - 0.004999999888241291); }
+	// Le même recul pour toute entité, avec ce qu'il laisse (de 0x46cd98 à 0x46ce6b) : l'écart est la position d'après le déplacement
+	// moins l'ancienne, celle de la matrice d'avant le déplacement que le balayage reçoit (00414a20, la différence) ; sa part gardée est
+	// l'écart fois (f − 0,005), chaque produit arrondi en simple précision ; la position devient l'ancienne plus cette part
+	// (FUN_00412850, la somme ; posée par 0041c390) ; le reste du déplacement est l'écart moins cette part. Au troisième tour de la
+	// boucle des contacts (le compteur vaut 2, 0x46ce37) la fonction sort ici, sans rebond ni glissade.
+	static void Reculer(const float *ancienne, float *pos, float fraction, float *reste) {
+		float f = Recul(fraction);
+		for(int i = 0; i < 3; i++){
+			float ecart = pos[i] - ancienne[i];
+			float garde = (float)((double)ecart * (double)f);
+			pos[i] = ancienne[i] + garde;
+			reste[i] = ecart - garde;
+		}
+	}
+	// La glissade des entités qui ne sont pas des projectiles (+0xc4 nul ; lue à l'assembleur de 0x46ce71 à 0x46cf6a) : le reste du
+	// déplacement est ramené dans le plan du contact. s est le produit scalaire de la normale du meilleur contact (+0x10) et du
+	// reste changé de signe (ny × −ry + nx × −rx, puis + nz × −rz, arrondi en simple précision), plus le double 0x900fa0 (0,001 en
+	// simple précision : 0.0010000000474974513), arrondi ; le reste reçoit la normale fois s, composante par composante (chaque
+	// produit et chaque somme arrondis) : ce qui allait dans le mur est retiré, et un millimètre l'en écarte. La position
+	// (FUN_00415310) plus ce reste (FUN_00412850) est posée (0041c390), le compteur monte de 1 et, sous 3, la boucle des contacts
+	// repart à 0x46cc20 : le code de balayage, la fraction du meilleur contact remise à FLT_MAX (ses autres champs restent), le
+	// balayage des secteurs depuis la même ancienne matrice. Une entité glisse donc au plus deux fois par image ; au troisième
+	// contact elle reste au recul.
+	static void Glisser(float *reste, const float *normale) {
+		float scalaire = (float)((double)normale[1] * (double)-reste[1] + (double)normale[0] * (double)-reste[0]
+		                         + (double)normale[2] * (double)-reste[2]);
+		float s = (float)((double)scalaire + (double)0.001f);
+		for(int i = 0; i < 3; i++){
+			float part = (float)((double)normale[i] * (double)s);
+			reste[i] = reste[i] + part;
+		}
+	}
+	// Un tour de la boucle des contacts pour une telle entité, après le balayage qui a touché : le recul, puis la glissade et la
+	// position qui la suit. Faux : la boucle s'arrête (le troisième tour, ou le compteur arrivé à 3).
+	static bool TourDeGlissade(const float *ancienne, float *pos, const float *normale, float fraction, int tour) {
+		float reste[3];
+		Reculer(ancienne, pos, fraction, reste);
+		if(tour == 2) return false;
+		Glisser(reste, normale);
+		for(int i = 0; i < 3; i++) pos[i] = pos[i] + reste[i];
+		return tour + 1 < 3;
+	}
+	// FUN_0041c390(x, y, z) (méthode d'une entité, lue à l'assembleur de 0x41c390 à 0x41c3e2, 83 octets, ret 0xc) : la pose d'une
+	// position, celle du recul, de la glissade et de la sortie du déplacement. Avec une matrice (+0x14 non nul), les trois mots
+	// +0x30, +0x34 et +0x38 de la matrice reçoivent x, y et z (son mot +0x3c reçoit un mot de la pile que rien n'a écrit : il n'est
+	// pas touché ici) ; dans les deux cas le placement de l'entité (+4, +8, +0xc) les reçoit aussi.
+	static void PoserPosition(float *matrice, float *placement, float x, float y, float z) {
+		if(matrice){ matrice[12] = x; matrice[13] = y; matrice[14] = z; }
+		placement[0] = x; placement[1] = y; placement[2] = z;
+	}
 	// Le début de la même fonction (lu à l'assembleur de son premier octet à 0x46cd98). La distance parcourue +0x19c passe à 0 ; tenue (+0xb0
 	// non nul) ou sans son +0x1c, l'entité ne fait rien de plus. Quand les trois réels de sa vitesse (+0x124) et les trois de sa
 	// vitesse angulaire (+0x130) sont tous nuls (fcom contre 0, test ah,0x44, jp) et que l'octet +0x108 a un des bits 0xf8, elle
@@ -313,6 +368,12 @@ struct CVolProjectile {
 		uint32 o1c = 0;
 		uint16 o20 = 0, o22 = 0;
 		float fraction = 3.4028234663852886e+38f;
+		// FUN_00415e50 (le constructeur, lu à l'assembleur de 0x415e50 à 0x415e75, 38 octets) : les trois réels de +0x0 et les trois de
+		// +0x10 à 0, la référence +0xc nulle, la fraction +0x24 au réel 0x9009b8 (FLT_MAX) ; +0x1c, +0x20 et +0x22 ne sont pas
+		// écrits (ici 0). Ce sont les valeurs de départ ci-dessus. FUN_004153b0 (la fin d'un contact, lue de 0x4153b0 à 0x4153c4,
+		// 21 octets) : la référence +0xc, non nulle, est déliée (00465690 avec l'entité et l'adresse du champ) ; le champ n'est pas
+		// remis à nul.
+		template<class D> void Defaire(D &&delier) { if(entite) delier(entite); }
 		// FUN_0046a920 (l'affectation d'un contact, lue à l'assembleur de 0x46a920 à 0x46a99b, ret 4) : les trois mots de +0x0 ; la
 		// référence +0xc quand elle change : l'ancienne, non nulle, est déliée (00465690 avec l'adresse du champ), la nouvelle est
 		// posée puis, non nulle, liée (00465680) ; les quatre mots de +0x10 à +0x1c, les deux mots courts +0x20 et +0x22, la fraction
@@ -341,7 +402,7 @@ struct CVolProjectile {
 	};
 	// FUN_0046c970(listes, secteur, meilleur, arg4, quatrième) (lue à l'assembleur de 0x46c970 à 0x46ca3f, ret 0x14) : le balayage
 	// d'un secteur. Les quatre listes du secteur (quatre mots de suite ; la quatrième, de rang 3, seulement quand l'octet du
-	// cinquième argument vaut 1) passent une à une par 0046c4b0 (le balayage d'une liste, non recréé : `balayer`, qui reçoit le rang
+	// cinquième argument vaut 1) passent une à une par FUN_0046c4b0 (le balayage d'une liste, BalayerListe : `balayer`, qui reçoit le rang
 	// de la liste et un contact local, le même pour les quatre listes, fait une fois avant la boucle). Quand elle rend vrai et que
 	// la fraction du contact local est strictement sous celle du meilleur (fcompp, test ah,0x41, jne), le contact local est copié
 	// dans le meilleur (FUN_0046a920, Copier ; les liens de la référence ne sont pas suivis ici) et la fonction rendra vrai.
@@ -451,20 +512,285 @@ struct CVolProjectile {
 		if(p.o1310 == 0xd && e == p.o1e94) return true;
 		return e == p.o430 && e != nullptr && e->o46c == 1 && (e->o108 & 0xf8) == 0x38;
 	}
+	// FUN_0046d700(sortie, placement, point) (lue à l'assembleur de 0x46d700 à 0x46d79c, 157 octets, cdecl) : un point du repère
+	// d'une entité sans matrice passe dans le monde par son placement (+4 de l'entité : x, y, z et le cap en +0xc, soit le +0x10 de
+	// l'entité). Cap nul (fldz, fcomp, test ah,0x44, jp : l'égalité stricte) : la somme du placement et du point. Sinon c = le
+	// cosinus du cap (FUN_0085ad50) et s = son sinus (FUN_0085aec0), arrondis en simple précision : x = px × c − py × s + le x du
+	// placement, y = c × py + px × s + son y, z = son z + pz.
+	static void PlacerSansMatrice(float *sortie, const float *placement, const float *point) {
+		if(0.0f == placement[3]){
+			for(int i = 0; i < 3; i++) sortie[i] = placement[i] + point[i];
+			return;
+		}
+		float c = cosf(placement[3]), sn = sinf(placement[3]);
+		float x = point[0] * c - point[1] * sn + placement[0];
+		float y = c * point[1] + point[0] * sn + placement[1];
+		float z = placement[2] + point[2];
+		sortie[0] = x; sortie[1] = y; sortie[2] = z;
+	}
+	// FUN_004660b0(sortie, point) (méthode d'une entité, lue à l'assembleur de 0x4660b0 à 0x466106, 87 octets, ret 8) : un point de
+	// son repère dans le monde. Avec une matrice (+0x14 non nul) : FUN_0041a850(&local, matrice, point), puis les trois mots copiés
+	// (`parMatrice` reçoit la sortie et le point) ; sans matrice : FUN_0046d700(sortie, entité + 4, point). FUN_00466b50(sortie)
+	// (de 0x466b50 à 0x466b6c, 29 octets, ret 4) l'appelle avec le modèle de collision de l'entité (FUN_0051ae00), dont les trois
+	// premiers réels sont le centre de sa sphère : c'est le centre du balayage d'une liste.
+	template<class M> static void DansLeMonde(bool matrice, const float *placement, const float *point, float *sortie, M &&parMatrice) {
+		if(matrice){ float local[3]; parMatrice(local, point); sortie[0] = local[0]; sortie[1] = local[1]; sortie[2] = local[2]; }
+		else PlacerSansMatrice(sortie, placement, point);
+	}
+	// FUN_0051ae00(entité) (lue à l'assembleur de 0x51ae00 à 0x51ae46, 71 octets, cdecl) : le modèle de collision d'une entité, le
+	// +0xc de la fiche de son modèle (la table 0xc67738, à l'indice du mot signé +0x10e). Pour une entité de genre 6 (+0x108 & 7)
+	// dont FUN_004ea210 rend vrai (de 0x4ea210 à 0x4ea21a, 11 octets : son +0x184 n'est pas nul), c'est le +0x80 de la fiche quand
+	// il n'est pas nul. FUN_00465cc0 (le rayon d'une entité) rend le réel +0xc de ce modèle de collision.
+	template<class T> static T *ModeleDeCollision(int genre, uint32 o184, T *ficheOc, T *ficheO80) {
+		if(genre == 6 && o184 != 0 && ficheO80 != nullptr) return ficheO80;
+		return ficheOc;
+	}
+	// FUN_00415350(sortie) (méthode d'une entité, lue à l'assembleur de 0x415350 à 0x4153ab, 94 octets, ret 4) : son vecteur
+	// « avant ». Avec une matrice (+0x14 non nul) : les trois mots +0x10, +0x14 et +0x18 de la matrice (sa deuxième ligne) ; sans
+	// matrice : (−sin(cap), cos(cap), 0), le cap étant le +0x10 de l'entité (FUN_0085aec0 puis fchs, FUN_0085ad50). Ce n'est pas la
+	// vitesse (ce que la séance 2 du 12.11 supposait).
+	static void Avant(const float *matrice, float cap, float *sortie) {
+		if(matrice){ sortie[0] = matrice[4]; sortie[1] = matrice[5]; sortie[2] = matrice[6]; return; }
+		sortie[0] = -sinf(cap); sortie[1] = cosf(cap); sortie[2] = 0.0f;
+	}
 	// La règle de deux projectiles de même modèle dans le balayage d'une liste (une part de 0046c4b0, lue à l'assembleur de 0x46c71b
 	// à 0x46c7b4, non comptée) : quand l'entité qui balaie est un projectile (+0xc4 non nul) et que l'entité de la liste a le même
-	// modèle (+0x10e), un des trois modèles DAT_00bf435c, DAT_00bf4358 ou DAT_00bf4354 (leurs noms ne sont pas lus dans la table
-	// 0xa136e8), le produit scalaire des deux vitesses (FUN_004144f0, sur les vecteurs que rend FUN_00415350 : la vitesse, supposé)
-	// est divisé par le produit des deux normes (FUN_0040df90 ; le produit puis le quotient arrondis en simple précision). Quand ce
-	// cosinus est strictement au-dessus du double 0x90c730 (0.8659999966621399 ; fcomp, test ah,0x41, jne), les deux projectiles
-	// ne se touchent pas : deux projectiles du même modèle qui volent à moins de 30° l'un de l'autre se traversent. Une vitesse
-	// nulle (0 / 0, non ordonné) garde le contact.
+	// modèle (+0x10e), un des trois modèles DAT_00bf435c, DAT_00bf4358 ou DAT_00bf4354 (« brocket », « potato » et « ammo_scatter »
+	// dans la table des noms 0xa136e8), le produit scalaire de leurs deux vecteurs « avant » (FUN_004144f0, sur les vecteurs que
+	// rend FUN_00415350 : `v` et `autre`) est divisé par le produit des deux normes (FUN_0040df90 ; le produit puis le quotient
+	// arrondis en simple précision). Quand ce cosinus est strictement au-dessus du double 0x90c730 (0.8659999966621399 ; fcomp,
+	// test ah,0x41, jne), les deux projectiles ne se touchent pas : deux fusées, deux patates ou deux plombs tournés à moins de 30°
+	// l'un de l'autre se traversent. Un vecteur nul (0 / 0, non ordonné) garde le contact.
 	static bool MemeSens(const float *v, const float *autre) {
 		double normeAutre = Norme(autre);
 		float scalaire = v[2] * autre[2] + v[0] * autre[0] + v[1] * autre[1];
 		float normes = (float)((double)Norme(v) * normeAutre);
 		float cosinus = scalaire / normes;
 		return (double)cosinus > 0.8659999966621399;
+	}
+	// Le ballon prisonnier, que les filtres d'un projectile interrogent. FUN_006838d0() (lue à l'assembleur de 0x6838d0 à 0x6838e1,
+	// 18 octets) : faux quand l'objet du mot DAT_01b89150 est nul ; sinon elle saute dans FUN_0067b0f0 (de 0x67b0f0 à 0x67b0fb, 12
+	// octets) : le bit 0x100 du mot +0x17dc de cet objet (shr eax,8 ; and al,1). Supposé : « une partie de ballon prisonnier est en
+	// cours » (l'objet est celui des pistes Dodgeball… de l'arbre d'actions ; le sens du bit n'est pas lu).
+	static bool BallonActif(bool objet, uint32 o17dc) { return objet && ((o17dc >> 8) & 1) != 0; }
+	// FUN_00683a10(piéton) (de 0x683a10 à 0x683a27, 24 octets, cdecl) : faux sans l'objet DAT_01b89150, sinon FUN_00680b60(piéton),
+	// méthode de cet objet (de 0x680b60 à 0x680bab, 76 octets, ret 4) : faux quand FUN_006838d0 rend faux, quand le piéton est nul ou
+	// n'est pas un piéton (+0x108 & 7 != 3) ; sinon le réel que rend FUN_0067b100(piéton) (ValeurDeBallon, plus bas : `valeur`), arrondi en simple
+	// précision, est comparé au réel 0xb9da80 (0,5 dans le binaire ; une donnée, pas une constante) : vrai quand 0,5 est strictement
+	// sous la valeur (fld la valeur, fld 0,5, fcompp, test ah,1, je : non ordonné, vrai aussi).
+	static bool JoueurDeBallon(bool actif, const EntiteFiltree *p, float valeur) {
+		if(!actif || p == nullptr || (p->o108 & 7) != 3) return false;
+		return !(0.5f >= valeur);
+	}
+	// Les joueurs du ballon prisonnier : l'objet du mot DAT_01b89150 tient neuf emplacements de 0x28c octets à partir de son +0x28
+	// (le dernier finit à +0x1714, sous le mot +0x17dc du bit lu plus haut) ; le premier mot d'un emplacement est le piéton, son
+	// +0x8 un réel. Supposé : neuf joueurs au plus ; le sens du réel n'est pas lu (rien ici ne l'écrit), seul son seuil de 0,5
+	// l'est. FUN_0067b0b0(piéton) (méthode de l'objet, lue à l'assembleur de 0x67b0b0 à 0x67b0e2, 51 octets, ret 4) : l'adresse
+	// de l'emplacement de ce piéton. Les neuf premiers mots sont comparés dans l'ordre ; au premier égal, le rang i ; aucun : −1,
+	// sans autre test, et l'adresse rendue est alors celle d'avant le premier emplacement (objet + 0x28 − 0x28c). PlaceDeBallon
+	// rend le décalage dans l'objet : 0x28 + i × 0x28c. `objet` est l'objet tel qu'il est en mémoire, ses piétons sur 32 bits.
+	static int32 PlaceDeBallon(const uint8 *objet, uint32 pieton) {
+		int32 i = 0;
+		for(; i < 9; i++){
+			uint32 mot;
+			memcpy(&mot, objet + 0x28 + i * 0x28c, 4);
+			if(mot == pieton) break;
+		}
+		if(i == 9) i = -1;
+		return i * 0x28c + 0x28;
+	}
+	// FUN_0067b100(piéton) (méthode de l'objet, lue à l'assembleur de 0x67b100 à 0x67b13f, 64 octets, ret 4) : le réel d'un
+	// joueur. La même recherche, refaite sur place : aucun emplacement, et elle rend 0,0 (fldz) ; sinon (le test du rang contre
+	// −1 qui suit, à 0x67b128, ne peut pas être vrai : le rang va de 0 à 8) FUN_0067b0b0 cherche une seconde fois et le réel +0x8
+	// de l'emplacement est rendu. Un piéton absent rend donc 0,0, sous le seuil : JoueurDeBallon est faux pour lui. Les
+	// emplacements vides ne sont pas distingués : un piéton nul trouverait le premier dont le mot est nul (FUN_00680b60 écarte le
+	// piéton nul avant d'appeler).
+	static float ValeurDeBallon(const uint8 *objet, uint32 pieton) {
+		int32 i = 0;
+		for(; i < 9; i++){
+			uint32 mot;
+			memcpy(&mot, objet + 0x28 + i * 0x28c, 4);
+			if(mot == pieton) break;
+		}
+		if(i == 9) return 0.0f;
+		float reel;
+		memcpy(&reel, objet + PlaceDeBallon(objet, pieton) + 0x8, 4);
+		return reel;
+	}
+	// FUN_004761a0(projectile) (méthode du piéton, lue à l'assembleur de 0x4761a0 à 0x476269, 202 octets, ret 4 ; le balayage d'une
+	// liste de secteur, 0046c4b0, l'appelle sur chaque piéton de la liste quand l'entité qui balaie est un projectile, +0xc4 non
+	// nul : vrai, et le piéton est passé) : ce projectile ne touche-t-il pas ce piéton ? Faux pour une entité dont le +0xc4 est nul
+	// (le binaire lit alors son genre et son modèle sans rien en faire). Vrai quand le +0xfc du piéton n'est pas nul. Puis, pendant
+	// le ballon prisonnier seulement (FUN_006838d0) : vrai pour un projectile bas et lent, dont le z (le +0x38 de sa matrice +0x14,
+	// ou son +0xc sans matrice) moins celui du piéton, moins 0,1847944 (le double 0x90c720), est strictement sous 0,5
+	// (_DAT_009055a0 : fcomp, test ah,5, jp) et dont la vitesse (FUN_0040df90 sur +0x124) est strictement sous 0,1 (le double
+	// 0x900128 : test ah,5, jnp) ; sinon vrai quand FUN_00683a10(piéton) rend vrai. Enfin, ballon ou non : vrai quand le piéton est
+	// le tireur du projectile (le +4 de l'entrée FUN_004d3360(projectile+0x238)). Un projectile ne touche donc jamais son tireur
+	// dans le balayage, quel que soit son âge. `joueurDeBallon` n'est lu que pendant le ballon, quand le projectile n'est pas bas et
+	// lent.
+	static bool ProjectileIgnore(bool oc4, bool ofc, bool ballon, float zProjectile, float zPieton, const float *vitesse,
+	                             bool joueurDeBallon, bool estLeTireur) {
+		if(!oc4) return false;
+		if(ofc) return true;
+		if(ballon){
+			float dz = zProjectile - zPieton;
+			dz = (float)((double)dz - 0.1847944);
+			if(dz < 0.5f && (double)Norme(vitesse) < 0.1) return true;
+			if(joueurDeBallon) return true;
+		}
+		return estLeTireur;
+	}
+	// FUN_00469f10(entité, projectile) (lue à l'assembleur de 0x469f10 à 0x469f63, 84 octets, cdecl ; 0046c4b0 l'appelle dans les
+	// deux sens : sur une entité de genre 2 de la liste quand un projectile balaie, et quand c'est une entité de genre 2 qui balaie
+	// et croise un projectile) : faux si l'entité n'est pas de genre 2 (+0x108 & 7) ou si le +0xc4 du projectile est nul ; vrai quand
+	// le tireur du projectile (le +4 de son entrée) est l'occupant de la place 0 de l'entité (FUN_004ce410(entité+0x1c4, 0) ; la
+	// comparaison ne teste pas le nul : un projectile sans tireur « égale » une place vide) ; sinon vrai quand le +0xfc de l'entité
+	// n'est pas nul. Le projectile de son conducteur ne touche donc pas un véhicule (genre 2 : un véhicule, supposé).
+	static bool VehiculeIgnore(int genre, bool oc4, const void *tireur, const void *place0, bool ofc) {
+		if(genre != 2 || !oc4) return false;
+		if(tireur == place0) return true;
+		return ofc;
+	}
+	// FUN_00447290 (méthode d'une entité, lue à l'assembleur de 0x447290 à 0x4472b7, 40 octets) : son modèle (+0x10e, signé) est-il
+	// un des trois de DAT_00bf42d4, DAT_00bf42d0 et DAT_00bf42cc (« Dog_Pitbull », « Dog_Pitbull2 » et « Dog_Pitbull3 » dans la
+	// table des noms de modèles 0xa136e8) : un chien.
+	static bool EstUnChien(int modele, int pitbull, int pitbull2, int pitbull3) {
+		return modele == pitbull || modele == pitbull2 || modele == pitbull3;
+	}
+	// FUN_0046a340(arg1, entité, contact, arg4) (la méthode +0xa4 de la vtable d'un CProjectile, 0x9059c4 : le mot lu dans le
+	// binaire ; lue à l'assembleur de 0x46a340 à 0x46a423, 228 octets, ret 0x10) : le test de collision que le balayage d'une liste
+	// (0046c4b0) appelle sur chaque entité qui a passé ses filtres. Elle choisit entre deux tests :
+	//  - le test fin contre un piéton, quand l'entité qui balaie est un projectile (+0xc4 non nul), que l'entité de la liste est un
+	//    piéton (+0x108 & 7 == 3) au +0xa4 nul, dont le modèle (+0x10e) n'est ni DAT_00bf42dc (« Rat_Ped ») ni un chien
+	//    (FUN_00447290) : 00572680(piéton) d'abord (1 529 octets, non lue ; supposé : elle prépare les volumes du piéton, que le mot
+	//    0xcf3138 désigne ensuite), puis 00469f70 (966 octets, non lue), méthode de l'entité qui balaie, avec arg1, sa matrice
+	//    (FUN_0046dbd0), son modèle de collision (0051ae00), la matrice du piéton, le mot 0xcf3138 et le contact ;
+	//  - sinon le test général 0056c770 (4 610 octets, non lue, cdecl à quinze arguments) : arg1, la matrice et le modèle de collision
+	//    de l'entité qui balaie, la matrice de l'entité de la liste deux fois, son modèle de collision, le contact, cinq mots nuls,
+	//    0xf, 0 et 1. Le rat et les chiens passent donc par leur modèle de collision, comme un bâtiment.
+	// L'octet rendu par le test (movzx : 0 à 255 ; supposé : le nombre de contacts) est rendu tel quel, sauf pour un projectile dont
+	// le contact porte la surface 0x41 (l'octet +0x22 du contact ; le nom de cette surface n'est pas lu) : 0, le projectile la
+	// traverse. arg4 n'est pas lu par cette méthode. `contrePieton` et `contreModele` sont les deux tests.
+	template<class P, class M> static int TesterCollision(bool oc4, int genre, uint32 oa4, bool rat, bool chien,
+	                                                     const ContactBalaye *contact, P &&contrePieton, M &&contreModele) {
+		int n;
+		if(oc4 && genre == 3 && oa4 == 0 && !rat && !chien) n = (uint8)contrePieton();
+		else n = (uint8)contreModele();
+		if(n > 0 && oc4 && (uint8)contact->o22 == 0x41) return 0;
+		return n;
+	}
+	// FUN_0046c4b0(arg1, &liste, meilleur, arg4) (méthode de l'entité qui balaie, lue à l'assembleur de 0x46c4b0 à 0x46c877, 967
+	// octets, ret 0x10) : le balayage d'une liste de secteur, le vrai test de collision du déplacement d'un CPhysical. FUN_0046c970
+	// l'appelle pour chaque liste d'un secteur (BalayerSecteur). Ce qu'elle lit d'une entité, sous le nom de son offset :
+	struct EntiteBalayee {
+		uint8 o108 = 0;                                        // ses trois bits bas : le genre (3 un piéton, 2 un véhicule, supposé)
+		uint16 o10a = 0;                                       // le code du dernier balayage qui l'a vue
+		int16 o10e = 0;                                        // le modèle
+		uint32 oc4 = 0;                                        // non nul : un projectile
+		uint32 o1c = 0, o20 = 0, o60 = 0, of4 = 0, o100 = 0;   // le filtre d'entrée
+		uint32 o28 = 0;                                        // de l'entité qui balaie : nul, son rayon grandit de sa vitesse
+		float vitesse[3] = {0.0f, 0.0f, 0.0f};                 // +0x124, +0x128, +0x12c
+	};
+	// Le volume du modèle de collision d'une entité (le mot +0x38 du modèle que rend FUN_0051ae00) : ce que le balayage en lit.
+	struct VolumeBalaye {
+		uint16 o1c = 0; uint8 o1e = 0, o1f = 0;                // trois comptes (supposé : sphères, boîtes, triangles ; non lu)
+		uint32 o18 = 0;
+	};
+	// Le déroulement, dans l'ordre du binaire. `m` porte ce que la fonction lit hors de l'entité : Code() (le mot 0xc1ae88, le code
+	// du balayage en cours), Pas() (le réel 0xc1a9a4), Rayon(moi) (FUN_00465cc0), Centre(moi, centre) (FUN_00466b50), Entite(piscine,
+	// indice) (FUN_0044a290), Noeud(suivant) (le mot 0xc0f788 + 4 × suivant), SansPietons() (l'octet 0xc2b10b vaut 1),
+	// IgnorePieton(moi, e) (FUN_004760b0), IgnoreSonGenre2(moi, e) (FUN_00476160), IgnoreGenre2Lie(moi, e) (FUN_00476270),
+	// BitDuModele(e) (le bit 1 << l'octet 0xa147e0 de l'octet +0xb de la fiche du modèle, table 0xc67738), Volume(e),
+	// Spheres(e, centre, rayon) (FUN_00465bc0), ProjectileIgnore(piéton, projectile) (FUN_004761a0), VehiculeIgnore(entité,
+	// projectile) (FUN_00469f10), ModeleSerre(modèle) (un des trois de DAT_00bf435c, DAT_00bf4358, DAT_00bf4354), Avant(e, vecteur)
+	// (FUN_00415350), Tester(moi, arg1, e, &local, arg4) (la méthode +0xa4 de la vtable de l'entité qui balaie : FUN_0046a340 pour
+	// un CProjectile), Lier(e) et Delier(e) (00465680, 00465690).
+	//  1. Le rayon du balayage est celui de l'entité ; quand son +0x28 est nul il grandit de la norme de sa vitesse (la racine,
+	//     0x85c4d0, de |vy² + vx² + vz²| arrondi en simple précision) fois le pas. Le centre vient de FUN_00466b50.
+	//  2. La liste : un nœud est un mot ; ses quatre bits bas sont la piscine, les quatorze suivants l'indice, les quatorze hauts le
+	//     nœud suivant (0x3fff : la fin). Le suivant est lu avant tout filtre.
+	//  3. Une entité dont le +0x10a vaut déjà le code est passée (une entité tient dans plusieurs listes) ; sinon elle le reçoit.
+	//  4. Quand c'est un piéton qui balaie : un projectile est passé ; un piéton est passé si l'octet 0xc2b10b vaut 1, si arg4 n'est
+	//     pas nul ou si FUN_004760b0 est vrai ; une entité de genre 2 si FUN_00476160 ou FUN_00476270 est vrai. Quand c'est une
+	//     entité de genre 2 qui balaie : un projectile est passé.
+	//  5. L'entité qui balaie elle-même est passée.
+	//  6. Le filtre d'entrée : (+0x20 non nul, et +0x1c ou +0x60 non nul, et le bit du modèle, et +0xf4 nul), ou sinon +0x100 non nul.
+	//  7. Le volume du modèle de collision : nul → passée ; ses trois comptes nuls → passée ; son +0x18 non nul → passée.
+	//  8. Le test des sphères (FUN_00465bc0) faux → passée.
+	//  9. Quand c'est un projectile qui balaie, trois jugements : un piéton que FUN_004761a0 écarte, une entité de genre 2 que
+	//     FUN_00469f10 écarte, un projectile du même modèle serré tourné du même côté (MemeSens) → passée. Sinon, quand c'est une
+	//     entité de genre 2 qui balaie un projectile : FUN_00469f10 dans l'autre sens (jamais atteint : le point 4 l'a déjà passé).
+	// 10. Un contact neuf (FUN_00415e50), la méthode +0xa4 ; non nulle : la référence du contact local est liée à l'entité
+	//     (FUN_0045f0a0) et, quand sa fraction est strictement sous celle du meilleur (fcompp, test ah,0x41, jne), le meilleur le
+	//     copie (FUN_0046a920), se lie à l'entité (FUN_0045f0a0) et la fonction rendra vrai. Le contact local est défait
+	//     (FUN_004153b0).
+	template<class E, class A, class M>
+	static bool BalayerListe(E *moi, A arg1, const uint32 *noeud, ContactBalaye *meilleur, bool arg4, M &m) {
+		uint16 code = m.Code();
+		bool touche = false;
+		float rayon = m.Rayon(moi), centre[3];
+		m.Centre(moi, centre);
+		if(moi->o28 == 0){
+			const float *v = moi->vitesse;
+			float n2 = (float)((double)v[1] * (double)v[1] + (double)v[0] * (double)v[0] + (double)v[2] * (double)v[2]);
+			float n = sqrtf(fabsf(n2));
+			rayon = (float)((double)n * (double)m.Pas() + (double)rayon);
+		}
+		auto lier = [&](const void *x){ m.Lier(x); };
+		auto delier = [&](const void *x){ m.Delier(x); };
+		int genreMoi = moi->o108 & 7;
+		while(noeud){
+			uint32 mot = *noeud;
+			E *e = m.Entite((int)(mot & 0xf), (int)((mot >> 4) & 0x3fff));
+			uint32 suivant = mot >> 18;
+			noeud = suivant == 0x3fff ? nullptr : m.Noeud(suivant);
+			if(e->o10a == code) continue;
+			e->o10a = code;
+			int genre = e->o108 & 7;
+			if(genreMoi == 3){
+				if(e->oc4 != 0) continue;
+				if(genre == 3){
+					if(m.SansPietons() || arg4 || m.IgnorePieton(moi, e)) continue;
+				}else if(genre == 2){
+					if(m.IgnoreSonGenre2(moi, e) || m.IgnoreGenre2Lie(moi, e)) continue;
+				}
+			}else if(genreMoi == 2){
+				if(e->oc4 != 0) continue;
+			}
+			if(e == moi) continue;
+			bool entre = e->o20 != 0 && (e->o1c != 0 || e->o60 != 0) && m.BitDuModele(e) && e->of4 == 0;
+			if(!entre && e->o100 == 0) continue;
+			const VolumeBalaye *vol = m.Volume(e);
+			if(vol == nullptr) continue;
+			if(vol->o1c == 0 && vol->o1e == 0 && vol->o1f == 0) continue;
+			if(vol->o18 != 0) continue;
+			if(!m.Spheres(e, centre, rayon)) continue;
+			if(moi->oc4 != 0){
+				bool pieton = true, vehicule = true, serre = true;
+				if(genre == 3) pieton = !m.ProjectileIgnore(e, moi);
+				else if(genre == 2) vehicule = !m.VehiculeIgnore(e, moi);
+				if(moi->o10e == e->o10e && m.ModeleSerre((int)moi->o10e)){
+					float avantE[3], avantMoi[3];
+					m.Avant(e, avantE);
+					m.Avant(moi, avantMoi);
+					if(MemeSens(avantMoi, avantE)) serre = false;
+				}
+				if(!pieton || !vehicule || !serre) continue;
+			}else if(genreMoi == 2 && e->oc4 != 0){
+				if(m.VehiculeIgnore(moi, e)) continue;
+			}
+			ContactBalaye local;
+			if(m.Tester(moi, arg1, e, &local, arg4) != 0){
+				local.LierEntite(e, delier, lier);
+				if(local.fraction < meilleur->fraction){
+					meilleur->Copier(local, delier, lier);
+					meilleur->LierEntite(e, delier, lier);
+					touche = true;
+				}
+			}
+			local.Defaire(delier);
+		}
+		return touche;
 	}
 	// Puis il rebondit, au premier tour de la boucle des contacts (les autres CPhysical glissent le long de la normale et refont
 	// jusqu'à trois tours). La normale du contact, dont le z positif est mis à 0 quand l'entité touchée a un +0xf0 (`aPlat` ; fldz,

@@ -673,6 +673,15 @@ un piéton. **Hors mission**, le repos se voit enfin : `build/outils/lancer_lua 
 _1_04_PARKING@10 --donner 302@15 --tirer @16.6` tire la balle 302 à 16,63 s ; elle touche le mur « nogo_tschoolnop » à 17,06 s, le
 sol « fgrd_sc1b18 » à 17,36 s (« premier contact au sol ») et « est au repos » à 17,98 s en (175,48, 7,95, 5,48).
 
+Le 13.11 (séance 1), les projectiles de l'outil passent par le balayage d'une liste recréé (`FUN_0046c4b0`,
+`CVolProjectile::BalayerListe`) : à chaque image, pour chaque projectile, l'outil fait une liste des piétons vivants, des objets
+cassables et du monde, et le code recréé choisit le contact le plus proche ; un projectile ne touche plus jamais son tireur
+(`FUN_004761a0`), au lieu d'être épargné 200 ms. Le test de collision lui-même reste celui de l'outil, supposé. La mission ne
+change pas d'une ligne : ses 110 lignes de projectile sortent les mêmes par le balayage recréé, les trois vitres aux mêmes
+instants, vingt et un rebonds, réussie à 82,53 s ; l'essai hors mission ci-dessus non plus (le repos à 17,98 s). Aucun tir de la
+mission ne recroise son tireur : la ligne « le projectile N traverse son tireur, le piéton P : le balayage l'écarte
+(FUN_004761a0) » n'y sort pas.
+
 ## `1_05` (« Save Algie ») (06.11.2026)
 
 `1_05` s'enchaîne après `1_04`. Lancée seule (`build/outils/lancer_lua 90 --mission 1_05 --sans-cinematiques`), elle bouclait

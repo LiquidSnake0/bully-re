@@ -256,6 +256,7 @@ struct CProjectileOutil { bool actif = false; int32 modele = -1; int tireur = -1
                           bool pousse = false;     // la poussée de FUN_004d1ec0 a déjà été dite
                           bool presJoue = false;   // le bit 0x1 de +0x22d : l'effet du passage près du joueur est joué (FUN_004d2290)
                           bool sorti = false;      // la première image du vol est passée (le monde ne la compte pas : voir AvancerProjectiles)
+                          bool ditTireur = false;  // le balayage a déjà dit qu'il écarte le tireur
                           float echelle = 1.0f; }; // l'échelle de temps +0x154 (1 par le constructeur de CPhysical ; FUN_004d2090)
 static CProjectileOutil projectiles[CPlacesProjectiles::kTaille];
 static CPlacesProjectiles placesProjectiles;
@@ -6751,6 +6752,121 @@ ChoquerProjectile(int place, CProjectileOutil &q, int genre, const CVector &pt, 
 	}
 }
 
+// Le balayage d'une liste de secteur (FUN_0046c4b0, CVolProjectile::BalayerListe) pour un projectile de l'outil. L'outil n'a ni
+// secteurs ni listes : il en fait une par projectile et par image, dans l'ordre où il testait déjà : les piétons vivants (la
+// piscine 0), les objets cassables (la piscine 2), puis le monde de la zone visible, une seule entité (la piscine 7). Le moteur y
+// rend ses jugements : le code de balayage, l'entité qui balaie, le filtre d'entrée, le volume, et pour un piéton FUN_004761a0 : un
+// projectile ne touche jamais celui qui l'a tiré (l'outil l'épargnait 200 ms, la règle de FUN_0046ad90, qui ne voit donc jamais
+// le tireur par ce chemin). Ce qui reste de l'outil, supposé : le test lui-même (la méthode +0xa4, FUN_0046a340, mène à deux tests
+// non lus), ici le segment de l'image contre trois sphères de 0,35 m pour un piéton, une de 0,5 m pour un objet et les triangles
+// du monde (CMondeCollision::Trajet), le monde ne comptant que s'il est croisé avant l'entrée dans la sphère déjà retenue ; le
+// rayon du projectile (0) et le test des sphères englobantes (toujours vrai) : l'outil ne lit pas les modèles de collision ; les
+// champs du filtre d'entrée (+0x20 et +0x1c levés pour tout ce que l'outil garde) ; le ballon prisonnier et le +0xfc (absents).
+// Les projectiles ne sont pas dans la liste : l'outil n'a pas de test entre deux projectiles (MemeSens n'y est donc pas jugé).
+struct CBalayageOutil {
+	enum { MOI, PIETON, OBJET, MONDE };
+	struct Ent : CVolProjectile::EntiteBalayee { int sorte = MOI, indice = -1; };
+	std::vector<Ent> ents; std::vector<uint32> noeuds;
+	CVolProjectile::VolumeBalaye volume;
+	const CProjectileOutil *q = nil; CVector avant; float pas = 0.0f; uint16 code = 0;
+	const CMondeCollision *collision = nil;
+	// ce que les tests de l'outil retiennent, comme avant le balayage
+	int touche = -1, objet = -1; bool monde = false; float mieux = 2.0f, fMonde = 2.0f; int32 vMonde = -1;
+	CVector centre = CVector(0.0f, 0.0f, 0.0f), nMonde = CVector(0.0f, 0.0f, 1.0f);
+	uint32 temps = 0;
+	bool tireurTraverse = false;   // FUN_004761a0 a écarté le tireur là où l'outil d'avant l'aurait touché
+	CBalayageOutil() { volume.o1c = 1; }
+
+	void Ajouter(int sorte, int indice, int genre) {
+		Ent e; e.sorte = sorte; e.indice = indice; e.o108 = (uint8)genre; e.o20 = 1; e.o1c = 1;
+		ents.push_back(e);
+	}
+	// Les nœuds : la piscine dans les quatre bits bas, l'indice dans les quatorze suivants (ici celui de l'entité dans `ents`), le
+	// nœud suivant dans les quatorze hauts, 0x3fff à la fin.
+	const uint32 *Lier() {
+		static const int piscines[4] = {3, 0, 2, 7};   // l'ordre de eEntityPool : les projectiles, les piétons, les objets, les bâtiments
+		noeuds.clear();
+		for(size_t i = 0; i < ents.size(); i++)
+			noeuds.push_back((uint32)piscines[ents[i].sorte] | (uint32)i << 4 | (uint32)(i + 1 < ents.size() ? i + 1 : 0x3fff) << 18);
+		return noeuds.empty() ? nil : &noeuds[0];
+	}
+	uint16 Code() { return code; }
+	float Pas() { return pas; }
+	float Rayon(Ent *) { return 0.0f; }
+	void Centre(Ent *, float *c) { c[0] = q->pos.x; c[1] = q->pos.y; c[2] = q->pos.z; }
+	Ent *Entite(int, int indice) { return &ents[indice]; }
+	const uint32 *Noeud(uint32 n) { return &noeuds[n]; }
+	bool SansPietons() { return false; }
+	bool IgnorePieton(Ent *, Ent *) { return false; }
+	bool IgnoreSonGenre2(Ent *, Ent *) { return false; }
+	bool IgnoreGenre2Lie(Ent *, Ent *) { return false; }
+	bool BitDuModele(Ent *) { return true; }
+	const CVolProjectile::VolumeBalaye *Volume(Ent *) { return &volume; }
+	bool Spheres(Ent *, const float *, float) { return true; }
+	bool ProjectileIgnore(Ent *e, Ent *) {
+		const CScriptPed *p = pietons.Acceder(e->indice);
+		float v[3] = {q->vitesse.x, q->vitesse.y, q->vitesse.z};
+		bool ignore = CVolProjectile::ProjectileIgnore(true, false, false, q->pos.z, p ? p->pos.z : 0.0f, v, false, e->indice == q->tireur);
+		if(ignore && p && !CContactProjectile::TireurEpargne(true, temps, q->naissance) && !CContactProjectile::SansContact(true, 0, true, q->pos.z, p->pos.z, v))
+			for(float h : {0.35f, 0.95f, 1.55f}){
+				float u;
+				if(SegmentDansSphere(avant, q->pos, CVector(p->pos.x, p->pos.y, p->pos.z + h), 0.35f, &u)) tireurTraverse = true;
+			}
+		return ignore;
+	}
+	bool VehiculeIgnore(Ent *, Ent *) { return false; }
+	bool ModeleSerre(int) { return false; }
+	void Avant(Ent *, float *a) { a[0] = 0.0f; a[1] = 1.0f; a[2] = 0.0f; }
+	void Lier(const void *) {}
+	void Delier(const void *) {}
+	int Tester(Ent *, int, Ent *e, CVolProjectile::ContactBalaye *contact, bool) {
+		if(e->sorte == PIETON){
+			const CScriptPed *p = pietons.Acceder(e->indice);
+			// FUN_0046b720 : un projectile bas (sous 0,68 m au-dessus de la position du piéton, supposée ici celle de l'outil) et
+			// lent (sous 0,1 m par pas) ne touche pas le piéton ; le +0x1310 du piéton n'est pas suivi (0).
+			float v[3] = {q->vitesse.x, q->vitesse.y, q->vitesse.z};
+			if(CContactProjectile::SansContact(true, 0, e->indice == q->tireur, q->pos.z, p->pos.z, v)) return 0;
+			bool t = false;
+			for(float h : {0.35f, 0.95f, 1.55f}){
+				float u;
+				if(SegmentDansSphere(avant, q->pos, CVector(p->pos.x, p->pos.y, p->pos.z + h), 0.35f, &u) && u < mieux){
+					mieux = u; touche = e->indice; centre = CVector(p->pos.x, p->pos.y, p->pos.z + h); t = true;
+				}
+			}
+			if(!t) return 0;
+			contact->fraction = mieux;
+			return 1;
+		}
+		if(e->sorte == OBJET){
+			// Les objets cassables : une sphère de 0,5 m autour de leur position (supposé : l'outil ne lit pas leur modèle de collision).
+			float u;
+			if(!SegmentDansSphere(avant, q->pos, objets[e->indice].pos, 0.5f, &u) || !(u < mieux)) return 0;
+			mieux = u; objet = e->indice; touche = -1; centre = objets[e->indice].pos;
+			contact->fraction = mieux;
+			return 1;
+		}
+		// Le monde : le trajet de l'image dans la collision de la zone visible (CollisionDuMonde). Il passe devant un piéton ou un
+		// objet quand le trajet le croise avant d'entrer dans leur sphère.
+		float entree = 2.0f;
+		if(objet >= 0 || touche >= 0){
+			float rayon = touche >= 0 ? 0.35f : 0.5f;
+			CVector d(q->pos.x - avant.x, q->pos.y - avant.y, q->pos.z - avant.z);
+			float l2 = d.x * d.x + d.y * d.y + d.z * d.z;
+			entree = mieux;
+			if(l2 > 0.0f){
+				float tc = ((centre.x - avant.x) * d.x + (centre.y - avant.y) * d.y + (centre.z - avant.z) * d.z) / l2;
+				float px = avant.x + d.x * tc - centre.x, py = avant.y + d.y * tc - centre.y, pz = avant.z + d.z * tc - centre.z;
+				float reste = rayon * rayon - (px * px + py * py + pz * pz);
+				if(reste >= 0.0f){ entree = tc - sqrtf(reste / l2); entree = entree < 0.0f ? 0.0f : entree > 1.0f ? 1.0f : entree; }
+			}
+		}
+		if(!(collision->Trajet(avant, q->pos, &fMonde, &nMonde, &vMonde) && fMonde < entree)) return 0;
+		monde = true; objet = -1; touche = -1;
+		contact->fraction = fMonde; contact->normale[0] = nMonde.x; contact->normale[1] = nMonde.y; contact->normale[2] = nMonde.z;
+		return 1;
+	}
+};
+
 static void
 AvancerProjectiles(float pas)
 {
@@ -6840,55 +6956,34 @@ AvancerProjectiles(float pas)
 			CVolProjectile::Deplacer(pt, v, false, true, CVolProjectile::Gravite(q.gravite), pas, q.echelle);
 			q.pos = CVector(pt[0], pt[1], pt[2]); q.vitesse = CVector(v[0], v[1], v[2]);
 		}
-		int touche = -1; float mieux = 2.0f;
-		CVector centre(0.0f, 0.0f, 0.0f);   // le centre de la sphère touchée, pour la normale du contact
+		// Le balayage de la liste (FUN_0046c4b0 : voir CBalayageOutil) : les piétons vivants, les objets cassables qui restent, le monde.
+		static uint16 codeDeBalayage = 0;
+		codeDeBalayage = CVolProjectile::CodeDeBalayage(codeDeBalayage);
+		CBalayageOutil b;
+		b.q = &q; b.avant = avant; b.pas = pas; b.code = codeDeBalayage; b.temps = maintenant;
 		for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++){
 			const CScriptPed *p = pietons.Acceder(i);
 			if(p == nil || p->mort) continue;
-			// FUN_0046ad90 : le tireur n'est épargné que pendant les 200 ms qui suivent la création.
-			if(CContactProjectile::TireurEpargne(i == q.tireur, maintenant, q.naissance)) continue;
-			// FUN_0046b720 : un projectile bas (sous 0,68 m au-dessus de la position du piéton, supposée ici celle de l'outil) et
-			// lent (sous 0,1 m par pas) ne touche pas le piéton ; le +0x1310 du piéton n'est pas suivi (0).
-			{
-				float v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z};
-				if(CContactProjectile::SansContact(true, 0, i == q.tireur, q.pos.z, p->pos.z, v)) continue;
-			}
-			for(float h : {0.35f, 0.95f, 1.55f}){
-				float u;
-				if(SegmentDansSphere(avant, q.pos, CVector(p->pos.x, p->pos.y, p->pos.z + h), 0.35f, &u) && u < mieux){ mieux = u; touche = i; centre = CVector(p->pos.x, p->pos.y, p->pos.z + h); }
-			}
+			b.Ajouter(CBalayageOutil::PIETON, i, 3);
 		}
-		// Les objets cassables : une sphère de 0,5 m autour de leur position (supposé : l'outil ne lit pas leur modèle de collision).
-		int objet = -1;
-		for(size_t i = 0; i < objets.size(); i++){
-			float u;
-			if(!objets[i].detruit && SegmentDansSphere(avant, q.pos, objets[i].pos, 0.5f, &u) && u < mieux){ mieux = u; objet = (int)i; touche = -1; centre = objets[i].pos; }
+		for(size_t i = 0; i < objets.size(); i++) if(!objets[i].detruit) b.Ajouter(CBalayageOutil::OBJET, (int)i, 4);
+		// Supposé : le trajet de la première image du vol ne compte pas le monde. Le moteur fait partir le projectile de la
+		// douille « Muzzle » de l'arme ou de l'os de la main (le départ de 0065e880, pas recréé : l'outil n'a ni os ni
+		// douilles), devant le tireur ; l'outil le fait partir du point du tireur, qui peut se tenir dans un volume du monde
+		// (dans l'arbre de 1_04, le tir de 73,36 s part dans le volume de « treeclimbbranch » et en touchait la face à 27 cm).
+		b.collision = q.sorti ? CollisionDuMonde(zones.zoneVisible) : nil;
+		q.sorti = true;
+		if(b.collision) b.Ajouter(CBalayageOutil::MONDE, 0, 1);
+		CBalayageOutil::Ent moi; moi.o108 = 4; moi.oc4 = 1; moi.o28 = 1; moi.o10e = (int16)q.modele;
+		CVolProjectile::ContactBalaye meilleur;
+		CVolProjectile::BalayerListe(&moi, 0, b.Lier(), &meilleur, false, b);
+		if(b.tireurTraverse && !q.ditTireur){
+			q.ditTireur = true;
+			printf("%6.2f s  le projectile %d traverse son tireur, le piéton %d : le balayage l'écarte (FUN_004761a0)\n", maintenant / 1000.0, place, q.tireur);
 		}
-		// Le monde : le trajet de l'image dans la collision de la zone visible (CollisionDuMonde). Il passe devant un piéton ou un
-		// objet quand le trajet le croise avant d'entrer dans leur sphère.
-		bool monde = false; float fMonde = 2.0f; CVector nMonde(0.0f, 0.0f, 1.0f); int32 vMonde = -1;
-		{
-			float entree = 2.0f;
-			if(objet >= 0 || touche >= 0){
-				float rayon = touche >= 0 ? 0.35f : 0.5f;
-				CVector d(q.pos.x - avant.x, q.pos.y - avant.y, q.pos.z - avant.z);
-				float l2 = d.x * d.x + d.y * d.y + d.z * d.z;
-				entree = mieux;
-				if(l2 > 0.0f){
-					float tc = ((centre.x - avant.x) * d.x + (centre.y - avant.y) * d.y + (centre.z - avant.z) * d.z) / l2;
-					float px = avant.x + d.x * tc - centre.x, py = avant.y + d.y * tc - centre.y, pz = avant.z + d.z * tc - centre.z;
-					float reste = rayon * rayon - (px * px + py * py + pz * pz);
-					if(reste >= 0.0f){ entree = tc - sqrtf(reste / l2); entree = entree < 0.0f ? 0.0f : entree > 1.0f ? 1.0f : entree; }
-				}
-			}
-			// Supposé : le trajet de la première image du vol ne compte pas le monde. Le moteur fait partir le projectile de la
-			// douille « Muzzle » de l'arme ou de l'os de la main (le départ de 0065e880, pas recréé : l'outil n'a ni os ni
-			// douilles), devant le tireur ; l'outil le fait partir du point du tireur, qui peut se tenir dans un volume du monde
-			// (dans l'arbre de 1_04, le tir de 73,36 s part dans le volume de « treeclimbbranch » et en touchait la face à 27 cm).
-			const CMondeCollision *m = q.sorti ? CollisionDuMonde(zones.zoneVisible) : nil;
-			q.sorti = true;
-			if(m && m->Trajet(avant, q.pos, &fMonde, &nMonde, &vMonde) && fMonde < entree){ monde = true; objet = -1; touche = -1; }
-		}
+		int touche = b.touche, objet = b.objet; float mieux = b.mieux;
+		CVector centre = b.centre;   // le centre de la sphère touchée, pour la normale du contact
+		bool monde = b.monde; float fMonde = b.fMonde; CVector nMonde = b.nMonde; int32 vMonde = b.vMonde;
 		// Le contact (FUN_0046ad90) : sur un piéton le coup puis le choc (FUN_004d3860) ; sur un objet le choc puis le coup. Le
 		// projectile reste dans le monde : il recule au point du contact et rebondit (FUN_0046ca40, plus bas). L'octet « fort » du
 		// choc vient du coup et de la vitesse d'avant le rebond (en mètres par pas, l'unité de +0x124).

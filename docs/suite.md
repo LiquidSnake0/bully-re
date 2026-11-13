@@ -122,63 +122,77 @@ chantier. Un point fini passe en bas, avec son commit.
    explosions (`FUN_004d2b40`, `FUN_004d2aa0`, `FUN_004d2690`), sa fin (`FUN_004d45e0`, `FUN_004d3dc0`) et les marques d'impact
    (`FUN_00560f70`, `FUN_00560f10`).
    Suite, dans l'ordre :
-   - la suite des armes : **le balayage d'une liste de secteur, la fonction `0046c4b0`** (967 octets ; lue en entier à l'assembleur le
-     12.11, séance 2, de 0x46c4b0 à 0x46c877 ; **pas recréée** : c'est le vrai test de collision du déplacement d'un `CPhysical`). État :
-     l'outil des missions a un sol depuis la séance 2 du 12.11 (`CMondeCollision::Trajet` dans `AvancerProjectiles`,
-     `outils/lancer_lua.cpp` ; voir « Fait »), mais ce sol est celui de l'outil (un segment contre des triangles et des sphères),
-     pas le balayage du moteur. Autour de `0046c4b0`, tout ce qui suit est recréé dans `CVolProjectile`
-     (`src/objects/Projectiles.h`) : le début et la sortie de `0046ca40` (`Immobile`, `PartagerChute`, `CodeDeBalayage`,
-     `BalayerSecteurs`, `PoserApresChute`, `Distance`), `FUN_0046c970` (`BalayerSecteur` : elle passe chaque liste d'un secteur à
-     `0046c4b0`), `FUN_0046a920` (`ContactBalaye::Copier`), `FUN_0045f0a0` (`ContactBalaye::LierEntite`), `FUN_00465bc0`
-     (`SpheresSeTouchent`), les trois filtres de piéton `FUN_004760b0`, `FUN_00476160`, `FUN_00476270` (`IgnorePieton`,
-     `IgnoreSonGenre2`, `IgnoreGenre2Lie`) et la règle des deux projectiles de même modèle (`MemeSens`). Dans l'ordre :
-     1. **recréer `0046c4b0(this = l'entité qui balaie, arg1, arg2 = &liste, arg3 = le meilleur contact, arg4 = un octet)`**. Sa
-        lecture, à ne pas refaire :
-        - bx = le code de balayage (le mot 0xc1ae88) ; l'octet rendu part à 0 ; rayon = `CEntity::GetBoundRadius` (0x465cc0) ;
-          `00466b50(this, &centre)` rend le centre (29 octets : `0051ae00`, 71 octets, puis `004660b0`, 87 octets, non lues) ; si `this+0x28` est nul, le rayon
-          grandit de la norme de la vitesse (+0x124, +0x128, +0x12c ; la racine par 0x85c4d0) fois le pas (0xc1a9a4) ;
-        - la boucle des nœuds : mot = [nœud] ; entité = `0044a290(mot & 0xf, (mot >> 4) & 0x3fff)` (la piscine et l'indice :
-          `src/core/Lists.h`) ; suivant = mot >> 18 : 0x3fff = la fin, sinon le nœud [0xc0f788] + 4 × suivant ;
-        - une entité dont le mot +0x10a vaut déjà le code est passée ; sinon +0x10a = le code ; modèle = `0051ae00(entité)` ;
-        - si `this` est un piéton (+0x108 & 7 == 3) : entité au +0xc4 non nul → passée ; entité piéton : octet 0xc2b10b à 1 →
-          passée, arg4 non nul → passée, `FUN_004760b0(this, entité)` vrai → passée ; entité de genre 2 : `FUN_00476160` vrai →
-          passée, `FUN_00476270` vrai → passée. Si `this` est de genre 2 et que l'entité a un +0xc4 non nul → passée ;
-        - entité == this → passée ;
-        - le filtre d'entrée : (entité+0x20 non nul) et (entité+0x1c non nul ou entité+0x60 non nul) et (le bit (1 << l'octet
-          0xa147e0) de l'octet +0xb de la fiche du modèle, table 0xc67738[le mot +0x10e]) et entité+0xf4 nul → on continue ; sinon
-          il faut entité+0x100 non nul, faute de quoi → passée ;
-        - col = [modèle + 0x38] : nul → passée ; (mot +0x1c nul, octets +0x1e et +0x1f nuls) → passée ; [col+0x18] non nul →
-          passée ;
-        - `FUN_00465bc0(entité, &centre, rayon)` faux → passée ;
-        - si `this+0xc4` n'est pas nul (un projectile) : trois octets à 1 ; entité piéton : le premier = !`004761a0(entité, this)`
-          (202 octets, **non lue**) ; entité de genre 2 : le deuxième = !`00469f10(entité, this)` (84 octets, **non lue**) ; même
-          modèle +0x10e parmi DAT_00bf435c, DAT_00bf4358, DAT_00bf4354 (noms à lire dans la table 0xa136e8) : le troisième tombe à
-          0 quand `MemeSens` est vrai (de 0x46c71b à 0x46c7b4 ; le double 0x90c730 vaut 0.8659999966621399). Sinon, si `this` est
-          de genre 2 et que l'entité a un +0xc4 non nul : le premier = !`00469f10(this, entité)`. Un des trois à 0 → passée ;
-        - un contact local est fait par `00415e50` (38 octets) ; **la méthode +0xa4 de la vtable de `this`** est appelée avec (arg1, entité,
-          &local, arg4) : **non lue, c'est le test de collision lui-même** ; pour un `CProjectile` (vtable 0x9059c4), le mot
-          +0xa4 lu dans le binaire vaut `0046a340` (228 octets ; supposé : la méthode de `CPhysical`, gardée) ; si elle rend non nul : `FUN_0045f0a0(&local, entité)` ; si la fraction
-          locale (+0x24) est strictement sous celle du meilleur (fcompp, test ah,0x41, jne) : `FUN_0046a920(meilleur, &local)`,
-          `FUN_0045f0a0(meilleur, entité)`, l'octet rendu = 1 ; le local est défait par `004153b0` (21 octets). La fonction rend l'octet.
-        Le désassemblage se refait par objdump de 0x46c4b0 à 0x46c878 (282 lignes). Le plus court chemin : lire `0046a340`
-        (et ce qu'elle appelle contre un modèle de collision : sphères, boîtes, triangles), `004761a0` et `00469f10`, puis écrire
-        `0046c4b0` en gabarit sur ces appels, avec ses tests ;
-     2. **la glissade** des autres `CPhysical` dans `0046ca40` (de 0x46ce71 à 0x46cf6f, **non lue** ; avec +0,001 du double
-        0x900fa0, jusqu'à trois tours) : dernier morceau non lu de la fonction, qui pourra alors être comptée ;
-     3. **brancher ce balayage dans l'outil** à la place de `CMondeCollision::Trajet` : l'outil n'a ni secteurs ni listes de
-        secteur ; ses volumes sont posés par placement dans une grille de 4 m (zone 0 : 3 243 placements, 97 905 triangles, 863
-        sphères). Deux règles de l'outil sont **supposées** et tomberont alors : la première image du vol ne compte pas le monde
-        (`q.sorti`) et le contact au point où le segment entre dans la sphère d'un piéton ;
+   - la suite des armes : **les deux tests fins de collision, `00469f70` et `0056c770`** (non lus) : c'est tout ce qui reste entre
+     le balayage, recréé et branché, et un vrai contact dans l'outil. État au 13.11, séance 1 (voir « Fait ») : le balayage d'une
+     liste de secteur est recréé (`FUN_0046c4b0`, `CVolProjectile::BalayerListe`, `src/objects/Projectiles.h`, un gabarit dont
+     l'adaptateur fournit `Code`, `Pas`, `Rayon`, `Centre`, `Entite`, `Noeud`, `SansPietons`, `IgnorePieton`, `IgnoreSonGenre2`,
+     `IgnoreGenre2Lie`, `BitDuModele`, `Volume`, `Spheres`, `ProjectileIgnore`, `VehiculeIgnore`, `ModeleSerre`, `Avant`, `Tester`,
+     `Lier`, `Delier`), avec tout ce qu'il appelle : `FUN_004761a0` (`ProjectileIgnore` : un projectile ne touche jamais son
+     tireur), `FUN_00469f10` (`VehiculeIgnore`), le ballon prisonnier (`FUN_006838d0`, `FUN_0067b0f0`, `FUN_00683a10`,
+     `FUN_00680b60`, `FUN_0067b0b0`, `FUN_0067b100`), `FUN_004d3360`, le centre (`FUN_00466b50`, `FUN_004660b0`, `FUN_0046d700`), `FUN_0051ae00`
+     (`ModeleDeCollision`), `FUN_004ea210` (`Avant`), `FUN_00415e50` et `FUN_004153b0` (le contact local), et **la méthode +0xa4
+     d'un `CProjectile`, `FUN_0046a340`** (`TesterCollision`, avec `FUN_00447290`, `EstUnChien`), qui ne fait que choisir entre
+     les deux tests non lus. **Le balayage est branché dans l'outil** (`outils/lancer_lua.cpp`, `CBalayageOutil` avant
+     `AvancerProjectiles`) : à chaque image et pour chaque projectile, l'outil fait une liste aux nœuds du binaire (les piétons
+     vivants, piscine 0 ; les objets cassables qui restent, piscine 2 ; le monde de la zone, une seule entité, piscine 7, absente
+     à la première image du vol) et la donne à `BalayerListe` ; le code recréé juge le code de balayage, le filtre d'entrée, le
+     volume et les jugements d'un projectile (le tireur n'est plus jamais touché ; l'outil écrit « le projectile N traverse son
+     tireur, le piéton P : le balayage l'écarte (FUN_004761a0) » quand son ancien test l'aurait touché) ; `Tester` garde les
+     tests de l'outil, supposés. Dans l'ordre :
+     1. **lire et recréer les deux tests de `FUN_0046a340`** (lue de 0x46a340 à 0x46a423, à ne pas relire) :
+        - le test fin contre un piéton, quand l'entité qui balaie est un projectile (+0xc4 non nul) et que l'entité de la liste
+          est un piéton (+0x108 & 7 == 3) au +0xa4 nul, dont le modèle (+0x10e) n'est ni DAT_00bf42dc (« Rat_Ped ») ni un des
+          trois chiens de `FUN_00447290` : d'abord `00572680(piéton)` (1 529 octets, **non lue** ; supposé : elle prépare les
+          volumes du piéton, que le mot 0xcf3138 désigne ensuite), puis `00469f70` (966 octets, **non lue**), méthode de l'entité
+          qui balaie, avec arg1, sa matrice (`FUN_0046dbd0`), son modèle de collision (`FUN_0051ae00`), la matrice du piéton, le
+          mot 0xcf3138 et le contact ;
+        - sinon le test général `0056c770` (4 610 octets, **non lue**, cdecl à quinze arguments) : arg1, la matrice et le modèle
+          de collision de l'entité qui balaie, la matrice de l'entité de la liste deux fois, son modèle de collision, le contact,
+          cinq mots nuls, 0xf, 0 et 1. C'est lui qui teste un projectile contre le monde, un objet, un véhicule, le rat et les
+          chiens : **commencer par lui** (toutes les billes de `1_04` finissent sur une vitre ou un piéton, mais le sol et les
+          murs de l'essai hors mission passent par lui). Il prend deux modèles de collision (sphères, boîtes, triangles : les
+          trois comptes +0x1c, +0x1e, +0x1f du volume +0x38, sens supposé) : l'outil a déjà les triangles et les sphères du
+          monde (`CMondeCollision`, `src/collision/Marche.h`), pas les modèles des entités ;
+     2. **brancher ces tests dans `CBalayageOutil::Tester`** (`outils/lancer_lua.cpp`) à la place des tests de l'outil, qui sont
+        tous **supposés** : le segment de l'image contre trois sphères de 0,35 m pour un piéton (h = 0,35, 0,95 et 1,55 m), une
+        de 0,5 m pour un objet cassable, `CMondeCollision::Trajet` pour le monde (compté seulement s'il est croisé avant l'entrée
+        dans la sphère déjà retenue). Tomberont alors : le rayon nul du projectile (`Rayon`, `FUN_00465cc0`), `Spheres` toujours
+        vrai (`FUN_00465bc0`, recréée : `SpheresSeTouchent`), le volume d'essai à un compte, et la règle de la première image du
+        vol (`q.sorti`, qui tient au point 4) ;
+     3. **composer `0046ca40` d'une pièce** (2 884 octets, de 0x46ca40 à 0x46d588 ; **lue en entier**, recréée par morceaux, pas
+        au compte). Ses morceaux, tous dans `CVolProjectile` : le début jusqu'à 0x46cd98 (`Immobile`, `PartagerChute`,
+        `CodeDeBalayage`, `BalayerSecteurs`) ; le recul de 0x46cd98 à 0x46ce6b (`Recul`, `Reculer`) ; la glissade de 0x46ce71 à
+        0x46cf6a (`Glisser`, `TourDeGlissade` : au plus deux glissades par image, le troisième contact reste au recul) ; la part
+        du projectile de 0x46cf6f à 0x46d2f6 (le rebond, la fléchette `Planter`, le frisbee `Devier`) ; la sortie de 0x46d2fc à
+        0x46d588 (`PoserApresChute`, `Distance`). La boucle des contacts, lue le 13.11 (0x46cc20 à 0x46cf6f) : le compteur de
+        tours est à [esp+0x20], le meilleur contact à [esp+0x68], le contact local à [esp+0xa8], la matrice d'avant le
+        déplacement à [esp+0xd0] (c'est l'arg1 passé à `FUN_0046c970`) ; à chaque tour le code de balayage monte, la fraction du
+        meilleur repart à FLT_MAX (0x9009b8) et les secteurs de la liste +0x178 sont balayés ; rien touché : la sortie. **Ce qui
+        manque pour la composer** : l'angle que `FUN_0046b720(entité, &meilleur, angle)` reçoit pour un projectile contre un
+        piéton (`00432830` sur le cap du piéton et `004331c0` sur l'opposé d'un vecteur pointé par ebp, **non identifié** : le
+        relire dans le début de la fonction) ; `00443950` et `00469320` de la sortie (non lues) ;
      4. le départ du tir : `FUN_0065f050` (la vitesse de départ) est recréée et branchée (`CViseeTir::VitesseDepart`) ; reste
         `0065e880` (la douille « Muzzle » de l'arme ou l'os de la main, lue au décompilé seulement) : **bloqué**, l'outil n'a ni
-        os ni douilles ; il fait partir le projectile du point du tireur, d'où la règle supposée de la première image ;
-     5. ce que le contrôle `FUN_004d2290` laisse non suivi : l'autre vol de l'octet +0x15 de l'entrée (la fonction `004d1960`,
+        os ni douilles ; il fait partir le projectile du point du tireur, d'où la règle supposée de la première image (`q.sorti`) ;
+     5. ce que le contrôle `FUN_004d2290` laisse non suivi : l'autre vol de l'octet +0x15 de l'entrée (la fonction `004d1810`,
         non lue ; le mode de DAT_01b65c14 à la création), les déclencheurs (`006d7220` sur 0x20c7e98), le son du modèle
         (`00598030` sur 0xcf5dc4 puis `0059a710` avec 3 000, ou 8 000 pour « WFtBomb », DAT_00bf4394), l'effet +0xa8 de la fiche
-        (lu par l'outil, non joué) ; le redressement de la matrice par `FUN_004d1560` (lue de 0x4d1560 à 0x4d1666) ; la suite de
-        la fléchette plantée (les fonctions `00415320`, `0041a460` avec -π et π, `0046a540`, puis `007014f0` et `00701e70` sur sa
-        position) ; l'ordre du contrôle et du déplacement dans la boucle du monde (supposé : le contrôle d'abord, non relu) ; la
-        vitesse angulaire d'un projectile (nulle dans l'outil). Le freinage, lui, est fait (la fiche est lue).
+        (lu par l'outil, non joué) ; le redressement de la matrice par `FUN_004d1560` (lue de 0x4d1560 à 0x4d1666) ; la matrice de
+        la fléchette plantée (les fonctions `00415320`, `0041a460` avec -π et π, `0046a540`, puis `007014f0` et `00701650` sur la
+        position) ; l'ordre du contrôle et du déplacement dans la boucle du monde (supposé : le contrôle d'abord, non lu) ; la
+        vitesse angulaire d'un projectile (nulle dans l'outil). Le freinage, lui, est fait (la fiche est lue) ;
+     6. les références d'entité dans l'outil : `FUN_00450730` et `FUN_00450780` sont recréées (`src/entities/References.h`), la
+        réserve de maillons (le mot 0xc11d40, taille non lue) et le parcours qui remet les champs à nul quand l'entité disparaît
+        (supposé, non lu) ne le sont pas ; l'adaptateur de l'outil a des `Lier` et `Delier` vides.
+     **Essayé et écarté le 13.11, séance 1** (ne pas refaire) : composer `0046ca40` d'une pièce sans l'angle de
+     `FUN_0046b720` (point 3) ; attendre deux liens du meilleur contact dans `BalayerListe` (le second, sur l'entité qu'il vient
+     de copier, ne fait rien : `FUN_0045f0a0` sort quand c'est déjà elle ; l'ordre juste pour un contact gardé : le lien du
+     contact local, le lien du meilleur par la copie, le délien du local) ; chercher un essai hors mission où le projectile
+     retombe sur son tireur (l'outil n'a pas d'option pour tirer vers le haut : `--tirer` vise devant le joueur) ; relire
+     `FUN_0046c4b0`, `FUN_0046a340`, `FUN_004761a0`, `FUN_00469f10` et la boucle des contacts de `0046ca40` (tout est lu, les
+     plages sont dans le journal du 13.11). **Les tests se rejouent seuls** en 2 min 45 (`tests/construire_tests.sh`, qui compile
+     aussi l'outil `lancer_lua`, puis `tests/sans_jeu.sh`) : une erreur de compilation de l'outil sort là, pas dans
+     `construire.sh`.
      **Essayé et écarté le 12.11, séance 2** (ne pas refaire) : un `AddImage` de plus pour l'image du monde (la table de
      `CdStream` n'a que huit places, `MAX_CDIMAGES` : à 34,02 s de `1_04` l'arbre `Act/Props/pxTree.act` ne se chargeait plus ;
      l'image déjà ouverte est reprise dans la table par son chemin) ; compter le monde dès la première image du vol (le tir de
@@ -196,7 +210,7 @@ chantier. Un point fini passe en bas, avec son commit.
      toutes ont les champs 104, 108, 112, 116, 120 et 288 ; les bornes sont à −1 sauf un angle de 35° sur une fiche ; la
      dispersion est nulle sauf 0,07 sur la fiche « bRocket ».
      **Le compte** : `tools/avancement.py` prend dans `src` les `FUN_xxxxxxxx` **et** la forme `0x…` du premier octet d'une
-     fonction : une fonction non recréée s'écrit sans préfixe (`0046c4b0`).
+     fonction : une fonction non recréée s'écrit sans préfixe (`0046ca40`).
      La table des noms de modèles est en 0xa136e8 (paires nom, adresse de la globale ; `FUN_0043f1e0` la lit, `FUN_0043f220` y
      écrit l'indice) : « dart » = DAT_00bf44dc, « Wfrisbee » = DAT_00bf439c, « WFtBomb » = DAT_00bf4394 ; elle nomme tout
      `DAT_00bf4xxx` comparé à un modèle (+0x10e).
@@ -283,6 +297,21 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- Le balayage d'une liste de secteur, recréé et branché dans l'outil des missions (13.11, séance 1 ; 0bfcdda, c4d4121, b25f6ee, 42d6883, 6b47b2f, 58f30bf, f54307f) : `FUN_0046c4b0`
+  (`CVolProjectile::BalayerListe`, `EntiteBalayee`, `VolumeBalaye`, `src/objects/Projectiles.h` ; lue de 0x46c4b0 à 0x46c877, 39
+  vérifications dans `test_armes` sur un monde d'essai) ; avant lui, tout ce qu'il appelle : les deux filtres d'un projectile
+  (`FUN_004761a0`, `ProjectileIgnore` : le tireur n'est jamais touché ; `FUN_00469f10`, `VehiculeIgnore`), le ballon prisonnier
+  (`FUN_006838d0`, `FUN_0067b0f0`, `FUN_00683a10`, `FUN_00680b60`, `FUN_0067b0b0`, `FUN_0067b100`), l'entrée de la table des projectiles
+  (`FUN_004d3360`), la méthode +0xa4 d'un `CProjectile` (`FUN_0046a340`, `TesterCollision`, avec `FUN_00447290`), le centre
+  (`FUN_00466b50`, `FUN_004660b0`, `FUN_0046d700`), `FUN_0051ae00`, `FUN_004ea210`, `FUN_00415e50` et `FUN_004153b0`.
+  Le branchement dans l'outil (`outils/lancer_lua.cpp`, `CBalayageOutil`) : les projectiles de l'outil passent par
+  `BalayerListe` au lieu de ses trois boucles (une liste par projectile et par image : les piétons, les objets cassables, le
+  monde) ; le tireur n'est plus jamais touché (`FUN_004761a0`), au lieu d'épargné 200 ms ; le test lui-même reste celui de
+  l'outil, supposé.
+  La glissade de `0046ca40` (0x46ce71 à 0x46cf6a, avec le recul de 0x46cd98 à 0x46ce6b : `Reculer`, `Glisser`, `TourDeGlissade`,
+  et `FUN_0041c390`, `PoserPosition`) : la fonction est lue en entier, recréée par morceaux, pas au compte. Les
+  références vers une entité (`FUN_00450730`, `FUN_00450780`, `FUN_00465680`, `FUN_00465690` ; `src/entities/References.h`). Les sept
+  missions gardent leurs temps.
 - Le sol sous les projectiles de l'outil des missions (12.11, séance 2 ; 07037ca, db4c5c1, be1f0c4, d18b45b, fc34c3d, 2506278, 5bfab15) : `CMondeCollision::Trajet`
   (`src/collision/Marche.h`) et la collision du monde dans `AvancerProjectiles` (`outils/lancer_lua.cpp` : les 488 .col de
   `Stream/World.img`, les placements « inst » de la zone ; « le projectile N touche le monde (placement) en (…) », le premier sol,
