@@ -273,8 +273,15 @@ struct CCollisionBalayee {
 	//    ((a − g) · (b − g) ≤ 0, le double nul 0x8ff1f0) et t ≤ fraction (ici l'égalité suffit) : la fraction, la normale c − e,
 	//    le point g, `face` à 0.
 	// Touché, la normale du contact est normalisée (FUN_00414cc0) ; elle rend vrai si l'une des trois parties a touché.
+	// Le corps est écrit pour un polygone de N sommets (`SpherePolygone`) : FUN_00575510 le fait avec 3, FUN_00575db0 avec 4.
 	static bool SphereTriangle(const float *const *sommets, const float *normale, const float *s, const float *deplacement, float *fraction,
 	                           float *normaleContact, float *pointContact, uint8 *face) {
+		return SpherePolygone<3>(sommets, normale, s, deplacement, fraction, normaleContact, pointContact, face, false,
+		                         [&](const float *p) { return DansTriangle(sommets[0], sommets[1], sommets[2], p); });
+	}
+	template<int N, class D>
+	static bool SpherePolygone(const float *const *sommets, const float *normale, const float *s, const float *deplacement, float *fraction,
+	                           float *normaleContact, float *pointContact, uint8 *face, bool fractionDAbord, D &&dedans) {
 		float dir[3] = {deplacement[0], deplacement[1], deplacement[2]};
 		Normaliser(dir);
 		float dn = Scalaire(dir, normale);
@@ -282,6 +289,7 @@ struct CCollisionBalayee {
 		Plan pl;
 		PlanParPoint(&pl, sommets[0], normale);
 		float dist = (float)(ScalaireD(pl.n, s) + pl.d);
+		if(fractionDAbord) *fraction = 3.4028234663852886e+38f;
 		if(-s[3] > dist) return false;
 		*fraction = 3.4028234663852886e+38f;
 		int genre = -1;
@@ -293,7 +301,7 @@ struct CCollisionBalayee {
 				float mr = -s[3];
 				float p[3];
 				for(int i = 0; i < 3; i++) p[i] = (float)((float)(s[i] + (float)((double)t * dir[i])) + (float)((double)mr * normale[i]));
-				if(DansTriangle(sommets[0], sommets[1], sommets[2], p) && !(*fraction <= t)) {
+				if(dedans(p) && !(*fraction <= t)) {
 					*fraction = t;
 					for(int i = 0; i < 3; i++) { normaleContact[i] = normale[i]; pointContact[i] = p[i]; }
 					*face = 1;
@@ -301,7 +309,7 @@ struct CCollisionBalayee {
 				}
 			}
 		}
-		for(int k = 0; k < 3; k++) {
+		for(int k = 0; k < N; k++) {
 			const float *v = sommets[k];
 			float q[3] = {(float)(v[0] - dir[0]), (float)(v[1] - dir[1]), (float)(v[2] - dir[2])};
 			float t1 = 3.4028234663852886e+38f, t2 = 3.4028234663852886e+38f;
@@ -321,8 +329,8 @@ struct CCollisionBalayee {
 			*face = 0;
 			genre = 1;
 		}
-		for(int k = 0; k < 3; k++) {
-			const float *a = sommets[k], *b = sommets[k == 2 ? 0 : k + 1];
+		for(int k = 0; k < N; k++) {
+			const float *a = sommets[k], *b = sommets[k == N - 1 ? 0 : k + 1];
 			float bd[3] = {(float)(b[0] - dir[0]), (float)(b[1] - dir[1]), (float)(b[2] - dir[2])};
 			Plan pa;
 			PlanParTroisPoints(&pa, a, b, bd);
@@ -356,6 +364,58 @@ struct CCollisionBalayee {
 		}
 		if(genre != -1) Normaliser(normaleContact);
 		return genre != -1;
+	}
+	// FUN_00574f90(n, coins, p) (cdecl, lue de 0x574f90 à 0x574fd6, 71 octets) : p est-il dans le polygone de n coins rangés à la
+	// suite (12 octets chacun), par l'éventail (c0, c1, c2), (c0, c2, c3)… : le premier triangle qui le contient (FUN_00574dc0)
+	// suffit ; n − 2 ≤ 0 : faux.
+	static bool DansPolygone(int n, const float *coins, const float *p) {
+		for(int i = 0; i < n - 2; i++)
+			if(DansTriangle(coins, coins + 3 * (i + 1), coins + 3 * (i + 2), p)) return true;
+		return false;
+	}
+	// FUN_00575db0(coins, normale, sphère, déplacement, &fraction, normaleContact, pointContact, &face) (cdecl, 2 214 octets, de
+	// 0x575db0 à 0x5766b1) : la même chose que FUN_00575510 pour une face à quatre coins rangés à la suite. Son assembleur a été lu
+	// en regard de celui de 00575510 : les mêmes comparaisons, dans le même ordre (le seuil −0,001, −r ≤ dist, r < dist strict
+	// pour la face, t < fraction pour la face et les sommets, t ≤ fraction pour les arêtes, les mêmes choix d'axes) et les mêmes
+	// appels ; les différences : la fraction passe à FLT_MAX avant le test du plan (un centre derrière la face de plus d'un rayon
+	// la laisse donc à FLT_MAX), le plan passe par le premier coin, le point de la face est cherché dans le quadrilatère
+	// (FUN_00574f90 avec 4), et les boucles des sommets et des arêtes font quatre tours ((c3, c0) pour la dernière arête).
+	static bool SphereQuadrilatere(const float *coins, const float *normale, const float *s, const float *deplacement, float *fraction,
+	                               float *normaleContact, float *pointContact, uint8 *face) {
+		const float *sommets[4] = {coins, coins + 3, coins + 6, coins + 9};
+		return SpherePolygone<4>(sommets, normale, s, deplacement, fraction, normaleContact, pointContact, face, true,
+		                         [&](const float *p) { return DansPolygone(4, coins, p); });
+	}
+	// FUN_00576660(min, max, sphère, déplacement, &fraction, normaleContact, pointContact, &face, &compte) (cdecl, lue à
+	// l'assembleur de 0x576660 à 0x5769e3, 900 octets) : une sphère qui se déplace contre une boîte alignée sur les axes (son min et
+	// son max), face par face. La fraction part de FLT_MAX ; une table de six sauts (0x5769e4) pose chaque face, sa normale (−1 en
+	// 0x9009ac, 0 ou 1) et ses quatre coins : −x, −y, −z, puis +x, +y, +z ; FUN_00575db0 sur chacune, et une distance strictement
+	// plus petite que la fraction la remplace, avec la normale et le point, et le compte monte de 1 (le compte que le test général
+	// tient pour la sphère). Elle rend vrai si une face a touché ; l'octet `face` est celui de la dernière face essayée.
+	static bool BoiteBalayee(const float *mn, const float *mx, const float *s, const float *deplacement, float *fraction,
+	                         float *normaleContact, float *pointContact, uint8 *face, int32 *compte) {
+		*fraction = 3.4028234663852886e+38f;
+		bool touche = false;
+		for(int k = 0; k < 6; k++) {
+			float n[3] = {0, 0, 0}, c[12];
+			auto coin = [&](int i, float x, float y, float z) { c[3 * i] = x; c[3 * i + 1] = y; c[3 * i + 2] = z; };
+			switch(k) {
+			case 0: n[0] = -1; coin(0, mn[0], mx[1], mx[2]); coin(1, mn[0], mn[1], mx[2]); coin(2, mn[0], mn[1], mn[2]); coin(3, mn[0], mx[1], mn[2]); break;
+			case 1: n[1] = -1; coin(0, mx[0], mn[1], mx[2]); coin(1, mn[0], mn[1], mx[2]); coin(2, mn[0], mn[1], mn[2]); coin(3, mx[0], mn[1], mn[2]); break;
+			case 2: n[2] = -1; coin(0, mx[0], mx[1], mn[2]); coin(1, mn[0], mx[1], mn[2]); coin(2, mn[0], mn[1], mn[2]); coin(3, mx[0], mn[1], mn[2]); break;
+			case 3: n[0] = 1; coin(0, mx[0], mx[1], mx[2]); coin(1, mx[0], mn[1], mx[2]); coin(2, mx[0], mn[1], mn[2]); coin(3, mx[0], mx[1], mn[2]); break;
+			case 4: n[1] = 1; coin(0, mx[0], mx[1], mx[2]); coin(1, mn[0], mx[1], mx[2]); coin(2, mn[0], mx[1], mn[2]); coin(3, mx[0], mx[1], mn[2]); break;
+			default: n[2] = 1; coin(0, mx[0], mx[1], mx[2]); coin(1, mn[0], mx[1], mx[2]); coin(2, mn[0], mn[1], mx[2]); coin(3, mx[0], mn[1], mx[2]); break;
+			}
+			float f = 3.4028234663852886e+38f, nc[3], pc[3];
+			if(SphereQuadrilatere(c, n, s, deplacement, &f, nc, pc, face) && f < *fraction) {
+				*fraction = f;
+				for(int i = 0; i < 3; i++) { normaleContact[i] = nc[i]; pointContact[i] = pc[i]; }
+				++*compte;
+				touche = true;
+			}
+		}
+		return touche;
 	}
 	// Les données d'un modèle de collision (le bloc que pointe le +0x38 d'un CColModel), telles que le test général les lit :
 	// les sphères en +0x0 (0x14 octets : le centre, le rayon en +0xc, la surface en +0x10, un octet en +0x11 que l'argument 12

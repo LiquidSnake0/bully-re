@@ -276,6 +276,40 @@ main(void)
 			Verifier(!B::DansBoite(bx[0], bord), "FUN_00565ad0 : sur la face, dehors (strictement)");
 			Verifier(B::TestGeneral(m1.m, m2.m, (const B::DonneesCol *)nullptr, m4.m, m4.m, &mb, &c, false, false, false, false, false, 0xf, nullptr, true, pas, tous) == 0, "FUN_0056c770 : sans données, 0");
 		}
+		// Une boîte (FUN_00576660), face par face (FUN_00575db0, FUN_00574f90) : la boîte de −1 à 1 et une sphère de 0,5 m.
+		{
+			const float mn[3] = {-1, -1, -1}, mx[3] = {1, 1, 1};
+			const float coins[12] = {1, 1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1};
+			const float pin[3] = {0.5f, -0.5f, 1}, pout[3] = {1.5f, 0, 1};
+			Verifier(B::DansPolygone(4, coins, pin) && !B::DansPolygone(4, coins, pout) && !B::DansPolygone(2, coins, pin), "FUN_00574f90 : dans le quadrilatère par son éventail, dehors, deux coins");
+			float f = 0, nc[3], pc[3]; uint8 face = 9; int32 compte = 0;
+			const float s1[4] = {0, 0, 3, 0.5f}, desc[3] = {0, 0, -3};
+			Verifier(B::BoiteBalayee(mn, mx, s1, desc, &f, nc, pc, &face, &compte) && pres(f, 1.5f) && nc[2] == 1.0f && pres(pc[2], 1.0f) && face == 1 && compte == 1, "FUN_00576660 : le dessus de la boîte, à 1,5 m, une face comptée");
+			const float s2[4] = {-3, 0, 0, 0.5f}, av[3] = {3, 0, -0.1f};
+			compte = 0;
+			Verifier(B::BoiteBalayee(mn, mx, s2, av, &f, nc, pc, &face, &compte) && fabsf(f - 1.5009f) < 1e-3f && nc[0] == -1.0f && pres(pc[0], -1.0f) && compte == 1, "FUN_00576660 : la face −x, de côté");
+			const float s3[4] = {0, 0, 3, 0.5f}, mont[3] = {0, 0, 3};
+			compte = 0;
+			Verifier(!B::BoiteBalayee(mn, mx, s3, mont, &f, nc, pc, &face, &compte) && f > 3e38f && compte == 0, "FUN_00576660 : la sphère qui s'éloigne, rien, la fraction à FLT_MAX");
+			float fq = 0;
+			const float sq[4] = {0, 0, -2, 0.5f}, nz[3] = {0, 0, 1};
+			Verifier(!B::SphereQuadrilatere(coins, nz, sq, desc, &fq, nc, pc, &face) && fq > 3e38f, "FUN_00575db0 : derrière la face de plus d'un rayon, la fraction déjà à FLT_MAX");
+			// La boîte dans le test général, par la fonction des boîtes : la chute de 3 m sur une boîte posée en (10, 0, 0).
+			struct Contact { float point[3] = {0, 0, 0}; float normale[3] = {0, 0, 0}; uint32 o1c = 0; uint16 o20 = 0, o22 = 0; float fraction = 0; };
+			B::SphereCol sa[1] = {{{0, 0, 0}, 0.5f, 2, 0, {0, 0}}};
+			B::BoiteCol bx[1] = {{{-1, -1, -1}, 0, {1, 1, 1}, 0, 6, 0, {0, 0}}};
+			B::DonneesCol ma, mb;
+			ma.spheres = sa; ma.nSpheres = 1; mb.boites = bx; mb.nBoites = 1;
+			B::Matrice m1, m2, m4;
+			m4.m[12] = 10; m1.m[12] = 10; m1.m[14] = 3; m2.m[12] = 10; m2.m[14] = 0;
+			auto boite = [](const B::BoiteCol &b, const float *s, const float *rb, float *f, float *n, float *p, uint8 *o, int32 *k) {
+				return B::BoiteBalayee(b.min, b.max, s, rb, f, n, p, o, k);
+			};
+			auto aucun = [](const float *, float, const std::function<void(int)> &) {};
+			Contact c;
+			Verifier(B::TestGeneral(m1.m, m2.m, &ma, m4.m, m4.m, &mb, &c, false, false, false, false, false, 0xf, nullptr, true, boite, aucun) == 1
+			         && pres(c.fraction, 0.5f) && pres(c.point[0], 10.0f) && pres(c.point[2], 1.0f) && c.normale[2] == 1.0f && c.o22 == 6, "FUN_0056c770 et FUN_00576660 : la chute sur la boîte, à la moitié");
+		}
 	}
 	return g_ko ? 1 : 0;
 }
