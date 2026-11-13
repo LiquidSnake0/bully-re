@@ -294,7 +294,8 @@ PoserMarque(const std::string &nom, const CVector &pos)
 // la position, ses points de vie (HitPoints, les 15 bits bas du +0 de sa ligne de object.dat), le bit 6 de l'octet +0x209 (posé par
 // ObjectToggleVulnerability : il écarte la destruction, FUN_004d0300) et celui qui l'a détruit (+0x224, PAnimDestroyedByPed).
 // Sa poignée (ce que le moteur passe aux scripts : l'octet du pool + l'indice × 0x100, FUN_005b3530) : l'indice × 0x100 + 1 (supposé).
-struct CObjetOutil { int32 modele = -1; uint32 nom = 0; CVector pos; int32 sante = 0; bool invulnerable = false, detruit = false;
+struct CObjetOutil { int32 modele = -1; uint32 nom = 0; CVector pos; float rot[4] = {0, 0, 0, 1}; CVector echelle = CVector(1, 1, 1);
+                     int32 sante = 0; bool invulnerable = false, detruit = false;
                      bool parArmeSeule = false, verrouillable = false; int destructeur = -1; };
 static std::vector<CObjetOutil> objets;
 static int journalRestant = 400;   // les lignes de journal qui restent (LANCER_JOURNAL)
@@ -2948,7 +2949,8 @@ NoterObjet(const CIplSpec &e)
 	const CObjectInfo *inf = InfoObjet(e.inst.modelId);
 	if(inf == nil) return 0;
 	CObjetOutil o;
-	o.modele = e.inst.modelId; o.nom = e.nom & 0x7fffffff; o.pos = e.inst.pos;
+	o.modele = e.inst.modelId; o.nom = e.nom & 0x7fffffff; o.pos = e.inst.pos; o.echelle = e.inst.scale;
+	for(int i = 0; i < 4; i++) o.rot[i] = e.inst.rot[i];
 	o.sante = inf->hitPointsAndLock & 0x7fff;
 	o.verrouillable = (inf->hitPointsAndLock & 0x8000) != 0;
 	o.parArmeSeule = (inf->destroyByWeaponOnly & 1) != 0;
@@ -6870,6 +6872,86 @@ TesterMonde(const CMondeCollision &m, int32 modele, const CVector &a, const CVec
 	return true;
 }
 
+// Les données du modèle de collision d'un objet cassable pour le test général : le modèle de même nom dans colsMonde (les .col de
+// Stream/World.img, que CollisionDuMonde lit), ses sphères, ses boîtes, ses sommets et ses triangles tels quels (CColSphere,
+// CColBox, CompressedVector et CColTriangle ont la disposition que lit FUN_0056c770). Sans arbre : tous les triangles sont
+// essayés dans l'ordre (l'arbre 005616a0 n'est pas recréé). nil sans modèle (l'outil garde alors sa sphère de 0,5 m). La sphère
+// englobante du modèle (le +0x0 du CColModel) sert à l'outil à n'essayer que les objets proches (TesterObjet) ; l'outil écrit les
+// comptes d'un modèle la première fois qu'un projectile passe dans cette sphère.
+struct CVueObjet : CCollisionBalayee::DonneesCol { CVector centre; float rayon = 0.0f; bool dit = false; std::string nom; int nb[3] = {0, 0, 0}; };
+static CVueObjet *
+DonneesObjet(int32 modele)
+{
+	typedef CCollisionBalayee CB;
+	static_assert(sizeof(CColSphere) == sizeof(CB::SphereCol) && sizeof(CColBox) == sizeof(CB::BoiteCol) && sizeof(CColTriangle) == sizeof(CB::TriangleCol)
+	              && sizeof(CompressedVector) == 6, "disposition des données de collision");
+	static std::map<int32, CVueObjet> vues;
+	static std::map<int32, bool> absents;
+	auto dj = vues.find(modele);
+	if(dj != vues.end()) return &dj->second;
+	if(absents.count(modele) || colsMonde.empty()) return nil;
+	std::string k = NomDeModeleMonde(modele);
+	for(char &c : k) c = (char)tolower((unsigned char)c);
+	auto it = colsMonde.find(k);
+	if(k.empty() || it == colsMonde.end() || it->second->pColData == nil){
+		absents[modele] = true;
+		return nil;
+	}
+	const CCollisionData &c = *it->second->pColData;
+	CVueObjet &d = vues[modele];
+	d.centre = it->second->boundingSphere.center; d.rayon = it->second->boundingSphere.radius; d.nom = k;
+	d.nb[0] = c.numSpheres; d.nb[1] = c.numBoxes; d.nb[2] = c.numTriangles;
+	d.spheres = reinterpret_cast<const CB::SphereCol *>(c.spheres); d.nSpheres = (int8)c.numSpheres;
+	d.boites = reinterpret_cast<const CB::BoiteCol *>(c.boxes); d.nBoites = (int8)c.numBoxes;
+	d.sommets = reinterpret_cast<const int16 *>(c.vertices);
+	d.triangles = reinterpret_cast<const CB::TriangleCol *>(c.triangles); d.nTriangles = (int16)c.numTriangles;
+	d.arbre = false;
+	return &d;
+}
+// Le trajet d'un projectile de a à b contre un objet cassable, par le test général comme le monde (TesterMonde) : l'objet est
+// posé par la matrice de son placement (la rotation du quaternion de l'entrée inst, NifPlacementRotation, et sa position ; m4 =
+// m5, il ne bouge pas), ses boîtes par FUN_00576660 (CCollisionBalayee::BoiteBalayee). Supposé : la matrice de l'entité est celle
+// du placement, sans l'échelle (une matrice du binaire est inversée par transposition, FUN_00413620) ; l'outil le dit une fois
+// pour un objet dont l'échelle n'est pas 1. L'outil n'essaie que les objets dont la sphère englobante, posée par la même matrice et
+// grossie de la plus grande sphère du projectile, croise le trajet (le tri des entités proches par le moteur n'est pas suivi).
+static bool
+TesterObjet(const CObjetOutil &o, CVueObjet &d, int32 modele, const CVector &a, const CVector &b, float *fraction,
+            CVector *normale, uint16 *surface)
+{
+	typedef CCollisionBalayee CB;
+	const std::vector<CB::SphereCol> &sp = SpheresDuProjectile(modele);
+	CB::DonneesCol proj; proj.spheres = &sp[0]; proj.nSpheres = (int8)(sp.size() < 127 ? sp.size() : 127);
+	CB::Matrice m1, m2, mo;
+	m1.m[12] = a.x; m1.m[13] = a.y; m1.m[14] = a.z; m2.m[12] = b.x; m2.m[13] = b.y; m2.m[14] = b.z;
+	float r[3][3];
+	NifPlacementRotation(o.rot, r);
+	for(int i = 0; i < 3; i++) for(int j = 0; j < 3; j++) mo.m[4 * j + i] = r[i][j];
+	mo.m[12] = o.pos.x; mo.m[13] = o.pos.y; mo.m[14] = o.pos.z;
+	float ce[3] = {d.centre.x, d.centre.y, d.centre.z}, cp[3], rp = 0.0f, u;
+	for(const CB::SphereCol &x : sp) rp = fmaxf(rp, sqrtf(x.centre[0] * x.centre[0] + x.centre[1] * x.centre[1] + x.centre[2] * x.centre[2]) + x.rayon);
+	CB::Point(cp, mo.m, ce);
+	if(!SegmentDansSphere(a, b, CVector(cp[0], cp[1], cp[2]), d.rayon + rp, &u)) return false;
+	if(!d.dit){
+		d.dit = true;
+		printf("%6.2f s  le modèle de collision de l'objet de modèle %d (%s) : %d sphère(s), %d boîte(s), %d triangle(s)\n", maintenant / 1000.0,
+		       o.modele, d.nom.c_str(), d.nb[0], d.nb[1], d.nb[2]);
+	}
+	static std::map<int32, bool> dits;
+	if((fabsf(o.echelle.x - 1) > 1e-4f || fabsf(o.echelle.y - 1) > 1e-4f || fabsf(o.echelle.z - 1) > 1e-4f) && !dits[o.modele]){
+		dits[o.modele] = true;
+		printf("%6.2f s  l'objet de modèle %d a l'échelle (%.3f, %.3f, %.3f), non suivie par le test\n", maintenant / 1000.0, o.modele, o.echelle.x, o.echelle.y, o.echelle.z);
+	}
+	CVolProjectile::ContactBalaye c;
+	auto boites = [](const CB::BoiteCol &bx, const float *s, const float *dep, float *f, float *nc, float *pc, uint8 *face, int32 *compte) {
+		return CB::BoiteBalayee(bx.min, bx.max, s, dep, f, nc, pc, face, compte);
+	};
+	auto candidats = [](const float *, float, auto &&) {};
+	if(!CB::TestGeneral(m1.m, m2.m, &proj, mo.m, mo.m, &d, &c, false, false, false, false, false, 0xf, nil, true, boites, candidats)) return false;
+	*fraction = c.fraction; *normale = CVector(c.normale[0], c.normale[1], c.normale[2]);
+	if(surface) *surface = c.o22;
+	return true;
+}
+
 struct CBalayageOutil {
 	enum { MOI, PIETON, OBJET, MONDE };
 	struct Ent : CVolProjectile::EntiteBalayee { int sorte = MOI, indice = -1; };
@@ -6880,6 +6962,7 @@ struct CBalayageOutil {
 	// ce que les tests de l'outil retiennent, comme avant le balayage
 	int touche = -1, objet = -1; bool monde = false; float mieux = 2.0f, fMonde = 2.0f; int32 vMonde = -1;
 	CVector centre = CVector(0.0f, 0.0f, 0.0f), nMonde = CVector(0.0f, 0.0f, 1.0f);
+	bool objetParModele = false; CVector nObjet = CVector(0.0f, 0.0f, 1.0f);   // un objet touché par son modèle (TesterObjet) et la normale du contact
 	uint32 temps = 0;
 	bool tireurTraverse = false;   // FUN_004761a0 a écarté le tireur là où l'outil d'avant l'aurait touché
 	CBalayageOutil() { volume.o1c = 1; }
@@ -6935,7 +7018,7 @@ struct CBalayageOutil {
 	int surfacesTraversees = 0;
 	int Tester(Ent *moi, int arg1, Ent *e, CVolProjectile::ContactBalaye *contact, bool arg4) {
 		int toucheAvant = touche, objetAvant = objet; bool mondeAvant = monde; float mieuxAvant = mieux, fMondeAvant = fMonde;
-		CVector centreAvant = centre, nMondeAvant = nMonde; int32 vMondeAvant = vMonde;
+		CVector centreAvant = centre, nMondeAvant = nMonde, nObjetAvant = nObjet; int32 vMondeAvant = vMonde; bool parModeleAvant = objetParModele;
 		int brut = 0;
 		int n = CVolProjectile::TesterCollision(true, e->o108 & 7, 0, false, false, contact,
 		                                        [&]{ return brut = TesterOutil(moi, arg1, e, contact, arg4); },
@@ -6943,7 +7026,7 @@ struct CBalayageOutil {
 		if(brut > 0 && n == 0){
 			surfacesTraversees++;
 			touche = toucheAvant; objet = objetAvant; monde = mondeAvant; mieux = mieuxAvant; fMonde = fMondeAvant;
-			centre = centreAvant; nMonde = nMondeAvant; vMonde = vMondeAvant;
+			centre = centreAvant; nMonde = nMondeAvant; vMonde = vMondeAvant; nObjet = nObjetAvant; objetParModele = parModeleAvant;
 		}
 		return n;
 	}
@@ -6963,21 +7046,33 @@ struct CBalayageOutil {
 				}
 			}
 			if(!t) return 0;
+			objetParModele = false;
 			contact->fraction = mieux;
 			return 1;
 		}
 		if(e->sorte == OBJET){
-			// Les objets cassables : une sphère de 0,5 m autour de leur position (supposé : l'outil ne lit pas leur modèle de collision).
+			// Les objets cassables : le test général contre leur modèle de collision posé par la matrice de leur placement
+			// (TesterObjet) ; sans modèle, une sphère de 0,5 m autour de leur position (supposé).
+			const CObjetOutil &o = objets[e->indice];
+			if(CVueObjet *d = DonneesObjet(o.modele)){
+				float f; CVector n; uint16 surface = 0;
+				if(!TesterObjet(o, *d, q->modele, avant, q->pos, &f, &n, &surface) || !(f < mieux)) return 0;
+				mieux = f; objet = e->indice; touche = -1; centre = o.pos; objetParModele = true; nObjet = n;
+				contact->o22 = surface;
+				contact->fraction = f; contact->normale[0] = n.x; contact->normale[1] = n.y; contact->normale[2] = n.z;
+				return 1;
+			}
 			float u;
-			if(!SegmentDansSphere(avant, q->pos, objets[e->indice].pos, 0.5f, &u) || !(u < mieux)) return 0;
-			mieux = u; objet = e->indice; touche = -1; centre = objets[e->indice].pos;
+			if(!SegmentDansSphere(avant, q->pos, o.pos, 0.5f, &u) || !(u < mieux)) return 0;
+			mieux = u; objet = e->indice; touche = -1; centre = o.pos; objetParModele = false;
 			contact->fraction = mieux;
 			return 1;
 		}
 		// Le monde : le trajet de l'image dans la collision de la zone visible (CollisionDuMonde). Il passe devant un piéton ou un
 		// objet quand le trajet le croise avant d'entrer dans leur sphère.
 		float entree = 2.0f;
-		if(objet >= 0 || touche >= 0){
+		if(objet >= 0 && objetParModele) entree = mieux;   // le contact du modèle de l'objet est déjà l'entrée
+		else if(objet >= 0 || touche >= 0){
 			float rayon = touche >= 0 ? 0.35f : 0.5f;
 			CVector d(q->pos.x - avant.x, q->pos.y - avant.y, q->pos.z - avant.z);
 			float l2 = d.x * d.x + d.y * d.y + d.z * d.z;
@@ -7115,6 +7210,7 @@ AvancerProjectiles(float pas)
 		int touche = b.touche, objet = b.objet; float mieux = b.mieux;
 		CVector centre = b.centre;   // le centre de la sphère touchée, pour la normale du contact
 		bool monde = b.monde; float fMonde = b.fMonde; CVector nMonde = b.nMonde; int32 vMonde = b.vMonde;
+		bool parModele = objet >= 0 && b.objetParModele;   // l'objet touché par son modèle : sa fraction et sa normale, comme le monde
 		// Le contact (FUN_0046ad90) : sur un piéton le coup puis le choc (FUN_004d3860) ; sur un objet le choc puis le coup. Le
 		// projectile reste dans le monde : il recule au point du contact et rebondit (FUN_0046ca40, plus bas). L'octet « fort » du
 		// choc vient du coup et de la vitesse d'avant le rebond (en mètres par pas, l'unité de +0x124).
@@ -7174,7 +7270,7 @@ AvancerProjectiles(float pas)
 			float rayon = touche >= 0 ? 0.35f : 0.5f, entree = monde ? fMonde : mieux;
 			CVector d(q.pos.x - avant.x, q.pos.y - avant.y, q.pos.z - avant.z);
 			float l2 = d.x * d.x + d.y * d.y + d.z * d.z;
-			if(l2 > 0.0f && !monde){
+			if(l2 > 0.0f && !monde && !parModele){
 				float tc = ((centre.x - avant.x) * d.x + (centre.y - avant.y) * d.y + (centre.z - avant.z) * d.z) / l2;
 				float px = avant.x + d.x * tc - centre.x, py = avant.y + d.y * tc - centre.y, pz = avant.z + d.z * tc - centre.z;
 				float reste = rayon * rayon - (px * px + py * py + pz * pz);
@@ -7185,6 +7281,7 @@ AvancerProjectiles(float pas)
 			q.pos = CVector(avant.x + d.x * f, avant.y + d.y * f, avant.z + d.z * f);
 			float n[3] = {e0.x - centre.x, e0.y - centre.y, e0.z - centre.z}, v[3] = {q.vitesse.x, q.vitesse.y, q.vitesse.z};
 			if(monde){ n[0] = nMonde.x; n[1] = nMonde.y; n[2] = nMonde.z; }
+			else if(parModele){ n[0] = b.nObjet.x; n[1] = b.nObjet.y; n[2] = b.nObjet.z; }
 			float e = TypeProjectile(q.modele).elasticite;
 			std::string surQuoi = touche >= 0 ? "le piéton " + std::to_string(touche) : monde ? std::string("le monde") : "l'objet " + std::to_string(objet);
 			// Deux modèles à part : la fléchette (« dart », DAT_00bf44dc) se plante au lieu de rebondir, et le frisbee (« Wfrisbee »,
