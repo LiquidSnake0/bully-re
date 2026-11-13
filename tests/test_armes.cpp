@@ -815,6 +815,73 @@ main(void)
 				printf("  le lancer sur une liste (FUN_00563aa0) : la plus proche des trois entités à %.1f, les six sphères d'un piéton quand le lancer le demande\n", 2.0);
 			}
 			{
+				// la ligne sur une liste de secteur (FUN_0045f520) et le filtre d'entrée (FUN_0041c3f0) sur un monde d'essai
+				struct Veh { uint32 o46c = 1; };
+				struct Ent : V::EntiteBalayee { uint32 oa4 = 0; bool o1c98 = false; const Veh *o1554 = nullptr; float d = 5.0f; bool touche = true; int modele = 1; };
+				struct Monde {
+					Ent *piscines[10][8] = {}; uint32 noeuds[8] = {}; uint16 code = 11;
+					bool morts = false, montes = false, bit = true, sansProjectiles = false, rat = false, chien = false;
+					const Ent *ignoree = nullptr; int modeleIgnore = -1; uint8 fiche8 = 0; uint32 fiche28 = 0, drapeauxVus = 0; int a2 = 0, a3 = 0, octetVu = 0;
+					std::string j;
+					bool Morts(){ return morts; } bool Montes(){ return montes; } uint16 Code(){ return code; }
+					Ent *Entite(int p, int i){ return piscines[p][i]; }
+					const uint32 *Noeud(uint32 n){ return &noeuds[n]; }
+					bool Ignoree(Ent *e){ return e == ignoree; }
+					bool ModeleIgnore(int mo){ return mo == modeleIgnore; }
+					bool BitDuModele(Ent *){ return bit; }
+					bool SansProjectiles(){ return sansProjectiles; }
+					uint8 OctetFiche8(Ent *){ return fiche8; } uint32 MotFiche28(Ent *){ return fiche28; }
+					bool Rat(Ent *){ return rat; } bool Chien(Ent *){ return chien; }
+					int ModelePieton(Ent *){ j += "6"; return 6; }
+					int Modele(Ent *e){ j += "m"; return e->modele; }
+					Ent *Matrice(Ent *e){ return e; }
+					int Octet82(){ return 0x82; }
+					bool Tester(int x2, Ent *e, int, int x3, float *d, uint32 dr, int octet){
+						j += "T"; a2 = x2; a3 = x3; drapeauxVus = dr; octetVu = octet;
+						if(e->touche) *d = e->d;
+						return e->touche;
+					}
+				};
+				auto entite = [](int genre){ Ent e; e.o108 = (uint8)(0x40 | genre); e.o20 = 1; e.o1c = 1; e.o10e = 300; return e; };
+				auto mot = [](int piscine, int indice, int suivant){ return (uint32)piscine | (uint32)indice << 4 | (uint32)suivant << 18; };
+				Monde m; Ent a = entite(1), b = entite(1), c = entite(1);
+				a.d = 5.0f; b.d = 2.0f; c.d = 2.0f;
+				m.piscines[7][5] = &a; m.piscines[7][6] = &b; m.piscines[2][1] = &c;
+				m.noeuds[0] = mot(7, 5, 3); m.noeuds[3] = mot(7, 6, 2); m.noeuds[2] = mot(2, 1, 0x3fff);
+				// le filtre d'entrée seul
+				VERIF(V::Entre(&c, m)); c.o20 = 0; VERIF(!V::Entre(&c, m)); c.o20 = 1; c.o1c = 0; VERIF(!V::Entre(&c, m)); c.o60 = 1; VERIF(V::Entre(&c, m)); c.o60 = 0; c.o1c = 1;
+				m.bit = false; VERIF(!V::Entre(&c, m)); m.bit = true; c.of4 = 1; VERIF(!V::Entre(&c, m)); c.of4 = 0;
+				float dist = 100.0f; Ent *vue = nullptr;
+				VERIF(!V::VueSurListe((const uint32 *)nullptr, 7, 8, &dist, &vue, 0x15, false, m) && m.j.empty());   // liste vide
+				// a à 5 (sous 100 : prise), b à 2 (prise), c à égalité : rien
+				VERIF(V::VueSurListe(&m.noeuds[0], 7, 8, &dist, &vue, 0x15, false, m) && m.j == "mTmTmT" && dist == 2.0f && vue == &b);
+				VERIF(m.a2 == 7 && m.a3 == 8 && m.drapeauxVus == 0x15 && m.octetVu == 0x82 && a.o10a == 11 && b.o10a == 11 && c.o10a == 11);
+				m.j.clear(); dist = 100.0f; VERIF(!V::VueSurListe(&m.noeuds[0], 7, 8, &dist, &vue, 0x15, false, m) && m.j.empty());   // le même code
+				auto relance = [&](uint32 dr = 0x15, bool six = false){ m.code++; m.j.clear(); dist = 100.0f; vue = nullptr; return V::VueSurListe(&m.noeuds[2], 7, 8, &dist, &vue, dr, six, m); };
+				VERIF(relance() && m.j == "mT" && vue == &c && dist == 2.0f);
+				// l'entité et les modèles écartés ne reçoivent pas le code
+				m.ignoree = &c; VERIF(!relance() && m.j.empty() && c.o10a != m.code); m.ignoree = nullptr;
+				m.modeleIgnore = 300; VERIF(!relance() && c.o10a != m.code); m.modeleIgnore = -1;
+				// une entité qui n'entre pas ; les octets du monde ne valent que pour une liste de piétons
+				c.o20 = 0; VERIF(!relance() && c.o10a != m.code); m.morts = true; m.montes = true; VERIF(!relance() && c.o10a != m.code);
+				// un piéton qui n'entre pas : mort avec `morts`, ou monté sur un véhicule au +0x46c à 1 avec `montes`
+				c.o108 = 3; m.montes = false; VERIF(!relance() && m.j.empty() && c.o10a == m.code); c.o1c98 = true; VERIF(relance() && m.j == "mT");
+				m.morts = false; VERIF(!relance()); m.montes = true; VERIF(!relance() && c.o10a == m.code); Veh veh; c.o1554 = &veh; VERIF(relance() && m.j == "mT");
+				veh.o46c = 2; VERIF(!relance()); c.o1554 = nullptr; c.o1c98 = false; m.montes = false; c.o20 = 1;
+				// les six sphères d'un piéton avec le septième argument, sauf +0xa4, le rat et les chiens
+				VERIF(relance() && m.j == "mT"); VERIF(relance(0x15, true) && m.j == "6T"); c.oa4 = 1; VERIF(relance(0x15, true) && m.j == "mT"); c.oa4 = 0;
+				m.rat = true; VERIF(relance(0x15, true) && m.j == "mT"); m.rat = false; m.chien = true; VERIF(relance(0x15, true) && m.j == "mT"); m.chien = false;
+				c.o108 = 1; VERIF(relance(0x15, true) && m.j == "mT");
+				// un projectile quand l'octet du monde le demande ; la fiche du modèle avec le bit 0x80 des drapeaux
+				c.oc4 = 1; VERIF(relance()); m.sansProjectiles = true; VERIF(!relance() && m.j.empty() && c.o10a == m.code); m.sansProjectiles = false; c.oc4 = 0;
+				m.fiche8 = 1; m.fiche28 = 1u << 19; VERIF(relance()); VERIF(!relance(0x95) && m.j.empty()); m.fiche8 = 2; VERIF(relance(0x95) && m.drapeauxVus == 0x95);
+				m.fiche8 = 1; m.fiche28 = 1u << 18; VERIF(relance(0x95)); m.fiche8 = 0; m.fiche28 = 0;
+				// sans modèle, pas de test ; le test faux ; une distance qui n'est pas plus courte
+				c.modele = 0; VERIF(!relance() && m.j == "m"); c.modele = 1; c.touche = false; VERIF(!relance() && m.j == "mT" && dist == 100.0f && vue == nullptr); c.touche = true;
+				c.d = 100.0f; VERIF(!relance() && m.j == "mT"); c.d = 2.0f;
+				printf("  la ligne sur une liste (FUN_0045f520) : la plus proche des trois entités à %.1f, un piéton mort ou monté selon les octets du monde\n", 2.0);
+			}
+			{
 				// les références vers une entité (FUN_00450730, FUN_00450780, FUN_00465680, FUN_00465690)
 				struct Ent { CReferenceEntite *o118 = nullptr; };
 				CReferenceEntite maillons[3]; maillons[0].suivant = &maillons[1]; maillons[1].suivant = &maillons[2];
