@@ -161,6 +161,51 @@ main(void)
 		Verifier(B::SpheresBalayees(a, b, 1.0f, d2, zero, &f, pt) && pres(f, 0.5f) && pres(pt[0], 1.5f), "FUN_00576a00 : le contact à la moitié, la fin du trajet juste au contact");
 		const float bd[4] = {2, 0, 0, 0.5f}, db[3] = {-2, 0, 0};
 		Verifier(B::SpheresBalayees(a, bd, 1.0f, d2, db, &f, pt) && pres(f, 0.25f) && pres(pt[0], 1.0f), "FUN_00576a00 : les deux bougent, se croisent au milieu");
+		// Une sphère contre un triangle (FUN_00575510) et ses pièces. Le triangle (0, 0, 0), (4, 0, 0), (0, 4, 0), de normale +z.
+		{
+			float n0[3] = {0, 0, 0};
+			Verifier(B::DiviserParRacine(2.0f, 16.0f) == 0.5f && B::DiviserParRacine(1.0f, 0.0f) > 3e38f && B::DiviserParRacine(-1.0f, 0.0f) < -3e38f, "FUN_00414ad0 : a / √|b|, FLT_MAX signé pour une racine nulle");
+			float v3[3] = {3, 0, 4};
+			Verifier(pres(B::Normaliser(v3), 0.2f) && pres(v3[0], 0.6f) && pres(v3[2], 0.8f) && B::Normaliser(n0) > 3e38f && n0[0] == 0.0f, "FUN_00414cc0 : normalisé, le facteur rendu, le vecteur nul reste nul");
+			const float t0[3] = {0, 0, 0}, t1[3] = {4, 0, 0}, t2[3] = {0, 4, 0}, nz[3] = {0, 0, 1};
+			const float *tri[3] = {t0, t1, t2};
+			float pied[3];
+			const float pp[3] = {1, 3, 0};
+			Verifier(pres(B::Distance2ADroite(pp, t0, t1, pied), 9.0f) && pres(pied[0], 1.0f) && pied[1] == 0.0f && pres(B::DistanceADroite(pp, t0, t1, nullptr), 3.0f), "FUN_00574fe0 et FUN_00575100 : la distance à la droite et le pied");
+			B::Plan pl;
+			const float n2[3] = {0, 0, 2}, h[3] = {0, 0, 1};
+			B::PlanParPoint(&pl, h, n2);
+			Verifier(pl.n[2] == 1.0f && pl.d == -1.0f, "FUN_00575140 : le plan par un point, la normale normalisée");
+			const float bas[3] = {4, 0, -1};
+			B::PlanParTroisPoints(&pl, t0, t1, bas);
+			Verifier(pres(pl.n[1], 1.0f) && pl.n[0] == 0.0f && pl.d == 0.0f, "FUN_005751a0 : le plan de trois points, normale w × u");
+			const float a2[2] = {0, 0}, b2[2] = {2, 0}, c2[2] = {1, -1}, d2[2] = {1, 1}, e2[2] = {0, 1};
+			float t = -1;
+			Verifier(B::Droites2D(a2, b2, c2, d2, &t) && pres(t, 0.5f) && !B::Droites2D(a2, b2, e2, d2, &t), "FUN_00575260 : les deux droites se coupent à t = 0,5, parallèles : faux");
+			const float sp[4] = {0, 0, 5, 1};
+			const float q0[3] = {0, 0, 0}, q1[3] = {0, 0, 1}, q2[3] = {3, 0, 0}, q3[3] = {3, 0, 5};
+			int32 nb = 0; float r1 = 0, r2 = 0;
+			Verifier(B::DroiteSphere(sp, q0, q1, &nb, &r1, &r2) && nb == 2 && pres(r1, 6.0f) && pres(r2, 4.0f), "FUN_00575310 : la droite entre et sort de la sphère, t1 = 6 et t2 = 4");
+			Verifier(!B::DroiteSphere(sp, q2, q3, &nb, &r1, &r2), "FUN_00575310 : à 3 m, le discriminant négatif");
+			const float pin[3] = {1, 1, 0}, pout[3] = {3, 3, 0}, pbord[3] = {2, 0, 0};
+			Verifier(B::DansTriangle(t0, t1, t2, pin) && !B::DansTriangle(t0, t1, t2, pout) && B::DansTriangle(t0, t1, t2, pbord) && !B::DansTriangle(t0, t1, t1, pin), "FUN_00574dc0 : dedans, dehors, sur le bord, le triangle plat");
+			float f, nc[3], pc[3]; uint8 face = 9;
+			// De face : la sphère de 0,5 m en (1, 1, 2) descend de 3 m.
+			const float sf[4] = {1, 1, 2, 0.5f}, desc[3] = {0, 0, -3};
+			Verifier(B::SphereTriangle(tri, nz, sf, desc, &f, nc, pc, &face) && pres(f, 1.5f) && face == 1 && nc[2] == 1.0f && pres(pc[0], 1.0f) && pres(pc[2], 0.0f), "FUN_00575510 : la face, à 1,5 m le long du déplacement");
+			const float mont[3] = {0, 0, 3};
+			Verifier(!B::SphereTriangle(tri, nz, sf, mont, &f, nc, pc, &face), "FUN_00575510 : la sphère qui s'éloigne de la face, rien");
+			const float sd[4] = {1, 1, -1, 0.5f};
+			Verifier(!B::SphereTriangle(tri, nz, sd, desc, &f, nc, pc, &face), "FUN_00575510 : derrière le plan de plus d'un rayon, rien");
+			// Un sommet : la sphère en (−2, 0, 0) avance vers +x en descendant un peu.
+			const float ss[4] = {-2, 0, 0, 0.5f}, av[3] = {3, 0, -0.1f};
+			Verifier(B::SphereTriangle(tri, nz, ss, av, &f, nc, pc, &face) && fabsf(f - 1.5f) < 0.01f && face == 0 && pc[0] == 0.0f && pc[1] == 0.0f && nc[0] < -0.99f, "FUN_00575510 : le sommet (0, 0, 0), à 1,5 m environ, la normale vers le centre");
+			// Une arête : la sphère en (2, −1, 0) avance vers +y en descendant un peu.
+			const float sa[4] = {2, -1, 0, 0.5f}, avy[3] = {0, 3, -0.1f};
+			Verifier(B::SphereTriangle(tri, nz, sa, avy, &f, nc, pc, &face) && fabsf(f - 0.5f) < 0.01f && face == 0 && fabsf(pc[0] - 2.0f) < 1e-3f && fabsf(pc[1]) < 1e-3f && nc[1] < -0.99f, "FUN_00575510 : l'arête (0, 0, 0) – (4, 0, 0), à 0,5 m, en x = 2");
+			const float sl[4] = {6, -1, 0, 0.5f};
+			Verifier(!B::SphereTriangle(tri, nz, sl, avy, &f, nc, pc, &face), "FUN_00575510 : à côté de l'arête, rien");
+		}
 	}
 	return g_ko ? 1 : 0;
 }

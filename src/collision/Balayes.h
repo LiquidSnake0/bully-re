@@ -129,4 +129,231 @@ struct CCollisionBalayee {
 		}
 		return true;
 	}
+	// FUN_00414ad0(a, b) (cdecl, lue de 0x414ad0 à 0x414b2b, 92 octets) : a / √|b|, la racine arrondie à float ; une racine nulle
+	// (fucom, test ah,0x44) rend FLT_MAX (0x9009b8) si a ≥ 0 et −FLT_MAX (0x9009bc) si a < 0.
+	static float DiviserParRacine(float a, float b) {
+		float r = (float)std::sqrt(std::fabs((double)b));
+		if(r == 0.0f) return a < 0.0f ? -3.4028234663852886e+38f : 3.4028234663852886e+38f;
+		return (float)((double)a / r);
+	}
+	// FUN_00414cc0 (méthode d'un vecteur, lue de 0x414cc0 à 0x414d1c, 93 octets) : le vecteur multiplié par 1 / √((x² + y²) + z²)
+	// (FUN_00414ad0 avec 1) ; un vecteur nul le reste (FLT_MAX fois 0). Elle rend le facteur sur la pile x87.
+	static float Normaliser(float *v) {
+		float n2 = (float)(((double)v[0] * v[0] + (double)v[1] * v[1]) + (double)v[2] * v[2]);
+		float k = DiviserParRacine(1.0f, n2);
+		v[0] = (float)((double)v[0] * k); v[1] = (float)((double)k * v[1]); v[2] = (float)((double)v[2] * k);
+		return k;
+	}
+	static double ScalaireD(const float *a, const float *b) { return ((double)a[1] * b[1] + (double)a[0] * b[0]) + (double)a[2] * b[2]; }
+	static float Scalaire(const float *a, const float *b) { return (float)ScalaireD(a, b); }
+	// FUN_00574fe0(p, a, b, pied) (cdecl, lue de 0x574fe0 à 0x5750f8, 281 octets) : le carré de la distance de p à la droite (a, b),
+	// sans borne : v = p − a, u = b − a, k = (v · u) / |u|² (arrondi à float), w = k u ; le pied a + w est écrit si `pied` n'est pas
+	// nul ; elle rend |v − w|².
+	static float Distance2ADroite(const float *p, const float *a, const float *b, float *pied) {
+		float v[3], u[3], w[3], r[3];
+		for(int i = 0; i < 3; i++) { v[i] = (float)(p[i] - a[i]); u[i] = (float)(b[i] - a[i]); }
+		float d = (float)(((double)v[1] * u[1] + (double)v[0] * u[0]) + (double)v[2] * u[2]);
+		float l2 = (float)(((double)u[0] * u[0] + (double)u[1] * u[1]) + (double)u[2] * u[2]);
+		float k = (float)((double)d / l2);
+		for(int i = 0; i < 3; i++) w[i] = (float)((double)k * u[i]);
+		if(pied) for(int i = 0; i < 3; i++) pied[i] = (float)(a[i] + w[i]);
+		for(int i = 0; i < 3; i++) r[i] = (float)(v[i] - w[i]);
+		return (float)(((double)r[0] * r[0] + (double)r[1] * r[1]) + (double)r[2] * r[2]);
+	}
+	// FUN_00575100(p, a, b, pied) (cdecl, lue de 0x575100 à 0x575132, 51 octets) : la distance, √|FUN_00574fe0|.
+	static float DistanceADroite(const float *p, const float *a, const float *b, float *pied) {
+		return (float)std::sqrt(std::fabs((double)Distance2ADroite(p, a, b, pied)));
+	}
+	// Un plan : la normale en +0x0, d en +0xc ; un point x est à la distance n · x + d.
+	struct Plan { float n[3]; float d; };
+	// FUN_00575140(point, normale) (méthode d'un plan, lue de 0x575140 à 0x57519c, 95 octets, ret 8) : la normale copiée et
+	// normalisée (FUN_00414cc0), d = −(n · point).
+	static void PlanParPoint(Plan *pl, const float *point, const float *normale) {
+		float n[3] = {normale[0], normale[1], normale[2]};
+		Normaliser(n);
+		pl->n[0] = n[0]; pl->n[1] = n[1]; pl->n[2] = n[2];
+		pl->d = (float)-(((double)point[1] * n[1] + (double)point[0] * n[0]) + (double)n[2] * point[2]);
+	}
+	// FUN_005751a0(p0, p1, p2) (méthode d'un plan, lue de 0x5751a0 à 0x575253, 182 octets, ret 0xc) : le plan des trois points, de
+	// normale w × u, u = p0 − p1 et w = p2 − p1 (00414a20), normalisée, d = −(n · p0).
+	static void PlanParTroisPoints(Plan *pl, const float *p0, const float *p1, const float *p2) {
+		float u[3], w[3];
+		for(int i = 0; i < 3; i++) { u[i] = (float)(p0[i] - p1[i]); w[i] = (float)(p2[i] - p1[i]); }
+		float n[3] = {(float)((double)u[2] * w[1] - (double)u[1] * w[2]), (float)((double)w[2] * u[0] - (double)u[2] * w[0]),
+		              (float)((double)w[0] * u[1] - (double)u[0] * w[1])};
+		Normaliser(n);
+		pl->n[0] = n[0]; pl->n[1] = n[1]; pl->n[2] = n[2];
+		pl->d = (float)-(((double)p0[1] * n[1] + (double)p0[0] * n[0]) + (double)n[2] * p0[2]);
+	}
+	// FUN_00575260(a, b, c, d, &t) (cdecl, lue de 0x575260 à 0x575307, 168 octets) : en deux dimensions (x et y seuls), le paramètre
+	// t du point a + t (b − a) où la droite (a, b) coupe la droite (c, d) : t = ((c − a) × (c − d)) / ((b − a) × (c − d)). Un
+	// déterminant nul (fucom, test ah,0x44) : faux, deux droites parallèles ; un `t` nul n'est pas écrit.
+	static bool Droites2D(const float *a, const float *b, const float *c, const float *d, float *t) {
+		float ex = (float)(b[0] - a[0]), ey = (float)(b[1] - a[1]), fx = (float)(c[0] - d[0]), fy = (float)(c[1] - d[1]);
+		float det = (float)((double)ex * fy - (double)ey * fx);
+		if(det == 0.0f) return false;
+		if(t) {
+			float num = (float)((double)fx * ((double)a[1] - c[1]) - (double)fy * ((double)a[0] - c[0]));
+			*t = (float)((double)num / det);
+		}
+		return true;
+	}
+	// FUN_00575310(sphère, p0, p1, &compte, &t1, &t2) (cdecl, lue de 0x575310 à 0x57550d, 510 octets) : la droite p0 + t (p1 − p0)
+	// contre une sphère (le centre en +0x0, le rayon en +0xc) : A = |p1 − p0|², B = 2 (p1 − p0) · (p0 − c), C = |c|² + |p0|²
+	// − 2 c · p0 − r² (les doubles 2 et 4 en 0x900980 et 0x900970) ; le discriminant B² − 4AC (arrondi à float) négatif : faux ;
+	// nul : une racine, −B / 2A dans t1 (compte 1) ; sinon (√|disc| − B) / 2A dans t1 et (−B − √|disc|) / 2A dans t2 (compte 2).
+	// Les pointeurs nuls ne sont pas écrits.
+	static bool DroiteSphere(const float *s, const float *p0, const float *p1, int32 *compte, float *t1, float *t2) {
+		float dx = (float)(p1[0] - p0[0]), dy = (float)(p1[1] - p0[1]), dz = (float)(p1[2] - p0[2]);
+		float A = (float)(((double)dx * dx + (double)dy * dy) + (double)dz * dz);
+		float B = (float)((((double)dy * ((double)p0[1] - s[1]) + (double)dx * ((double)p0[0] - s[0])) + (double)dz * ((double)p0[2] - s[2])) * 2.0);
+		double c1 = (((((double)s[0] * s[0] + (double)s[1] * s[1]) + (double)s[2] * s[2]) + (double)p0[0] * p0[0]) + (double)p0[1] * p0[1]) + (double)p0[2] * p0[2];
+		double sp = ((double)s[1] * p0[1] + (double)s[0] * p0[0]) + (double)s[2] * p0[2];
+		float C = (float)((c1 - 2.0 * sp) - (double)s[3] * s[3]);
+		double B2 = (double)B * B, AC4 = 4.0 * A * C;
+		float disc = (float)(B2 - AC4);
+		if(disc < 0.0f) return false;
+		if(disc == 0.0f) {
+			if(compte) *compte = 1;
+			if(t1) *t1 = (float)(-(double)B / (2.0 * A));
+			return true;
+		}
+		if(compte) *compte = 2;
+		if(t1) {
+			float r = (float)std::sqrt(std::fabs((double)(float)(B2 - AC4)));
+			*t1 = (float)((r - (double)B) / ((double)A + A));
+		}
+		if(t2) {
+			float mb = -B;
+			float r = (float)std::sqrt(std::fabs((double)(float)(B2 - AC4)));
+			*t2 = (float)((mb - (double)r) / ((double)A + A));
+		}
+		return true;
+	}
+	// FUN_00574dc0(a, b, c, p) (cdecl, lue de 0x574dc0 à 0x574f85, 454 octets) : p (supposé dans le plan) est-il dans le triangle,
+	// par ses coordonnées barycentriques : v0 = b − a, v1 = c − a, v2 = p − a et leurs produits scalaires ; den = d01² − d00 d11
+	// (arrondi à float) ; |den| < FLT_EPSILON (le réel 0x90d198) : faux ; u = (d12 d01 − d11 d02) / den et v = (d01 d02 − d00 d12)
+	// / den ; vrai si u est dans [0, 1], v ≥ 0 et u + v ≤ 1 (le double 1 en 0x8ff1d8).
+	static bool DansTriangle(const float *a, const float *b, const float *c, const float *p) {
+		float v0[3], v1[3], v2[3];
+		for(int i = 0; i < 3; i++) { v0[i] = (float)(b[i] - a[i]); v1[i] = (float)(c[i] - a[i]); v2[i] = (float)(p[i] - a[i]); }
+		float d00 = (float)(((double)v0[0] * v0[0] + (double)v0[1] * v0[1]) + (double)v0[2] * v0[2]);
+		float d01 = (float)(((double)v1[0] * v0[0] + (double)v1[1] * v0[1]) + (double)v1[2] * v0[2]);
+		float d11 = (float)(((double)v1[1] * v1[1] + (double)v1[0] * v1[0]) + (double)v1[2] * v1[2]);
+		float d02 = (float)(((double)v0[0] * v2[0] + (double)v0[1] * v2[1]) + (double)v0[2] * v2[2]);
+		float d12 = (float)(((double)v1[0] * v2[0] + (double)v1[1] * v2[1]) + (double)v1[2] * v2[2]);
+		float den = (float)((double)d01 * d01 - (double)d00 * d11);
+		if(std::fabs(den) < 1.1920928955078125e-07f) return false;
+		float inv = (float)(1.0 / den);
+		float u = (float)(((double)d12 * d01 - (double)d11 * d02) * inv);
+		if(u < 0.0f || 1.0f < u) return false;
+		float v = (float)(((double)d01 * d02 - (double)d00 * d12) * inv);
+		if(v < 0.0f) return false;
+		return !((double)u + v > 1.0);
+	}
+	// FUN_00575510(sommets, normale, sphère, déplacement, &fraction, normaleContact, pointContact, &face) (cdecl, lue à l'assembleur
+	// de 0x575510 à 0x575dac, 2 205 octets) : une sphère qui se déplace contre un triangle (trois pointeurs vers ses sommets, sa
+	// normale). Le déplacement est d'abord normalisé (FUN_00414cc0 sur une copie) : la fraction rendue est une distance le long
+	// du déplacement, et c'est l'appelant qui la compare à sa longueur. Dans l'ordre :
+	//  - le triangle n'est testé que de face : faux si la direction · la normale > −0,001 (le réel 0x914638) ; faux aussi si le
+	//    centre est derrière son plan (FUN_00575140 par le premier sommet) de plus d'un rayon (dist < −r) ;
+	//  - la fraction part de FLT_MAX ; la face, si le centre est devant le plan de plus d'un rayon (r < dist, strictement) :
+	//    t = −(dist − r) / (direction · normale), le point c + t dir − r n ; dans le triangle (FUN_00574dc0) et t < fraction : la
+	//    fraction, la normale du triangle, le point, et l'octet `face` à 1 ;
+	//  - les trois sommets : le trajet inverse du sommet, de v à v − dir, contre la sphère de départ (FUN_00575310) ; le plus petit
+	//    des deux t (t2 seulement s'il est strictement plus petit), s'il est ≥ 0 et < fraction : la fraction, la normale c − (v
+	//    − t dir), le point le sommet, `face` à 0 ;
+	//  - les trois arêtes (a, b) = (s0, s1), (s1, s2), (s2, s0) : le plan de l'arête et de la direction (FUN_005751a0 avec a, b et
+	//    b − dir) ; si le centre en est à au plus un rayon (−r ≤ dist ≤ r) : le cercle où la sphère coupe ce plan, de centre
+	//    c' = c − dist n et de rayon h = √|r² − dist²| ; e, le point de ce cercle le plus proche de la droite de l'arête (c' + h ×
+	//    la direction normalisée de c' vers son pied sur la droite, FUN_00575100) ; en deux dimensions (le plan des deux axes où la
+	//    normale du plan est la plus petite : x est écarté s'il est strictement le plus grand, sinon z si |ny| ≤ |nz|, sinon y),
+	//    le t où la droite (e, e + dir) coupe la droite de l'arête (FUN_00575260) ; t ≥ 0, le point g = e + t dir entre a et b
+	//    ((a − g) · (b − g) ≤ 0, le double nul 0x8ff1f0) et t ≤ fraction (ici l'égalité suffit) : la fraction, la normale c − e,
+	//    le point g, `face` à 0.
+	// Touché, la normale du contact est normalisée (FUN_00414cc0) ; elle rend vrai si l'une des trois parties a touché.
+	static bool SphereTriangle(const float *const *sommets, const float *normale, const float *s, const float *deplacement, float *fraction,
+	                           float *normaleContact, float *pointContact, uint8 *face) {
+		float dir[3] = {deplacement[0], deplacement[1], deplacement[2]};
+		Normaliser(dir);
+		float dn = Scalaire(dir, normale);
+		if(dn > -0.001f) return false;
+		Plan pl;
+		PlanParPoint(&pl, sommets[0], normale);
+		float dist = (float)(ScalaireD(pl.n, s) + pl.d);
+		if(-s[3] > dist) return false;
+		*fraction = 3.4028234663852886e+38f;
+		int genre = -1;
+		if(s[3] < dist) {
+			float nd = Scalaire(dir, normale);
+			if(nd != 0.0f) {
+				float ecart = (float)(dist - s[3]);
+				float t = (float)(-(double)ecart / nd);
+				float mr = -s[3];
+				float p[3];
+				for(int i = 0; i < 3; i++) p[i] = (float)((float)(s[i] + (float)((double)t * dir[i])) + (float)((double)mr * normale[i]));
+				if(DansTriangle(sommets[0], sommets[1], sommets[2], p) && !(*fraction <= t)) {
+					*fraction = t;
+					for(int i = 0; i < 3; i++) { normaleContact[i] = normale[i]; pointContact[i] = p[i]; }
+					*face = 1;
+					genre = 0;
+				}
+			}
+		}
+		for(int k = 0; k < 3; k++) {
+			const float *v = sommets[k];
+			float q[3] = {(float)(v[0] - dir[0]), (float)(v[1] - dir[1]), (float)(v[2] - dir[2])};
+			float t1 = 3.4028234663852886e+38f, t2 = 3.4028234663852886e+38f;
+			int32 n;
+			if(!DroiteSphere(s, v, q, &n, &t1, &t2)) continue;
+			float t = t1;
+			if(t2 < t1) t = t2;
+			if(t < 0.0f || *fraction <= t) continue;
+			*fraction = t;
+			float p[3];
+			for(int i = 0; i < 3; i++) {
+				float w = (float)(q[i] - v[i]);
+				p[i] = (float)(v[i] + (float)((double)t * w));
+				normaleContact[i] = (float)(s[i] - p[i]);
+				pointContact[i] = v[i];
+			}
+			*face = 0;
+			genre = 1;
+		}
+		for(int k = 0; k < 3; k++) {
+			const float *a = sommets[k], *b = sommets[k == 2 ? 0 : k + 1];
+			float bd[3] = {(float)(b[0] - dir[0]), (float)(b[1] - dir[1]), (float)(b[2] - dir[2])};
+			Plan pa;
+			PlanParTroisPoints(&pa, a, b, bd);
+			float de = (float)((double)s[0] * pa.n[0] + (double)pa.n[1] * s[1] + (double)pa.n[2] * s[2] + pa.d);
+			if(s[3] < de || -s[3] > de) continue;
+			float r2 = (float)((double)s[3] * s[3]);
+			float h = (float)std::sqrt(std::fabs((double)(float)(r2 - (double)de * de)));
+			float c[3], pied[3] = {0.0f, 0.0f, 0.0f}, g[3], e[3], f[3];
+			for(int i = 0; i < 3; i++) c[i] = (float)(s[i] - (double)de * pa.n[i]);
+			DistanceADroite(c, a, b, pied);
+			for(int i = 0; i < 3; i++) g[i] = (float)(pied[i] - c[i]);
+			Normaliser(g);
+			for(int i = 0; i < 3; i++) { e[i] = (float)((float)((double)g[i] * h) + c[i]); f[i] = (float)(e[i] + dir[i]); }
+			float ax = std::fabs(pa.n[0]), ay = std::fabs(pa.n[1]), az = std::fabs(pa.n[2]);
+			int i1 = 0, i2 = 1;
+			if(!(ay >= ax) && !(az >= ax)) { i1 = 1; i2 = 2; }
+			else if(!(ay < az || ay == az)) i2 = 2;
+			float e2[2] = {e[i1], e[i2]}, f2[2] = {f[i1], f[i2]}, a2[2] = {a[i1], a[i2]}, b2[2] = {b[i1], b[i2]};
+			float t;
+			if(!Droites2D(e2, f2, a2, b2, &t)) continue;
+			if(t < 0.0f) continue;
+			float gp[3], ga[3], gb[3];
+			for(int i = 0; i < 3; i++) { gp[i] = (float)(e[i] + (float)((double)t * dir[i])); ga[i] = (float)(a[i] - gp[i]); gb[i] = (float)(b[i] - gp[i]); }
+			float pr = (float)(((double)gb[0] * ga[0] + (double)ga[1] * gb[1]) + (double)ga[2] * gb[2]);
+			if(pr > 0.0f) continue;
+			if(*fraction < t) continue;
+			*fraction = t;
+			for(int i = 0; i < 3; i++) { normaleContact[i] = (float)(s[i] - e[i]); pointContact[i] = gp[i]; }
+			*face = 0;
+			genre = 2;
+		}
+		if(genre != -1) Normaliser(normaleContact);
+		return genre != -1;
+	}
 };
