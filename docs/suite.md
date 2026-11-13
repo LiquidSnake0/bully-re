@@ -122,43 +122,85 @@ chantier. Un point fini passe en bas, avec son commit.
    explosions (`FUN_004d2b40`, `FUN_004d2aa0`, `FUN_004d2690`), sa fin (`FUN_004d45e0`, `FUN_004d3dc0`) et les marques d'impact
    (`FUN_00560f70`, `FUN_00560f10`).
    Suite, dans l'ordre :
-   - la suite des armes : **le sol sous les projectiles de l'outil des missions**. La physique d'un `CProjectile` est recréée dans
-     `CVolProjectile` (`src/objects/Projectiles.h` ; 12.11, séance 1, voir « Fait ») : le vol, l'air, le repos, le rebond, la paire du
-     contact, le contrôle, la poussée, le freinage, la fléchette et le frisbee. Mais `outils/lancer_lua.cpp` (`AvancerProjectiles`)
-     n'a toujours **pas de sol** : ses projectiles ne touchent que les sphères des piétons (0,35 m, trois par piéton) et des objets
-     cassables (0,5 m), et tous ceux des sept missions explosent à leur contact (rayon 0,001 m) et sont détruits à l'image suivante.
-     Le repos (`Controler`, `Reposer`), le premier sol (`CChocProjectile::PremierSol`, `FUN_004d3370`), le freinage (`Freiner`),
-     l'explosion de la fin de vie (`CPlacesProjectiles::Detruire`) et un vol après rebond ne se voient donc que dans
-     `tests/test_armes.cpp`. Dans l'ordre :
-     1. brancher la collision du monde dans `lancer_lua` : `CMondeCollision` (`src/collision/Marche.h`) n'est branché que dans
-        `outils/scene.h` et `outils/visite.cpp` ; il faut le charger pour la zone de la mission et y lancer le trajet de l'image
-        (de `avant` à `q.pos`), puis passer le point et la normale du contact à `CVolProjectile::Recul` et `Rebondir` (l'outil
-        prend aujourd'hui le point où le trajet entre dans sa sphère et la normale du centre à ce point, supposé ; le point du
-        choc reste le point le plus proche du centre ; essayé et écarté : la normale au point le plus proche, perpendiculaire au
-        vol, ne renverse rien). Un essai hors mission suffit pour voir le repos : tirer une bille vers le sol et lire « le
-        projectile N est au repos en (…) » ;
-     2. le balayage du déplacement lui-même : la fonction 0046ca40 (2 884 octets) n'est recréée que pour sa part du projectile
-        (lue de 0x46cd98 à 0x46ce47, de 0x46cf6f à 0x46d2f6) ; restent son début (de 0x46ca40 à 0x46cd98 : le balayage, par la
-        fonction `0046c970` qu'elle appelle, non lue), la glissade des autres `CPhysical` (de 0x46ce71, avec +0,001 du double
-        0x900fa0, jusqu'à trois tours) et la sortie (0x46d2fc). La paire `FUN_0046b720` est recréée (`CContactProjectile::
-        SansContact`), les deux contacts `FUN_0046ad90` aussi ;
-     3. le départ du tir (`FUN_0065e880`, la douille « Muzzle ») : la visée de l'outil tire encore le long d'une parabole continue
-        alors que le vol du moteur (`Deplacer`) descend de 1,5 × g × pas² de plus par image (0,0327 m pour un facteur de gravité
-        1) : les chocs sont plus bas que le point visé (`1_04` à 17,52 s : z 7,58 m pour 7,60 visés ; `1_03` aux briques à
-        123,72 s : 9,57 m pour 10,18 visés) ;
-     4. ce que le contrôle `FUN_004d2290` laisse non suivi : l'autre vol de l'octet +0x15 de l'entrée (la fonction `004d1960`,
+   - la suite des armes : **le balayage d'une liste de secteur, la fonction `0046c4b0`** (967 octets ; lue en entier à l'assembleur le
+     12.11, séance 2, de 0x46c4b0 à 0x46c877 ; **pas recréée** : c'est le vrai test de collision du déplacement d'un `CPhysical`). État :
+     l'outil des missions a un sol depuis la séance 2 du 12.11 (`CMondeCollision::Trajet` dans `AvancerProjectiles`,
+     `outils/lancer_lua.cpp` ; voir « Fait »), mais ce sol est celui de l'outil (un segment contre des triangles et des sphères),
+     pas le balayage du moteur. Autour de `0046c4b0`, tout ce qui suit est recréé dans `CVolProjectile`
+     (`src/objects/Projectiles.h`) : le début et la sortie de `0046ca40` (`Immobile`, `PartagerChute`, `CodeDeBalayage`,
+     `BalayerSecteurs`, `PoserApresChute`, `Distance`), `FUN_0046c970` (`BalayerSecteur` : elle passe chaque liste d'un secteur à
+     `0046c4b0`), `FUN_0046a920` (`ContactBalaye::Copier`), `FUN_0045f0a0` (`ContactBalaye::LierEntite`), `FUN_00465bc0`
+     (`SpheresSeTouchent`), les trois filtres de piéton `FUN_004760b0`, `FUN_00476160`, `FUN_00476270` (`IgnorePieton`,
+     `IgnoreSonGenre2`, `IgnoreGenre2Lie`) et la règle des deux projectiles de même modèle (`MemeSens`). Dans l'ordre :
+     1. **recréer `0046c4b0(this = l'entité qui balaie, arg1, arg2 = &liste, arg3 = le meilleur contact, arg4 = un octet)`**. Sa
+        lecture, à ne pas refaire :
+        - bx = le code de balayage (le mot 0xc1ae88) ; l'octet rendu part à 0 ; rayon = `CEntity::GetBoundRadius` (0x465cc0) ;
+          `00466b50(this, &centre)` rend le centre (29 octets : `0051ae00`, 71 octets, puis `004660b0`, 87 octets, non lues) ; si `this+0x28` est nul, le rayon
+          grandit de la norme de la vitesse (+0x124, +0x128, +0x12c ; la racine par 0x85c4d0) fois le pas (0xc1a9a4) ;
+        - la boucle des nœuds : mot = [nœud] ; entité = `0044a290(mot & 0xf, (mot >> 4) & 0x3fff)` (la piscine et l'indice :
+          `src/core/Lists.h`) ; suivant = mot >> 18 : 0x3fff = la fin, sinon le nœud [0xc0f788] + 4 × suivant ;
+        - une entité dont le mot +0x10a vaut déjà le code est passée ; sinon +0x10a = le code ; modèle = `0051ae00(entité)` ;
+        - si `this` est un piéton (+0x108 & 7 == 3) : entité au +0xc4 non nul → passée ; entité piéton : octet 0xc2b10b à 1 →
+          passée, arg4 non nul → passée, `FUN_004760b0(this, entité)` vrai → passée ; entité de genre 2 : `FUN_00476160` vrai →
+          passée, `FUN_00476270` vrai → passée. Si `this` est de genre 2 et que l'entité a un +0xc4 non nul → passée ;
+        - entité == this → passée ;
+        - le filtre d'entrée : (entité+0x20 non nul) et (entité+0x1c non nul ou entité+0x60 non nul) et (le bit (1 << l'octet
+          0xa147e0) de l'octet +0xb de la fiche du modèle, table 0xc67738[le mot +0x10e]) et entité+0xf4 nul → on continue ; sinon
+          il faut entité+0x100 non nul, faute de quoi → passée ;
+        - col = [modèle + 0x38] : nul → passée ; (mot +0x1c nul, octets +0x1e et +0x1f nuls) → passée ; [col+0x18] non nul →
+          passée ;
+        - `FUN_00465bc0(entité, &centre, rayon)` faux → passée ;
+        - si `this+0xc4` n'est pas nul (un projectile) : trois octets à 1 ; entité piéton : le premier = !`004761a0(entité, this)`
+          (202 octets, **non lue**) ; entité de genre 2 : le deuxième = !`00469f10(entité, this)` (84 octets, **non lue**) ; même
+          modèle +0x10e parmi DAT_00bf435c, DAT_00bf4358, DAT_00bf4354 (noms à lire dans la table 0xa136e8) : le troisième tombe à
+          0 quand `MemeSens` est vrai (de 0x46c71b à 0x46c7b4 ; le double 0x90c730 vaut 0.8659999966621399). Sinon, si `this` est
+          de genre 2 et que l'entité a un +0xc4 non nul : le premier = !`00469f10(this, entité)`. Un des trois à 0 → passée ;
+        - un contact local est fait par `00415e50` (38 octets) ; **la méthode +0xa4 de la vtable de `this`** est appelée avec (arg1, entité,
+          &local, arg4) : **non lue, c'est le test de collision lui-même** ; pour un `CProjectile` (vtable 0x9059c4), le mot
+          +0xa4 lu dans le binaire vaut `0046a340` (228 octets ; supposé : la méthode de `CPhysical`, gardée) ; si elle rend non nul : `FUN_0045f0a0(&local, entité)` ; si la fraction
+          locale (+0x24) est strictement sous celle du meilleur (fcompp, test ah,0x41, jne) : `FUN_0046a920(meilleur, &local)`,
+          `FUN_0045f0a0(meilleur, entité)`, l'octet rendu = 1 ; le local est défait par `004153b0` (21 octets). La fonction rend l'octet.
+        Le désassemblage se refait par objdump de 0x46c4b0 à 0x46c878 (282 lignes). Le plus court chemin : lire `0046a340`
+        (et ce qu'elle appelle contre un modèle de collision : sphères, boîtes, triangles), `004761a0` et `00469f10`, puis écrire
+        `0046c4b0` en gabarit sur ces appels, avec ses tests ;
+     2. **la glissade** des autres `CPhysical` dans `0046ca40` (de 0x46ce71 à 0x46cf6f, **non lue** ; avec +0,001 du double
+        0x900fa0, jusqu'à trois tours) : dernier morceau non lu de la fonction, qui pourra alors être comptée ;
+     3. **brancher ce balayage dans l'outil** à la place de `CMondeCollision::Trajet` : l'outil n'a ni secteurs ni listes de
+        secteur ; ses volumes sont posés par placement dans une grille de 4 m (zone 0 : 3 243 placements, 97 905 triangles, 863
+        sphères). Deux règles de l'outil sont **supposées** et tomberont alors : la première image du vol ne compte pas le monde
+        (`q.sorti`) et le contact au point où le segment entre dans la sphère d'un piéton ;
+     4. le départ du tir : `FUN_0065f050` (la vitesse de départ) est recréée et branchée (`CViseeTir::VitesseDepart`) ; reste
+        `0065e880` (la douille « Muzzle » de l'arme ou l'os de la main, lue au décompilé seulement) : **bloqué**, l'outil n'a ni
+        os ni douilles ; il fait partir le projectile du point du tireur, d'où la règle supposée de la première image ;
+     5. ce que le contrôle `FUN_004d2290` laisse non suivi : l'autre vol de l'octet +0x15 de l'entrée (la fonction `004d1960`,
         non lue ; le mode de DAT_01b65c14 à la création), les déclencheurs (`006d7220` sur 0x20c7e98), le son du modèle
         (`00598030` sur 0xcf5dc4 puis `0059a710` avec 3 000, ou 8 000 pour « WFtBomb », DAT_00bf4394), l'effet +0xa8 de la fiche
-        (lu par l'outil, non joué) ; la fiche du freinage (le nom +0x12c de la fiche du projectile, construit par `005fa720`,
-        `005fa7b0`, `005fa760` et résolu par `0072ad50` dans la table 0x1b65378, sinon DAT_020c888c : l'outil ne la lit pas,
-        `Freiner` ne sert que dans les tests) ; le redressement de la matrice par `FUN_004d1560` (lue de 0x4d1560 à 0x4d1666) ;
-        la suite de la fléchette plantée (les fonctions `00415320`, `0041a460` avec -π et π, `0046a540`, puis `007014f0` et
-        `00701e70` sur sa position) ; l'ordre du contrôle et du déplacement dans la boucle du monde (supposé : le contrôle
-        d'abord, non relu) ; la vitesse angulaire d'un projectile (nulle dans l'outil) ; `006838d0` (rend 0 sans DAT_01b89150).
+        (lu par l'outil, non joué) ; le redressement de la matrice par `FUN_004d1560` (lue de 0x4d1560 à 0x4d1666) ; la suite de
+        la fléchette plantée (les fonctions `00415320`, `0041a460` avec -π et π, `0046a540`, puis `007014f0` et `00701e70` sur sa
+        position) ; l'ordre du contrôle et du déplacement dans la boucle du monde (supposé : le contrôle d'abord, non relu) ; la
+        vitesse angulaire d'un projectile (nulle dans l'outil). Le freinage, lui, est fait (la fiche est lue).
+     **Essayé et écarté le 12.11, séance 2** (ne pas refaire) : un `AddImage` de plus pour l'image du monde (la table de
+     `CdStream` n'a que huit places, `MAX_CDIMAGES` : à 34,02 s de `1_04` l'arbre `Act/Props/pxTree.act` ne se chargeait plus ;
+     l'image déjà ouverte est reprise dans la table par son chemin) ; compter le monde dès la première image du vol (le tir de
+     73,36 s de `1_04` touchait à 27 cm le volume « treeclimbbranch » où se tient le joueur, la mission ne finissait plus) ;
+     l'essai hors mission avec `--tirer` seul ou `--donner 303` (« le joueur n'a pas d'arme en main » : la bille ne se met pas en
+     main ainsi). **L'essai qui marche** : `build/outils/lancer_lua 40 --mission 1_04 --sans-cinematiques --entrer
+     _1_04_PARKING@10 --donner 302@15 --tirer @16.6` : la balle 302 part à 16,63 s, touche le mur « nogo_tschoolnop » à 17,06 s
+     en (175,47, 9,63, 6,83) à 0,348 m par pas, le sol « fgrd_sc1b18 » à 17,36 s en (175,48, 8,16, 5,48) (« premier contact au
+     sol »), et « est au repos » à 17,98 s en (175,48, 7,95, 5,48).
+     **Les fiches de freinage** (« DodgeballPhysicsButes » de `Globals.cat`, relevées à l'essai) : par défaut, arrêt sous 0,0015 m
+     par pas, × 0,998 dès 0,05 m par pas, × 0,985 en dessous ; BaseballToss (arme 302) et StinkBomb (309) ont ces valeurs ;
+     CherryBomb (301, 311), bRocket (308), BouncyBall (325), RegularBall (329), Basketball (381) : 1 et 0,96 ; Wftball (331, 400) :
+     0,995 et 0,98 ; soft (346) et RemoteCherryBomb (417) : 0,99 et 0,985 ; de genre 7 sans nom de fiche : 304 (la bille), 312,
+     318, 320, 322, 343, 378 ; 346 et 400 nomment une fiche sans être de genre 7. **Les fiches de vitesse** (`FicheVitesse`) :
+     toutes ont les champs 104, 108, 112, 116, 120 et 288 ; les bornes sont à −1 sauf un angle de 35° sur une fiche ; la
+     dispersion est nulle sauf 0,07 sur la fiche « bRocket ».
+     **Le compte** : `tools/avancement.py` prend dans `src` les `FUN_xxxxxxxx` **et** la forme `0x…` du premier octet d'une
+     fonction : une fonction non recréée s'écrit sans préfixe (`0046c4b0`).
      La table des noms de modèles est en 0xa136e8 (paires nom, adresse de la globale ; `FUN_0043f1e0` la lit, `FUN_0043f220` y
      écrit l'indice) : « dart » = DAT_00bf44dc, « Wfrisbee » = DAT_00bf439c, « WFtBomb » = DAT_00bf4394 ; elle nomme tout
      `DAT_00bf4xxx` comparé à un modèle (+0x10e).
-     Puis, comme avant : le balayage d'une explosion (la fonction en 0x463b70 qu'appelle `FUN_004d2690`, puis `004629d0`, 2 427
+     Puis, comme avant : **le balayage d'une explosion** (la fonction en 0x463b70 qu'appelle `FUN_004d2690`, puis `004629d0`, 2 427
      octets, non lue : qui est touché et avec quels dégâts) ; la marque d'une explosion par la surface du contact (+0x14c de la fiche,
      `FUN_004d2b40`) et la normale du contact dans l'outil (ses marques sont posées au point même) ; les volumes d'eau de
      `FUN_006d48d0` ; le départ du tir (la douille « Muzzle », `FUN_0065e880`) ; le genre d'un coup de projectile (+0x468, le 19e
@@ -241,6 +283,17 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- Le sol sous les projectiles de l'outil des missions (12.11, séance 2 ; 07037ca, db4c5c1, be1f0c4, d18b45b, fc34c3d, 2506278, 5bfab15) : `CMondeCollision::Trajet`
+  (`src/collision/Marche.h`) et la collision du monde dans `AvancerProjectiles` (`outils/lancer_lua.cpp` : les 488 .col de
+  `Stream/World.img`, les placements « inst » de la zone ; « le projectile N touche le monde (placement) en (…) », le premier sol,
+  le repos ; l'option `--donner ARME@s`) ; la vitesse de départ d'un tir (`FUN_0065f050`, `CViseeTir::VitesseDepart` dans
+  `src/peds/Armes.h` : la durée du vol tirée de la distance à plat, vingt essais contre les bornes +0x68 à +0x78 de la fiche, la
+  dispersion +0x120 ; `1_03` aux briques finit à 147,97 s au lieu de 148,04 s) ; le freinage dans l'outil (la fiche
+  « DodgeballPhysicsButes » de `Globals.cat`, `Freiner` avant `Controler` pour le genre 7) ; l'entourage du balayage du
+  déplacement dans `CVolProjectile` (`FUN_0046c970`, `FUN_0046a920`, le début et la sortie de `0046ca40`, `Recul` à la constante
+  exacte) ; le test des sphères (`FUN_00465bc0`) ; les trois filtres de piéton du balayage d'une liste (`FUN_004760b0`,
+  `FUN_00476160`, `FUN_00476270`) ; la référence d'un contact (`FUN_0045f0a0`) et la règle des deux projectiles de même modèle
+  (`MemeSens`, cosinus au-dessus de 0,866). Le balayage d'une liste (`0046c4b0`) est lu en entier, pas recréé : premier point de la suite.
 - La physique d'un projectile dans le monde (12.11, séance 1 ; d37cc93, dbacaa5, 4c7b7c4, fb6074b, a181812, d61ab96, 4777fc2, 949c743, 698e156) : `CVolProjectile` dans `src/objects/Projectiles.h`. Le vol
   (`FUN_004494d0`, `FUN_004d1510`, `FUN_00469760`, `FUN_004d2160` : la gravité +0x230 × 0,008 par pas, le déplacement, l'unité de
   +0x124 = le mètre par pas) ; l'air (`FUN_004698c0` : 0,99999 puissance le pas) ; le repos (`FUN_00469a20` : onze images sous
