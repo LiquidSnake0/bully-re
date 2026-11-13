@@ -7099,12 +7099,7 @@ AvancerProjectiles(float pas)
 			b.Ajouter(CBalayageOutil::PIETON, i, 3);
 		}
 		for(size_t i = 0; i < objets.size(); i++) if(!objets[i].detruit) b.Ajouter(CBalayageOutil::OBJET, (int)i, 4);
-		// Supposé : le trajet de la première image du vol ne compte pas le monde. Le moteur fait partir le projectile de la
-		// douille « Muzzle » de l'arme ou de l'os de la main (le départ de 0065e880, pas recréé : l'outil n'a ni os ni
-		// douilles), devant le tireur ; l'outil le fait partir du point du tireur, qui peut se tenir dans un volume du monde
-		// (dans l'arbre de 1_04, le tir de 73,36 s part dans le volume de « treeclimbbranch » et en touchait la face à 27 cm).
-		b.collision = q.sorti ? CollisionDuMonde(zones.zoneVisible) : nil;
-		q.sorti = true;
+		b.collision = CollisionDuMonde(zones.zoneVisible);
 		if(b.collision) b.Ajouter(CBalayageOutil::MONDE, 0, 1);
 		CBalayageOutil::Ent moi; moi.o108 = 4; moi.oc4 = 1; moi.o28 = 1; moi.o10e = (int16)q.modele;
 		CVolProjectile::ContactBalaye meilleur;
