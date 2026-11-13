@@ -1699,3 +1699,49 @@ en échec plutôt que de les masquer.
   180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout**.
 - **Bilan** : 1 307 fonctions recréées (6,3 % des fonctions, 8,4 % du code), contre 1 286 (6,2 %, 8,1 %) ; 2 240 comprises
   (13,0 % du code), contre 2 223 (12,7 %) ; neuf commits (huit de moteur et la documentation).
+
+## 13.11.2026, séance 3 (de 04 h 24 à 05 h 08)
+
+- **La règle supposée de la première image du vol est retirée** (`q.sorti` dans `AvancerProjectiles`) : le monde est compté dès
+  le premier pas. Depuis que le monde passe par le test général, un triangle n'est touché que de face (`FUN_00575510`) : un
+  projectile qui part de l'intérieur d'un volume en voit les faces de dos. Le tir de 73,36 s de `1_04`, qui touchait à 27 cm le
+  volume « treeclimbbranch » le 12.11, ne touche plus rien et la mission finit au même instant ; seule la lecture du monde avance
+  de 3 centièmes (au premier pas du premier tir).
+- **Les objets cassables passent par le test général** (`DonneesObjet`, `CVueObjet`, `TesterObjet`) avec leur modèle de
+  collision (le .col de même nom) et la matrice de leur placement (`CObjetOutil` garde le quaternion et l'échelle de l'entrée
+  inst) ; leurs boîtes par `FUN_00576660`. Le contact garde la fraction, la normale et la surface du test ; le rebond les prend
+  comme pour le monde. Un objet sans modèle garde la sphère de 0,5 m. L'outil n'essaie que les objets dont la sphère englobante,
+  posée et grossie du projectile, croise le trajet (sinon les 60 modèles d'objets de la carte étaient essayés à chaque pas).
+  Dans `1_04`, la bille touche les trois vitres du bus (« buswindow », 4 triangles) aux mêmes instants, 17,52, 19,50 et
+  21,52 s, sur leurs triangles : le rebond suit la normale de la vitre, (-0,185, 0,837, 0,086) → (-0,056, -0,243, 0,067) m par
+  pas au lieu de (0,052, -0,234, -0,097), et le monde, qui n'est plus caché par la sphère de 0,5 m, a derrière la vitre une
+  surface 0x41 que la bille traverse.
+- **L'arbre de partition d'un modèle et son parcours, recréés** (`src/collision/Arbre.h`, `CArbreCollision`) : `FUN_005616a0`
+  (le premier candidat), `FUN_00561750` (le suivant), `FUN_005615a0` (une case de la pile), `FUN_00564a00` (une sphère contre une
+  boîte), la pose au chargement `FUN_00561790` et le constructeur `FUN_00561690` ; la descente `00561080` pour les modes 1 et 3
+  (le mode 2, `00564d40`, 2 605 octets, posé par `00561700`, ne l'est pas). **Les nœuds du fichier ne sont pas dans l'ordre de
+  la mémoire** : `FUN_00561790` les remet (les drapeaux de +0 à +3, les comptes de +1 à +7, les coupes de +2..+7 à +0..+2 et
+  +4..+6) ; lus dans l'ordre du fichier, un nœud renvoyait à la racine et le parcours bouclait sans fin. La pile du parcours a
+  32 cases. Une coupe vaut min + octet × (max − min) / 255.
+- **Le carré de la distance en x et y** (`FUN_005641c0`, 1 001 octets, chaque pas arrondi à float) et le mode 3 de la descente
+  (la sphère vue en x et y, celui que demande `FUN_005616a0` quand son troisième argument n'est pas nul), au quatrième commit.
+- **Où cela se voit** : `test_col` essaie les 772 modèles qui ont un arbre (sur 3 863), une sphère de 5 cm au centre de chacun de
+  leurs 131 022 triangles : le parcours les rend tous sauf 5, en mode 1 comme en mode 3 ; aucun sommet hors de la boîte de la
+  racine ; les 5 et 4 rangs au-delà des triangles sont dans deux modèles dont l'arbre ne couvre pas les triangles (l'un, de 12
+  triangles et 7 nœuds, rend les rangs 2 573 et 2 574) : leurs données, gardées telles quelles dans la vérification. Dans
+  l'outil, un objet dont le modèle a un arbre le donne au test général : les vitres de `1_04` ont un arbre d'un nœud, mêmes
+  contacts.
+- **Non fait, écrit en tête de la suite** : le modèle d'un piéton (`00572680`, bloqué sans os : ce qu'il faudrait est écrit), le
+  mode 2 de l'arbre, le monde par placements avec leurs arbres au lieu de la grille de l'outil.
+- **Une erreur dans un message** : celui du quatrième commit (9fa2ffd) dit « 8,4 % du code » ; le compte est passé à 8,5 % à ce
+  commit (1 314 fonctions, 379 387 octets sur 4 480 993).
+- **Quatre commits de moteur, pas huit** : le chantier de la suite (les points 1, 2 et 4) est fait ; le point 3 est bloqué (pas
+  d'os) ; ce qui reste de l'arbre (le mode 2, `00564d40`, 2 605 octets) n'a aucun appelant dans l'outil, et le monde par
+  placements ne changerait rien de visible : plutôt que des commits sans effet, la séance s'est arrêtée avant l'heure.
+- **Les comptes des README** : chaque commit est parti d'un arbre qui ne contenait que lui ; écrites sans préfixe pour ne pas
+  être comptées : `00561080` (le mode 2 manque), `00564d40`, `00561700`, `00572680`.
+- **REA amont** : déjà relevé cette nuit, pas refait.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 147,97 s), `1_04` à 82,53 s, `1_05` à
+  180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout**.
+- **Bilan** : 1 314 fonctions recréées (6,3 % des fonctions, 8,5 % du code), contre 1 307 (6,3 %, 8,4 %) ; 2 247 comprises
+  (13,0 % du code), contre 2 240 (13,0 %). Quatre commits de moteur et celui-ci.
