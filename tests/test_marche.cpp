@@ -3,6 +3,7 @@
 #include "collision/Marche.h"
 #include "collision/Balayes.h"
 #include <cmath>
+#include <functional>
 #include <cstdio>
 
 static int g_ko = 0;
@@ -205,6 +206,75 @@ main(void)
 			Verifier(B::SphereTriangle(tri, nz, sa, avy, &f, nc, pc, &face) && fabsf(f - 0.5f) < 0.01f && face == 0 && fabsf(pc[0] - 2.0f) < 1e-3f && fabsf(pc[1]) < 1e-3f && nc[1] < -0.99f, "FUN_00575510 : l'arête (0, 0, 0) – (4, 0, 0), à 0,5 m, en x = 2");
 			const float sl[4] = {6, -1, 0, 0.5f};
 			Verifier(!B::SphereTriangle(tri, nz, sl, avy, &f, nc, pc, &face), "FUN_00575510 : à côté de l'arête, rien");
+		}
+		// Le test général (FUN_0056c770) : un sol de deux triangles (z = 0, de −5 à 5) et une sphère, posés en (10, 0, 0) ; a est une
+		// sphère de 0,5 m.
+		{
+			struct Contact { float point[3] = {0, 0, 0}; float normale[3] = {0, 0, 0}; uint32 o1c = 9; uint16 o20 = 0, o22 = 0; float fraction = 0; };
+			static const int16 som[12] = {-640, -640, 0, -640, 640, 0, 640, -640, 0, 640, 640, 0};
+			static const B::TriangleCol tris[2] = {{0, 1, 2, 7, 0}, {3, 2, 1, 8, 0}};
+			B::SphereCol sb[1] = {{{3, 0, 1}, 0.5f, 5, 1, {0, 0}}};
+			B::SphereCol sa[1] = {{{0, 0, 0}, 0.5f, 2, 0, {0, 0}}};
+			B::DonneesCol mb, ma;
+			mb.spheres = sb; mb.nSpheres = 1; mb.sommets = som; mb.triangles = tris; mb.nTriangles = 2;
+			ma.spheres = sa; ma.nSpheres = 1;
+			B::Matrice m1, m2, m4;
+			m4.m[12] = 10;
+			auto pas = [](const B::BoiteCol &, const float *, const float *, float *, float *, float *, uint8 *, int32 *) { return false; };
+			int vus = 0;
+			auto tous = [&](const float *, float, const std::function<void(int)> &) { vus++; };
+			auto place = [](B::Matrice &m, float x, float y, float z) { m.m[12] = x; m.m[13] = y; m.m[14] = z; };
+			Contact c;
+			// a tombe de 3 m en (11, 1) : le sol à 0,5 m sous son centre, à la moitié du trajet.
+			place(m1, 11, 1, 2); place(m2, 11, 1, -1);
+			Verifier(B::TestGeneral(m1.m, m2.m, &ma, m4.m, m4.m, &mb, &c, false, false, false, false, false, 0xf, nullptr, true, pas, tous) == 1
+			         && pres(c.fraction, 0.5f) && pres(c.normale[2], 1.0f) && pres(c.point[0], 11.0f) && pres(c.point[1], 1.0f) && pres(c.point[2], 0.0f)
+			         && c.o22 == 8 && c.o20 == 2 && c.o1c == 0, "FUN_0056c770 : le sol, à la moitié, le second triangle, sa surface en +0x22");
+			Verifier(B::TestGeneral(m1.m, m2.m, &ma, m4.m, m4.m, &mb, &c, false, false, false, false, false, 0x7, nullptr, true, pas, tous) == 0
+			         && c.fraction > 3e38f, "FUN_0056c770 : sans le bit 8, les triangles ne comptent pas, la fraction à FLT_MAX");
+			// Vers le haut : la face du sol n'est pas testée de dos.
+			place(m1, 11, 1, -1); place(m2, 11, 1, 2);
+			Verifier(B::TestGeneral(m1.m, m2.m, &ma, m4.m, m4.m, &mb, &c, false, false, false, false, false, 0xf, nullptr, true, pas, tous) == 0, "FUN_0056c770 : par en dessous, le sol se traverse");
+			// L'arbre : seuls les triangles qu'il rend sont testés, avec la sphère de b grossie de la longueur du déplacement.
+			place(m1, 11, 1, 2); place(m2, 11, 1, -1);
+			mb.arbre = true;
+			float rayon = 0;
+			auto premier = [&](const float *, float r, const std::function<void(int)> &v) { rayon = r; v(0); };
+			auto second = [&](const float *, float r, const std::function<void(int)> &v) { v(1); };
+			Verifier(B::TestGeneral(m1.m, m2.m, &ma, m4.m, m4.m, &mb, &c, false, false, false, false, false, 0xf, nullptr, true, pas, premier) == 0 && pres(rayon, 3.5f), "FUN_0056c770 : l'arbre ne rend que le premier triangle, rien ; le rayon demandé L + r");
+			Verifier(B::TestGeneral(m1.m, m2.m, &ma, m4.m, m4.m, &mb, &c, false, false, false, false, false, 0xf, nullptr, true, pas, second) == 1 && pres(c.fraction, 0.5f), "FUN_0056c770 : l'arbre rend le second, touché");
+			mb.arbre = false;
+			Verifier(vus == 0, "FUN_0056c770 : sans arbre, les triangles sont tous pris dans l'ordre");
+			// La sphère de b, avec b tourné d'un quart de tour : elle est en (10, 3, 1) ; a avance de 4 m vers +y à z = 1.
+			float r[16] = {0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 10, 0, 0, 0};
+			for(int i = 0; i < 16; i++) m4.m[i] = r[i];
+			place(m1, 10, 0, 1); place(m2, 10, 4, 1);
+			Verifier(B::TestGeneral(m1.m, m2.m, &ma, m4.m, m4.m, &mb, &c, false, false, false, false, false, 0xf, nullptr, true, pas, tous) == 1
+			         && pres(c.fraction, 0.5f) && pres(c.normale[1], -1.0f) && pres(c.point[1], 2.5f) && c.o22 == (5 | 1 << 8) && c.o20 == 2,
+			         "FUN_0056c770 : la sphère de b tournée, à la moitié, la normale des centres, les mots +0x10 des deux sphères");
+			Verifier(B::TestGeneral(m1.m, m2.m, &ma, m4.m, m4.m, &mb, &c, false, false, false, false, true, 0xf, nullptr, true, pas, tous) == 0, "FUN_0056c770 : l'argument 12 saute la sphère dont l'octet +0x11 n'est pas nul");
+			// Une boîte : la fonction des boîtes reçoit la sphère et le déplacement dans l'espace de b ; sa normale est tournée par m4.
+			B::BoiteCol bx[1] = {{{-1, -1, -1}, 0, {1, 1, 1}, 0, 4, 3, {0, 0}}};
+			mb.boites = bx; mb.nBoites = 1;
+			place(m1, 10, 0, 2); place(m2, 10, 0, -1);
+			float sv[4] = {0, 0, 0, 0}, rv[3] = {0, 0, 0};
+			auto boite = [&](const B::BoiteCol &, const float *s, const float *rb, float *f, float *n, float *p, uint8 *o, int32 *k) {
+				for(int i = 0; i < 4; i++) sv[i] = s[i];
+				for(int i = 0; i < 3; i++) rv[i] = rb[i];
+				*f = 1.0f; n[0] = 1; n[1] = 0; n[2] = 0; p[0] = 0; p[1] = 0; p[2] = 1; ++*k; return true;
+			};
+			Verifier(B::TestGeneral(m1.m, m2.m, &ma, m4.m, m4.m, &mb, &c, false, false, false, false, false, 0xf, nullptr, true, boite, tous) == 1
+			         && pres(c.fraction, 1.0f / 3.0f) && pres(c.normale[1], 1.0f) && pres(c.point[0], 10.0f) && pres(c.point[2], 1.0f) && c.o22 == (4 | 3 << 8)
+			         && pres(sv[2], 2.0f) && sv[3] == 0.5f && pres(rv[2], -3.0f), "FUN_0056c770 : la boîte à 1 m sur 3, plus près que le sol ; ce qu'elle reçoit");
+			// L'argument 11 : la sphère dans la boîte, sans contact balayé : la fraction 1, la normale (0, 0, 1).
+			place(m1, 10, 0, 0.5f); place(m2, 10, 0, 0.5f);
+			Verifier(B::TestGeneral(m1.m, m2.m, &ma, m4.m, m4.m, &mb, &c, false, false, false, true, false, 0x2, nullptr, true, pas, tous) == 1
+			         && c.fraction == 1.0f && c.normale[2] == 1.0f && pres(c.point[2], 0.5f), "FUN_0056c770 et FUN_00565ad0 : l'argument 11, la sphère dans la boîte");
+			const float dedans[3] = {0, 0, 0.5f}, dessus[3] = {0, 0, 2};
+			Verifier(B::DansBoite(bx[0], dedans) && !B::DansBoite(bx[0], dessus), "FUN_00565ad0 : dedans, et dehors au-dessus");
+			const float bord[3] = {1, 0, 0};
+			Verifier(!B::DansBoite(bx[0], bord), "FUN_00565ad0 : sur la face, dehors (strictement)");
+			Verifier(B::TestGeneral(m1.m, m2.m, (const B::DonneesCol *)nullptr, m4.m, m4.m, &mb, &c, false, false, false, false, false, 0xf, nullptr, true, pas, tous) == 0, "FUN_0056c770 : sans données, 0");
 		}
 	}
 	return g_ko ? 1 : 0;

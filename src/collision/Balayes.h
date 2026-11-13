@@ -13,6 +13,7 @@
 #pragma once
 #include "../common.h"
 #include <cmath>
+#include <cstring>
 
 struct CCollisionBalayee {
 	struct Matrice {
@@ -355,5 +356,195 @@ struct CCollisionBalayee {
 		}
 		if(genre != -1) Normaliser(normaleContact);
 		return genre != -1;
+	}
+	// Les données d'un modèle de collision (le bloc que pointe le +0x38 d'un CColModel), telles que le test général les lit :
+	// les sphères en +0x0 (0x14 octets : le centre, le rayon en +0xc, la surface en +0x10, un octet en +0x11 que l'argument 12
+	// du test général fait sauter, le mot de 16 bits en +0x10 copié tel quel dans le contact), les boîtes en +0x8 (0x24 octets : le
+	// min, le max en +0x10, le mot +0x20 copié dans le contact), les sommets en +0xc (FUN_0056e530), les triangles en +0x10 (8
+	// octets : trois rangs de sommets sur 16 bits, la surface en +6), un arbre en +0x14 (non nul : les triangles candidats sont
+	// demandés à 005616a0 puis 00561750, non lues), le nombre de triangles en +0x1c (16 bits, signé), de sphères en +0x1e et de
+	// boîtes en +0x1f (8 bits, signés). Sur l'hôte, des pointeurs ordinaires ; `Sommet` lit les sommets compressés.
+	struct SphereCol { float centre[3]; float rayon; uint8 surface, o11; uint8 pad[2]; uint16 Mot(void) const { return (uint16)(surface | o11 << 8); } };
+	struct BoiteCol { float min[3]; float pad0; float max[3]; float pad1; uint8 surface, o21; uint8 pad[2]; uint16 Mot(void) const { return (uint16)(surface | o21 << 8); } };
+	struct TriangleCol { uint16 a, b, c; uint8 surface, o7; };
+	struct DonneesCol {
+		const SphereCol *spheres = nullptr;
+		const BoiteCol *boites = nullptr;
+		const int16 *sommets = nullptr;
+		const TriangleCol *triangles = nullptr;
+		bool arbre = false;
+		int16 nTriangles = 0;
+		int8 nSpheres = 0, nBoites = 0;
+		// Le triangle k : ses trois sommets (FUN_0056e530) et sa surface (+6).
+		void Triangle(int k, float *v0, float *v1, float *v2, uint8 *surface) const {
+			const TriangleCol &t = triangles[k];
+			CCollisionBalayee::Sommet(v0, sommets, t.a); CCollisionBalayee::Sommet(v1, sommets, t.b); CCollisionBalayee::Sommet(v2, sommets, t.c);
+			*surface = t.surface;
+		}
+	};
+	// FUN_00565ad0(point) (méthode d'une boîte, lue de 0x565ad0 à 0x565bf0, 289 octets) : le point est-il dans la boîte, strictement
+	// (min < p et p > max refusent l'égalité : fcompp, test ah,5, jp ; test ah,0x41, jne).
+	static bool DansBoite(const BoiteCol &b, const float *p) {
+		return b.min[0] < p[0] && b.min[1] < p[1] && b.min[2] < p[2] && p[0] < b.max[0] && p[1] < b.max[1] && p[2] < b.max[2];
+	}
+	// FUN_0056c770(m1, m2, a, m4, m5, b, contact, a8, a9, a10, a11, a12, a13, a14, a15) (cdecl, quinze arguments, lue à
+	// l'assembleur de 0x56c770 à 0x56d970, 4 610 octets) : le test général de collision de deux modèles, a qui se déplace de la
+	// matrice m1 à m2, b de m4 à m5 ; la méthode +0xa4 d'un CProjectile (FUN_0046a340) le donne avec m1 = son arg1 (la matrice
+	// d'avant le déplacement), m2 et a = la matrice et le modèle de l'entité qui balaie, m4 = m5 et b = la matrice et le modèle de
+	// l'entité de la liste, cinq mots nuls, a13 = 0xf, a14 nul et a15 = 1. Des données nulles chez l'un ou l'autre : 0. Un contact
+	// nul est remplacé par un contact sur sa pile. Dans l'ordre :
+	//  - da = pos(m2) − pos(m1) et db = pos(m5) − pos(m4) ; l'inverse de m4 (FUN_00413620) fois m1 (FUN_00413780) : la matrice qui
+	//    pose a, avant son déplacement, dans l'espace de b ; la fraction du contact repart à FLT_MAX (0x9009b8) ;
+	//  - pour chaque sphère de a (une seule, la première, si a8 ; celles dont l'octet +0x11 n'est pas nul sautées si a12), posée
+	//    par m1 (FUN_0045d3b0 ; si a9, da devient sa position par m2 moins celle-là) :
+	//    · bit 1 de a13 : contre chaque sphère de b posée par m4, FUN_00576a00 avec t = 1 ; une fraction strictement plus petite
+	//      que celle du contact la remplace, avec le point, la normale (a + f da) − (b + f db) normalisée, le mot +0x10 de la sphère
+	//      de a en +0x20 du contact, celui de b en +0x22 et le rang de la sphère de a en +0x1c ; touché et a10 : 1 tout de suite ;
+	//    · dans l'espace de b : la sphère de a, et le déplacement relatif da − db tourné par l'inverse de m4 (FUN_00414560), de
+	//      longueur L (FUN_0085c4d0 sur |·|², arrondie) ; un compteur de contacts et un octet partent de 0 ;
+	//    · bit 2 : chaque boîte de b par la fonction `boite` (00576660, non lue ici : elle reçoit la boîte, son max, la sphère, le
+	//      déplacement, et rend la distance, la normale, le point, l'octet et le compteur) ; une distance f < L : f / L, si elle est
+	//      plus petite que celle du contact, la remplace, avec la normale tournée par m4, le point posé par m4, les mots +0x10 et
+	//      +0x20 ; sinon, si a11 et que la sphère est dans la boîte (FUN_00565ad0, strictement) : la fraction 1, le point du centre
+	//      posé par m4, la normale du vecteur 0x9e33dc ((0, 0, 1) dans le fichier) ; touché et a10 : 1 ;
+	//    · bit 8, s'il y a des triangles : chacun (tous dans l'ordre, ou ceux que rend l'arbre pour la sphère grossie de L,
+	//      la fonction `candidats`) : ses trois sommets (FUN_0056e530), sa normale (v2 − v0) × (v1 − v0) (FUN_004145e0, puis
+	//      FUN_00414cc0 ; l'ordre des sommets des modèles de Bully la fait sortir de la face), FUN_00575510 ; une distance f < L
+	//      compte un contact (au second, a14 non nul reçoit 1 en +1 et +2), f / L plus petite que celle du contact la remplace :
+	//      la normale (avec a15, celle que rend FUN_00575510, sinon celle du triangle) tournée par m4, le point posé par m4, le mot
+	//      +0x10 de la sphère, la surface du triangle en +0x22 et 0 en +0x23 ;
+	//  - elle rend 1 si quelque chose a touché. La fin libère le champ +0xc du contact de sa pile (00465690), qu'elle n'écrit
+	//    jamais : sans effet.
+	// Supposé : le sens de l'octet que rend FUN_00575510 (1 pour la face) et des octets +1 et +2 de a14 ; a14 reçoit aussi cet
+	// octet et le point ou la normale (ici écrits comme dans le binaire). `C` est le contact (point, normale, o1c, o20, o22,
+	// fraction), `MA` et `MB` les données d'un modèle (`DonneesCol`, ou une vue avec les mêmes noms : nSpheres, spheres, nBoites,
+	// boites, nTriangles, Triangle, arbre).
+	template<class C, class MA, class MB, class B, class K>
+	static uint8 TestGeneral(const float *m1, const float *m2, const MA *a, const float *m4, const float *m5, const MB *b, C *contact,
+	                         bool a8, bool a9, bool a10, bool a11, bool a12, uint8 a13, uint8 *a14, bool a15, B &&boite, K &&candidats) {
+		if(!a || !b) return 0;
+		C local;
+		if(!contact) contact = &local;
+		float da[3], db[3];
+		for(int i = 0; i < 3; i++) { da[i] = (float)(m2[12 + i] - m1[12 + i]); db[i] = (float)(m5[12 + i] - m4[12 + i]); }
+		Matrice inv, loc;
+		Inverser(m4, inv.m);
+		Multiplier(&loc, inv.m, m1);
+		contact->fraction = 3.4028234663852886e+38f;
+		uint8 touche = 0;
+		int n = a8 ? 1 : a->nSpheres;
+		for(int i = 0; i < n; i++) {
+			const SphereCol &sa = a->spheres[i];
+			if(a12 && sa.o11) continue;
+			float ca[4];
+			Point(ca, m1, sa.centre);
+			ca[3] = sa.rayon;
+			if(a9) {
+				float t[3];
+				Point(t, m2, sa.centre);
+				for(int k = 0; k < 3; k++) da[k] = (float)(t[k] - ca[k]);
+			}
+			if(a13 & 1) {
+				for(int j = 0; j < b->nSpheres; j++) {
+					const SphereCol &sb = b->spheres[j];
+					if(a12 && sb.o11) continue;
+					float cb[4], pt[3];
+					Point(cb, m4, sb.centre);
+					cb[3] = sb.rayon;
+					float f = contact->fraction;
+					if(!SpheresBalayees(ca, cb, 1.0f, da, db, &f, pt) || !(f < contact->fraction)) continue;
+					contact->fraction = f;
+					float na[3], nb[3], nr[3];
+					for(int k = 0; k < 3; k++) {
+						contact->point[k] = pt[k];
+						na[k] = (float)((float)((double)da[k] * f) + ca[k]);
+						nb[k] = (float)((float)((double)f * db[k]) + cb[k]);
+						nr[k] = (float)(na[k] - nb[k]);
+					}
+					contact->o20 = sa.Mot();
+					contact->o22 = sb.Mot();
+					contact->o1c = (uint32)i;
+					touche = 1;
+					Normaliser(nr);
+					for(int k = 0; k < 3; k++) contact->normale[k] = nr[k];
+				}
+				if(a10 && touche) return 1;
+			}
+			float s[4], rel[3], rb[3];
+			Point(s, loc.m, sa.centre);
+			s[3] = sa.rayon;
+			for(int k = 0; k < 3; k++) rel[k] = (float)(da[k] - db[k]);
+			Tourner(rb, inv.m, rel);
+			float L = (float)std::sqrt(std::fabs((double)(float)(((double)rb[0] * rb[0] + (double)rb[1] * rb[1]) + (double)rb[2] * rb[2])));
+			uint8 octet = 0;
+			int32 compte = 0;
+			float nB[3] = {0, 0, 0}, pB[3] = {0, 0, 0};
+			if(a13 & 2) {
+				for(int j = 0; j < b->nBoites; j++) {
+					const BoiteCol &bx = b->boites[j];
+					float f = contact->fraction;
+					if(boite(bx, s, rb, &f, nB, pB, &octet, &compte) && f < L) {
+						if(compte > 1 && a14) { a14[2] = 1; a14[1] = 1; }
+						float q = (float)((double)f / L);
+						if(!(q < contact->fraction)) continue;
+						float nw[3], pw[3];
+						Tourner(nw, m4, nB);
+						if(a14) { a14[0] = octet; memcpy(a14 + 4, nw, 12); a14[2] = 1; }
+						Point(pw, m4, pB);
+						contact->fraction = q;
+						for(int k = 0; k < 3; k++) { contact->normale[k] = nw[k]; contact->point[k] = pw[k]; }
+						contact->o20 = sa.Mot();
+						contact->o22 = bx.Mot();
+						contact->o1c = (uint32)i;
+						touche = 1;
+					} else if(a11 && DansBoite(bx, s)) {
+						float pw[3];
+						Point(pw, m4, s);
+						contact->fraction = 1.0f;
+						for(int k = 0; k < 3; k++) contact->point[k] = pw[k];
+						contact->normale[0] = 0.0f; contact->normale[1] = 0.0f; contact->normale[2] = 1.0f;
+						contact->o20 = sa.Mot();
+						contact->o22 = bx.Mot();
+						contact->o1c = (uint32)i;
+						touche = 1;
+					}
+				}
+				if(a10 && touche) return 1;
+			}
+			if(b->nTriangles > 0 && (a13 & 8)) {
+				auto visiter = [&](int k) {
+					float v0[3], v1[3], v2[3], e1[3], e2[3], nt[3];
+					uint8 surface;
+					b->Triangle(k, v0, v1, v2, &surface);
+					for(int q = 0; q < 3; q++) { e1[q] = (float)(v1[q] - v0[q]); e2[q] = (float)(v2[q] - v0[q]); }
+					nt[0] = (float)((double)e2[1] * e1[2] - (double)e2[2] * e1[1]);
+					nt[1] = (float)((double)e2[2] * e1[0] - (double)e1[2] * e2[0]);
+					nt[2] = (float)((double)e1[1] * e2[0] - (double)e2[1] * e1[0]);
+					Normaliser(nt);
+					const float *som[3] = {v0, v1, v2};
+					float f = contact->fraction;
+					if(!SphereTriangle(som, nt, s, rb, &f, nB, pB, &octet) || !(f < L)) return;
+					compte++;
+					if(compte > 1 && a14) { a14[2] = 1; a14[1] = 1; }
+					float q = (float)((double)f / L);
+					if(!(q < contact->fraction)) return;
+					float nw[3], pw[3];
+					if(!a15) { Tourner(nw, m4, nt); for(int z = 0; z < 3; z++) nt[z] = nw[z]; }
+					else { Tourner(nw, m4, nB); for(int z = 0; z < 3; z++) nB[z] = nw[z]; }
+					for(int z = 0; z < 3; z++) contact->normale[z] = nw[z];
+					if(a14) { memcpy(a14 + 4, nt, 12); a14[0] = octet; a14[2] = 1; }
+					Point(pw, m4, pB);
+					contact->fraction = q;
+					for(int z = 0; z < 3; z++) contact->point[z] = pw[z];
+					contact->o20 = sa.Mot();
+					contact->o22 = surface;
+					contact->o1c = (uint32)i;
+					touche = 1;
+				};
+				if(b->arbre) candidats(s, (float)((double)L + s[3]), visiter);
+				else for(int k = 0; k < b->nTriangles; k++) visiter(k);
+			}
+		}
+		return touche;
 	}
 };
