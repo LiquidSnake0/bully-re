@@ -258,6 +258,7 @@ struct CProjectileOutil { bool actif = false; int32 modele = -1; int tireur = -1
                           bool presJoue = false;   // le bit 0x1 de +0x22d : l'effet du passage près du joueur est joué (FUN_004d2290)
                           bool sorti = false;      // la première image du vol est passée (le monde ne la compte pas : voir AvancerProjectiles)
                           bool ditTireur = false;  // le balayage a déjà dit qu'il écarte le tireur
+                          bool ditSurface = false; // l'outil a déjà dit qu'il traverse une surface 0x41 (FUN_0046a340)
                           float echelle = 1.0f; }; // l'échelle de temps +0x154 (1 par le constructeur de CPhysical ; FUN_004d2090)
 static CProjectileOutil projectiles[CPlacesProjectiles::kTaille];
 static CPlacesProjectiles placesProjectiles;
@@ -6593,11 +6594,13 @@ CollisionDuMonde(int zone)
 		for(int32 i = 0; i < c.numTriangles; i++){
 			const CColTriangle &tr = c.triangles[i];
 			m.AjouterTriangle(NifApply(t, c.vertices[tr.a].Get()), NifApply(t, c.vertices[tr.b].Get()), NifApply(t, c.vertices[tr.c].Get()));
+			m.surface.resize(m.tri.size() / 3 - 1, 0); m.surface.push_back(tr.surface);
 		}
 		for(int32 i = 0; i < c.numBoxes; i++){
 			const CColBox &bx = c.boxes[i]; CVector k8[8];
 			for(int j = 0; j < 8; j++) k8[j] = NifApply(t, CVector(j & 1 ? bx.max.x : bx.min.x, j & 2 ? bx.max.y : bx.min.y, j & 4 ? bx.max.z : bx.min.z));
 			m.AjouterBoite(k8);
+			m.surface.resize(m.tri.size() / 3, bx.surface);
 		}
 		for(int32 i = 0; i < c.numSpheres; i++){
 			float sc = fmaxf(fmaxf(fabsf(e.scale.x), fabsf(e.scale.y)), fabsf(e.scale.z)); if(sc <= 0) sc = 1;
@@ -6770,7 +6773,8 @@ ChoquerProjectile(int place, CProjectileOutil &q, int genre, const CVector &pt, 
 // façon que (v2 − v0) × (v1 − v0) sorte de la boîte, la normale que prend le test général), comme les triangles des .col, ajoutés
 // dans leur ordre ; contre une sphère de rayon nul, deux triangles d'une face valent la face (FUN_00576660 n'est pas utile ici).
 // L'arbre de partition du binaire (le +0x14 des données, 005616a0) est remplacé par la grille de l'outil (Candidats), qui rend
-// au moins les triangles proches, dans leur ordre. La surface des triangles n'est pas gardée par CMondeCollision : 0.
+// au moins les triangles proches, dans leur ordre. La surface d'un triangle est celle que CollisionDuMonde a notée (celle du
+// triangle ou de la boîte du .col).
 struct CVueMonde {
 	const CMondeCollision *m = nil;
 	std::vector<CCollisionBalayee::SphereCol> spheres;
@@ -6780,7 +6784,7 @@ struct CVueMonde {
 	void Triangle(int k, float *v0, float *v1, float *v2, uint8 *surface) const {
 		const CVector &a = m->tri[3 * k], &b = m->tri[3 * k + 1], &c = m->tri[3 * k + 2];
 		v0[0] = a.x; v0[1] = a.y; v0[2] = a.z; v1[0] = b.x; v1[1] = b.y; v1[2] = b.z; v2[0] = c.x; v2[1] = c.y; v2[2] = c.z;
-		*surface = 0;
+		*surface = m->Surface((size_t)k);
 	}
 };
 static const CVueMonde &
@@ -6803,9 +6807,9 @@ VueDuMonde(const CMondeCollision &m)
 // méthode +0xa4 d'un CProjectile (FUN_0046a340 : cinq mots nuls, 0xf, un a14 nul et a15 = 1). Le projectile est une sphère de
 // rayon nul (supposé : l'outil ne lit pas son modèle de collision, FUN_0051ae00 ; le rayon du balayage, Rayon, est nul aussi),
 // posée sans rotation à a puis à b. Rend la fraction, la normale du contact et le rang du volume touché (celui du triangle, ou
-// −1 − celui de la sphère), comme CMondeCollision::Trajet le faisait.
+// −1 − celui de la sphère), comme CMondeCollision::Trajet le faisait, et le mot +0x22 du contact (la surface d'un triangle).
 static bool
-TesterMonde(const CMondeCollision &m, const CVector &a, const CVector &b, float *fraction, CVector *normale, int32 *volume)
+TesterMonde(const CMondeCollision &m, const CVector &a, const CVector &b, float *fraction, CVector *normale, int32 *volume, uint16 *surface = nil)
 {
 	typedef CCollisionBalayee CB;
 	const CVueMonde &vue = VueDuMonde(m);
@@ -6824,6 +6828,7 @@ TesterMonde(const CMondeCollision &m, const CVector &a, const CVector &b, float 
 	};
 	if(!CB::TestGeneral(m1.m, m2.m, &proj, id.m, id.m, &vue, &c, false, false, false, false, false, 0xf, nil, true, boites, candidats)) return false;
 	*fraction = c.fraction; *normale = CVector(c.normale[0], c.normale[1], c.normale[2]);
+	if(surface) *surface = c.o22;
 	if(volume){
 		*volume = dernier;
 		if(dernier < 0){
@@ -6895,7 +6900,29 @@ struct CBalayageOutil {
 	void Avant(Ent *, float *a) { a[0] = 0.0f; a[1] = 1.0f; a[2] = 0.0f; }
 	void Lier(const void *) {}
 	void Delier(const void *) {}
-	int Tester(Ent *, int, Ent *e, CVolProjectile::ContactBalaye *contact, bool) {
+	// La méthode +0xa4 d'un CProjectile (FUN_0046a340, CVolProjectile::TesterCollision) choisit le test : un piéton (genre 3) au
+	// +0xa4 nul qui n'est ni le rat ni un chien passe par le test fin contre un piéton, le reste par le test général ; un contact
+	// de surface 0x41 n'en est pas un, le projectile la traverse. Ici le test contre un piéton et celui contre un objet sont ceux de
+	// l'outil (supposés, leur contact porte la surface 0), celui contre le monde le test général (TesterMonde, qui rend la surface
+	// du triangle touché). Supposé : le +0xa4 d'un piéton de l'outil est nul et aucun n'est le rat ni un chien. Quand la surface
+	// 0x41 écarte le monde, l'outil oublie ce que son test en avait retenu.
+	int surfacesTraversees = 0;
+	int Tester(Ent *moi, int arg1, Ent *e, CVolProjectile::ContactBalaye *contact, bool arg4) {
+		int toucheAvant = touche, objetAvant = objet; bool mondeAvant = monde; float mieuxAvant = mieux, fMondeAvant = fMonde;
+		CVector centreAvant = centre, nMondeAvant = nMonde; int32 vMondeAvant = vMonde;
+		int brut = 0;
+		int n = CVolProjectile::TesterCollision(true, e->o108 & 7, 0, false, false, contact,
+		                                        [&]{ return brut = TesterOutil(moi, arg1, e, contact, arg4); },
+		                                        [&]{ return brut = TesterOutil(moi, arg1, e, contact, arg4); });
+		if(brut > 0 && n == 0){
+			surfacesTraversees++;
+			touche = toucheAvant; objet = objetAvant; monde = mondeAvant; mieux = mieuxAvant; fMonde = fMondeAvant;
+			centre = centreAvant; nMonde = nMondeAvant; vMonde = vMondeAvant;
+		}
+		return n;
+	}
+	int TesterOutil(Ent *, int, Ent *e, CVolProjectile::ContactBalaye *contact, bool) {
+		contact->o22 = 0;
 		if(e->sorte == PIETON){
 			const CScriptPed *p = pietons.Acceder(e->indice);
 			// FUN_0046b720 : un projectile bas (sous 0,68 m au-dessus de la position du piéton, supposée ici celle de l'outil) et
@@ -6937,7 +6964,9 @@ struct CBalayageOutil {
 			}
 		}
 		// Le test lui-même est celui du binaire, le test général (TesterMonde) : un triangle n'est touché que de face (FUN_00575510).
-		if(!(TesterMonde(*collision, avant, q->pos, &fMonde, &nMonde, &vMonde) && fMonde < entree)) return 0;
+		uint16 surface = 0;
+		if(!(TesterMonde(*collision, avant, q->pos, &fMonde, &nMonde, &vMonde, &surface) && fMonde < entree)) return 0;
+		contact->o22 = surface;
 		monde = true; objet = -1; touche = -1;
 		contact->fraction = fMonde; contact->normale[0] = nMonde.x; contact->normale[1] = nMonde.y; contact->normale[2] = nMonde.z;
 		return 1;
@@ -7054,6 +7083,10 @@ AvancerProjectiles(float pas)
 		CBalayageOutil::Ent moi; moi.o108 = 4; moi.oc4 = 1; moi.o28 = 1; moi.o10e = (int16)q.modele;
 		CVolProjectile::ContactBalaye meilleur;
 		CVolProjectile::BalayerListe(&moi, 0, b.Lier(), &meilleur, false, b);
+		if(b.surfacesTraversees && !q.ditSurface){
+			q.ditSurface = true;
+			printf("%6.2f s  le projectile %d traverse une surface 0x41 du monde (FUN_0046a340)\n", maintenant / 1000.0, place);
+		}
 		if(b.tireurTraverse && !q.ditTireur){
 			q.ditTireur = true;
 			printf("%6.2f s  le projectile %d traverse son tireur, le piéton %d : le balayage l'écarte (FUN_004761a0)\n", maintenant / 1000.0, place, q.tireur);
