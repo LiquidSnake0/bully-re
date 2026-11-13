@@ -607,4 +607,67 @@ struct CCollisionBalayee {
 		}
 		return touche;
 	}
+	// FUN_00469f70(m1, m2, a, m4, b, contact) (méthode de l'entité qui balaie, ret 0x18, lue à l'assembleur de 0x469f70 à 0x46a333,
+	// 966 octets) : le test fin d'un projectile contre un piéton, que la méthode +0xa4 d'un CProjectile (FUN_0046a340) choisit pour
+	// un piéton qui n'est ni le rat ni un chien ; a est le modèle du projectile qui va de m1 à m2, b le modèle du piéton (le mot
+	// 0xcf3138, que 00572680, non lue, prépare juste avant), posé par m4, et qui ne bouge pas (le déplacement de b est le vecteur
+	// 0xbcc564, dans la mémoire non initialisée du fichier : nul, supposé). Des données nulles chez l'un ou l'autre : 0. Elle calcule
+	// l'inverse de m4 fois m1 (FUN_00413620, FUN_00413780) sans s'en servir, et met la fraction du contact à FLT_MAX. Pour chaque
+	// sphère de a, posée par m1 (FUN_0045d3b0), les sphères de b posées par m4, chacune par FUN_00576a00 (t = 1, db nul) :
+	//  - un contact dont la fraction est strictement plus petite que celle du contact le remplace : la fraction, le point, le mot
+	//    +0x10 de la sphère de a en +0x20, celui de la sphère de b en +0x22, la normale (a + f da) − b normalisée, le rang de la
+	//    sphère de b en +0x1c ;
+	//  - la sphère 0 de b touchée, le déplacement est normalisé puis multiplié par 100 (le double 0x900130) et seule la sphère 3
+	//    est essayée : touchée, elle donne le point, les mots, la normale et le rang 3, mais pas la fraction, qui reste celle de
+	//    la sphère 0 ; puis la boucle s'arrête. Le déplacement reste allongé pour les sphères suivantes de a.
+	// Supposé : la sphère 0 du modèle d'un piéton l'englobe et la sphère 3 est celle où le coup porte (00572680 n'est pas lue). Le
+	// binaire ne vérifie pas que b a quatre sphères ; ici, sans quatrième sphère, la boucle s'arrête (une garde de l'hôte).
+	template<class C, class MA, class MB>
+	static uint8 TestPieton(const float *m1, const float *m2, const MA *a, const float *m4, const MB *b, C *contact) {
+		if(!a || !b) return 0;
+		float da[3];
+		for(int i = 0; i < 3; i++) da[i] = (float)(m2[12 + i] - m1[12 + i]);
+		static const float zero[3] = {0.0f, 0.0f, 0.0f};
+		contact->fraction = 3.4028234663852886e+38f;
+		uint8 touche = 0;
+		for(int i = 0; i < a->nSpheres; i++) {
+			const SphereCol &sa = a->spheres[i];
+			float ca[4];
+			Point(ca, m1, sa.centre);
+			ca[3] = sa.rayon;
+			bool allonge = false;
+			for(int j = 0; j < b->nSpheres; j++) {
+				if(allonge) {
+					j = 3;
+					Normaliser(da);
+					for(int k = 0; k < 3; k++) da[k] = (float)((double)da[k] * 100.0);
+					if(j >= b->nSpheres) break;
+				}
+				const SphereCol &sb = b->spheres[j];
+				float cb[4], pt[3];
+				Point(cb, m4, sb.centre);
+				cb[3] = sb.rayon;
+				float f = contact->fraction;
+				if(!SpheresBalayees(ca, cb, 1.0f, da, zero, &f, pt) || !(f < contact->fraction)) {
+					if(allonge) break;
+					continue;
+				}
+				if(!allonge) contact->fraction = f;
+				float n[3];
+				for(int k = 0; k < 3; k++) {
+					contact->point[k] = pt[k];
+					n[k] = (float)((float)(ca[k] + (float)((double)da[k] * f)) - cb[k]);
+				}
+				contact->o20 = sa.Mot();
+				contact->o22 = sb.Mot();
+				touche = 1;
+				Normaliser(n);
+				for(int k = 0; k < 3; k++) contact->normale[k] = n[k];
+				contact->o1c = (uint32)j;
+				if(j != 0) { if(allonge) break; continue; }
+				allonge = true;
+			}
+		}
+		return touche;
+	}
 };

@@ -310,6 +310,31 @@ main(void)
 			Verifier(B::TestGeneral(m1.m, m2.m, &ma, m4.m, m4.m, &mb, &c, false, false, false, false, false, 0xf, nullptr, true, boite, aucun) == 1
 			         && pres(c.fraction, 0.5f) && pres(c.point[0], 10.0f) && pres(c.point[2], 1.0f) && c.normale[2] == 1.0f && c.o22 == 6, "FUN_0056c770 et FUN_00576660 : la chute sur la boîte, à la moitié");
 		}
+		// Le test fin contre un piéton (FUN_00469f70) : un piéton de quatre sphères posé en (5, 0, 0) (la sphère 0 l'englobe, la
+		// sphère 3 est la tête), un projectile de 5 cm qui avance de 10 m en x.
+		{
+			struct Contact { float point[3] = {0, 0, 0}; float normale[3] = {0, 0, 0}; uint32 o1c = 9; uint16 o20 = 0, o22 = 0; float fraction = 0; };
+			B::SphereCol sp[4] = {{{0, 0, 1}, 1.0f, 10, 0, {0, 0}}, {{0, 0, 0.4f}, 0.3f, 11, 0, {0, 0}}, {{0, 0, 1}, 0.3f, 12, 0, {0, 0}}, {{0, 0, 1.6f}, 0.3f, 13, 0, {0, 0}}};
+			B::SphereCol pr[1] = {{{0, 0, 0}, 0.05f, 3, 0, {0, 0}}};
+			B::DonneesCol ped, proj;
+			ped.spheres = sp; ped.nSpheres = 4; proj.spheres = pr; proj.nSpheres = 1;
+			B::Matrice m1, m2, m4;
+			m4.m[12] = 5;
+			m1.m[14] = 1.6f; m2.m[12] = 10; m2.m[14] = 1.6f;
+			Contact c;
+			float f0 = (5.0f - sqrtf(1.05f * 1.05f - 0.36f)) / 10.0f;
+			Verifier(B::TestPieton(m1.m, m2.m, &proj, m4.m, &ped, &c) == 1 && fabsf(c.fraction - f0) < 1e-4f && c.o1c == 3 && c.o22 == 13 && c.o20 == 3
+			         && pres(c.point[0], 4.7f) && pres(c.point[2], 1.6f) && pres(c.normale[0], -1.0f), "FUN_00469f70 : la sphère 0 donne la fraction, la sphère 3 (le trajet allongé de 100 fois) le point, la normale et le rang");
+			m1.m[14] = 0.4f; m2.m[14] = 0.4f;
+			Verifier(B::TestPieton(m1.m, m2.m, &proj, m4.m, &ped, &c) == 1 && fabsf(c.fraction - f0) < 1e-4f && c.o1c == 0 && c.o22 == 10 && pres(c.normale[2], -0.6f / 1.05f),
+			         "FUN_00469f70 : la sphère 3 manquée, le contact reste celui de la sphère 0, la sphère 1 n'est pas essayée");
+			sp[0].rayon = 0.1f; sp[0].centre[2] = 0;
+			m1.m[14] = 1.0f; m2.m[14] = 1.0f;
+			Verifier(B::TestPieton(m1.m, m2.m, &proj, m4.m, &ped, &c) == 1 && pres(c.fraction, 0.465f) && c.o1c == 2 && c.o22 == 12, "FUN_00469f70 : la sphère 0 manquée, les suivantes sans allonger, la sphère 2 touchée");
+			m1.m[14] = 3.0f; m2.m[14] = 3.0f;
+			Verifier(B::TestPieton(m1.m, m2.m, &proj, m4.m, &ped, &c) == 0 && c.fraction > 3e38f, "FUN_00469f70 : au-dessus du piéton, rien, la fraction à FLT_MAX");
+			Verifier(B::TestPieton(m1.m, m2.m, (const B::DonneesCol *)nullptr, m4.m, &ped, &c) == 0, "FUN_00469f70 : sans données, 0");
+		}
 	}
 	return g_ko ? 1 : 0;
 }
