@@ -662,8 +662,9 @@ struct CVolProjectile {
 	// (0046c4b0) appelle sur chaque entité qui a passé ses filtres. Elle choisit entre deux tests :
 	//  - le test fin contre un piéton, quand l'entité qui balaie est un projectile (+0xc4 non nul), que l'entité de la liste est un
 	//    piéton (+0x108 & 7 == 3) au +0xa4 nul, dont le modèle (+0x10e) n'est ni DAT_00bf42dc (« Rat_Ped ») ni un chien
-	//    (FUN_00447290) : 00572680(piéton) d'abord (1 529 octets, non lue ; supposé : elle prépare les volumes du piéton, que le mot
-	//    0xcf3138 désigne ensuite), puis 00469f70 (966 octets, non lue), méthode de l'entité qui balaie, avec arg1, sa matrice
+	//    (FUN_00447290) : FUN_00572680(piéton) d'abord (1 529 octets, CModelePieton::Construire dans collision/ModelePieton.h : elle
+	//    pose six sphères sur six os du piéton, dans le modèle que le mot 0xcf3138 désigne ensuite), puis FUN_00469f70 (966
+	//    octets, CCollisionBalayee::TestPieton), méthode de l'entité qui balaie, avec arg1, sa matrice
 	//    (FUN_0046dbd0), son modèle de collision (0051ae00), la matrice du piéton, le mot 0xcf3138 et le contact ;
 	//  - sinon le test général 0056c770 (4 610 octets, non lue, cdecl à quinze arguments) : arg1, la matrice et le modèle de collision
 	//    de l'entité qui balaie, la matrice de l'entité de la liste deux fois, son modèle de collision, le contact, cinq mots nuls,
@@ -678,6 +679,171 @@ struct CVolProjectile {
 		else n = (uint8)contreModele();
 		if(n > 0 && oc4 && (uint8)contact->o22 == 0x41) return 0;
 		return n;
+	}
+	// FUN_00563aa0(&liste, rayon) (méthode d'un lancer, lue à l'assembleur de 0x563aa0 à 0x563d22, ret 8 ; 00563f30, non lue, est sa
+	// seule appelante) : le lancer sur une liste de secteur, l'autre parcours qui refait le modèle d'un piéton (FUN_00572680). La
+	// liste est celle du balayage plus bas (FUN_0046c4b0) : un nœud est un mot, quatre bits de piscine, quatorze d'indice
+	// (FUN_0044a290), quatorze du nœud suivant (0x3fff : la fin ; le mot 0xc0f788 + 4 × suivant), lu avant tout filtre. Ce qu'elle
+	// lit du lancer, sous le nom de son offset (ce qu'ils veulent dire est supposé : 00563f30 n'est pas lue) :
+	//  +0x0  une entité : un piéton que FUN_004761a0 écarte pour elle est passé (supposé : celle qui lance) ;
+	//  +0x4  trois réels : le centre du test des sphères (00465a50, méthode de l'entité, avec le rayon donné) et le premier
+	//        argument du test ; +0x10 trois réels et +0x1c un réel, ses deuxième et troisième arguments (supposé : le départ,
+	//        la direction et la longueur) ;
+	//  +0x20 des drapeaux, passés au test ; le bit 0x80 : le filtre +0x44 (cdecl, l'entité ; vrai : passée) est appelé ;
+	//  +0x34 le meilleur contact, +0x38 mis à 1 quand il est pris, +0x3c sa distance ;
+	//  +0x41 un octet : non nul, un contact de surface 0x41 (l'octet +0x22 du contact) ne compte pas ;
+	//  +0x42 un octet : non nul, une entité au +0x100 non nul entre aussi, et un piéton (+0x108 & 7 == 3) au +0xa4 nul, qui n'est
+	//        ni le rat (DAT_00bf42dc) ni un chien (FUN_00447290), est testé contre ses six sphères (FUN_00572680, puis le mot
+	//        0xcf3138) au lieu de son modèle de collision (0051ae00).
+	// Le déroulement : une entité dont le +0x10a vaut déjà le code (le mot 0xc1ae88) est passée, sinon elle le reçoit ; le filtre
+	// d'entrée du balayage (+0x20 non nul, et +0x1c ou +0x60 non nul, et le bit du modèle, et +0xf4 nul), ou sinon +0x42 du lancer
+	// et +0x100 de l'entité non nuls ; le filtre +0x44 ; le test des sphères ; pour un piéton, FUN_004761a0 quand le +0x0 du lancer
+	// n'est pas nul ; le modèle ; un contact local neuf (les réels de +0x0 et de +0x10 nuls, la référence nulle, la fraction à
+	// FLT_MAX, le réel 0x9009b8) et le test 00569f10 (3 175 octets, non lue, cdecl à dix arguments : &lancer + 4, &lancer + 0x10,
+	// le réel +0x1c, la matrice de l'entité (FUN_0046dbd0), le modèle, le contact local, une distance locale, les drapeaux, 0xf et
+	// 1). Vrai, et pas la surface 0x41 d'un lancer au +0x41 non nul : quand la meilleure distance est strictement plus grande que
+	// la distance rendue (fld la rendue, fld +0x3c, fcomp st(1), test ah,0x41, jne), +0x3c la prend, le meilleur contact copie le
+	// local (FUN_0046a920), sa référence passe à l'entité (FUN_00465690 pour l'ancienne, FUN_00465680 pour la nouvelle) et +0x38
+	// vaut 1. La référence du contact local, non nulle, est déliée à la fin (FUN_00465690). Rien n'est rendu. `m` porte ce que la
+	// fonction lit hors du lancer et de l'entité : Code(), Entite(piscine, indice), Noeud(suivant), BitDuModele(e), Filtre(lancer,
+	// e), Spheres(e, centre, rayon), ProjectileIgnore(piéton, entité), Rat(e), Chien(e), ModelePieton(e), Modele(e), Matrice(e),
+	// Tester(…), Lier(e) et Delier(e). La distance locale n'est pas écrite avant le test (ici 0).
+	template<class L, class M>
+	static void LancerSurListe(L *l, const uint32 *noeud, float rayon, M &m) {
+		auto lier = [&](const void *x){ m.Lier(x); };
+		auto delier = [&](const void *x){ m.Delier(x); };
+		while(noeud){
+			uint32 mot = *noeud;
+			auto *e = m.Entite((int)(mot & 0xf), (int)((mot >> 4) & 0x3fff));
+			uint32 suivant = mot >> 18;
+			noeud = suivant == 0x3fff ? nullptr : m.Noeud(suivant);
+			uint16 code = m.Code();
+			if(e->o10a == code) continue;
+			e->o10a = code;
+			bool entre = e->o20 != 0 && (e->o1c != 0 || e->o60 != 0) && m.BitDuModele(e) && e->of4 == 0;
+			if(!entre && (l->o42 == 0 || e->o100 == 0)) continue;
+			if((l->o20 & 0x80) != 0 && l->o44 && m.Filtre(l, e)) continue;
+			float centre[3] = {l->o4[0], l->o4[1], l->o4[2]};
+			if(!m.Spheres(e, centre, rayon)) continue;
+			bool pieton = (e->o108 & 7) == 3;
+			if(pieton && l->o0 != nullptr && m.ProjectileIgnore(e, l->o0)) continue;
+			bool sixSpheres = l->o42 != 0 && pieton && e->oa4 == 0 && !m.Rat(e) && !m.Chien(e);
+			auto modele = sixSpheres ? m.ModelePieton(e) : m.Modele(e);
+			ContactBalaye local;
+			float distance = 0.0f;
+			if(m.Tester(l->o4, l->o10, l->o1c, m.Matrice(e), modele, &local, &distance, l->o20, 0xf, 1)
+			   && !(l->o41 != 0 && (uint8)local.o22 == 0x41)){
+				if(l->o3c > distance){
+					l->o3c = distance;
+					l->o34->Copier(local, delier, lier);
+					l->o34->LierEntite(e, delier, lier);
+					l->o38 = 1;
+				}
+			}
+			local.Defaire(delier);
+		}
+	}
+	// FUN_0041c3f0 (méthode d'une entité, lue à l'assembleur de 0x41c3f0 à 0x41c434, 69 octets) : le filtre d'entrée des parcours
+	// d'une liste de secteur, à part : +0x20 non nul, et +0x1c ou +0x60 non nul, et le bit du modèle (1 << l'octet 0xa147e0 dans
+	// l'octet +0xb de sa fiche, table 0xc67738), et +0xf4 nul. FUN_0046c4b0 et FUN_00563aa0 en portent une copie.
+	template<class E, class M> static bool Entre(E *e, M &m) {
+		return e->o20 != 0 && (e->o1c != 0 || e->o60 != 0) && m.BitDuModele(e) && e->of4 == 0;
+	}
+	// FUN_0045f520(&liste, arg2, arg3, &distance, &entité, drapeaux, sixSphères) (cdecl à sept arguments, lue à l'assembleur de
+	// 0x45f520 à 0x45f7e6, 711 octets ; FUN_00460f60, plus bas, est sa seule appelante) : le troisième parcours d'une liste de secteur
+	// qui refait le modèle d'un piéton (FUN_00572680), celui d'une ligne (supposé : la ligne de vue ; son test, 0056aee0, n'est pas lu). Vide,
+	// la liste rend faux. Deux octets du monde ouvrent le filtre d'entrée quand la première entité de la liste est un piéton
+	// (+0x108 & 7 == 3) : 0xc1ae75 (`morts` : un piéton sans collision passe si son octet +0x1c98, mort, n'est pas nul) et 0xc1ae74
+	// (`montes` : il passe si son +0x1554, son véhicule, n'est pas nul et que le +0x46c de celui-ci vaut 1). Pour chaque entité,
+	// le nœud suivant lu d'abord : passée si son +0x10a vaut déjà le code (le mot 0xc1ae88), si elle est l'entité du mot 0xc1ae70,
+	// si son modèle (+0x10e) est un de ceux de la table 0xc1aa64 (comptés au mot 0xc1ae68), ou si elle n'entre pas (FUN_0041c3f0)
+	// alors que ni `morts` ni `montes` ne valent ; elle reçoit alors le code ; passée encore si c'est un projectile (+0xc4 non nul)
+	// quand l'octet 0xc1ae6c n'est pas nul, ou, avec le bit 0x80 des drapeaux, si l'octet +8 de la fiche de son modèle vaut 1 et
+	// que le bit 19 de son mot +0x28 est mis. Un piéton qui n'entre pas doit être mort avec `morts`, ou monté avec `montes` ; une
+	// autre entité doit entrer. Le modèle : pour un piéton, avec le septième argument, au +0xa4 nul, qui n'est ni le rat
+	// (DAT_00bf42dc) ni un chien (FUN_00447290), ses six sphères (FUN_00572680, puis le mot 0xcf3138) ; sinon son modèle de
+	// collision (0051ae00) ; nul : passée. Le test 0056aee0 (1 165 octets, non lue, cdecl à sept arguments : arg2, la matrice de
+	// l'entité (FUN_0046dbd0), le modèle, arg3, une distance locale, les drapeaux et l'octet 0xc1ae82) ; la distance locale part
+	// de la distance donnée et n'est pas remise entre deux entités. Vrai, et la distance donnée strictement plus grande que la
+	// locale (fld la locale, fld la donnée, fcomp st(1), test ah,0x41, jne) : la donnée la prend, l'entité est rendue par le
+	// cinquième argument et la fonction rendra vrai. `m` porte ce qui est lu hors de l'entité : Morts(), Montes(), Code(),
+	// Entite(piscine, indice), Noeud(suivant), Ignoree(e), ModeleIgnore(modèle), BitDuModele(e), SansProjectiles(), OctetFiche8(e),
+	// MotFiche28(e), Rat(e), Chien(e), ModelePieton(e), Modele(e), Matrice(e), Octet82() et Tester(…).
+	template<class A, class B, class P, class M>
+	static bool VueSurListe(const uint32 *noeud, A arg2, B arg3, float *donnee, P *touchee, uint32 drapeaux, bool sixSpheres, M &m) {
+		if(noeud == nullptr) return false;
+		bool parFiche = ((drapeaux >> 7) & 1) != 0;
+		float distance = *donnee;
+		bool touche = false, morts = false, montes = false;
+		if(m.Morts() && (m.Entite((int)(*noeud & 0xf), (int)((*noeud >> 4) & 0x3fff))->o108 & 7) == 3) morts = true;
+		if(m.Montes() && (m.Entite((int)(*noeud & 0xf), (int)((*noeud >> 4) & 0x3fff))->o108 & 7) == 3) montes = true;
+		uint16 code = m.Code();
+		do{
+			uint32 mot = *noeud;
+			auto *e = m.Entite((int)(mot & 0xf), (int)((mot >> 4) & 0x3fff));
+			uint32 suivant = mot >> 18;
+			noeud = suivant == 0x3fff ? nullptr : m.Noeud(suivant);
+			if(e->o10a == code) continue;
+			if(m.Ignoree(e)) continue;
+			if(m.ModeleIgnore((int)e->o10e)) continue;
+			if(!Entre(e, m) && !morts && !montes) continue;
+			e->o10a = code;
+			if(m.SansProjectiles() && e->oc4 != 0) continue;
+			if(parFiche && m.OctetFiche8(e) == 1 && ((m.MotFiche28(e) >> 0x13) & 1) != 0) continue;
+			bool spheres = false;
+			if((e->o108 & 7) == 3){
+				if(!Entre(e, m) && !(morts && e->o1c98 != 0)){
+					if(!montes || e->o1554 == nullptr || e->o1554->o46c != 1) continue;
+				}
+				spheres = sixSpheres && e->oa4 == 0 && !m.Rat(e) && !m.Chien(e);
+			}else if(!Entre(e, m)) continue;
+			auto modele = spheres ? m.ModelePieton(e) : m.Modele(e);
+			if(!modele) continue;
+			if(m.Tester(arg2, m.Matrice(e), modele, arg3, &distance, drapeaux, m.Octet82())){
+				if(*donnee > distance){
+					*donnee = distance;
+					*touchee = e;
+					touche = true;
+				}
+			}
+		}while(noeud);
+		return touche;
+	}
+	// FUN_00460f60(secteur, arg2, arg3, &distance, &entité, drapeaux, sixSphères) (cdecl à sept arguments, lue à l'assembleur de
+	// 0x460f60 à 0x4610a6, 327 octets ; 00461d50, non lue, est sa seule appelante) : la ligne de FUN_0045f520 sur les cinq listes
+	// d'un secteur (cinq mots de suite), choisies par les cinq bits bas des drapeaux et parcourues dans cet ordre : le bit 1 la
+	// liste +0, le bit 2 la liste +8, le bit 4 la liste +0xc, le bit 8 la liste +4, le bit 0x10 la liste +0x10. Les octets
+	// 0xc1ae75 et 0xc1ae74 du monde (`morts` et `montes`) sont gardés puis mis à zéro à l'entrée ; ils ne sont rendus (à 1, s'ils
+	// n'étaient pas nuls) que le temps de la liste +0xc, la seule aussi qui reçoive le septième argument (les six sphères) : c'est
+	// la liste des piétons du secteur (supposé pour les quatre autres : bâtiments, véhicules, objets). À la sortie les deux octets
+	// reprennent leur valeur d'entrée. Les cinq parcours partagent une distance locale, partie de la distance donnée ; ce que
+	// rend FUN_0045f520 n'est pas lu : la fonction rend vrai, et la distance donnée prend la locale, si la donnée est strictement
+	// plus grande que la locale (fld la locale, fld la donnée, fcomp st(1), test ah,0x41, jne). `m` porte en plus PoserMorts(b)
+	// et PoserMontes(b).
+	template<class A, class B, class P, class M>
+	static bool VueSurSecteur(const uint32 *const *listes, A arg2, B arg3, float *donnee, P *touchee, uint32 drapeaux, bool sixSpheres, M &m) {
+		float distance = *donnee;
+		bool morts = m.Morts(), montes = m.Montes();
+		m.PoserMorts(false);
+		m.PoserMontes(false);
+		if(drapeaux & 1) VueSurListe(listes[0], arg2, arg3, &distance, touchee, drapeaux, false, m);
+		if(drapeaux & 2) VueSurListe(listes[2], arg2, arg3, &distance, touchee, drapeaux, false, m);
+		if(drapeaux & 4){
+			if(morts) m.PoserMorts(true);
+			if(montes) m.PoserMontes(true);
+			VueSurListe(listes[3], arg2, arg3, &distance, touchee, drapeaux, sixSpheres, m);
+			m.PoserMorts(false);
+			m.PoserMontes(false);
+		}
+		if(drapeaux & 8) VueSurListe(listes[1], arg2, arg3, &distance, touchee, drapeaux, false, m);
+		if(drapeaux & 0x10) VueSurListe(listes[4], arg2, arg3, &distance, touchee, drapeaux, false, m);
+		m.PoserMontes(montes);
+		m.PoserMorts(morts);
+		if(*donnee > distance){
+			*donnee = distance;
+			return true;
+		}
+		return false;
 	}
 	// FUN_0046c4b0(arg1, &liste, meilleur, arg4) (méthode de l'entité qui balaie, lue à l'assembleur de 0x46c4b0 à 0x46c877, 967
 	// octets, ret 0x10) : le balayage d'une liste de secteur, le vrai test de collision du déplacement d'un CPhysical. FUN_0046c970

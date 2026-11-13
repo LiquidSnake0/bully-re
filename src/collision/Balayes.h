@@ -610,7 +610,7 @@ struct CCollisionBalayee {
 	// FUN_00469f70(m1, m2, a, m4, b, contact) (méthode de l'entité qui balaie, ret 0x18, lue à l'assembleur de 0x469f70 à 0x46a333,
 	// 966 octets) : le test fin d'un projectile contre un piéton, que la méthode +0xa4 d'un CProjectile (FUN_0046a340) choisit pour
 	// un piéton qui n'est ni le rat ni un chien ; a est le modèle du projectile qui va de m1 à m2, b le modèle du piéton (le mot
-	// 0xcf3138, que 00572680, non lue, prépare juste avant), posé par m4, et qui ne bouge pas (le déplacement de b est le vecteur
+	// 0xcf3138, que FUN_00572680, CModelePieton::Construire dans ModelePieton.h, prépare juste avant), posé par m4, et qui ne bouge pas (le déplacement de b est le vecteur
 	// 0xbcc564, dans la mémoire non initialisée du fichier : nul, supposé). Des données nulles chez l'un ou l'autre : 0. Elle calcule
 	// l'inverse de m4 fois m1 (FUN_00413620, FUN_00413780) sans s'en servir, et met la fraction du contact à FLT_MAX. Pour chaque
 	// sphère de a, posée par m1 (FUN_0045d3b0), les sphères de b posées par m4, chacune par FUN_00576a00 (t = 1, db nul) :
@@ -620,7 +620,10 @@ struct CCollisionBalayee {
 	//  - la sphère 0 de b touchée, le déplacement est normalisé puis multiplié par 100 (le double 0x900130) et seule la sphère 3
 	//    est essayée : touchée, elle donne le point, les mots, la normale et le rang 3, mais pas la fraction, qui reste celle de
 	//    la sphère 0 ; puis la boucle s'arrête. Le déplacement reste allongé pour les sphères suivantes de a.
-	// Supposé : la sphère 0 du modèle d'un piéton l'englobe et la sphère 3 est celle où le coup porte (00572680 n'est pas lue). Le
+	// Les six sphères sont celles de FUN_00572680 : avec la fiche FightCollisionButes par défaut, la sphère 0 est sur le bassin
+	// (os 2, 0,35 m), la sphère 1 sur le haut de la colonne (os 12), la sphère 2 sur la tête (os 16), la sphère 3 de nouveau sur
+	// le bassin (os 2, 0,1 m), les sphères 4 et 5 sur les mollets (os 4 et 7). La sphère 0 n'englobe donc pas le piéton : un
+	// projectile qui touche le grand bassin n'est plus essayé que contre le petit, les autres sphères passent leur tour. Le
 	// binaire ne vérifie pas que b a quatre sphères ; ici, sans quatrième sphère, la boucle s'arrête (une garde de l'hôte).
 	template<class C, class MA, class MB>
 	static uint8 TestPieton(const float *m1, const float *m2, const MA *a, const float *m4, const MB *b, C *contact) {

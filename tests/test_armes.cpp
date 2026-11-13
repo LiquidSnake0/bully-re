@@ -750,6 +750,159 @@ main(void)
 				{ V::ContactBalaye k; m.code++; m.j.clear(); VERIF(!V::BalayerListe(&c, 42, &m.noeuds[2], &k, false, m) && m.j.empty()); }
 			}
 			{
+				// le lancer sur une liste de secteur (FUN_00563aa0) sur un monde d'essai
+				struct Ent : V::EntiteBalayee { uint32 oa4 = 0; float d = 5.0f; bool touche = true; uint8 surface = 0; const void *lie = nullptr; };
+				struct Lancer {
+					const void *o0 = nullptr; float o4[3] = {1, 2, 3}, o10[3] = {0, 1, 0}, o1c = 30.0f; uint32 o20 = 0x15;
+					V::ContactBalaye *o34 = nullptr; uint32 o38 = 0; float o3c = 3.4028234663852886e+38f; uint8 o41 = 0, o42 = 0; bool o44 = false;
+				};
+				struct Monde {
+					Ent *piscines[10][8] = {}; uint32 noeuds[8] = {}; uint16 code = 9;
+					bool bit = true, spheres = true, filtre = false, ignore = false, rat = false, chien = false;
+					std::string j; float rayonVu = 0.0f, longueurVue = 0.0f; uint32 drapeauxVus = 0; int a9 = 0, a10 = 0; bool departVu = false;
+					uint16 Code(){ return code; }
+					Ent *Entite(int p, int i){ return piscines[p][i]; }
+					const uint32 *Noeud(uint32 n){ return &noeuds[n]; }
+					bool BitDuModele(Ent *){ return bit; }
+					bool Filtre(Lancer *, Ent *){ j += "F"; return filtre; }
+					bool Spheres(Ent *, const float *c, float r){ rayonVu = r; return spheres && c[0] == 1 && c[2] == 3; }
+					bool ProjectileIgnore(Ent *, const void *){ j += "p"; return ignore; }
+					bool Rat(Ent *){ return rat; }
+					bool Chien(Ent *){ return chien; }
+					int ModelePieton(Ent *){ j += "6"; return 6; }
+					int Modele(Ent *){ j += "m"; return 1; }
+					Ent *Matrice(Ent *e){ return e; }
+					bool Tester(const float *o4, const float *o10, float o1c, Ent *e, int, V::ContactBalaye *c, float *d, uint32 dr, int x9, int x10){
+						j += "T"; departVu = o4[1] == 2 && o10[1] == 1; longueurVue = o1c; drapeauxVus = dr; a9 = x9; a10 = x10;
+						*d = e->d; c->o22 = e->surface; c->entite = e->lie; return e->touche;
+					}
+					void Lier(const void *){ j += "+"; } void Delier(const void *){ j += "-"; }
+				};
+				auto entite = [](int genre){ Ent e; e.o108 = (uint8)(0x40 | genre); e.o20 = 1; e.o1c = 1; return e; };
+				auto mot = [](int piscine, int indice, int suivant){ return (uint32)piscine | (uint32)indice << 4 | (uint32)suivant << 18; };
+				Monde m; Ent a = entite(1), b = entite(1), c = entite(1);
+				a.d = 5.0f; b.d = 2.0f; c.d = 2.0f;
+				m.piscines[7][5] = &a; m.piscines[7][6] = &b; m.piscines[2][1] = &c;
+				// la liste : le nœud 0 (a) → 3 (b) → 2 (c) → fin
+				m.noeuds[0] = mot(7, 5, 3); m.noeuds[3] = mot(7, 6, 2); m.noeuds[2] = mot(2, 1, 0x3fff);
+				V::ContactBalaye meilleur; Lancer l; l.o34 = &meilleur;
+				V::LancerSurListe(&l, (const uint32 *)nullptr, 4.0f, m); VERIF(m.j.empty() && l.o38 == 0);            // liste vide
+				V::LancerSurListe(&l, &m.noeuds[0], 4.0f, m);
+				// a touche à 5 (sous FLT_MAX : le meilleur la prend et se lie à elle), b à 2 (a déliée, b liée), c à égalité : rien
+				VERIF(m.j == "mT+mT-+mT" && meilleur.entite == &b && l.o3c == 2.0f && l.o38 == 1);
+				VERIF(m.rayonVu == 4.0f && m.departVu && m.longueurVue == 30.0f && m.drapeauxVus == 0x15 && m.a9 == 0xf && m.a10 == 1);
+				VERIF(a.o10a == 9 && b.o10a == 9 && c.o10a == 9);
+				m.j.clear(); V::LancerSurListe(&l, &m.noeuds[0], 4.0f, m); VERIF(m.j.empty());                        // le même code : toutes déjà vues
+				auto relance = [&](Lancer &x){ m.code++; m.j.clear(); x.o38 = 0; x.o3c = 3.4028234663852886e+38f; V::LancerSurListe(&x, &m.noeuds[2], 4.0f, m); return x.o38 == 1; };
+				// le filtre d'entrée : sans lui, il faut le +0x42 du lancer et le +0x100 de l'entité
+				c.o20 = 0; VERIF(!relance(l)); c.o100 = 1; VERIF(!relance(l)); l.o42 = 1; VERIF(relance(l) && m.j == "mT-+"); l.o42 = 0; c.o100 = 0; c.o20 = 1;
+				m.bit = false; VERIF(!relance(l)); m.bit = true; c.of4 = 1; VERIF(!relance(l)); c.of4 = 0;
+				// le filtre +0x44 : appelé avec le bit 0x80 seulement
+				l.o44 = true; VERIF(relance(l) && m.j == "mT-+"); l.o20 = 0x95; VERIF(relance(l) && m.j == "FmT-+" && m.drapeauxVus == 0x95);
+				m.filtre = true; VERIF(!relance(l) && m.j == "F"); m.filtre = false; l.o44 = false; VERIF(relance(l) && m.j == "mT-+"); l.o20 = 0x15;
+				// les sphères
+				m.spheres = false; VERIF(!relance(l) && m.j.empty()); m.spheres = true;
+				// un piéton : écarté pour l'entité du lancer ; ses six sphères avec le +0x42, sauf +0xa4, le rat et les chiens
+				c.o108 = 3; VERIF(relance(l) && m.j == "mT-+"); l.o0 = &a; VERIF(relance(l) && m.j == "pmT-+"); m.ignore = true; VERIF(!relance(l) && m.j == "p"); m.ignore = false;
+				l.o42 = 1; VERIF(relance(l) && m.j == "p6T-+"); c.oa4 = 1; VERIF(relance(l) && m.j == "pmT-+"); c.oa4 = 0;
+				m.rat = true; VERIF(relance(l) && m.j == "pmT-+"); m.rat = false; m.chien = true; VERIF(relance(l) && m.j == "pmT-+"); m.chien = false;
+				c.o108 = 1; VERIF(relance(l) && m.j == "mT-+"); l.o42 = 0; l.o0 = nullptr;
+				// la surface 0x41 d'un lancer au +0x41 non nul ; le test faux ; la référence du contact local déliée à la fin
+				c.surface = 0x41; VERIF(relance(l)); l.o41 = 1; VERIF(!relance(l) && m.j == "mT"); c.surface = 0x40; VERIF(relance(l)); l.o41 = 0; c.surface = 0;
+				c.touche = false; VERIF(!relance(l) && m.j == "mT"); c.touche = true;
+				// le meilleur tient déjà c : la copie délie c et lie l'entité du contact local (a), puis la référence revient à c ; le local est délié
+				c.lie = &a; VERIF(relance(l) && m.j == "mT-+-+-" && meilleur.entite == &c); c.lie = nullptr;
+				printf("  le lancer sur une liste (FUN_00563aa0) : la plus proche des trois entités à %.1f, les six sphères d'un piéton quand le lancer le demande\n", 2.0);
+			}
+			{
+				// la ligne sur une liste de secteur (FUN_0045f520) et le filtre d'entrée (FUN_0041c3f0) sur un monde d'essai
+				struct Veh { uint32 o46c = 1; };
+				struct Ent : V::EntiteBalayee { uint32 oa4 = 0; bool o1c98 = false; const Veh *o1554 = nullptr; float d = 5.0f; bool touche = true; int modele = 1; };
+				struct Monde {
+					Ent *piscines[10][8] = {}; uint32 noeuds[8] = {}; uint16 code = 11;
+					bool morts = false, montes = false, bit = true, sansProjectiles = false, rat = false, chien = false;
+					const Ent *ignoree = nullptr; int modeleIgnore = -1; uint8 fiche8 = 0; uint32 fiche28 = 0, drapeauxVus = 0; int a2 = 0, a3 = 0, octetVu = 0;
+					std::string j, etats;
+					bool Morts(){ return morts; } bool Montes(){ return montes; } uint16 Code(){ return code; }
+					void PoserMorts(bool b){ morts = b; } void PoserMontes(bool b){ montes = b; }
+					Ent *Entite(int p, int i){ return piscines[p][i]; }
+					const uint32 *Noeud(uint32 n){ return &noeuds[n]; }
+					bool Ignoree(Ent *e){ return e == ignoree; }
+					bool ModeleIgnore(int mo){ return mo == modeleIgnore; }
+					bool BitDuModele(Ent *){ return bit; }
+					bool SansProjectiles(){ return sansProjectiles; }
+					uint8 OctetFiche8(Ent *){ return fiche8; } uint32 MotFiche28(Ent *){ return fiche28; }
+					bool Rat(Ent *){ return rat; } bool Chien(Ent *){ return chien; }
+					int ModelePieton(Ent *){ j += "6"; return 6; }
+					int Modele(Ent *e){ j += "m"; return e->modele; }
+					Ent *Matrice(Ent *e){ return e; }
+					int Octet82(){ return 0x82; }
+					bool Tester(int x2, Ent *e, int, int x3, float *d, uint32 dr, int octet){
+						j += "T"; a2 = x2; a3 = x3; drapeauxVus = dr; octetVu = octet;
+						etats += morts ? 'M' : '-'; etats += montes ? 'N' : '-';
+						if(e->touche) *d = e->d;
+						return e->touche;
+					}
+				};
+				auto entite = [](int genre){ Ent e; e.o108 = (uint8)(0x40 | genre); e.o20 = 1; e.o1c = 1; e.o10e = 300; return e; };
+				auto mot = [](int piscine, int indice, int suivant){ return (uint32)piscine | (uint32)indice << 4 | (uint32)suivant << 18; };
+				Monde m; Ent a = entite(1), b = entite(1), c = entite(1);
+				a.d = 5.0f; b.d = 2.0f; c.d = 2.0f;
+				m.piscines[7][5] = &a; m.piscines[7][6] = &b; m.piscines[2][1] = &c;
+				m.noeuds[0] = mot(7, 5, 3); m.noeuds[3] = mot(7, 6, 2); m.noeuds[2] = mot(2, 1, 0x3fff);
+				// le filtre d'entrée seul
+				VERIF(V::Entre(&c, m)); c.o20 = 0; VERIF(!V::Entre(&c, m)); c.o20 = 1; c.o1c = 0; VERIF(!V::Entre(&c, m)); c.o60 = 1; VERIF(V::Entre(&c, m)); c.o60 = 0; c.o1c = 1;
+				m.bit = false; VERIF(!V::Entre(&c, m)); m.bit = true; c.of4 = 1; VERIF(!V::Entre(&c, m)); c.of4 = 0;
+				float dist = 100.0f; Ent *vue = nullptr;
+				VERIF(!V::VueSurListe((const uint32 *)nullptr, 7, 8, &dist, &vue, 0x15, false, m) && m.j.empty());   // liste vide
+				// a à 5 (sous 100 : prise), b à 2 (prise), c à égalité : rien
+				VERIF(V::VueSurListe(&m.noeuds[0], 7, 8, &dist, &vue, 0x15, false, m) && m.j == "mTmTmT" && dist == 2.0f && vue == &b);
+				VERIF(m.a2 == 7 && m.a3 == 8 && m.drapeauxVus == 0x15 && m.octetVu == 0x82 && a.o10a == 11 && b.o10a == 11 && c.o10a == 11);
+				m.j.clear(); dist = 100.0f; VERIF(!V::VueSurListe(&m.noeuds[0], 7, 8, &dist, &vue, 0x15, false, m) && m.j.empty());   // le même code
+				auto relance = [&](uint32 dr = 0x15, bool six = false){ m.code++; m.j.clear(); dist = 100.0f; vue = nullptr; return V::VueSurListe(&m.noeuds[2], 7, 8, &dist, &vue, dr, six, m); };
+				VERIF(relance() && m.j == "mT" && vue == &c && dist == 2.0f);
+				// l'entité et les modèles écartés ne reçoivent pas le code
+				m.ignoree = &c; VERIF(!relance() && m.j.empty() && c.o10a != m.code); m.ignoree = nullptr;
+				m.modeleIgnore = 300; VERIF(!relance() && c.o10a != m.code); m.modeleIgnore = -1;
+				// une entité qui n'entre pas ; les octets du monde ne valent que pour une liste de piétons
+				c.o20 = 0; VERIF(!relance() && c.o10a != m.code); m.morts = true; m.montes = true; VERIF(!relance() && c.o10a != m.code);
+				// un piéton qui n'entre pas : mort avec `morts`, ou monté sur un véhicule au +0x46c à 1 avec `montes`
+				c.o108 = 3; m.montes = false; VERIF(!relance() && m.j.empty() && c.o10a == m.code); c.o1c98 = true; VERIF(relance() && m.j == "mT");
+				m.morts = false; VERIF(!relance()); m.montes = true; VERIF(!relance() && c.o10a == m.code); Veh veh; c.o1554 = &veh; VERIF(relance() && m.j == "mT");
+				veh.o46c = 2; VERIF(!relance()); c.o1554 = nullptr; c.o1c98 = false; m.montes = false; c.o20 = 1;
+				// les six sphères d'un piéton avec le septième argument, sauf +0xa4, le rat et les chiens
+				VERIF(relance() && m.j == "mT"); VERIF(relance(0x15, true) && m.j == "6T"); c.oa4 = 1; VERIF(relance(0x15, true) && m.j == "mT"); c.oa4 = 0;
+				m.rat = true; VERIF(relance(0x15, true) && m.j == "mT"); m.rat = false; m.chien = true; VERIF(relance(0x15, true) && m.j == "mT"); m.chien = false;
+				c.o108 = 1; VERIF(relance(0x15, true) && m.j == "mT");
+				// un projectile quand l'octet du monde le demande ; la fiche du modèle avec le bit 0x80 des drapeaux
+				c.oc4 = 1; VERIF(relance()); m.sansProjectiles = true; VERIF(!relance() && m.j.empty() && c.o10a == m.code); m.sansProjectiles = false; c.oc4 = 0;
+				m.fiche8 = 1; m.fiche28 = 1u << 19; VERIF(relance()); VERIF(!relance(0x95) && m.j.empty()); m.fiche8 = 2; VERIF(relance(0x95) && m.drapeauxVus == 0x95);
+				m.fiche8 = 1; m.fiche28 = 1u << 18; VERIF(relance(0x95)); m.fiche8 = 0; m.fiche28 = 0;
+				// sans modèle, pas de test ; le test faux ; une distance qui n'est pas plus courte
+				c.modele = 0; VERIF(!relance() && m.j == "m"); c.modele = 1; c.touche = false; VERIF(!relance() && m.j == "mT" && dist == 100.0f && vue == nullptr); c.touche = true;
+				c.d = 100.0f; VERIF(!relance() && m.j == "mT"); c.d = 2.0f;
+				// le secteur (FUN_00460f60) : cinq listes choisies par les drapeaux, parcourues dans l'ordre +0, +8, +0xc, +4, +0x10
+				Ent p = entite(3), q = entite(1), r = entite(1);
+				a.d = 5.0f; b.d = 4.0f; p.d = 1.0f; q.d = 0.5f; r.d = 0.25f;
+				m.piscines[3][0] = &p; m.piscines[3][1] = &q; m.piscines[3][2] = &r;
+				m.noeuds[4] = mot(7, 5, 0x3fff); m.noeuds[5] = mot(7, 6, 0x3fff); m.noeuds[6] = mot(3, 0, 0x3fff); m.noeuds[7] = mot(3, 1, 0x3fff); m.noeuds[1] = mot(3, 2, 0x3fff);
+				const uint32 *listes[5] = {&m.noeuds[4], &m.noeuds[7], &m.noeuds[5], &m.noeuds[6], &m.noeuds[1]};   // a, q, b, p (un piéton), r
+				auto secteur = [&](uint32 dr, bool six = false){ m.code++; m.j.clear(); m.etats.clear(); dist = 100.0f; vue = nullptr; return V::VueSurSecteur(listes, 7, 8, &dist, &vue, dr, six, m); };
+				VERIF(secteur(0x1f, true) && m.j == "mTmT6TmTmT" && dist == 0.25f && vue == &r && m.etats == "----------");
+				VERIF(secteur(0x1) && m.j == "mT" && dist == 5.0f && vue == &a); VERIF(secteur(0x2) && dist == 4.0f && vue == &b);
+				VERIF(secteur(0x4) && m.j == "mT" && dist == 1.0f && vue == &p); VERIF(secteur(0x8) && dist == 0.5f && vue == &q); VERIF(secteur(0x10) && dist == 0.25f && vue == &r);
+				VERIF(secteur(0x7) && m.j == "mTmTmT" && dist == 1.0f && vue == &p); VERIF(!secteur(0) && m.j.empty() && dist == 100.0f && vue == nullptr);
+				a.d = 100.0f; VERIF(!secteur(0x1) && m.j == "mT" && dist == 100.0f); a.d = 5.0f;
+				// les deux octets du monde : nuls hors de la liste +0xc, rendus pour elle, repris à la sortie
+				m.morts = true; m.montes = true; VERIF(secteur(0x1f) && m.etats == "----MN----" && m.morts && m.montes);
+				m.montes = false; VERIF(secteur(0x1f) && m.etats == "----M-----" && m.morts && !m.montes);
+				VERIF(secteur(0x1b) && m.etats == "--------" && m.morts && !m.montes);
+				// un piéton mort que le filtre refuse : vu dans la liste +0xc avec `morts`, pas sans
+				p.o20 = 0; p.o1c98 = true; VERIF(secteur(0x4) && vue == &p); m.morts = false; VERIF(!secteur(0x4) && m.j.empty()); p.o20 = 1; p.o1c98 = false;
+				printf("  le secteur (FUN_00460f60) : cinq listes par les drapeaux, la plus proche à %.2f, les octets du monde rendus à la seule liste des piétons\n", 0.25);
+				printf("  la ligne sur une liste (FUN_0045f520) : la plus proche des trois entités à %.1f, un piéton mort ou monté selon les octets du monde\n", 2.0);
+			}
+			{
 				// les références vers une entité (FUN_00450730, FUN_00450780, FUN_00465680, FUN_00465690)
 				struct Ent { CReferenceEntite *o118 = nullptr; };
 				CReferenceEntite maillons[3]; maillons[0].suivant = &maillons[1]; maillons[1].suivant = &maillons[2];

@@ -1745,3 +1745,47 @@ en échec plutôt que de les masquer.
   180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout**.
 - **Bilan** : 1 314 fonctions recréées (6,3 % des fonctions, 8,5 % du code), contre 1 307 (6,3 %, 8,4 %) ; 2 247 comprises
   (13,0 % du code), contre 2 240 (13,0 %). Quatre commits de moteur et celui-ci.
+
+## 13.11.2026, séance 4 (de 05 h 13 à 06 h 09)
+
+- **Le modèle de collision d'un piéton est recréé et branché** (0cb74b1) : `FUN_00572680` (lue à l'assembleur de 0x572680 à
+  0x572c78, 1 529 octets ; `CModelePieton::Construire`, `src/collision/ModelePieton.h`) refait pour un piéton le modèle unique
+  du mot 0xcf3138 : six sphères sur six os du squelette, les rangs et les rayons dans la fiche FightCollisionButes du modèle
+  (Globals.cat), ramenées au repère du piéton, avec une sphère englobante et une boîte. Avec elle `FUN_00412670`,
+  `FUN_004130d0`, `FUN_00571280`, `FUN_00570e40`, `FUN_0056ea30` et `FUN_005646e0`. Le blocage « l'outil n'a pas d'os » est
+  levé : l'outil lit le squelette du .nif du modèle (36 nœuds sous « Dummy »), à la pose du fichier (**supposé** : le binaire
+  lit la pose de l'image), et `TesterPieton` remplace les trois sphères de 0,35 m. Ce que cela corrige : la sphère 0 n'englobe
+  pas le piéton, elle est sur le bassin ; la 1 sur le haut de la colonne, la 2 sur la tête, la 3 de nouveau sur le bassin
+  (0,1 m), les 4 et 5 sur les mollets.
+- **Ce qui se voit** : dans `1_04`, le modèle de Gary à 17,36 s, ceux de dix piétons à 73,36 s (quatre avec leur fiche, six par
+  défaut) et de Jimmy à 73,59 s ; les 18 rebonds sur un piéton restent (piéton 10 à la sphère 5, piétons 5 et 6 à la sphère 3,
+  piétons 7, 8 et 9 à la sphère 0), trois coups sur le piéton 8 un pas plus tôt (75,04, 75,87, 76,66 s au lieu de 75,08, 75,90,
+  76,69 s). Dans `1_03` aux briques, les modèles des piétons 6 et 7 à 122,63 s et de Jimmy à 122,86 s ; trois briques sur le
+  piéton 6 à 123,72, 125,27 et 127,18 s (sphères 5, 0, 0), aux mêmes secondes, le point du choc et le rebond changés.
+- **Un os par son nom** (3983d49) : `FUN_0068e380` (cdecl (squelette, nom), de 0x68e380 à 0x68e3d7, 88 octets) est
+  `CHxdFile::OsParNom` (`src/anim/Hxd.h`) ; « Jaw » a le rang 15 et « Eyes » le rang 18 dans MAINPED.HXD. L'outil nomme les
+  six os de chaque modèle, et sur les quinze modèles des missions le nœud du .nif à chaque rang est l'os de même nom : l'ordre
+  des os, qui était supposé, est vérifié.
+- **Les deux autres parcours qui refont le modèle d'un piéton** (a24dc5a, fa14a47, dfb291e) : `FUN_00563aa0`
+  (`CVolProjectile::LancerSurListe`, de 0x563aa0 à 0x563d22 : le parcours d'un « lancer », qui garde le contact le plus
+  proche) et `FUN_0045f520` (`VueSurListe`, de 0x45f520 à 0x45f7e6, 711 octets : une ligne, qui rend l'entité la plus proche)
+  avec le filtre d'entrée `FUN_0041c3f0` (`Entre`, 69 octets). Avec `FUN_0046c4b0`, les trois appelants de `FUN_00572680`
+  sont recréés. Avec eux `FUN_00460f60` (`VueSurSecteur`, 327 octets), la seule appelante de `FUN_0045f520` : la ligne sur
+  les cinq listes d'un secteur, choisies par les cinq bits bas des drapeaux ; la liste +0xc est celle des piétons (la seule
+  qui reçoive les six sphères et les deux octets du monde qui laissent passer un piéton mort ou monté). Ils ne sont pas
+  branchés (l'outil n'a ni lancer ni ligne de vue) : ils se voient dans `test_armes`, sur un monde d'essai. Leurs tests
+  (`00569f10`, `0056aee0`) et leurs appelantes (`00563f30`, `00461d50`) ne sont pas lus.
+- **Le départ du tir, lu et écarté** : `0065e880` (461 octets) est lue en entier, avec `006c1030` et `006bf410` (la
+  transformation d'un os) : la douille « Muzzle » de l'arme tenue, à défaut la matrice du piéton. Elle dépend de la pose
+  animée (la main levée) et des douilles de l'arme : pas recréée, le détail est dans `docs/suite.md` (point 5).
+- **La pose par l'animation, écartée** : l'outil ne sait pas quelle animation joue un piéton ; les pièces existent
+  (`src/anim/Agr.h`, `AgrHxd.h`, `outils/scene.h`) mais ne sont pas liées à lancer_lua. C'est le premier point de la suite.
+- **Les comptes des README** : chaque commit est parti d'un arbre qui ne contenait que lui. Le compte n'a pas bougé au
+  commit 3983d49 : l'adresse 0x68e380 était déjà citée par `src/vehicles/Bike.h` (une déclaration sans corps, `FindNode`, qui
+  la dit rendre un pointeur : à corriger). Écrites sans préfixe pour ne pas être comptées : `00569f10`, `0056aee0`,
+  `0051ae00`, `00563f30`, `00461d50`, `00465a50`.
+- **REA amont** : déjà relevé cette nuit, pas refait.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux briques 147,97 s), `1_04` à 82,53 s, `1_05` à
+  180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout**.
+- **Bilan** : 1 325 fonctions recréées (6,4 % des fonctions, 8,6 % du code), contre 1 314 (6,3 %, 8,5 %) ; 2 256 comprises
+  (13,1 % du code), contre 2 247 (13,0 %). Cinq commits de moteur et celui-ci.

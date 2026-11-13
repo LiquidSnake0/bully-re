@@ -95,6 +95,11 @@ main(void)
 	VERIF(groupes == 423 && groupesSuivis == 423 && rattachees == 3913);
 	// MAINPED : 46 masques, 36 os, 3 365 animations, 425 groupes.
 	VERIF(mainped.masques.size() == 46 && mainped.os.size() == 36 && mainped.anims.size() == 3365 && mainped.groupes.size() == 425);
+	// FUN_0068e380 : un os par son nom haché ; les deux que le binaire cherche (« Jaw », « Eyes ») et ceux des six sphères de Jimmy.
+	VERIF(mainped.OsParNom("Jaw") == 15 && mainped.OsParNom("Eyes") == 18 && mainped.OsParNom("eyes") == 18 && mainped.OsParNom("Coude") == -1);
+	VERIF(mainped.OsParNom("Pelvis") == 2 && mainped.OsParNom("Spine2") == 12 && mainped.OsParNom("Left Calf") == 4 && mainped.OsParNom("Right Calf") == 7 && mainped.OsParNom("EyeLids") == 16);
+	printf("  les os par leur nom : Jaw %d, Eyes %d, Pelvis %d, Spine2 %d, Left Calf %d, Right Calf %d\n", mainped.OsParNom("Jaw"), mainped.OsParNom("Eyes"),
+	       mainped.OsParNom("Pelvis"), mainped.OsParNom("Spine2"), mainped.OsParNom("Left Calf"), mainped.OsParNom("Right Calf"));
 	const CHxdAnim *p = mainped.Chercher(0x6158a6b0);
 	VERIF(p && p->nom == "C_PLAYER\\PUNCH_SLOP_1");
 	// NPC_LOVE\KISS_HARD_B : 4,433 s, 5 044 octets dans NPC_Love.agr (n° 8), 4 de plus ici.
