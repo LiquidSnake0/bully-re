@@ -691,6 +691,15 @@ sphère de 0,055 m), son centre s'arrête à 5,5 cm au-dessus du sol, en (175,49
 ne gagne qu'une ligne, celle du modèle de collision de la bille (une sphère de 0,025 m) : aucun de ses projectiles ne touche le
 monde (ses rebonds sont sur les vitres et les piétons), réussie à 82,53 s.
 
+Le 13.11 (séance 3), les objets cassables passent eux aussi par le test général, avec leur modèle de collision posé par la
+matrice de leur placement (`TesterObjet`), et la règle de la première image du vol est retirée. La bille (une sphère de 0,025 m)
+touche les trois vitres du bus (« buswindow » : 4 triangles, un arbre de partition d'un nœud) aux mêmes instants, 17,52, 19,50 et
+21,52 s, mais sur leurs triangles : elle rebondit selon la normale de la vitre (pour la première, (-0,185, 0,837, 0,086) →
+(-0,056, -0,243, 0,067) m par pas au lieu de (0,052, -0,234, -0,097)), et traverse derrière elle une surface 0x41 du monde que la
+sphère de 0,5 m cachait (« le projectile 0 traverse une surface 0x41 du monde »). Le tir de 73,36 s ne touche plus le volume
+« treeclimbbranch » au départ (un triangle n'est touché que de face). Les vitres cassent, réussie à 82,53 s ; l'essai hors
+mission est inchangé (le repos à 17,85 s en (175,49, 12,52, 6,13)).
+
 ## `1_05` (« Save Algie ») (06.11.2026)
 
 `1_05` s'enchaîne après `1_04`. Lancée seule (`build/outils/lancer_lua 90 --mission 1_05 --sans-cinematiques`), elle bouclait
