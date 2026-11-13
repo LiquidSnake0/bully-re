@@ -848,6 +848,10 @@ main(void)
 					VERIF(n.o24 == 1.5f && n.o28 == 2.0f && n.o2c == 0.0f && fabsf(n.o30 - sqrtf(65.0f) * 0.5f) < 1e-6f);   // (−1, −1, −1) à (4, 5, 1)
 					Lancer n2; V::ConstruireLancer(&n2, fi, de, 1.0f, 0u, &k2, false, (uint8)0, (uint8)0, (Ent *)nullptr);
 					VERIF(n2.o24 == n.o24 && n2.o28 == n.o28 && n2.o30 == n.o30 && n2.o4[0] == 0 && n2.o10[0] == 3);                   // le sens ne change pas la boîte
+					// le filtre du lancer de 00507b10 (FUN_0045ed40) : l'octet +0x8 de la fiche à 1 et le bit 19 de son +0x28
+					VERIF(V::FiltreDuChemin(1, 0x80000u) && V::FiltreDuChemin(1, 0xffffffffu) && !V::FiltreDuChemin(1, 0xfff7ffffu));
+					VERIF(!V::FiltreDuChemin(2, 0x80000u) && !V::FiltreDuChemin(0, 0xffffffffu) && !V::FiltreDuChemin(1, 0u));
+					printf("  le filtre du chemin (FUN_0045ed40) : une fiche de genre 1 au bit 0x80000 passée, les autres non\n");
 					printf("  le lancer construit (FUN_00562f10) : de (3, 4, 0) à (0, 0, 0), rayon 1, la sphère au centre (%.1f, %.1f, %.1f) de rayon %.2f\n", n.o24, n.o28, n.o2c, n.o30);
 					printf("  le lancer sur les secteurs (FUN_00563f30) : le carré de la sphère du lancer, les cinq listes par les bits, le rayon %.0f = 5 + 30\n", 35.0);
 				}

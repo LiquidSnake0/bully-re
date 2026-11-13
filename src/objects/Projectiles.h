@@ -766,7 +766,7 @@ struct CVolProjectile {
 	// 0,5 : la demi-diagonale de la boîte. Rend le lancer. Ce que disent ces champs (supposé) : un trajet de sphère, du début à
 	// la fin, de ce rayon. Un appelant vu (00507b10, sur une chaîne « ConversationPath ») le construit avec le rayon 0,3 (le réel
 	// 0x911e30), les drapeaux 0x8b (les listes +0, +8 et +4 d'un secteur, sans les piétons, et le filtre), le meilleur contact
-	// global 0xc216c0, le filtre 0045ed40, les octets et l'entité nuls, puis appelle FUN_00563f30.
+	// global 0xc216c0, le filtre FUN_0045ed40 (`FiltreDuChemin`, plus bas), les octets et l'entité nuls, puis appelle FUN_00563f30.
 	template<class L, class C, class F, class E>
 	static L *ConstruireLancer(L *l, const float *debut, const float *fin, float rayon, uint32 drapeaux, C *meilleur, F filtre,
 	                           uint8 o41, uint8 o42, E *entite) {
@@ -793,6 +793,14 @@ struct CVolProjectile {
 		l->o42 = o42;
 		l->o0 = entite;
 		return l;
+	}
+	// FUN_0045ed40(entité) (cdecl, lue à l'assembleur de 0x45ed40 à 0x45ed63, 36 octets) : le filtre +0x44 du lancer de 00507b10
+	// (vrai : l'entité est passée, voir LancerSurListe). La fiche du modèle de l'entité (la table 0xc67738, à l'indice du mot
+	// signé +0x10e) : faux si son octet +0x8 ne vaut pas 1, sinon le bit 19 (0x80000) de son mot +0x28 (shr eax,0x13, and al,1).
+	// Ce que disent l'octet et le bit n'est pas lu (supposé : le genre de la fiche et un drapeau du modèle).
+	static bool FiltreDuChemin(uint8 genreFiche, uint32 ficheO28) {
+		if(genreFiche != 1) return false;
+		return ((ficheO28 >> 19) & 1) != 0;
 	}
 	// FUN_00563f30() (méthode d'un lancer, lue à l'assembleur de 0x563f30 à 0x5641b8, 649 octets, ret ; cinq appelants, non lus :
 	// 004fe060, 00504350, 00505600, 00507b10 et 00680f50) : le lancer sur les secteurs du monde, la seule appelante de
