@@ -599,6 +599,31 @@ main(void)
 				VERIF(V::TesterCollision(true, 1, 0, false, false, &c, fin, [&]{ return 0x100; }) == 0);  // l'octet bas seul (movzx eax,al)
 				VERIF(V::TesterCollision(true, 1, 0, false, false, &c, fin, [&]{ return 0; }) == 0);
 			}
+			{
+				// le centre du balayage (FUN_00466b50, FUN_004660b0, FUN_0046d700), le modèle de collision (FUN_0051ae00, FUN_004ea210),
+				// le vecteur « avant » (FUN_00415350), le contact neuf et sa fin (FUN_00415e50, FUN_004153b0)
+				float pl[4] = {10.0f, 20.0f, 30.0f, 0.0f}, pt[3] = {1.0f, 2.0f, 3.0f}, o[3];
+				V::PlacerSansMatrice(o, pl, pt); VERIF(o[0] == 11.0f && o[1] == 22.0f && o[2] == 33.0f);            // cap nul : la somme
+				pl[3] = 1.5707964f; V::PlacerSansMatrice(o, pl, pt);                                                 // un quart de tour : (x, y) → (−y, x)
+				VERIF(fabsf(o[0] - 8.0f) < 1e-5f && fabsf(o[1] - 21.0f) < 1e-5f && o[2] == 33.0f);
+				V::PlacerSansMatrice(pt, pl, pt); VERIF(fabsf(pt[0] - 8.0f) < 1e-5f && fabsf(pt[1] - 21.0f) < 1e-5f);  // la sortie peut être le point
+				float q[3] = {1.0f, 2.0f, 3.0f}; int appels = 0;
+				V::DansLeMonde(true, pl, q, o, [&](float *l, const float *p0){ appels++; l[0] = p0[0] * 2; l[1] = p0[1] * 2; l[2] = p0[2] * 2; });
+				VERIF(appels == 1 && o[0] == 2.0f && o[1] == 4.0f && o[2] == 6.0f);
+				V::DansLeMonde(false, pl, q, o, [&](float *, const float *){ appels++; });
+				VERIF(appels == 1 && fabsf(o[0] - 8.0f) < 1e-5f && o[2] == 33.0f);
+				int oc = 0, o80 = 0;
+				VERIF(V::ModeleDeCollision(6, 1, &oc, &o80) == &o80 && V::ModeleDeCollision(6, 0, &oc, &o80) == &oc);
+				VERIF(V::ModeleDeCollision(4, 1, &oc, &o80) == &oc && V::ModeleDeCollision(6, 1, &oc, (int *)nullptr) == &oc);
+				float m[16] = {1, 2, 3, 0, 4, 5, 6, 0, 7, 8, 9, 0, 10, 11, 12, 1}, av[3];
+				V::Avant(m, 99.0f, av); VERIF(av[0] == 4.0f && av[1] == 5.0f && av[2] == 6.0f);                      // la deuxième ligne de la matrice
+				V::Avant(nullptr, 0.0f, av); VERIF(av[0] == 0.0f && av[1] == 1.0f && av[2] == 0.0f);                  // sans matrice, cap nul : +y
+				V::Avant(nullptr, 1.5707964f, av); VERIF(fabsf(av[0] + 1.0f) < 1e-6f && fabsf(av[1]) < 1e-6f && av[2] == 0.0f);
+				V::ContactBalaye neuf; int delies = 0;
+				VERIF(neuf.entite == nullptr && neuf.fraction == 3.4028234663852886e+38f && neuf.point[2] == 0.0f && neuf.normale[2] == 0.0f);
+				neuf.Defaire([&](const void *){ delies++; }); VERIF(delies == 0);
+				neuf.entite = &oc; neuf.Defaire([&](const void *e){ if(e == &oc) delies++; }); VERIF(delies == 1 && neuf.entite == &oc);
+			}
 			bool remis = false;
 			VERIF(V::CodeDeBalayage(7, &remis) == 8 && !remis && V::CodeDeBalayage(0xfffe) == 0xffff && V::CodeDeBalayage(0xffff, &remis) == 1 && remis);
 			float avantChute[3] = {1.0f, 2.0f, 4.05f}, pos[3] = {1.0f, 2.0f, 3.0f};

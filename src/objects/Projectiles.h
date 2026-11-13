@@ -316,6 +316,12 @@ struct CVolProjectile {
 		uint32 o1c = 0;
 		uint16 o20 = 0, o22 = 0;
 		float fraction = 3.4028234663852886e+38f;
+		// FUN_00415e50 (le constructeur, lu à l'assembleur de 0x415e50 à 0x415e75, 38 octets) : les trois réels de +0x0 et les trois de
+		// +0x10 à 0, la référence +0xc nulle, la fraction +0x24 au réel 0x9009b8 (FLT_MAX) ; +0x1c, +0x20 et +0x22 ne sont pas
+		// écrits (ici 0). Ce sont les valeurs de départ ci-dessus. FUN_004153b0 (la fin d'un contact, lue de 0x4153b0 à 0x4153c4,
+		// 21 octets) : la référence +0xc, non nulle, est déliée (00465690 avec l'entité et l'adresse du champ) ; le champ n'est pas
+		// remis à nul.
+		template<class D> void Defaire(D &&delier) { if(entite) delier(entite); }
 		// FUN_0046a920 (l'affectation d'un contact, lue à l'assembleur de 0x46a920 à 0x46a99b, ret 4) : les trois mots de +0x0 ; la
 		// référence +0xc quand elle change : l'ancienne, non nulle, est déliée (00465690 avec l'adresse du champ), la nouvelle est
 		// posée puis, non nulle, liée (00465680) ; les quatre mots de +0x10 à +0x1c, les deux mots courts +0x20 et +0x22, la fraction
@@ -454,14 +460,55 @@ struct CVolProjectile {
 		if(p.o1310 == 0xd && e == p.o1e94) return true;
 		return e == p.o430 && e != nullptr && e->o46c == 1 && (e->o108 & 0xf8) == 0x38;
 	}
+	// FUN_0046d700(sortie, placement, point) (lue à l'assembleur de 0x46d700 à 0x46d79c, 157 octets, cdecl) : un point du repère
+	// d'une entité sans matrice passe dans le monde par son placement (+4 de l'entité : x, y, z et le cap en +0xc, soit le +0x10 de
+	// l'entité). Cap nul (fldz, fcomp, test ah,0x44, jp : l'égalité stricte) : la somme du placement et du point. Sinon c = le
+	// cosinus du cap (FUN_0085ad50) et s = son sinus (FUN_0085aec0), arrondis en simple précision : x = px × c − py × s + le x du
+	// placement, y = c × py + px × s + son y, z = son z + pz.
+	static void PlacerSansMatrice(float *sortie, const float *placement, const float *point) {
+		if(0.0f == placement[3]){
+			for(int i = 0; i < 3; i++) sortie[i] = placement[i] + point[i];
+			return;
+		}
+		float c = cosf(placement[3]), sn = sinf(placement[3]);
+		float x = point[0] * c - point[1] * sn + placement[0];
+		float y = c * point[1] + point[0] * sn + placement[1];
+		float z = placement[2] + point[2];
+		sortie[0] = x; sortie[1] = y; sortie[2] = z;
+	}
+	// FUN_004660b0(sortie, point) (méthode d'une entité, lue à l'assembleur de 0x4660b0 à 0x466106, 87 octets, ret 8) : un point de
+	// son repère dans le monde. Avec une matrice (+0x14 non nul) : FUN_0041a850(&local, matrice, point), puis les trois mots copiés
+	// (`parMatrice` reçoit la sortie et le point) ; sans matrice : FUN_0046d700(sortie, entité + 4, point). FUN_00466b50(sortie)
+	// (de 0x466b50 à 0x466b6c, 29 octets, ret 4) l'appelle avec le modèle de collision de l'entité (FUN_0051ae00), dont les trois
+	// premiers réels sont le centre de sa sphère : c'est le centre du balayage d'une liste.
+	template<class M> static void DansLeMonde(bool matrice, const float *placement, const float *point, float *sortie, M &&parMatrice) {
+		if(matrice){ float local[3]; parMatrice(local, point); sortie[0] = local[0]; sortie[1] = local[1]; sortie[2] = local[2]; }
+		else PlacerSansMatrice(sortie, placement, point);
+	}
+	// FUN_0051ae00(entité) (lue à l'assembleur de 0x51ae00 à 0x51ae46, 71 octets, cdecl) : le modèle de collision d'une entité, le
+	// +0xc de la fiche de son modèle (la table 0xc67738, à l'indice du mot signé +0x10e). Pour une entité de genre 6 (+0x108 & 7)
+	// dont FUN_004ea210 rend vrai (de 0x4ea210 à 0x4ea21a, 11 octets : son +0x184 n'est pas nul), c'est le +0x80 de la fiche quand
+	// il n'est pas nul. FUN_00465cc0 (le rayon d'une entité) rend le réel +0xc de ce modèle de collision.
+	template<class T> static T *ModeleDeCollision(int genre, uint32 o184, T *ficheOc, T *ficheO80) {
+		if(genre == 6 && o184 != 0 && ficheO80 != nullptr) return ficheO80;
+		return ficheOc;
+	}
+	// FUN_00415350(sortie) (méthode d'une entité, lue à l'assembleur de 0x415350 à 0x4153ab, 94 octets, ret 4) : son vecteur
+	// « avant ». Avec une matrice (+0x14 non nul) : les trois mots +0x10, +0x14 et +0x18 de la matrice (sa deuxième ligne) ; sans
+	// matrice : (−sin(cap), cos(cap), 0), le cap étant le +0x10 de l'entité (FUN_0085aec0 puis fchs, FUN_0085ad50). Ce n'est pas la
+	// vitesse (ce que la séance 2 du 12.11 supposait).
+	static void Avant(const float *matrice, float cap, float *sortie) {
+		if(matrice){ sortie[0] = matrice[4]; sortie[1] = matrice[5]; sortie[2] = matrice[6]; return; }
+		sortie[0] = -sinf(cap); sortie[1] = cosf(cap); sortie[2] = 0.0f;
+	}
 	// La règle de deux projectiles de même modèle dans le balayage d'une liste (une part de 0046c4b0, lue à l'assembleur de 0x46c71b
 	// à 0x46c7b4, non comptée) : quand l'entité qui balaie est un projectile (+0xc4 non nul) et que l'entité de la liste a le même
-	// modèle (+0x10e), un des trois modèles DAT_00bf435c, DAT_00bf4358 ou DAT_00bf4354 (leurs noms ne sont pas lus dans la table
-	// 0xa136e8), le produit scalaire des deux vitesses (FUN_004144f0, sur les vecteurs que rend FUN_00415350 : la vitesse, supposé)
-	// est divisé par le produit des deux normes (FUN_0040df90 ; le produit puis le quotient arrondis en simple précision). Quand ce
-	// cosinus est strictement au-dessus du double 0x90c730 (0.8659999966621399 ; fcomp, test ah,0x41, jne), les deux projectiles
-	// ne se touchent pas : deux projectiles du même modèle qui volent à moins de 30° l'un de l'autre se traversent. Une vitesse
-	// nulle (0 / 0, non ordonné) garde le contact.
+	// modèle (+0x10e), un des trois modèles DAT_00bf435c, DAT_00bf4358 ou DAT_00bf4354 (« brocket », « potato » et « ammo_scatter »
+	// dans la table des noms 0xa136e8), le produit scalaire de leurs deux vecteurs « avant » (FUN_004144f0, sur les vecteurs que
+	// rend FUN_00415350 : `v` et `autre`) est divisé par le produit des deux normes (FUN_0040df90 ; le produit puis le quotient
+	// arrondis en simple précision). Quand ce cosinus est strictement au-dessus du double 0x90c730 (0.8659999966621399 ; fcomp,
+	// test ah,0x41, jne), les deux projectiles ne se touchent pas : deux fusées, deux patates ou deux plombs tournés à moins de 30°
+	// l'un de l'autre se traversent. Un vecteur nul (0 / 0, non ordonné) garde le contact.
 	static bool MemeSens(const float *v, const float *autre) {
 		double normeAutre = Norme(autre);
 		float scalaire = v[2] * autre[2] + v[0] * autre[0] + v[1] * autre[1];
