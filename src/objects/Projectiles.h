@@ -517,6 +517,34 @@ struct CVolProjectile {
 		if(tireur == place0) return true;
 		return ofc;
 	}
+	// FUN_00447290 (méthode d'une entité, lue à l'assembleur de 0x447290 à 0x4472b7, 40 octets) : son modèle (+0x10e, signé) est-il
+	// un des trois de DAT_00bf42d4, DAT_00bf42d0 et DAT_00bf42cc (« Dog_Pitbull », « Dog_Pitbull2 » et « Dog_Pitbull3 » dans la
+	// table des noms de modèles 0xa136e8) : un chien.
+	static bool EstUnChien(int modele, int pitbull, int pitbull2, int pitbull3) {
+		return modele == pitbull || modele == pitbull2 || modele == pitbull3;
+	}
+	// FUN_0046a340(arg1, entité, contact, arg4) (la méthode +0xa4 de la vtable d'un CProjectile, 0x9059c4 : le mot lu dans le
+	// binaire ; lue à l'assembleur de 0x46a340 à 0x46a423, 228 octets, ret 0x10) : le test de collision que le balayage d'une liste
+	// (0046c4b0) appelle sur chaque entité qui a passé ses filtres. Elle choisit entre deux tests :
+	//  - le test fin contre un piéton, quand l'entité qui balaie est un projectile (+0xc4 non nul), que l'entité de la liste est un
+	//    piéton (+0x108 & 7 == 3) au +0xa4 nul, dont le modèle (+0x10e) n'est ni DAT_00bf42dc (« Rat_Ped ») ni un chien
+	//    (FUN_00447290) : 00572680(piéton) d'abord (1 529 octets, non lue ; supposé : elle prépare les volumes du piéton, que le mot
+	//    0xcf3138 désigne ensuite), puis 00469f70 (966 octets, non lue), méthode de l'entité qui balaie, avec arg1, sa matrice
+	//    (FUN_0046dbd0), son modèle de collision (0051ae00), la matrice du piéton, le mot 0xcf3138 et le contact ;
+	//  - sinon le test général 0056c770 (4 610 octets, non lue, cdecl à quinze arguments) : arg1, la matrice et le modèle de collision
+	//    de l'entité qui balaie, la matrice de l'entité de la liste deux fois, son modèle de collision, le contact, cinq mots nuls,
+	//    0xf, 0 et 1. Le rat et les chiens passent donc par leur modèle de collision, comme un bâtiment.
+	// L'octet rendu par le test (movzx : 0 à 255 ; supposé : le nombre de contacts) est rendu tel quel, sauf pour un projectile dont
+	// le contact porte la surface 0x41 (l'octet +0x22 du contact ; le nom de cette surface n'est pas lu) : 0, le projectile la
+	// traverse. arg4 n'est pas lu par cette méthode. `contrePieton` et `contreModele` sont les deux tests.
+	template<class P, class M> static int TesterCollision(bool oc4, int genre, uint32 oa4, bool rat, bool chien,
+	                                                     const ContactBalaye *contact, P &&contrePieton, M &&contreModele) {
+		int n;
+		if(oc4 && genre == 3 && oa4 == 0 && !rat && !chien) n = (uint8)contrePieton();
+		else n = (uint8)contreModele();
+		if(n > 0 && oc4 && (uint8)contact->o22 == 0x41) return 0;
+		return n;
+	}
 	// Puis il rebondit, au premier tour de la boucle des contacts (les autres CPhysical glissent le long de la normale et refont
 	// jusqu'à trois tours). La normale du contact, dont le z positif est mis à 0 quand l'entité touchée a un +0xf0 (`aPlat` ; fldz,
 	// fcom, test ah,5, jp), est normalisée (0x414cc0, supposée). Contre un piéton (le genre de l'entité touchée, +0x108 & 7, vaut 3)

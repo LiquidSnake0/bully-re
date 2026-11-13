@@ -578,6 +578,27 @@ main(void)
 				VERIF(V::VehiculeIgnore(2, true, &a1, &a1, false) && !V::VehiculeIgnore(2, true, &a1, &a2, false) && V::VehiculeIgnore(2, true, &a1, &a2, true));
 				VERIF(V::VehiculeIgnore(2, true, nullptr, nullptr, false));                  // sans tireur et place vide : « égaux »
 			}
+			{
+				// la méthode +0xa4 d'un CProjectile (FUN_0046a340) et les trois chiens (FUN_00447290)
+				VERIF(V::EstUnChien(7, 7, 8, 9) && V::EstUnChien(8, 7, 8, 9) && V::EstUnChien(9, 7, 8, 9) && !V::EstUnChien(10, 7, 8, 9));
+				V::ContactBalaye c; std::string qui;
+				auto fin = [&]{ qui += "p"; return 1; };
+				auto gen = [&]{ qui += "m"; return 3; };
+				VERIF(V::TesterCollision(true, 3, 0, false, false, &c, fin, gen) == 1 && qui == "p");      // projectile contre piéton : le test fin
+				VERIF(V::TesterCollision(false, 3, 0, false, false, &c, fin, gen) == 3 && qui == "pm");    // pas un projectile : le test général
+				VERIF(V::TesterCollision(true, 1, 0, false, false, &c, fin, gen) == 3 && qui == "pmm");    // contre un bâtiment
+				VERIF(V::TesterCollision(true, 3, 1, false, false, &c, fin, gen) == 3 && qui == "pmmm");   // un piéton au +0xa4 non nul
+				VERIF(V::TesterCollision(true, 3, 0, true, false, &c, fin, gen) == 3 && qui == "pmmmm");   // le rat
+				VERIF(V::TesterCollision(true, 3, 0, false, true, &c, fin, gen) == 3 && qui == "pmmmmm");  // un chien
+				c.o22 = 0x41;
+				VERIF(V::TesterCollision(true, 3, 0, false, false, &c, fin, gen) == 0);                    // la surface 0x41 : un projectile la traverse
+				VERIF(V::TesterCollision(true, 1, 0, false, false, &c, fin, gen) == 0);
+				VERIF(V::TesterCollision(false, 1, 0, false, false, &c, fin, gen) == 3);                   // pas les autres entités
+				c.o22 = 0x341; VERIF(V::TesterCollision(true, 1, 0, false, false, &c, fin, gen) == 0);     // l'octet +0x22 seul, pas le +0x23
+				c.o22 = 0x40; VERIF(V::TesterCollision(true, 1, 0, false, false, &c, fin, gen) == 3);
+				VERIF(V::TesterCollision(true, 1, 0, false, false, &c, fin, [&]{ return 0x100; }) == 0);  // l'octet bas seul (movzx eax,al)
+				VERIF(V::TesterCollision(true, 1, 0, false, false, &c, fin, [&]{ return 0; }) == 0);
+			}
 			bool remis = false;
 			VERIF(V::CodeDeBalayage(7, &remis) == 8 && !remis && V::CodeDeBalayage(0xfffe) == 0xffff && V::CodeDeBalayage(0xffff, &remis) == 1 && remis);
 			float avantChute[3] = {1.0f, 2.0f, 4.05f}, pos[3] = {1.0f, 2.0f, 3.0f};
