@@ -281,12 +281,62 @@ struct CVolProjectile {
 		if(genre7) *ob0 = repos; else *o28 = repos;
 		*compte = repos ? 10 : 0;
 	}
-	// La fonction 0046ca40 (le déplacement d'un CPhysical dans le monde, 2 884 octets, non recréée en entier ; ici sa part pour un projectile, +0xc4 non nul, lue à
+	// La fonction 0046ca40 (le déplacement d'un CPhysical dans le monde, 2 884 octets, lue en entier, recréée par morceaux et pas encore d'une pièce ; ici sa part pour un projectile, +0xc4 non nul, lue à
 	// l'assembleur de 0x46cd98 à 0x46ce47 et de 0x46d0d7 à 0x46d22e ; le balayage d'une liste de secteur, FUN_0046c4b0, est BalayerListe). Au
 	// contact le plus proche, à la fraction f du déplacement de l'image, le projectile est reposé à l'ancienne position plus le
 	// déplacement fois (f − 0,005) (le double 0x90c740, qui vaut 0,005 en simple précision : 0,004999999888241291), arrondi en
 	// simple précision.
 	static float Recul(float fraction) { return (float)((double)fraction - 0.004999999888241291); }
+	// Le même recul pour toute entité, avec ce qu'il laisse (de 0x46cd98 à 0x46ce6b) : l'écart est la position d'après le déplacement
+	// moins l'ancienne, celle de la matrice d'avant le déplacement que le balayage reçoit (00414a20, la différence) ; sa part gardée est
+	// l'écart fois (f − 0,005), chaque produit arrondi en simple précision ; la position devient l'ancienne plus cette part
+	// (FUN_00412850, la somme ; posée par 0041c390) ; le reste du déplacement est l'écart moins cette part. Au troisième tour de la
+	// boucle des contacts (le compteur vaut 2, 0x46ce37) la fonction sort ici, sans rebond ni glissade.
+	static void Reculer(const float *ancienne, float *pos, float fraction, float *reste) {
+		float f = Recul(fraction);
+		for(int i = 0; i < 3; i++){
+			float ecart = pos[i] - ancienne[i];
+			float garde = (float)((double)ecart * (double)f);
+			pos[i] = ancienne[i] + garde;
+			reste[i] = ecart - garde;
+		}
+	}
+	// La glissade des entités qui ne sont pas des projectiles (+0xc4 nul ; lue à l'assembleur de 0x46ce71 à 0x46cf6a) : le reste du
+	// déplacement est ramené dans le plan du contact. s est le produit scalaire de la normale du meilleur contact (+0x10) et du
+	// reste changé de signe (ny × −ry + nx × −rx, puis + nz × −rz, arrondi en simple précision), plus le double 0x900fa0 (0,001 en
+	// simple précision : 0.0010000000474974513), arrondi ; le reste reçoit la normale fois s, composante par composante (chaque
+	// produit et chaque somme arrondis) : ce qui allait dans le mur est retiré, et un millimètre l'en écarte. La position
+	// (FUN_00415310) plus ce reste (FUN_00412850) est posée (0041c390), le compteur monte de 1 et, sous 3, la boucle des contacts
+	// repart à 0x46cc20 : le code de balayage, la fraction du meilleur contact remise à FLT_MAX (ses autres champs restent), le
+	// balayage des secteurs depuis la même ancienne matrice. Une entité glisse donc au plus deux fois par image ; au troisième
+	// contact elle reste au recul.
+	static void Glisser(float *reste, const float *normale) {
+		float scalaire = (float)((double)normale[1] * (double)-reste[1] + (double)normale[0] * (double)-reste[0]
+		                         + (double)normale[2] * (double)-reste[2]);
+		float s = (float)((double)scalaire + (double)0.001f);
+		for(int i = 0; i < 3; i++){
+			float part = (float)((double)normale[i] * (double)s);
+			reste[i] = reste[i] + part;
+		}
+	}
+	// Un tour de la boucle des contacts pour une telle entité, après le balayage qui a touché : le recul, puis la glissade et la
+	// position qui la suit. Faux : la boucle s'arrête (le troisième tour, ou le compteur arrivé à 3).
+	static bool TourDeGlissade(const float *ancienne, float *pos, const float *normale, float fraction, int tour) {
+		float reste[3];
+		Reculer(ancienne, pos, fraction, reste);
+		if(tour == 2) return false;
+		Glisser(reste, normale);
+		for(int i = 0; i < 3; i++) pos[i] = pos[i] + reste[i];
+		return tour + 1 < 3;
+	}
+	// FUN_0041c390(x, y, z) (méthode d'une entité, lue à l'assembleur de 0x41c390 à 0x41c3e2, 83 octets, ret 0xc) : la pose d'une
+	// position, celle du recul, de la glissade et de la sortie du déplacement. Avec une matrice (+0x14 non nul), les trois mots
+	// +0x30, +0x34 et +0x38 de la matrice reçoivent x, y et z (son mot +0x3c reçoit un mot de la pile que rien n'a écrit : il n'est
+	// pas touché ici) ; dans les deux cas le placement de l'entité (+4, +8, +0xc) les reçoit aussi.
+	static void PoserPosition(float *matrice, float *placement, float x, float y, float z) {
+		if(matrice){ matrice[12] = x; matrice[13] = y; matrice[14] = z; }
+		placement[0] = x; placement[1] = y; placement[2] = z;
+	}
 	// Le début de la même fonction (lu à l'assembleur de son premier octet à 0x46cd98). La distance parcourue +0x19c passe à 0 ; tenue (+0xb0
 	// non nul) ou sans son +0x1c, l'entité ne fait rien de plus. Quand les trois réels de sa vitesse (+0x124) et les trois de sa
 	// vitesse angulaire (+0x130) sont tous nuls (fcom contre 0, test ah,0x44, jp) et que l'octet +0x108 a un des bits 0xf8, elle

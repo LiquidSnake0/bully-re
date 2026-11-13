@@ -474,6 +474,36 @@ main(void)
 			float chute = V::PartagerChute(4.0f, &z, 0);
 			VERIF(fabsf(chute + 1.05f) < 1e-6f && fabsf(z - 4.05f) < 1e-6f);
 			VERIF(V::Recul(1.0f) == (float)(1.0 - (double)0.005f));
+			{
+				// le recul et la glissade d'une entité qui n'est pas un projectile (0046ca40, de 0x46cd98 à 0x46cf6a)
+				float anc[3] = {0.0f, 0.0f, 0.0f}, pos[3] = {1.0f, 1.0f, 0.0f}, reste[3], mur[3] = {-1.0f, 0.0f, 0.0f};
+				V::Reculer(anc, pos, 0.5f, reste);
+				VERIF(fabsf(pos[0] - 0.495f) < 1e-6f && fabsf(pos[1] - 0.495f) < 1e-6f && pos[2] == 0.0f);
+				VERIF(fabsf(reste[0] - 0.505f) < 1e-6f && fabsf(reste[1] - 0.505f) < 1e-6f && reste[2] == 0.0f);
+				VERIF(fabsf(pos[0] + reste[0] - 1.0f) < 1e-6f);                                            // la part gardée et le reste font l'écart
+				V::Glisser(reste, mur);
+				// ce qui allait dans le mur est retiré, un millimètre l'en écarte, le long du mur rien ne change
+				VERIF(fabsf(reste[0] + 0.001f) < 1e-6f && fabsf(reste[1] - 0.505f) < 1e-6f && reste[2] == 0.0f);
+				float r2[3] = {0.0f, 0.0f, -1.0f}, sol[3] = {0.0f, 0.0f, 1.0f};
+				V::Glisser(r2, sol); VERIF(r2[0] == 0.0f && r2[1] == 0.0f && fabsf(r2[2] - 0.001f) < 1e-7f);
+				float r3[3] = {0.25f, 0.0f, 0.0f};                                            // parallèle au sol : le millimètre seul
+				V::Glisser(r3, sol); VERIF(r3[0] == 0.25f && r3[2] == (float)(double)0.001f);
+				float r4[3] = {3.0f, 0.0f, -4.0f}, pente[3] = {0.6f, 0.0f, 0.8f};             // une pente : le reste suit le plan
+				V::Glisser(r4, pente);
+				VERIF(fabsf(r4[0] * pente[0] + r4[2] * pente[2] - 0.001f) < 1e-5f);
+				// un tour entier : le long du mur jusqu'au bout, un millimètre et le recul en deçà
+				float p2[3] = {1.0f, 1.0f, 0.0f};
+				VERIF(V::TourDeGlissade(anc, p2, mur, 0.5f, 0) && fabsf(p2[0] - 0.494f) < 1e-6f && fabsf(p2[1] - 1.0f) < 1e-6f);
+				float p3[3] = {1.0f, 1.0f, 0.0f};
+				VERIF(V::TourDeGlissade(anc, p3, mur, 0.5f, 1) && fabsf(p3[0] - 0.494f) < 1e-6f);    // deuxième tour : elle glisse encore
+				float mat[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 7, 8, 9, 1}, plc[4] = {7, 8, 9, 0.5f};
+				V::PoserPosition(mat, plc, 1.0f, 2.0f, 3.0f);                                 // FUN_0041c390 : la matrice et le placement
+				VERIF(mat[12] == 1.0f && mat[13] == 2.0f && mat[14] == 3.0f && mat[15] == 1.0f && mat[0] == 1.0f);
+				VERIF(plc[0] == 1.0f && plc[1] == 2.0f && plc[2] == 3.0f && plc[3] == 0.5f);
+				V::PoserPosition(nullptr, plc, 4.0f, 5.0f, 6.0f); VERIF(plc[0] == 4.0f && plc[2] == 6.0f && mat[12] == 1.0f);
+				float p4[3] = {1.0f, 1.0f, 0.0f};
+				VERIF(!V::TourDeGlissade(anc, p4, mur, 0.5f, 2) && fabsf(p4[0] - 0.495f) < 1e-6f && fabsf(p4[1] - 0.495f) < 1e-6f);   // troisième : le recul seul
+			}
 			V::ContactBalaye m;
 			VERIF(m.fraction == 3.4028234663852886e+38f && sizeof(float) * 3 == sizeof(m.point));
 			float fr[4] = {0.8f, 0.3f, 0.5f, 0.1f}; int vus = 0;
