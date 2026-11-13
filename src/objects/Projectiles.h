@@ -754,6 +754,46 @@ struct CVolProjectile {
 			local.Defaire(delier);
 		}
 	}
+	// FUN_00562f10(début, fin, rayon, drapeaux, meilleur, filtre, o41, o42, entité) (méthode d'un lancer, lue à l'assembleur de
+	// 0x562f10 à 0x56315f, 592 octets, ret 0x24 : neuf arguments ; cinq appelants, non lus) : le constructeur du lancer. Il met à zéro
+	// +0x4 à +0x18 et +0x24 à +0x2c, puis copie le début en +0x4, la fin en +0x10, le rayon en +0x1c, les drapeaux en +0x20, le
+	// meilleur contact en +0x34, le filtre en +0x44, les octets +0x41 et +0x42 et l'entité en +0x0 ; +0x38, +0x3c et +0x40 ne sont
+	// pas écrits (FUN_00563f30 écrit les deux premiers). La sphère du lancer (+0x24 à +0x30, celle dont FUN_00563f30 tire ses
+	// secteurs) englobe la boîte du trajet : par axe, le plus petit (fcom, test ah,0x41 : la fin quand elle n'est pas strictement
+	// au-dessus du début) et le plus grand (test ah,5, jp : la fin quand elle n'est pas strictement dessous) du début et de la fin,
+	// le premier moins le rayon, le second plus le rayon ; le centre, leur somme (FUN_00412850) fois 0,5 (le double 0x8ff1f8) ; le
+	// rayon, la longueur de leur écart (FUN_00414a20 ; la racine, 0x85c4d0, de |z² + (y² + x²)| rangée en simple précision) fois
+	// 0,5 : la demi-diagonale de la boîte. Rend le lancer. Ce que disent ces champs (supposé) : un trajet de sphère, du début à
+	// la fin, de ce rayon. Un appelant vu (00507b10, sur une chaîne « ConversationPath ») le construit avec le rayon 0,3 (le réel
+	// 0x911e30), les drapeaux 0x8b (les listes +0, +8 et +4 d'un secteur, sans les piétons, et le filtre), le meilleur contact
+	// global 0xc216c0, le filtre 0045ed40, les octets et l'entité nuls, puis appelle FUN_00563f30.
+	template<class L, class C, class F, class E>
+	static L *ConstruireLancer(L *l, const float *debut, const float *fin, float rayon, uint32 drapeaux, C *meilleur, F filtre,
+	                           uint8 o41, uint8 o42, E *entite) {
+		for(int i = 0; i < 3; i++){ l->o4[i] = debut[i]; l->o10[i] = fin[i]; }
+		l->o1c = rayon;
+		l->o20 = drapeaux;
+		l->o34 = meilleur;
+		float mn[3], mx[3];
+		for(int i = 0; i < 3; i++){
+			float a = debut[i], b = fin[i];
+			mn[i] = b <= a ? b : a;
+			mx[i] = b >= a ? b : a;
+		}
+		for(int i = 0; i < 3; i++){ mn[i] = mn[i] - rayon; mx[i] = mx[i] + rayon; }
+		l->o24 = (float)((double)(mx[0] + mn[0]) * 0.5);
+		l->o28 = (float)((double)(mx[1] + mn[1]) * 0.5);
+		l->o2c = (float)((double)(mx[2] + mn[2]) * 0.5);
+		float e[3] = {mx[0] - mn[0], mx[1] - mn[1], mx[2] - mn[2]};
+		float d2 = e[2] * e[2] + (e[1] * e[1] + e[0] * e[0]);
+		float longueur = (float)sqrt((double)fabsf(d2));
+		l->o30 = (float)((double)longueur * 0.5);
+		l->o41 = o41;
+		l->o44 = filtre;
+		l->o42 = o42;
+		l->o0 = entite;
+		return l;
+	}
 	// FUN_00563f30() (méthode d'un lancer, lue à l'assembleur de 0x563f30 à 0x5641b8, 649 octets, ret ; cinq appelants, non lus :
 	// 004fe060, 00504350, 00505600, 00507b10 et 00680f50) : le lancer sur les secteurs du monde, la seule appelante de
 	// FUN_00563aa0. Le meilleur est remis à zéro (+0x3c au réel 0x9009b8, FLT_MAX ; +0x38 à 0). Les secteurs sont ceux du carré

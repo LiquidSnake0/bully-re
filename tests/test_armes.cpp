@@ -841,6 +841,14 @@ main(void)
 					VERIF(V::LancerSurSecteurs(&s, m) == 0 && m.listes.empty());                                        // qu'en bas, le haut qu'en haut : rien
 					s.o20 = 0; m.listes.clear(); m.code = 0xffff;                                                       // aucun bit ; le code repart à 1
 					VERIF(V::LancerSurSecteurs(&s, m) == 0 && m.listes == "E" && m.code == 1);
+					// le constructeur (FUN_00562f10) : la sphère englobe la boîte du trajet élargie du rayon
+					V::ContactBalaye k2; Lancer n; float de[3] = {3, 4, 0}, fi[3] = {0, 0, 0};
+					VERIF(V::ConstruireLancer(&n, de, fi, 1.0f, 0x8bu, &k2, true, (uint8)1, (uint8)2, &a) == &n);
+					VERIF(n.o4[0] == 3 && n.o10[1] == 0 && n.o1c == 1.0f && n.o20 == 0x8b && n.o34 == &k2 && n.o44 && n.o41 == 1 && n.o42 == 2 && n.o0 == &a);
+					VERIF(n.o24 == 1.5f && n.o28 == 2.0f && n.o2c == 0.0f && fabsf(n.o30 - sqrtf(65.0f) * 0.5f) < 1e-6f);   // (−1, −1, −1) à (4, 5, 1)
+					Lancer n2; V::ConstruireLancer(&n2, fi, de, 1.0f, 0u, &k2, false, (uint8)0, (uint8)0, (Ent *)nullptr);
+					VERIF(n2.o24 == n.o24 && n2.o28 == n.o28 && n2.o30 == n.o30 && n2.o4[0] == 0 && n2.o10[0] == 3);                   // le sens ne change pas la boîte
+					printf("  le lancer construit (FUN_00562f10) : de (3, 4, 0) à (0, 0, 0), rayon 1, la sphère au centre (%.1f, %.1f, %.1f) de rayon %.2f\n", n.o24, n.o28, n.o2c, n.o30);
 					printf("  le lancer sur les secteurs (FUN_00563f30) : le carré de la sphère du lancer, les cinq listes par les bits, le rayon %.0f = 5 + 30\n", 35.0);
 				}
 			}
