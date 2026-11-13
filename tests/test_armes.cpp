@@ -822,8 +822,9 @@ main(void)
 					Ent *piscines[10][8] = {}; uint32 noeuds[8] = {}; uint16 code = 11;
 					bool morts = false, montes = false, bit = true, sansProjectiles = false, rat = false, chien = false;
 					const Ent *ignoree = nullptr; int modeleIgnore = -1; uint8 fiche8 = 0; uint32 fiche28 = 0, drapeauxVus = 0; int a2 = 0, a3 = 0, octetVu = 0;
-					std::string j;
+					std::string j, etats;
 					bool Morts(){ return morts; } bool Montes(){ return montes; } uint16 Code(){ return code; }
+					void PoserMorts(bool b){ morts = b; } void PoserMontes(bool b){ montes = b; }
 					Ent *Entite(int p, int i){ return piscines[p][i]; }
 					const uint32 *Noeud(uint32 n){ return &noeuds[n]; }
 					bool Ignoree(Ent *e){ return e == ignoree; }
@@ -838,6 +839,7 @@ main(void)
 					int Octet82(){ return 0x82; }
 					bool Tester(int x2, Ent *e, int, int x3, float *d, uint32 dr, int octet){
 						j += "T"; a2 = x2; a3 = x3; drapeauxVus = dr; octetVu = octet;
+						etats += morts ? 'M' : '-'; etats += montes ? 'N' : '-';
 						if(e->touche) *d = e->d;
 						return e->touche;
 					}
@@ -879,6 +881,25 @@ main(void)
 				// sans modèle, pas de test ; le test faux ; une distance qui n'est pas plus courte
 				c.modele = 0; VERIF(!relance() && m.j == "m"); c.modele = 1; c.touche = false; VERIF(!relance() && m.j == "mT" && dist == 100.0f && vue == nullptr); c.touche = true;
 				c.d = 100.0f; VERIF(!relance() && m.j == "mT"); c.d = 2.0f;
+				// le secteur (FUN_00460f60) : cinq listes choisies par les drapeaux, parcourues dans l'ordre +0, +8, +0xc, +4, +0x10
+				Ent p = entite(3), q = entite(1), r = entite(1);
+				a.d = 5.0f; b.d = 4.0f; p.d = 1.0f; q.d = 0.5f; r.d = 0.25f;
+				m.piscines[3][0] = &p; m.piscines[3][1] = &q; m.piscines[3][2] = &r;
+				m.noeuds[4] = mot(7, 5, 0x3fff); m.noeuds[5] = mot(7, 6, 0x3fff); m.noeuds[6] = mot(3, 0, 0x3fff); m.noeuds[7] = mot(3, 1, 0x3fff); m.noeuds[1] = mot(3, 2, 0x3fff);
+				const uint32 *listes[5] = {&m.noeuds[4], &m.noeuds[7], &m.noeuds[5], &m.noeuds[6], &m.noeuds[1]};   // a, q, b, p (un piéton), r
+				auto secteur = [&](uint32 dr, bool six = false){ m.code++; m.j.clear(); m.etats.clear(); dist = 100.0f; vue = nullptr; return V::VueSurSecteur(listes, 7, 8, &dist, &vue, dr, six, m); };
+				VERIF(secteur(0x1f, true) && m.j == "mTmT6TmTmT" && dist == 0.25f && vue == &r && m.etats == "----------");
+				VERIF(secteur(0x1) && m.j == "mT" && dist == 5.0f && vue == &a); VERIF(secteur(0x2) && dist == 4.0f && vue == &b);
+				VERIF(secteur(0x4) && m.j == "mT" && dist == 1.0f && vue == &p); VERIF(secteur(0x8) && dist == 0.5f && vue == &q); VERIF(secteur(0x10) && dist == 0.25f && vue == &r);
+				VERIF(secteur(0x7) && m.j == "mTmTmT" && dist == 1.0f && vue == &p); VERIF(!secteur(0) && m.j.empty() && dist == 100.0f && vue == nullptr);
+				a.d = 100.0f; VERIF(!secteur(0x1) && m.j == "mT" && dist == 100.0f); a.d = 5.0f;
+				// les deux octets du monde : nuls hors de la liste +0xc, rendus pour elle, repris à la sortie
+				m.morts = true; m.montes = true; VERIF(secteur(0x1f) && m.etats == "----MN----" && m.morts && m.montes);
+				m.montes = false; VERIF(secteur(0x1f) && m.etats == "----M-----" && m.morts && !m.montes);
+				VERIF(secteur(0x1b) && m.etats == "--------" && m.morts && !m.montes);
+				// un piéton mort que le filtre refuse : vu dans la liste +0xc avec `morts`, pas sans
+				p.o20 = 0; p.o1c98 = true; VERIF(secteur(0x4) && vue == &p); m.morts = false; VERIF(!secteur(0x4) && m.j.empty()); p.o20 = 1; p.o1c98 = false;
+				printf("  le secteur (FUN_00460f60) : cinq listes par les drapeaux, la plus proche à %.2f, les octets du monde rendus à la seule liste des piétons\n", 0.25);
 				printf("  la ligne sur une liste (FUN_0045f520) : la plus proche des trois entités à %.1f, un piéton mort ou monté selon les octets du monde\n", 2.0);
 			}
 			{

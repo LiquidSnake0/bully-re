@@ -750,8 +750,8 @@ struct CVolProjectile {
 		return e->o20 != 0 && (e->o1c != 0 || e->o60 != 0) && m.BitDuModele(e) && e->of4 == 0;
 	}
 	// FUN_0045f520(&liste, arg2, arg3, &distance, &entité, drapeaux, sixSphères) (cdecl à sept arguments, lue à l'assembleur de
-	// 0x45f520 à 0x45f7e6, 711 octets ; 00460f60, non lue, est sa seule appelante) : le troisième parcours d'une liste de secteur
-	// qui refait le modèle d'un piéton (FUN_00572680), celui d'une ligne (supposé : la ligne de vue ; 00460f60 n'est pas lue). Vide,
+	// 0x45f520 à 0x45f7e6, 711 octets ; FUN_00460f60, plus bas, est sa seule appelante) : le troisième parcours d'une liste de secteur
+	// qui refait le modèle d'un piéton (FUN_00572680), celui d'une ligne (supposé : la ligne de vue ; son test, 0056aee0, n'est pas lu). Vide,
 	// la liste rend faux. Deux octets du monde ouvrent le filtre d'entrée quand la première entité de la liste est un piéton
 	// (+0x108 & 7 == 3) : 0xc1ae75 (`morts` : un piéton sans collision passe si son octet +0x1c98, mort, n'est pas nul) et 0xc1ae74
 	// (`montes` : il passe si son +0x1554, son véhicule, n'est pas nul et que le +0x46c de celui-ci vaut 1). Pour chaque entité,
@@ -808,6 +808,42 @@ struct CVolProjectile {
 			}
 		}while(noeud);
 		return touche;
+	}
+	// FUN_00460f60(secteur, arg2, arg3, &distance, &entité, drapeaux, sixSphères) (cdecl à sept arguments, lue à l'assembleur de
+	// 0x460f60 à 0x4610a6, 327 octets ; 00461d50, non lue, est sa seule appelante) : la ligne de FUN_0045f520 sur les cinq listes
+	// d'un secteur (cinq mots de suite), choisies par les cinq bits bas des drapeaux et parcourues dans cet ordre : le bit 1 la
+	// liste +0, le bit 2 la liste +8, le bit 4 la liste +0xc, le bit 8 la liste +4, le bit 0x10 la liste +0x10. Les octets
+	// 0xc1ae75 et 0xc1ae74 du monde (`morts` et `montes`) sont gardés puis mis à zéro à l'entrée ; ils ne sont rendus (à 1, s'ils
+	// n'étaient pas nuls) que le temps de la liste +0xc, la seule aussi qui reçoive le septième argument (les six sphères) : c'est
+	// la liste des piétons du secteur (supposé pour les quatre autres : bâtiments, véhicules, objets). À la sortie les deux octets
+	// reprennent leur valeur d'entrée. Les cinq parcours partagent une distance locale, partie de la distance donnée ; ce que
+	// rend FUN_0045f520 n'est pas lu : la fonction rend vrai, et la distance donnée prend la locale, si la donnée est strictement
+	// plus grande que la locale (fld la locale, fld la donnée, fcomp st(1), test ah,0x41, jne). `m` porte en plus PoserMorts(b)
+	// et PoserMontes(b).
+	template<class A, class B, class P, class M>
+	static bool VueSurSecteur(const uint32 *const *listes, A arg2, B arg3, float *donnee, P *touchee, uint32 drapeaux, bool sixSpheres, M &m) {
+		float distance = *donnee;
+		bool morts = m.Morts(), montes = m.Montes();
+		m.PoserMorts(false);
+		m.PoserMontes(false);
+		if(drapeaux & 1) VueSurListe(listes[0], arg2, arg3, &distance, touchee, drapeaux, false, m);
+		if(drapeaux & 2) VueSurListe(listes[2], arg2, arg3, &distance, touchee, drapeaux, false, m);
+		if(drapeaux & 4){
+			if(morts) m.PoserMorts(true);
+			if(montes) m.PoserMontes(true);
+			VueSurListe(listes[3], arg2, arg3, &distance, touchee, drapeaux, sixSpheres, m);
+			m.PoserMorts(false);
+			m.PoserMontes(false);
+		}
+		if(drapeaux & 8) VueSurListe(listes[1], arg2, arg3, &distance, touchee, drapeaux, false, m);
+		if(drapeaux & 0x10) VueSurListe(listes[4], arg2, arg3, &distance, touchee, drapeaux, false, m);
+		m.PoserMontes(montes);
+		m.PoserMorts(morts);
+		if(*donnee > distance){
+			*donnee = distance;
+			return true;
+		}
+		return false;
 	}
 	// FUN_0046c4b0(arg1, &liste, meilleur, arg4) (méthode de l'entité qui balaie, lue à l'assembleur de 0x46c4b0 à 0x46c877, 967
 	// octets, ret 0x10) : le balayage d'une liste de secteur, le vrai test de collision du déplacement d'un CPhysical. FUN_0046c970
