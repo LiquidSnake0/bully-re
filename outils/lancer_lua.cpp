@@ -48,6 +48,7 @@
 #include "../src/collision/ColModel.h"
 #include "../src/collision/Marche.h"
 #include "../src/collision/Balayes.h"
+#include "../src/collision/Arbre.h"
 #include "../src/gamebryo/NifTransform.h"
 #include "../src/anim/Hxd.h"
 #include "../src/anim/AnimGroups.h"
@@ -6874,11 +6875,13 @@ TesterMonde(const CMondeCollision &m, int32 modele, const CVector &a, const CVec
 
 // Les données du modèle de collision d'un objet cassable pour le test général : le modèle de même nom dans colsMonde (les .col de
 // Stream/World.img, que CollisionDuMonde lit), ses sphères, ses boîtes, ses sommets et ses triangles tels quels (CColSphere,
-// CColBox, CompressedVector et CColTriangle ont la disposition que lit FUN_0056c770). Sans arbre : tous les triangles sont
-// essayés dans l'ordre (l'arbre 005616a0 n'est pas recréé). nil sans modèle (l'outil garde alors sa sphère de 0,5 m). La sphère
+// CColBox, CompressedVector et CColTriangle ont la disposition que lit FUN_0056c770). Un modèle qui a un arbre de partition (le
+// bloc 0xef5dcb33, CCollisionData::kdTree) le donne au test général, qui n'essaie que les triangles qu'il rend pour la sphère
+// (FUN_005616a0 puis FUN_00561750, CArbreCollision) ; sans arbre, tous les triangles dans l'ordre. nil sans modèle (l'outil garde alors sa sphère de 0,5 m). La sphère
 // englobante du modèle (le +0x0 du CColModel) sert à l'outil à n'essayer que les objets proches (TesterObjet) ; l'outil écrit les
 // comptes d'un modèle la première fois qu'un projectile passe dans cette sphère.
-struct CVueObjet : CCollisionBalayee::DonneesCol { CVector centre; float rayon = 0.0f; bool dit = false; std::string nom; int nb[3] = {0, 0, 0}; };
+struct CVueObjet : CCollisionBalayee::DonneesCol { CVector centre; float rayon = 0.0f; bool dit = false; std::string nom; int nb[4] = {0, 0, 0, 0};
+                                                    CArbreCollision::Donnees arbreD; };
 static CVueObjet *
 DonneesObjet(int32 modele)
 {
@@ -6900,12 +6903,13 @@ DonneesObjet(int32 modele)
 	const CCollisionData &c = *it->second->pColData;
 	CVueObjet &d = vues[modele];
 	d.centre = it->second->boundingSphere.center; d.rayon = it->second->boundingSphere.radius; d.nom = k;
-	d.nb[0] = c.numSpheres; d.nb[1] = c.numBoxes; d.nb[2] = c.numTriangles;
+	d.nb[0] = c.numSpheres; d.nb[1] = c.numBoxes; d.nb[2] = c.numTriangles; d.nb[3] = c.kdTree ? c.numKdNodes : 0;
 	d.spheres = reinterpret_cast<const CB::SphereCol *>(c.spheres); d.nSpheres = (int8)c.numSpheres;
 	d.boites = reinterpret_cast<const CB::BoiteCol *>(c.boxes); d.nBoites = (int8)c.numBoxes;
 	d.sommets = reinterpret_cast<const int16 *>(c.vertices);
 	d.triangles = reinterpret_cast<const CB::TriangleCol *>(c.triangles); d.nTriangles = (int16)c.numTriangles;
-	d.arbre = false;
+	d.arbre = c.kdTree != nil && c.numKdNodes > 0 && c.numTriangles > 0;
+	if(d.arbre) CArbreCollision::Lire(c.kdTree, c.numTriangles, &d.arbreD);
 	return &d;
 }
 // Le trajet d'un projectile de a à b contre un objet cassable, par le test général comme le monde (TesterMonde) : l'objet est
@@ -6933,8 +6937,8 @@ TesterObjet(const CObjetOutil &o, CVueObjet &d, int32 modele, const CVector &a, 
 	if(!SegmentDansSphere(a, b, CVector(cp[0], cp[1], cp[2]), d.rayon + rp, &u)) return false;
 	if(!d.dit){
 		d.dit = true;
-		printf("%6.2f s  le modèle de collision de l'objet de modèle %d (%s) : %d sphère(s), %d boîte(s), %d triangle(s)\n", maintenant / 1000.0,
-		       o.modele, d.nom.c_str(), d.nb[0], d.nb[1], d.nb[2]);
+		printf("%6.2f s  le modèle de collision de l'objet de modèle %d (%s) : %d sphère(s), %d boîte(s), %d triangle(s), un arbre de %d nœud(s)\n",
+		       maintenant / 1000.0, o.modele, d.nom.c_str(), d.nb[0], d.nb[1], d.nb[2], d.nb[3]);
 	}
 	static std::map<int32, bool> dits;
 	if((fabsf(o.echelle.x - 1) > 1e-4f || fabsf(o.echelle.y - 1) > 1e-4f || fabsf(o.echelle.z - 1) > 1e-4f) && !dits[o.modele]){
@@ -6945,7 +6949,12 @@ TesterObjet(const CObjetOutil &o, CVueObjet &d, int32 modele, const CVector &a, 
 	auto boites = [](const CB::BoiteCol &bx, const float *s, const float *dep, float *f, float *nc, float *pc, uint8 *face, int32 *compte) {
 		return CB::BoiteBalayee(bx.min, bx.max, s, dep, f, nc, pc, face, compte);
 	};
-	auto candidats = [](const float *, float, auto &&) {};
+	// Les triangles candidats : ceux que rend l'arbre pour la sphère (dans l'espace de l'objet) grossie du déplacement, comme la
+	// boucle de FUN_0056c770 de 0x56d1a5 à 0x56d553 (FUN_005616a0, puis FUN_00561750 jusqu'à 0xffff).
+	auto candidats = [&](const float *centre, float r, auto &&visiter) {
+		CArbreCollision parcours;
+		for(uint16 k = parcours.Debut(&d.arbreD, centre, r, false); k != 0xffff; k = parcours.Suivant()){ visiter((int)k); }
+	};
 	if(!CB::TestGeneral(m1.m, m2.m, &proj, mo.m, mo.m, &d, &c, false, false, false, false, false, 0xf, nil, true, boites, candidats)) return false;
 	*fraction = c.fraction; *normale = CVector(c.normale[0], c.normale[1], c.normale[2]);
 	if(surface) *surface = c.o22;
