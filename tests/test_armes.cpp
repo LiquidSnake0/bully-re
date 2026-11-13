@@ -759,6 +759,7 @@ main(void)
 				struct Ent : V::EntiteBalayee { uint32 oa4 = 0; float d = 5.0f; bool touche = true; uint8 surface = 0; const void *lie = nullptr; };
 				struct Lancer {
 					const void *o0 = nullptr; float o4[3] = {1, 2, 3}, o10[3] = {0, 1, 0}, o1c = 30.0f; uint32 o20 = 0x15;
+					float o24 = 0, o28 = 0, o2c = 0, o30 = 1;
 					V::ContactBalaye *o34 = nullptr; uint32 o38 = 0; float o3c = 3.4028234663852886e+38f; uint8 o41 = 0, o42 = 0; bool o44 = false;
 				};
 				struct Monde {
@@ -782,6 +783,10 @@ main(void)
 						*d = e->d; c->o22 = e->surface; c->entite = e->lie; return e->touche;
 					}
 					void Lier(const void *){ j += "+"; } void Delier(const void *){ j += "-"; }
+					// pour FUN_00563f30 : les secteurs demandés, une seule liste non vide
+					std::string listes; int lx = -1, ly = -1, lr = -1; const uint32 *liste = nullptr;
+					void PoserCode(uint16 c){ code = c; } void EffacerCodes(){ listes += "E"; }
+					const uint32 *Liste(int x, int y, int r){ listes += std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(r) + ";"; return x == lx && y == ly && r == lr ? liste : nullptr; }
 				};
 				auto entite = [](int genre){ Ent e; e.o108 = (uint8)(0x40 | genre); e.o20 = 1; e.o1c = 1; return e; };
 				auto mot = [](int piscine, int indice, int suivant){ return (uint32)piscine | (uint32)indice << 4 | (uint32)suivant << 18; };
@@ -818,6 +823,26 @@ main(void)
 				// le meilleur tient déjà c : la copie délie c et lie l'entité du contact local (a), puis la référence revient à c ; le local est délié
 				c.lie = &a; VERIF(relance(l) && m.j == "mT-+-+-" && meilleur.entite == &c); c.lie = nullptr;
 				printf("  le lancer sur une liste (FUN_00563aa0) : la plus proche des trois entités à %.1f, les six sphères d'un piéton quand le lancer le demande\n", 2.0);
+				{
+					// le lancer sur les secteurs (FUN_00563f30)
+					V::ContactBalaye k; Lancer s; s.o34 = &k; s.o38 = 7; s.o3c = 1.0f;
+					s.o4[0] = 1; s.o4[1] = 2; s.o4[2] = 3; s.o10[0] = 4; s.o10[1] = 6; s.o10[2] = 3; s.o1c = 30.0f;  // l'écart (3, 4, 0) : 5 m
+					s.o24 = 10; s.o28 = -30; s.o30 = 5; s.o20 = 0x15;                                                 // un seul secteur, (18, 17)
+					m.code = 20; m.listes.clear(); m.j.clear(); m.lx = 18; m.ly = 17; m.lr = 3; m.liste = &m.noeuds[0];
+					VERIF(V::LancerSurSecteurs(&s, m) == 1 && m.code == 21 && m.listes == "18,17,0;18,17,3;18,17,4;");
+					VERIF(m.j == "mT+mT-+mT" && k.entite == &b && s.o3c == 2.0f && m.rayonVu == 35.0f);                // remis à FLT_MAX : b à 2, le rayon 5 + 30
+					s.o24 = 0; s.o28 = 0; s.o30 = 30; s.o20 = 2; m.listes.clear();                                      // quatre secteurs, les rangées en y dehors
+					VERIF(V::LancerSurSecteurs(&s, m) == 0 && s.o3c == 3.4028234663852886e+38f && m.listes == "17,17,2;18,17,2;17,18,2;18,18,2;");
+					s.o24 = 10; s.o28 = 10; s.o20 = 0x1f; s.o30 = 1; m.listes.clear();                                                          // les cinq bits : l'ordre +0, +8, +0xc, +4, +0x10
+					VERIF(V::LancerSurSecteurs(&s, m) == 0 && m.listes == "18,18,0;18,18,2;18,18,3;18,18,1;18,18,4;");
+					s.o24 = -910; s.o28 = 890; s.o30 = 20; s.o20 = 8; m.listes.clear();                                 // bornés à 0 et à 35
+					VERIF(V::LancerSurSecteurs(&s, m) == 0 && m.listes == "0,35,1;");
+					s.o24 = -2000; s.o28 = 2000; s.o30 = 1; m.listes.clear();                                           // hors du monde : le bas n'est borné
+					VERIF(V::LancerSurSecteurs(&s, m) == 0 && m.listes.empty());                                        // qu'en bas, le haut qu'en haut : rien
+					s.o20 = 0; m.listes.clear(); m.code = 0xffff;                                                       // aucun bit ; le code repart à 1
+					VERIF(V::LancerSurSecteurs(&s, m) == 0 && m.listes == "E" && m.code == 1);
+					printf("  le lancer sur les secteurs (FUN_00563f30) : le carré de la sphère du lancer, les cinq listes par les bits, le rayon %.0f = 5 + 30\n", 35.0);
+				}
 			}
 			{
 				// la ligne sur une liste de secteur (FUN_0045f520) et le filtre d'entrée (FUN_0041c3f0) sur un monde d'essai

@@ -690,15 +690,16 @@ struct CVolProjectile {
 		if(n > 0 && oc4 && (uint8)contact->o22 == 0x41) return 0;
 		return n;
 	}
-	// FUN_00563aa0(&liste, rayon) (méthode d'un lancer, lue à l'assembleur de 0x563aa0 à 0x563d22, ret 8 ; 00563f30, non lue, est sa
-	// seule appelante) : le lancer sur une liste de secteur, l'autre parcours qui refait le modèle d'un piéton (FUN_00572680). La
+	// FUN_00563aa0(&liste, rayon) (méthode d'un lancer, lue à l'assembleur de 0x563aa0 à 0x563d22, ret 8 ; FUN_00563f30, plus bas,
+	// est sa seule appelante) : le lancer sur une liste de secteur, l'autre parcours qui refait le modèle d'un piéton (FUN_00572680). La
 	// liste est celle du balayage plus bas (FUN_0046c4b0) : un nœud est un mot, quatre bits de piscine, quatorze d'indice
 	// (FUN_0044a290), quatorze du nœud suivant (0x3fff : la fin ; le mot 0xc0f788 + 4 × suivant), lu avant tout filtre. Ce qu'elle
-	// lit du lancer, sous le nom de son offset (ce qu'ils veulent dire est supposé : 00563f30 n'est pas lue) :
+	// lit du lancer, sous le nom de son offset (ce qu'ils veulent dire est supposé, sauf ce que FUN_00563f30 en fait) :
 	//  +0x0  une entité : un piéton que FUN_004761a0 écarte pour elle est passé (supposé : celle qui lance) ;
 	//  +0x4  trois réels : le centre du test des sphères (FUN_00465a50, `SphereTouche`, méthode de l'entité, avec le rayon donné) et le premier
-	//        argument du test ; +0x10 trois réels et +0x1c un réel, ses deuxième et troisième arguments (supposé : le départ,
-	//        la direction et la longueur) ;
+	//        argument du test ; +0x10 trois réels et +0x1c un réel, ses deuxième et troisième arguments. FUN_00563f30 fait
+	//        de +0x10 un point (l'écart +0x10 − +0x4) et de +0x1c un rayon ajouté à la longueur de cet écart : supposé, le
+	//        départ, l'arrivée et l'épaisseur d'un trajet (une capsule ; 00569f10 n'est pas lue) ;
 	//  +0x20 des drapeaux, passés au test ; le bit 0x80 : le filtre +0x44 (cdecl, l'entité ; vrai : passée) est appelé ;
 	//  +0x34 le meilleur contact, +0x38 mis à 1 quand il est pris, +0x3c sa distance ;
 	//  +0x41 un octet : non nul, un contact de surface 0x41 (l'octet +0x22 du contact) ne compte pas ;
@@ -752,6 +753,44 @@ struct CVolProjectile {
 			}
 			local.Defaire(delier);
 		}
+	}
+	// FUN_00563f30() (méthode d'un lancer, lue à l'assembleur de 0x563f30 à 0x5641b8, 649 octets, ret ; cinq appelants, non lus :
+	// 004fe060, 00504350, 00505600, 00507b10 et 00680f50) : le lancer sur les secteurs du monde, la seule appelante de
+	// FUN_00563aa0. Le meilleur est remis à zéro (+0x3c au réel 0x9009b8, FLT_MAX ; +0x38 à 0). Les secteurs sont ceux du carré
+	// d'une sphère du lancer (+0x24 et +0x28 son centre en x et en y, +0x30 son rayon ; +0x2c n'est pas lu) : en x de
+	// _ftol((+0x24 − +0x30) / 50 + 18) à _ftol((+0x30 + +0x24) / 50 + 18), en y de même avec +0x28 (les doubles 0x900aa0 et
+	// 0x900a98, la conversion de la grille de src/core/World.h), le bas mis à 0 s'il n'est pas strictement positif (fcom, test
+	// ah,0x41), le haut à 35 (le réel 0x900a94) s'il n'est pas strictement dessous (test ah,5, jp) ; le bas n'est pas borné en haut
+	// ni le haut en bas : une sphère hors du monde ne voit aucun secteur. Puis le code (le mot 0xc1ae88) monte de 1, ou repart à 1 après 0045d6f0 quand il a atteint 0xffff (la règle de `CodeDeBalayage`). Le rayon passé à chaque
+	// liste : la longueur de l'écart +0x10 − +0x4 (FUN_00414a20 ; la racine, 0x85c4d0, de |z² + (y² + x²)|, rangée en simple
+	// précision) plus +0x1c. Les rangées en y à l'extérieur, les secteurs en x à l'intérieur (0x14 octets le secteur, 0x2d0 la
+	// rangée, le tableau 0xc1b178) ; dans chaque secteur, FUN_00563aa0 sur les listes choisies par les bits de +0x20, dans l'ordre
+	// des bits : 1 la liste +0, 2 la liste +8, 4 la liste +0xc, 8 la liste +4, 0x10 la liste +0x10 (l'ordre de FUN_00460f60).
+	// Rend le mot +0x38 (1 quand un contact est pris). `m` ajoute à ce que lit `LancerSurListe` : PoserCode(c), EffacerCodes() et
+	// Liste(x, y, rang), le premier nœud d'une liste d'un secteur (nul : vide). Les calculs en double sont supposés équivalents à
+	// la précision étendue du binaire.
+	template<class L, class M>
+	static uint32 LancerSurSecteurs(L *l, M &m) {
+		l->o3c = 3.4028234663852886e+38f;
+		l->o38 = 0;
+		auto bas = [](double a){ int i = (int)(a / 50.0 + 18.0); return i > 0 ? i : 0; };
+		auto haut = [](double a){ int i = (int)(a / 50.0 + 18.0); return i < 35 ? i : 35; };
+		int x0 = bas((double)l->o24 - (double)l->o30), y0 = bas((double)l->o28 - (double)l->o30);
+		int x1 = haut((double)l->o30 + (double)l->o24), y1 = haut((double)l->o28 + (double)l->o30);
+		bool remis = false;
+		uint16 code = CodeDeBalayage(m.Code(), &remis);
+		if(remis) m.EffacerCodes();
+		m.PoserCode(code);
+		float d[3] = {l->o10[0] - l->o4[0], l->o10[1] - l->o4[1], l->o10[2] - l->o4[2]};
+		float d2 = d[2] * d[2] + (d[1] * d[1] + d[0] * d[0]);
+		float longueur = (float)sqrt((double)fabsf(d2));
+		float rayon = longueur + l->o1c;
+		static const struct { uint32 bit; int rang; } ordre[5] = {{1, 0}, {2, 2}, {4, 3}, {8, 1}, {0x10, 4}};
+		for(int y = y0; y <= y1; y++)
+			for(int x = x0; x <= x1; x++)
+				for(const auto &o : ordre)
+					if((l->o20 & o.bit) != 0) LancerSurListe(l, m.Liste(x, y, o.rang), rayon, m);
+		return l->o38;
 	}
 	// FUN_0041c3f0 (méthode d'une entité, lue à l'assembleur de 0x41c3f0 à 0x41c434, 69 octets) : le filtre d'entrée des parcours
 	// d'une liste de secteur, à part : +0x20 non nul, et +0x1c ou +0x60 non nul, et le bit du modèle (1 << l'octet 0xa147e0 dans
