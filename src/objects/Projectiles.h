@@ -662,8 +662,9 @@ struct CVolProjectile {
 	// (0046c4b0) appelle sur chaque entité qui a passé ses filtres. Elle choisit entre deux tests :
 	//  - le test fin contre un piéton, quand l'entité qui balaie est un projectile (+0xc4 non nul), que l'entité de la liste est un
 	//    piéton (+0x108 & 7 == 3) au +0xa4 nul, dont le modèle (+0x10e) n'est ni DAT_00bf42dc (« Rat_Ped ») ni un chien
-	//    (FUN_00447290) : 00572680(piéton) d'abord (1 529 octets, non lue ; supposé : elle prépare les volumes du piéton, que le mot
-	//    0xcf3138 désigne ensuite), puis 00469f70 (966 octets, non lue), méthode de l'entité qui balaie, avec arg1, sa matrice
+	//    (FUN_00447290) : FUN_00572680(piéton) d'abord (1 529 octets, CModelePieton::Construire dans collision/ModelePieton.h : elle
+	//    pose six sphères sur six os du piéton, dans le modèle que le mot 0xcf3138 désigne ensuite), puis FUN_00469f70 (966
+	//    octets, CCollisionBalayee::TestPieton), méthode de l'entité qui balaie, avec arg1, sa matrice
 	//    (FUN_0046dbd0), son modèle de collision (0051ae00), la matrice du piéton, le mot 0xcf3138 et le contact ;
 	//  - sinon le test général 0056c770 (4 610 octets, non lue, cdecl à quinze arguments) : arg1, la matrice et le modèle de collision
 	//    de l'entité qui balaie, la matrice de l'entité de la liste deux fois, son modèle de collision, le contact, cinq mots nuls,

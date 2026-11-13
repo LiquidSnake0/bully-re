@@ -48,8 +48,11 @@
 #include "../src/collision/ColModel.h"
 #include "../src/collision/Marche.h"
 #include "../src/collision/Balayes.h"
+#include "../src/collision/ModelePieton.h"
 #include "../src/collision/Arbre.h"
 #include "../src/gamebryo/NifTransform.h"
+#include "../src/gamebryo/NifFile.h"
+#include "../src/gamebryo/NifSkin.h"
 #include "../src/anim/Hxd.h"
 #include "../src/anim/AnimGroups.h"
 #include "../src/core/ConditionListe.h"
@@ -6961,6 +6964,115 @@ TesterObjet(const CObjetOutil &o, CVueObjet &d, int32 modele, const CVector &a, 
 	return true;
 }
 
+// Les os d'un modèle de piéton, pour son modèle de collision (FUN_00572680, CModelePieton) : le squelette du .nif de même nom que
+// le modèle dans Stream/World.img, ses 36 nœuds sous « Dummy » dans l'ordre du fichier (l'ordre des os de MAINPED.HXD,
+// docs/agr.md), chacun à sa place dans le repère du modèle (NifWorldTransforms). Supposé : la pose est celle du fichier, l'outil
+// ne suit pas l'animation qui pose les os dans le jeu ; le repère du modèle a son origine aux pieds, x à droite et y devant.
+// La fiche FightCollisionButes est celle du nœud GlobalsBank/Globals/FIGHTING/<nom du modèle> de Globals.cat (le chemin
+// « Fighting », haché du nom du modèle, de FUN_00572680 ; supposé : le +4 de la fiche du modèle est le haché de son nom), à défaut
+// celle de GlobalsBank/Globals (DAT_020c88a0, supposé).
+struct CSqueletteOutil {
+	bool ok = false, dit = false, fichePropre = false;
+	enum { OS = 36 };   // les os de MAINPED.HXD (AGR_OS de src/anim/Agr.h)
+	int n = 0;
+	CVector os[OS];
+	std::string nom;
+	CModelePieton::Fiche fiche;
+};
+
+static CSqueletteOutil *
+SqueletteDuModele(int32 modele)
+{
+	static const bool coupe = getenv("LANCER_SANS_OS") != nil;
+	static std::map<int32, CSqueletteOutil> vus;
+	auto dj = vus.find(modele);
+	if(dj != vus.end()) return dj->second.ok ? &dj->second : nil;
+	CSqueletteOutil &s = vus[modele];
+	auto nm = modeles.nomDuModele.find(modele);
+	if(coupe || nm == modeles.nomDuModele.end()) return nil;
+	s.nom = nm->second;
+	CActionTrack t;
+	uint32 type = ActionHash("FightCollisionButes");
+	if(CActionBank::ButesChemin("Globals.cat", {ActionHash("GlobalsBank"), ActionHash("Globals"), ActionHash("Fighting"), ActionHash(s.nom.c_str())}, type, t))
+		s.fichePropre = true;
+	else if(!CActionBank::ButesChemin("Globals.cat", {ActionHash("GlobalsBank"), ActionHash("Globals")}, type, t)){
+		printf("%6.2f s  pas de fiche FightCollisionButes pour le modèle %d (%s) : le piéton garde trois sphères de 0,35 m (supposé)\n", maintenant / 1000.0, modele, s.nom.c_str());
+		return nil;
+	}
+	for(int k = 0; k < 6; k++){
+		s.fiche.os[k] = (int32)t.Mot((uint16)(24 + 8 * k));
+		s.fiche.rayon[k] = CActionBank::ButesReel(t, (uint16)(28 + 8 * k));
+	}
+	int32 monde = -1;
+	for(int32 i = 0; i < CdStream::ms_numImages && monde < 0; i++)
+		if(strcasecmp(CdStream::ms_images[i].m_path, "Stream\\World.img") == 0) monde = i;
+	const CDirectoryEntry *d = monde >= 0 ? CdStream::ms_images[monde].Find((s.nom + ".nif").c_str()) : nil;
+	if(d){
+		std::vector<uint8> buf(d->size * CDSTREAM_SECTOR_SIZE);
+		int32 fd = CFileMgr::OpenFile("Stream\\World.img", "rb", 1);
+		CFileMgr::Seek(fd, d->offset * CDSTREAM_SECTOR_SIZE, 0);
+		bool lu = CFileMgr::ReadExact(fd, buf.data(), (uint32)buf.size());
+		CFileMgr::CloseFile(fd);
+		CNifFile f;
+		if(lu && f.Load(buf.data(), (uint32)buf.size())){
+			std::vector<NifTransform> mondes(f.numBlocks);
+			NifWorldTransforms(f, mondes.data());
+			std::vector<int32> pile(1, NifFindNode(f, "Dummy"));
+			while(!pile.empty() && s.n < CSqueletteOutil::OS){
+				int32 x = pile.back(); pile.pop_back();
+				if(x < 0 || x >= f.numBlocks || f.blocks[x].kind != NIF_NODE || !f.blocks[x].data) continue;
+				s.os[s.n++] = mondes[x].t;
+				const NifNode *nd = (const NifNode*)f.blocks[x].data;
+				for(int32 i = nd->numChildren - 1; i >= 0; i--) pile.push_back(nd->children[i]);
+			}
+			f.Free();
+		}
+	}
+	bool rangs = true;
+	for(int k = 0; k < 6; k++) rangs = rangs && s.fiche.os[k] >= 0 && s.fiche.os[k] < s.n;
+	if(!rangs){
+		printf("%6.2f s  pas de squelette pour le modèle %d (%s) : %d os lus dans %s.nif, le piéton garde trois sphères de 0,35 m (supposé)\n",
+		       maintenant / 1000.0, modele, s.nom.c_str(), s.n, s.nom.c_str());
+		return nil;
+	}
+	s.ok = true;
+	return &s;
+}
+
+// Le test fin d'un projectile contre un piéton, comme la méthode +0xa4 d'un CProjectile le fait (FUN_0046a340) : le modèle du
+// piéton refait par FUN_00572680 (six sphères sur six os), puis FUN_00469f70 (CCollisionBalayee::TestPieton) avec les sphères du
+// modèle du projectile, de `a` à `b`, et la matrice du piéton. Le cap de l'outil (en degrés, 0 vers +x) donne l'avant du piéton,
+// (cos, sin, 0), et sa droite, (sin, −cos, 0). Rend −1 sans squelette, sinon 0 ou 1.
+static int
+TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVector &a, const CVector &b, CVolProjectile::ContactBalaye *contact)
+{
+	typedef CCollisionBalayee CB;
+	CSqueletteOutil *s = SqueletteDuModele(p.modele);
+	if(s == nil) return -1;
+	float cap = p.cap * 3.14159265f / 180.0f, c = cosf(cap), sn = sinf(cap);
+	CB::Matrice m1, m2, m4;
+	m4.m[0] = sn; m4.m[1] = -c; m4.m[4] = c; m4.m[5] = sn;
+	m4.m[12] = p.pos.x; m4.m[13] = p.pos.y; m4.m[14] = p.pos.z;
+	m1.m[12] = a.x; m1.m[13] = a.y; m1.m[14] = a.z; m2.m[12] = b.x; m2.m[13] = b.y; m2.m[14] = b.z;
+	CModelePieton ped;
+	ped.Construire(&m4.m[12], CModelePieton::Cap(m4.m), s->fiche, [&](int32 rang, float *o){
+		const CVector &l = s->os[rang];
+		CB::Point(o, m4.m, &l.x);
+	});
+	if(!s->dit){
+		s->dit = true;
+		const CModelePieton::Fiche &f = s->fiche;
+		printf("%6.2f s  le modèle de collision du piéton %d, de modèle %d (%s) : six sphères sur les os %d, %d, %d, %d, %d, %d de %s.nif (%d os, dans la pose du fichier, supposée), "
+		       "de rayons %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m (la fiche FightCollisionButes %s), hautes de %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m ; l'englobante a %.2f m de rayon\n",
+		       maintenant / 1000.0, indice, p.modele, s->nom.c_str(), f.os[0], f.os[1], f.os[2], f.os[3], f.os[4], f.os[5], s->nom.c_str(), s->n,
+		       f.rayon[0], f.rayon[1], f.rayon[2], f.rayon[3], f.rayon[4], f.rayon[5], s->fichePropre ? "du modèle" : "par défaut",
+		       ped.spheres[0].centre[2], ped.spheres[1].centre[2], ped.spheres[2].centre[2], ped.spheres[3].centre[2], ped.spheres[4].centre[2], ped.spheres[5].centre[2], ped.rayon);
+	}
+	const std::vector<CB::SphereCol> &sp = SpheresDuProjectile(modeleProjectile);
+	CB::DonneesCol proj; proj.spheres = &sp[0]; proj.nSpheres = (int8)(sp.size() < 127 ? sp.size() : 127);
+	return CB::TestPieton(m1.m, m2.m, &proj, m4.m, &ped, contact) ? 1 : 0;
+}
+
 struct CBalayageOutil {
 	enum { MOI, PIETON, OBJET, MONDE };
 	struct Ent : CVolProjectile::EntiteBalayee { int sorte = MOI, indice = -1; };
@@ -6972,6 +7084,7 @@ struct CBalayageOutil {
 	int touche = -1, objet = -1; bool monde = false; float mieux = 2.0f, fMonde = 2.0f; int32 vMonde = -1;
 	CVector centre = CVector(0.0f, 0.0f, 0.0f), nMonde = CVector(0.0f, 0.0f, 1.0f);
 	bool objetParModele = false; CVector nObjet = CVector(0.0f, 0.0f, 1.0f);   // un objet touché par son modèle (TesterObjet) et la normale du contact
+	bool pietonParModele = false; int spherePieton = -1;   // un piéton touché par son modèle (TesterPieton, la normale dans nObjet) et le rang de la sphère
 	uint32 temps = 0;
 	bool tireurTraverse = false;   // FUN_004761a0 a écarté le tireur là où l'outil d'avant l'aurait touché
 	CBalayageOutil() { volume.o1c = 1; }
@@ -7006,11 +7119,15 @@ struct CBalayageOutil {
 		const CScriptPed *p = pietons.Acceder(e->indice);
 		float v[3] = {q->vitesse.x, q->vitesse.y, q->vitesse.z};
 		bool ignore = CVolProjectile::ProjectileIgnore(true, false, false, q->pos.z, p ? p->pos.z : 0.0f, v, false, e->indice == q->tireur);
-		if(ignore && p && !CContactProjectile::TireurEpargne(true, temps, q->naissance) && !CContactProjectile::SansContact(true, 0, true, q->pos.z, p->pos.z, v))
-			for(float h : {0.35f, 0.95f, 1.55f}){
+		if(ignore && p && !CContactProjectile::TireurEpargne(true, temps, q->naissance) && !CContactProjectile::SansContact(true, 0, true, q->pos.z, p->pos.z, v)){
+			CVolProjectile::ContactBalaye c;
+			int r = TesterPieton(*p, e->indice, q->modele, avant, q->pos, &c);
+			if(r > 0) tireurTraverse = true;
+			if(r < 0) for(float h : {0.35f, 0.95f, 1.55f}){
 				float u;
 				if(SegmentDansSphere(avant, q->pos, CVector(p->pos.x, p->pos.y, p->pos.z + h), 0.35f, &u)) tireurTraverse = true;
 			}
+		}
 		return ignore;
 	}
 	bool VehiculeIgnore(Ent *, Ent *) { return false; }
@@ -7028,6 +7145,7 @@ struct CBalayageOutil {
 	int Tester(Ent *moi, int arg1, Ent *e, CVolProjectile::ContactBalaye *contact, bool arg4) {
 		int toucheAvant = touche, objetAvant = objet; bool mondeAvant = monde; float mieuxAvant = mieux, fMondeAvant = fMonde;
 		CVector centreAvant = centre, nMondeAvant = nMonde, nObjetAvant = nObjet; int32 vMondeAvant = vMonde; bool parModeleAvant = objetParModele;
+		bool pietonAvant = pietonParModele; int sphereAvant = spherePieton;
 		int brut = 0;
 		int n = CVolProjectile::TesterCollision(true, e->o108 & 7, 0, false, false, contact,
 		                                        [&]{ return brut = TesterOutil(moi, arg1, e, contact, arg4); },
@@ -7036,6 +7154,7 @@ struct CBalayageOutil {
 			surfacesTraversees++;
 			touche = toucheAvant; objet = objetAvant; monde = mondeAvant; mieux = mieuxAvant; fMonde = fMondeAvant;
 			centre = centreAvant; nMonde = nMondeAvant; vMonde = vMondeAvant; nObjet = nObjetAvant; objetParModele = parModeleAvant;
+			pietonParModele = pietonAvant; spherePieton = sphereAvant;
 		}
 		return n;
 	}
@@ -7047,6 +7166,19 @@ struct CBalayageOutil {
 			// lent (sous 0,1 m par pas) ne touche pas le piéton ; le +0x1310 du piéton n'est pas suivi (0).
 			float v[3] = {q->vitesse.x, q->vitesse.y, q->vitesse.z};
 			if(CContactProjectile::SansContact(true, 0, e->indice == q->tireur, q->pos.z, p->pos.z, v)) return 0;
+			// Le test fin (FUN_00469f70) contre les six sphères du modèle du piéton (FUN_00572680) ; sans squelette, les trois
+			// sphères de 0,35 m d'avant (supposé).
+			CVolProjectile::ContactBalaye c;
+			int r = TesterPieton(*p, e->indice, q->modele, avant, q->pos, &c);
+			if(r >= 0){
+				if(r == 0 || !(c.fraction < mieux)) return 0;
+				mieux = c.fraction; touche = e->indice; objetParModele = false; pietonParModele = true; spherePieton = (int)c.o1c;
+				nObjet = CVector(c.normale[0], c.normale[1], c.normale[2]);
+				centre = CVector(c.point[0] - nObjet.x, c.point[1] - nObjet.y, c.point[2] - nObjet.z);
+				const void *entite = contact->entite;
+				*contact = c; contact->entite = entite;
+				return 1;
+			}
 			bool t = false;
 			for(float h : {0.35f, 0.95f, 1.55f}){
 				float u;
@@ -7055,7 +7187,7 @@ struct CBalayageOutil {
 				}
 			}
 			if(!t) return 0;
-			objetParModele = false;
+			objetParModele = false; pietonParModele = false;
 			contact->fraction = mieux;
 			return 1;
 		}
@@ -7080,7 +7212,7 @@ struct CBalayageOutil {
 		// Le monde : le trajet de l'image dans la collision de la zone visible (CollisionDuMonde). Il passe devant un piéton ou un
 		// objet quand le trajet le croise avant d'entrer dans leur sphère.
 		float entree = 2.0f;
-		if(objet >= 0 && objetParModele) entree = mieux;   // le contact du modèle de l'objet est déjà l'entrée
+		if((objet >= 0 && objetParModele) || (touche >= 0 && pietonParModele)) entree = mieux;   // le contact du modèle de l'objet ou du piéton est déjà l'entrée
 		else if(objet >= 0 || touche >= 0){
 			float rayon = touche >= 0 ? 0.35f : 0.5f;
 			CVector d(q->pos.x - avant.x, q->pos.y - avant.y, q->pos.z - avant.z);
@@ -7219,7 +7351,8 @@ AvancerProjectiles(float pas)
 		int touche = b.touche, objet = b.objet; float mieux = b.mieux;
 		CVector centre = b.centre;   // le centre de la sphère touchée, pour la normale du contact
 		bool monde = b.monde; float fMonde = b.fMonde; CVector nMonde = b.nMonde; int32 vMonde = b.vMonde;
-		bool parModele = objet >= 0 && b.objetParModele;   // l'objet touché par son modèle : sa fraction et sa normale, comme le monde
+		// l'objet ou le piéton touché par son modèle : sa fraction et sa normale, comme le monde
+		bool parModele = (objet >= 0 && b.objetParModele) || (touche >= 0 && b.pietonParModele);
 		// Le contact (FUN_0046ad90) : sur un piéton le coup puis le choc (FUN_004d3860) ; sur un objet le choc puis le coup. Le
 		// projectile reste dans le monde : il recule au point du contact et rebondit (FUN_0046ca40, plus bas). L'octet « fort » du
 		// choc vient du coup et de la vitesse d'avant le rebond (en mètres par pas, l'unité de +0x124).
@@ -7292,7 +7425,7 @@ AvancerProjectiles(float pas)
 			if(monde){ n[0] = nMonde.x; n[1] = nMonde.y; n[2] = nMonde.z; }
 			else if(parModele){ n[0] = b.nObjet.x; n[1] = b.nObjet.y; n[2] = b.nObjet.z; }
 			float e = TypeProjectile(q.modele).elasticite;
-			std::string surQuoi = touche >= 0 ? "le piéton " + std::to_string(touche) : monde ? std::string("le monde") : "l'objet " + std::to_string(objet);
+			std::string surQuoi = touche >= 0 ? "le piéton " + std::to_string(touche) + (parModele ? " (la sphère " + std::to_string(b.spherePieton) + " de son modèle)" : "") : monde ? std::string("le monde") : "l'objet " + std::to_string(objet);
 			// Deux modèles à part : la fléchette (« dart », DAT_00bf44dc) se plante au lieu de rebondir, et le frisbee (« Wfrisbee »,
 			// DAT_00bf439c) est dévié après son rebond (FUN_0046ca40, de 0x46cf6f à 0x46d0d2 et de 0x46d231 à 0x46d2f6). La table
 			// des noms de modèles (0xa136e8, FUN_0043f1e0 qui la lit, FUN_0043f220 qui écrit l'indice) donne aussi « WFtBomb » à

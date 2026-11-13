@@ -2,6 +2,7 @@
 // fichier du jeu. Un sol, une marche, un mur, une rampe, une sphère.
 #include "collision/Marche.h"
 #include "collision/Balayes.h"
+#include "collision/ModelePieton.h"
 #include <cmath>
 #include <functional>
 #include <cstdio>
@@ -334,6 +335,63 @@ main(void)
 			m1.m[14] = 3.0f; m2.m[14] = 3.0f;
 			Verifier(B::TestPieton(m1.m, m2.m, &proj, m4.m, &ped, &c) == 0 && c.fraction > 3e38f, "FUN_00469f70 : au-dessus du piéton, rien, la fraction à FLT_MAX");
 			Verifier(B::TestPieton(m1.m, m2.m, (const B::DonneesCol *)nullptr, m4.m, &ped, &c) == 0, "FUN_00469f70 : sans données, 0");
+		}
+		// Le modèle d'un piéton (FUN_00572680) : un piéton en (10, 20, 5) de cap un quart de tour (son avant vers −x, sa droite vers
+		// +y), six os donnés dans le monde, la fiche de Jimmy (os 2, 12, 18, 2, 4, 7).
+		{
+			typedef CModelePieton P;
+			P::Fiche fiche;
+			const int32 rangs[6] = {2, 12, 18, 2, 4, 7};
+			const float rayons[6] = {0.24f, 0.24f, 0.19f, 0.1f, 0.2f, 0.2f};
+			for(int k = 0; k < 6; k++) { fiche.os[k] = rangs[k]; fiche.rayon[k] = rayons[k]; }
+			// les os dans le repère du piéton (x à droite, y devant, z en haut), puis dans le monde : (10 − y, 20 + x, 5 + z)
+			auto local = [](int32 rang, float *l) {
+				l[0] = 0; l[1] = 0; l[2] = 0;
+				if(rang == 2) l[2] = 1.0f;
+				else if(rang == 12) { l[1] = 0.05f; l[2] = 1.4f; }
+				else if(rang == 18) { l[1] = 0.1f; l[2] = 1.7f; }
+				else if(rang == 4) { l[0] = -0.1f; l[2] = 0.4f; }
+				else if(rang == 7) { l[0] = 0.1f; l[2] = 0.4f; }
+			};
+			auto os = [&](int32 rang, float *p) { float l[3]; local(rang, l); p[0] = 10.0f - l[1]; p[1] = 20.0f + l[0]; p[2] = 5.0f + l[2]; };
+			B::Matrice m4;
+			m4.m[0] = 0; m4.m[1] = 1; m4.m[4] = -1; m4.m[5] = 0; m4.m[12] = 10; m4.m[13] = 20; m4.m[14] = 5;
+			float pos[3] = {10, 20, 5};
+			float cap = P::Cap(m4.m);
+			P ped;
+			ped.Construire(pos, cap, fiche, os);
+			bool centres = pres(cap, 1.5707964f);
+			for(int k = 0; k < 6; k++) {
+				float l[3]; local(rangs[k], l);
+				for(int i = 0; i < 3; i++) centres = centres && fabsf(ped.spheres[k].centre[i] - l[i]) < 1e-5f;
+				centres = centres && ped.spheres[k].rayon == rayons[k];
+			}
+			Verifier(centres, "FUN_00572680 : les six os ramenés au repère du piéton (FUN_00412670, FUN_004130d0, FUN_00571280, FUN_00570e40), les six rayons de la fiche");
+			float r = sqrtf(0.01f + 1.7f * 1.7f) + 0.19f;
+			Verifier(fabsf(ped.rayon - r) < 1e-5f && ped.centre[0] == 0 && ped.centre[1] == 0 && ped.centre[2] == 0
+			         && ped.min[0] == -ped.rayon && ped.min[1] == -ped.rayon && ped.min[2] == 0 && ped.max[0] == ped.rayon && ped.max[2] == ped.rayon,
+			         "FUN_00572680 : l'englobante part de la sphère la plus loin (la tête), la boîte de (−R, −R, 0) à (R, R, R) (FUN_0056ea30, FUN_005646e0)");
+			// un projectile de 5 cm qui vient de −x à la hauteur de la tête : il touche la sphère 2, posée par la matrice du piéton
+			struct Contact { float point[3] = {0, 0, 0}; float normale[3] = {0, 0, 0}; uint32 o1c = 9; uint16 o20 = 0, o22 = 0; float fraction = 0; };
+			B::SphereCol pr[1] = {{{0, 0, 0}, 0.05f, 3, 0, {0, 0}}};
+			B::DonneesCol proj; proj.spheres = pr; proj.nSpheres = 1;
+			B::Matrice m1, m2;
+			m1.m[12] = 0; m1.m[13] = 20; m1.m[14] = 6.7f; m2.m[12] = 20; m2.m[13] = 20; m2.m[14] = 6.7f;
+			Contact c;
+			Verifier(B::TestPieton(m1.m, m2.m, &proj, m4.m, &ped, &c) == 1 && c.o1c == 2 && fabsf(c.fraction - (9.9f - 0.24f) / 20.0f) < 1e-4f && pres(c.normale[0], -1.0f),
+			         "FUN_00572680 et FUN_00469f70 : le projectile touche la sphère de la tête, à 24 cm de l'os");
+			// à la hauteur du bassin : la sphère 0 (24 cm) donne la fraction, la sphère 3 (10 cm, le même os) le rang
+			m1.m[14] = 6.0f; m2.m[14] = 6.0f;
+			Verifier(B::TestPieton(m1.m, m2.m, &proj, m4.m, &ped, &c) == 1 && c.o1c == 3 && fabsf(c.fraction - (10.0f - 0.29f) / 20.0f) < 1e-4f,
+			         "FUN_00572680 et FUN_00469f70 : au bassin, la fraction de la sphère 0 et le rang de la sphère 3");
+			// tous les os à l'origine d'un piéton de cap nul : le plus grand carré reste 0 et le rang reste 0
+			auto plat = [&](int32, float *p) { p[0] = 10; p[1] = 20; p[2] = 5; };
+			ped.Construire(pos, 0.0f, fiche, plat);
+			Verifier(ped.rayon == 0.24f && ped.spheres[5].centre[2] == 0, "FUN_00572680 : tous les os à l'origine, l'englobante a le rayon de la sphère 0");
+			float m[16] = {1, 2, 0, 0, 3, 4, 0, 0, 0, 0, 1, 0, 5, 6, 7, 1};
+			P::TournerZ(m, 1.5707964f);
+			Verifier(pres(m[0], -2) && pres(m[1], 1) && pres(m[4], -4) && pres(m[5], 3) && pres(m[12], -6) && pres(m[13], 5) && m[14] == 7 && m[10] == 1,
+			         "FUN_004130d0 : un quart de tour autour de z, la position tournée avec les trois axes");
 		}
 	}
 	return g_ko ? 1 : 0;
