@@ -498,6 +498,17 @@ main(void)
 				b.entite = &e2; a.Copier(b, del, lie); VERIF(liens == "+1-1+2");           // l'ancienne déliée, puis la nouvelle liée
 				b.entite = nullptr; a.Copier(b, del, lie); VERIF(liens == "+1-1+2-2" && a.entite == nullptr);
 			}
+			{
+				// la sphère englobante d'une entité contre celle d'un balayage (FUN_00465bc0)
+				float c1[3] = {0.0f, 0.0f, 0.0f}, c2[3] = {3.0f, 4.0f, 0.0f}, v0[3] = {0.0f, 0.0f, 0.0f}, v1[3] = {-0.25f, 0.5f, -0.25f};
+				VERIF(!V::SpheresSeTouchent(c1, 2.0f, false, v0, c2, 3.0f));                // 5 m d'écart, 5 m de rayons : l'égalité rend faux
+				VERIF(V::SpheresSeTouchent(c1, 2.0f, false, v0, c2, 3.01f));
+				VERIF(!V::SpheresSeTouchent(c1, 2.0f, false, v1, c2, 3.0f));                // la vitesse d'une entité immobile ne compte pas
+				VERIF(V::SpheresSeTouchent(c1, 2.0f, true, v1, c2, 3.0f));                  // mobile : le rayon grandit de 1 (0,5 + 0,25 + 0,25)
+				VERIF(!V::SpheresSeTouchent(c1, 1.0f, true, v1, c2, 3.0f));                 // 1 + 3 + 1 = 5 : l'égalité encore
+				float c3[3] = {0.0f, 0.0f, 12.0f};
+				VERIF(V::SpheresSeTouchent(c3, 6.0f, false, v0, c2, 7.01f) && !V::SpheresSeTouchent(c3, 6.0f, false, v0, c2, 6.99f));   // 13 m, avec le z
+			}
 			bool remis = false;
 			VERIF(V::CodeDeBalayage(7, &remis) == 8 && !remis && V::CodeDeBalayage(0xfffe) == 0xffff && V::CodeDeBalayage(0xffff, &remis) == 1 && remis);
 			float avantChute[3] = {1.0f, 2.0f, 4.05f}, pos[3] = {1.0f, 2.0f, 3.0f};

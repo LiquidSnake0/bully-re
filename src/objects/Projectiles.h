@@ -383,6 +383,21 @@ struct CVolProjectile {
 		float d[3] = {pos[0] - debut[0], pos[1] - debut[1], pos[2] - debut[2]};
 		return Norme(d);
 	}
+	// FUN_00465bc0(centre, rayon) (lue à l'assembleur de 0x465bc0 à 0x465cb9, ret 8 ; le balayage d'une liste de secteur, 0046c4b0,
+	// l'appelle sur chaque entité avant sa méthode +0xa4) : la sphère englobante de l'entité touche-t-elle la sphère donnée ? Le
+	// centre de la sphère de son modèle de collision (0051ae00 le rend ; ses trois premiers réels) passe dans le monde par la matrice
+	// de l'entité (FUN_0046dbd0, FUN_0041a850 : `centreMonde`) ; le rayon donné grandit du rayon du modèle (+0xc) et, pour une entité
+	// dont le +0xf0 n'est pas nul (`mobile`), des valeurs absolues des trois réels de sa vitesse (|+0x128| + |+0x124|, puis
+	// + |+0x12c|). Vrai quand le carré de l'écart des deux centres (y² + x², puis + z², arrondi en simple précision) est strictement
+	// sous le carré du rayon (fcompp, test ah,5, jp : l'égalité rend faux).
+	static bool SpheresSeTouchent(const float *centreMonde, float rayonModele, bool mobile, const float *vitesse,
+	                              const float *centre, float rayon) {
+		float dx = centreMonde[0] - centre[0], dy = centreMonde[1] - centre[1], dz = centreMonde[2] - centre[2];
+		rayon = rayonModele + rayon;
+		if(mobile) rayon = fabsf(vitesse[1]) + fabsf(vitesse[0]) + fabsf(vitesse[2]) + rayon;
+		float d2 = dy * dy + dx * dx + dz * dz;
+		return d2 < rayon * rayon;
+	}
 	// Puis il rebondit, au premier tour de la boucle des contacts (les autres CPhysical glissent le long de la normale et refont
 	// jusqu'à trois tours). La normale du contact, dont le z positif est mis à 0 quand l'entité touchée a un +0xf0 (`aPlat` ; fldz,
 	// fcom, test ah,5, jp), est normalisée (0x414cc0, supposée). Contre un piéton (le genre de l'entité touchée, +0x108 & 7, vaut 3)
