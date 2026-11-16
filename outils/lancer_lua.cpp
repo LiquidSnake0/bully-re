@@ -54,6 +54,8 @@
 #include "../src/gamebryo/NifFile.h"
 #include "../src/gamebryo/NifSkin.h"
 #include "../src/anim/Hxd.h"
+#include "../src/anim/Agr.h"
+#include "../src/anim/AgrHxd.h"
 #include "../src/anim/AnimGroups.h"
 #include "../src/core/ConditionListe.h"
 #include "../src/audio/SpeechEvents.h"
@@ -6973,6 +6975,7 @@ TesterObjet(const CObjetOutil &o, CVueObjet &d, int32 modele, const CVector &a, 
 // celle de GlobalsBank/Globals (DAT_020c88a0, supposé).
 // Les noms des os de MAINPED.HXD, dans leur ordre : le rang d'un os dans une fiche FightCollisionButes est son rang ici.
 static std::vector<std::string> osDesPietons;
+static CHxdFile hxdPietons;   // MAINPED.HXD, gardé : le passage d'un haché d'animation à son groupe et à son rang (CHxdFile::Indice)
 
 struct CSqueletteOutil {
 	bool ok = false, dit = false, fichePropre = false;
@@ -7045,6 +7048,106 @@ SqueletteDuModele(int32 modele)
 	return &s;
 }
 
+// Un fichier de Stream/World.img lu en entier (vide s'il n'y est pas).
+static std::vector<uint8>
+LireDuMonde(const std::string &nom)
+{
+	static int32 monde = -2;
+	if(monde == -2){
+		monde = -1;
+		for(int32 i = 0; i < CdStream::ms_numImages && monde < 0; i++)
+			if(strcasecmp(CdStream::ms_images[i].m_path, "Stream\\World.img") == 0) monde = i;
+	}
+	const CDirectoryEntry *d = monde >= 0 ? CdStream::ms_images[monde].Find(nom.c_str()) : nil;
+	if(d == nil) return std::vector<uint8>();
+	std::vector<uint8> buf(d->size * CDSTREAM_SECTOR_SIZE);
+	int32 fd = CFileMgr::OpenFile("Stream\\World.img", "rb", 1);
+	CFileMgr::Seek(fd, d->offset * CDSTREAM_SECTOR_SIZE, 0);
+	bool lu = CFileMgr::ReadExact(fd, buf.data(), (uint32)buf.size());
+	CFileMgr::CloseFile(fd);
+	if(!lu) buf.clear();
+	return buf;
+}
+
+// Une animation de piéton par son haché (celui de la position 24 d'une piste Animation, docs/cat.md) : son enregistrement dans
+// MAINPED.HXD donne son groupe et son rang dans le groupe (CHxdFile::Indice, le rattachement de FUN_006bf0e0) ; le groupe est le
+// .agr de même nom dans Stream/World.img (à défaut dans le dossier Anim), découpé et décodé (AgrLireGroupe, src/anim/Agr.h), chaque animation étirée sur la durée
+// de son enregistrement (HxdEtirer, l'évaluation FUN_006be250 qui divise le temps par le +0xc de l'enregistrement). Chaque groupe
+// est lu une fois. nil : un haché inconnu de MAINPED, un groupe absent de World.img ou une animation qui ne se décode pas.
+struct CAnimOutil { const AgrAnim *anim = nil; const CHxdAnim *enr = nil; std::string groupe; int32 rang = -1; };
+static CAnimOutil
+AnimationParHache(uint32 hache)
+{
+	static std::map<int32, std::vector<AgrAnim>> groupes;
+	CAnimOutil r;
+	for(const CHxdAnim &a : hxdPietons.anims) if((a.hachage & 0x7fffffff) == (hache & 0x7fffffff)){ r.enr = &a; break; }
+	if(r.enr == nil) return r;
+	int32 g = -1;
+	r.rang = hxdPietons.Indice(r.enr->hachage, &g);
+	if(g < 0 || g >= (int32)hxdPietons.groupes.size()) return r;
+	r.groupe = hxdPietons.groupes[g].nom;
+	auto it = groupes.find(g);
+	if(it == groupes.end()){
+		std::vector<AgrAnim> v;
+		std::vector<uint8> buf = LireDuMonde(r.groupe + ".agr");
+		if(buf.empty()){   // à défaut, Anim\<groupe>.agr (C_Player.agr n'est pas dans World.img), comme outils/visite.cpp
+			buf.resize(8 << 20);
+			int32 k = CFileMgr::LoadFile(("Anim\\" + r.groupe + ".agr").c_str(), buf.data(), (int32)buf.size(), "rb");
+			buf.resize(k > 0 ? (size_t)k : 0);
+		}
+		if(!buf.empty() && AgrLireGroupe(buf.data(), (uint32)buf.size(), v)) HxdEtirer(v, hxdPietons, r.groupe.c_str());
+		it = groupes.emplace(g, std::move(v)).first;
+	}
+	if(r.rang >= 0 && r.rang < (int32)it->second.size() && it->second[r.rang].decodee) r.anim = &it->second[r.rang];
+	return r;
+}
+
+// L'animation que joue un piéton de l'outil, et son instant : les pistes Animation du nœud que joue son contrôleur d'actions
+// (controleurs, le nœud +0x10), lancées (leur entrée, la position 12, atteinte par le temps du nœud). Le temps joué suit la mise à
+// jour de la piste (FUN_0060ae00, docs/cat.md) : il part de la position 40 et avance à la vitesse 48 (la stat 0x14 du piéton n'est pas
+// suivie) ; en mode 2 il boucle sur la durée de l'enregistrement HXD, sinon il s'arrête à la fin (la position 44 si elle est positive
+// et plus courte, sinon la durée) : la dernière pose reste. Supposé : de plusieurs pistes lancées, la dernière entrée l'emporte (les
+// couches, position 36, et les masques d'os, position 28, ne sont pas suivis) ; les pistes que les Execute du nœud ajoutent ne
+// comptent pas. Faux sans contrôleur ou sans piste Animation lancée.
+struct CPoseJouee { uint32 hache = 0; float t = 0, entree = 0; int32 mode = 0; CAnimOutil a; };
+static bool
+AnimationDuPieton(int ped, CPoseJouee *out)
+{
+	static const uint32 kAnimation = ActionHash("Animation");
+	auto it = controleurs.find(ped);
+	if(it == controleurs.end() || it->second.joue == nil) return false;
+	const CActionNode &n = *it->second.joue;
+	const CActionTreeFile *f = arbres.Fichier(n);
+	if(f == nil) return false;
+	float tn = it->second.Temps(maintenant / 1000.0f);
+	bool trouve = false;
+	CActionTrack mieux;
+	float entreeMieux = 0;
+	for(int32 dp : n.pistes){
+		CActionTrack p;
+		if(!f->Piste(dp, p) || p.type != kAnimation) continue;
+		float e = CActionBank::ButesReel(p, 12);
+		if(p.Champ(12) == nil) e = 0;
+		if(e > tn || (trouve && e < entreeMieux)) continue;
+		mieux = p; entreeMieux = e; trouve = true;
+	}
+	if(!trouve) return false;
+	auto R = [&](uint16 k, float d){ return mieux.Champ(k) ? CActionBank::ButesReel(mieux, k) : d; };
+	out->hache = mieux.Mot(24);
+	out->mode = (int32)mieux.Mot(32);
+	out->entree = entreeMieux;
+	out->a = AnimationParHache(out->hache);
+	float duree = out->a.enr ? out->a.enr->duree : -1.0f;
+	float vitesse = R(48, 1.0f); if(vitesse <= 0.0f) vitesse = 1.0f;
+	float t = R(40, 0.0f) + (tn - entreeMieux) * vitesse;
+	if(duree > 0.0f){
+		if(out->mode == 2) t = fmodf(t, duree);
+		else { float fin = R(44, -1.0f); if(fin < 0.0f || fin > duree) fin = duree; if(t > fin) t = fin; }
+	}
+	out->t = t < 0.0f ? 0.0f : t;
+	return true;
+}
+
 // Le test fin d'un projectile contre un piéton, comme la méthode +0xa4 d'un CProjectile le fait (FUN_0046a340) : le modèle du
 // piéton refait par FUN_00572680 (six sphères sur six os), puis FUN_00469f70 (CCollisionBalayee::TestPieton) avec les sphères du
 // modèle du projectile, de `a` à `b`, et la matrice du piéton. Le cap de l'outil (en degrés, 0 vers +x) donne l'avant du piéton,
@@ -7078,6 +7181,19 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 		       maintenant / 1000.0, indice, p.modele, s->nom.c_str(), os.c_str(), s->nom.c_str(), s->n,
 		       f.rayon[0], f.rayon[1], f.rayon[2], f.rayon[3], f.rayon[4], f.rayon[5], s->fichePropre ? "du modèle" : "par défaut",
 		       ped.spheres[0].centre[2], ped.spheres[1].centre[2], ped.spheres[2].centre[2], ped.spheres[3].centre[2], ped.spheres[4].centre[2], ped.spheres[5].centre[2], ped.rayon);
+	}
+	{
+		// L'animation que joue le piéton, dite une fois par piéton et par animation.
+		static std::set<std::pair<int, uint32>> dites;
+		CPoseJouee pj;
+		bool joue = AnimationDuPieton(indice, &pj);
+		if(dites.insert(std::make_pair(indice, joue ? pj.hache : 0u)).second){
+			if(!joue) printf("%6.2f s  le piéton %d ne joue aucune piste Animation (le nœud %s) : ses os restent dans la pose du fichier\n",
+			                 maintenant / 1000.0, indice, arbres.CheminDe(NoeudJoue(indice)).c_str());
+			else printf("%6.2f s  le piéton %d joue %s (%08x : n° %d de %s.agr, %s, %.2f s, mode %d), à %.2f s de l'animation (entrée à %.2f s du nœud %s)\n",
+			            maintenant / 1000.0, indice, pj.a.enr ? pj.a.enr->nom.c_str() : "?", pj.hache, pj.a.rang, pj.a.groupe.empty() ? "?" : pj.a.groupe.c_str(),
+			            pj.a.anim ? "décodée" : "pas décodée", pj.a.enr ? pj.a.enr->duree : -1.0f, pj.mode, pj.t, pj.entree, arbres.CheminDe(NoeudJoue(indice)).c_str());
+		}
 	}
 	const std::vector<CB::SphereCol> &sp = SpheresDuProjectile(modeleProjectile);
 	CB::DonneesCol proj; proj.spheres = &sp[0]; proj.nSpheres = (int8)(sp.size() < 127 ? sp.size() : 127);
@@ -8370,7 +8486,7 @@ ChargerMissions(void)
 			const int32 MAX = 4 << 20;
 			uint8 *h = (uint8*)malloc(MAX);
 			int32 k = CFileMgr::LoadFile("Anim\\MAINPED.HXD", h, MAX, "rb");
-			CHxdFile mainped;
+			CHxdFile &mainped = hxdPietons;
 			if(k > 0 && mainped.Load(h, (uint32)k))
 				for(const CHxdAnim &a : mainped.anims) arbres.dureesAnimations[a.hachage & 0x7fffffff] = a.duree;
 			printf("%d durées d'animations lues dans MAINPED.HXD\n", (int)arbres.dureesAnimations.size());
