@@ -7108,47 +7108,37 @@ AnimationParHache(uint32 hache)
 	return r;
 }
 
-// L'animation que joue un piéton de l'outil, et son instant : les pistes Animation du nœud que joue son contrôleur d'actions
-// (controleurs, le nœud +0x10), lancées (leur entrée, la position 12, atteinte par le temps du nœud). Le temps joué suit la mise à
-// jour de la piste (FUN_0060ae00, docs/cat.md) : il part de la position 40 et avance à la vitesse 48 (la stat 0x14 du piéton n'est pas
-// suivie) ; en mode 2 il boucle sur la durée de l'enregistrement HXD, sinon il s'arrête à la fin (la position 44 si elle est positive
-// et plus courte, sinon la durée) : la dernière pose reste. Supposé : de plusieurs pistes lancées, la dernière entrée l'emporte (les
-// couches, position 36, et les masques d'os, position 28, ne sont pas suivis) ; les pistes que les Execute du nœud ajoutent ne
-// comptent pas. Faux sans contrôleur ou sans piste Animation lancée.
+// L'animation que joue un piéton de l'outil, et son instant : les pistes Animation et HitAnimation que son contrôleur d'actions a
+// recueillies (CActionController::animations : celles du nœud joué, +0x10, et des nœuds que ses Execute font jouer), lancées
+// (leur entrée atteinte par le temps du nœud) et vivantes (sans vie, ou le temps du nœud sous l'entrée plus la vie). Le temps joué
+// suit la mise à jour de la piste (FUN_0060ae00, docs/cat.md) : il part de la position 40 et avance à la vitesse 48 (la stat 0x14 du
+// piéton n'est pas suivie) ; en mode 2 il boucle sur la durée de l'enregistrement HXD, sinon il s'arrête à la fin (la position 44 si
+// elle est positive et plus courte, sinon la durée) : la dernière pose reste. Supposé : de plusieurs pistes vivantes, la dernière
+// entrée l'emporte, et à entrée égale la dernière de la liste (les couches, position 36, et les masques d'os, position 28, ne sont
+// pas suivis). Faux sans contrôleur ou sans piste vivante.
 struct CPoseJouee { uint32 hache = 0; float t = 0, entree = 0; int32 mode = 0; CAnimOutil a; };
 static bool
 AnimationDuPieton(int ped, CPoseJouee *out)
 {
-	static const uint32 kAnimation = ActionHash("Animation");
 	auto it = controleurs.find(ped);
 	if(it == controleurs.end() || it->second.joue == nil) return false;
-	const CActionNode &n = *it->second.joue;
-	const CActionTreeFile *f = arbres.Fichier(n);
-	if(f == nil) return false;
 	float tn = it->second.Temps(maintenant / 1000.0f);
-	bool trouve = false;
-	CActionTrack mieux;
-	float entreeMieux = 0;
-	for(int32 dp : n.pistes){
-		CActionTrack p;
-		if(!f->Piste(dp, p) || p.type != kAnimation) continue;
-		float e = CActionBank::ButesReel(p, 12);
-		if(p.Champ(12) == nil) e = 0;
-		if(e > tn || (trouve && e < entreeMieux)) continue;
-		mieux = p; entreeMieux = e; trouve = true;
+	const CActionController::PisteAnimation *mieux = nil;
+	for(const CActionController::PisteAnimation &p : it->second.animations){
+		if(p.entree > tn || (p.vie >= 0.0f && tn >= p.entree + p.vie)) continue;
+		if(mieux == nil || p.entree >= mieux->entree) mieux = &p;
 	}
-	if(!trouve) return false;
-	auto R = [&](uint16 k, float d){ return mieux.Champ(k) ? CActionBank::ButesReel(mieux, k) : d; };
-	out->hache = mieux.Mot(24);
-	out->mode = (int32)mieux.Mot(32);
-	out->entree = entreeMieux;
+	if(mieux == nil) return false;
+	out->hache = mieux->hache;
+	out->mode = mieux->mode;
+	out->entree = mieux->entree;
 	out->a = AnimationParHache(out->hache);
 	float duree = out->a.enr ? out->a.enr->duree : -1.0f;
-	float vitesse = R(48, 1.0f); if(vitesse <= 0.0f) vitesse = 1.0f;
-	float t = R(40, 0.0f) + (tn - entreeMieux) * vitesse;
+	float vitesse = mieux->vitesse > 0.0f ? mieux->vitesse : 1.0f;
+	float t = mieux->depart + (tn - mieux->entree) * vitesse;
 	if(duree > 0.0f){
 		if(out->mode == 2) t = fmodf(t, duree);
-		else { float fin = R(44, -1.0f); if(fin < 0.0f || fin > duree) fin = duree; if(t > fin) t = fin; }
+		else { float fin = mieux->fin; if(fin < 0.0f || fin > duree) fin = duree; if(t > fin) t = fin; }
 	}
 	out->t = t < 0.0f ? 0.0f : t;
 	return true;

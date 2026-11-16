@@ -104,7 +104,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kPassage = ActionHash("PropSetInTransition"), kDrapeauObjet = ActionHash("PropFlags"), kViseeAuto = ActionHash("WeaponPlayerFireAutoTarget"),
 	                    kActionObjet = ActionHash("PropSetPedAction"), kSynchro = ActionHash("Sync"),
                     kBoutonHistorique = ActionHash("ActionRegisterButtonHistory"),
-	                    kInteraction = ActionHash("PropInteract");
+	                    kInteraction = ActionHash("PropInteract"), kAnimation = ActionHash("Animation"),
+	                    kAnimationCoup = ActionHash("HitAnimation");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -262,6 +263,9 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			const CActionAttribut *at = p.Champ(32);
 			const CActionNode *v = at ? b.Relatif(&n, f->ChaineCitee(at->decalage).c_str()) : nil;
 			if(v) suitesExecutees.push_back(v);
+		}else if(p.type == kAnimation || p.type == kAnimationCoup){
+			animations.push_back({a, Reel(p, 16, -1.0f), p.Mot(24), p.Mot(28), (int32)p.Mot(32), (int32)p.Mot(36),
+			                      Reel(p, 40, 0.0f), Reel(p, 44, -1.0f), Reel(p, 48, 1.0f), Reel(p, 52, -1.0f)});
 		}else if(p.type == kExecute){
 			const CActionAttribut *at = p.Champ(32);
 			if(at == nil) continue;
@@ -324,6 +328,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	departs.clear();
 	regards.clear();
 	poursuites.clear();
+	animations.clear();
 	ArreterCollisions();
 	joue = n;
 	debut = t;

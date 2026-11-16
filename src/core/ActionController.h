@@ -126,6 +126,13 @@ public:
 	struct Regard { float entree, vie; int32 genre; float decalage; };
 	std::vector<Regard> regards, regardsActifs;
 	struct Poursuite { float entree, vie; int32 genre; float arrivee; };
+	// Les pistes Animation et HitAnimation (AnimationTrack : lancement FUN_00612360, mise à jour FUN_0060ae00, arrêt
+	// FUN_0060af80 ; HitAnimationTrack, table 0x934cb8, une AnimationTrack) du nœud joué et des nœuds que ses Execute font
+	// jouer (FUN_005f3e20 : une seule liste), dans l'ordre de la liste : l'entrée (12, au plus tôt celle du nœud ajouté), la vie
+	// (16), le haché de l'animation (24), le masque d'os (28), le mode (32), la couche (36), le départ (40), la fin (44), la
+	// vitesse (48) et le fondu (52), docs/cat.md. Le contrôleur ne les joue pas : l'outil y lit ce que le piéton anime.
+	struct PisteAnimation { float entree, vie; uint32 hache, masque; int32 mode, couche; float depart, fin, vitesse, fondu; };
+	std::vector<PisteAnimation> animations;
 	std::vector<Poursuite> poursuites, poursuitesActives;
 	// Les pistes de l'IA (relevées dans AI_FightTutorial), suivies quand `sousControleurs` est posé :
 	// - ManageTargets (ManageTargetsTrack 0x934d14 ; lancement FUN_006273f0, mise à jour FUN_00627420, à chaque image tant
