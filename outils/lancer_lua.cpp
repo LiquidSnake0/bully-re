@@ -7157,7 +7157,11 @@ AnimationDuPieton(int ped, CPoseJouee *out)
 // Les os d'un piéton dans la pose de son animation à l'instant t, dans le repère du modèle, comme outils/scene.h (Reposer) pose un
 // piéton de la visite : chaque os de 1 à 35 qui a une piste dans l'animation (AgrRotation, interpolée entre ses deux clés) prend
 // sa rotation à la place de celle du nœud du .nif (la pose rᵀ · m, composée après la rotation du nœud, la remplace) ; l'os 0
-// (Dummy) ne bouge pas le modèle ; puis NifWorldTransforms compose les nœuds. Le binaire lit, lui, la position de l'os dans la
+// (Dummy) ne bouge pas le modèle ; le bassin (l'os 1, Root) prend la position de sa piste (AgrPositionOs, dans le repère de son
+// parent comme la translation du nœud), moins le trajet de la flèche au sol (l'os 35, ARROW) depuis le début de l'animation, en
+// x et en y : c'est le piéton entier qui avance de ce trajet (sa position), pas son bassin ; puis NifWorldTransforms compose les
+// nœuds. Supposé : la position de la piste est à l'échelle du modèle (outils/scene.h l'étire par un bassin de référence que
+// l'animation ne donne pas). Le binaire lit, lui, la position de l'os dans la
 // table des transformations du squelette ([[squelette + 0x14] + 8], 0x34 octets par os, la position en +0x24 : FUN_00572680) ;
 // supposé : ce que l'outil compose ici est ce que le lecteur d'animations du jeu y écrit (le fondu et les couches ne sont pas
 // suivis). Faux sans .nif gardé.
@@ -7177,8 +7181,16 @@ PoserOs(const CSqueletteOutil &s, const AgrAnim &a, float t, CVector out[CSquele
 			pose[b].m[i][j] = v;
 		}
 	}
+	std::vector<CVector> decalage(f.numBlocks, CVector(0, 0, 0));
+	CVector rt, f0(0, 0, 0), ft(0, 0, 0);
+	int32 bb = s.n > 1 ? s.bloc[1] : -1;
+	if(bb >= 0 && bb < f.numBlocks && AgrPositionOs(a, 1, t, &rt)){
+		AgrPositionOs(a, AGR_OS - 1, 0, &f0); AgrPositionOs(a, AGR_OS - 1, t, &ft);
+		const CVector &repos = ((const NifAVObject*)f.blocks[bb].data)->translation;
+		decalage[bb] = CVector(rt.x - (ft.x - f0.x) - repos.x, rt.y - (ft.y - f0.y) - repos.y, rt.z - repos.z);
+	}
 	std::vector<NifTransform> mondes(f.numBlocks);
-	NifWorldTransforms(f, mondes.data(), pose.data(), true);
+	NifWorldTransforms(f, mondes.data(), pose.data(), true, decalage.data());
 	for(int32 k = 0; k < s.n; k++) out[k] = mondes[s.bloc[k]].t;
 	return true;
 }
