@@ -7108,39 +7108,55 @@ AnimationParHache(uint32 hache)
 	return r;
 }
 
-// L'animation que joue un piéton de l'outil, et son instant : les pistes Animation et HitAnimation que son contrôleur d'actions a
-// recueillies (CActionController::animations : celles du nœud joué, +0x10, et des nœuds que ses Execute font jouer), lancées
-// (leur entrée atteinte par le temps du nœud) et vivantes (sans vie, ou le temps du nœud sous l'entrée plus la vie). Le temps joué
-// suit la mise à jour de la piste (FUN_0060ae00, docs/cat.md) : il part de la position 40 et avance à la vitesse 48 (la stat 0x14 du
-// piéton n'est pas suivie) ; en mode 2 il boucle sur la durée de l'enregistrement HXD, sinon il s'arrête à la fin (la position 44 si
-// elle est positive et plus courte, sinon la durée) : la dernière pose reste. Supposé : de plusieurs pistes vivantes, la dernière
-// entrée l'emporte, et à entrée égale la dernière de la liste (les couches, position 36, et les masques d'os, position 28, ne sont
-// pas suivis). Faux sans contrôleur ou sans piste vivante.
-struct CPoseJouee { uint32 hache = 0; float t = 0, entree = 0; int32 mode = 0; CAnimOutil a; };
+// L'instant joué d'une piste Animation au temps tn de son nœud : la mise à jour de la piste (FUN_0060ae00, docs/cat.md) le fait
+// partir de la position 40 et avancer à la vitesse 48 (la stat 0x14 du piéton n'est pas suivie) ; en mode 2 il boucle sur la durée
+// de l'enregistrement HXD, sinon il s'arrête à la fin (la position 44 si elle est positive et plus courte, sinon la durée) : la
+// dernière pose reste.
+struct CPoseJouee { uint32 hache = 0; float t = 0, entree = 0, fondu = 0; int32 mode = 0; CAnimOutil a; };
+static void
+InstantJoue(const CActionController::PisteAnimation &p, float tn, CPoseJouee *out)
+{
+	out->hache = p.hache;
+	out->mode = p.mode;
+	out->entree = p.entree;
+	out->a = AnimationParHache(p.hache);
+	float duree = out->a.enr ? out->a.enr->duree : -1.0f;
+	float vitesse = p.vitesse > 0.0f ? p.vitesse : 1.0f;
+	float t = p.depart + (tn - p.entree) * vitesse;
+	if(duree > 0.0f){
+		if(p.mode == 2) t = fmodf(t, duree);
+		else { float fin = p.fin; if(fin < 0.0f || fin > duree) fin = duree; if(t > fin) t = fin; }
+	}
+	out->t = t < 0.0f ? 0.0f : t;
+	// Le fondu (52) : négatif, celui de l'enregistrement HXD (+0x10), comme FUN_006b6570 le prend (lu à l'assembleur,
+	// 0x6b65eb à 0x6b6607) ; 0 : sans fondu.
+	out->fondu = p.fondu < 0.0f ? (out->a.enr ? out->a.enr->fondu : 0.0f) : p.fondu;
+}
+
+// L'animation que joue un piéton de l'outil, et son instant : la piste vivante (CActionController::Animation) des pistes
+// Animation et HitAnimation que son contrôleur d'actions a recueillies (celles du nœud joué, +0x10, et des nœuds que ses Execute
+// font jouer). `quittee`, s'il est donné : l'animation du nœud quitté et le poids de la nouvelle, quand la nouvelle est encore dans
+// son fondu (le temps depuis son lancement sous son fondu) ; le poids monte de 0 à 1 sur le fondu, linéairement (supposé : le lecteur
+// du jeu tient ses poids en +0xc, +0x10 et +0x14 de sa place, FUN_006b6570, non lus plus loin) ; l'animation quittée reste à
+// l'instant où elle a été quittée (supposé). Faux sans contrôleur ou sans piste vivante.
 static bool
-AnimationDuPieton(int ped, CPoseJouee *out)
+AnimationDuPieton(int ped, CPoseJouee *out, CPoseJouee *quittee = nil, float *poids = nil)
 {
 	auto it = controleurs.find(ped);
 	if(it == controleurs.end() || it->second.joue == nil) return false;
-	float tn = it->second.Temps(maintenant / 1000.0f);
-	const CActionController::PisteAnimation *mieux = nil;
-	for(const CActionController::PisteAnimation &p : it->second.animations){
-		if(p.entree > tn || (p.vie >= 0.0f && tn >= p.entree + p.vie)) continue;
-		if(mieux == nil || p.entree >= mieux->entree) mieux = &p;
+	const CActionController &c = it->second;
+	float tn = c.Temps(maintenant / 1000.0f);
+	const CActionController::PisteAnimation *m = c.Animation(tn);
+	if(m == nil) return false;
+	InstantJoue(*m, tn, out);
+	if(quittee && poids){
+		*poids = 1.0f;
+		float depuis = tn - m->entree;
+		if(c.quittee.ok && out->fondu > 0.0f && depuis < out->fondu && c.quittee.p.hache != m->hache){
+			InstantJoue(c.quittee.p, c.quittee.tNoeud, quittee);
+			if(quittee->a.anim) *poids = depuis / out->fondu;
+		}
 	}
-	if(mieux == nil) return false;
-	out->hache = mieux->hache;
-	out->mode = mieux->mode;
-	out->entree = mieux->entree;
-	out->a = AnimationParHache(out->hache);
-	float duree = out->a.enr ? out->a.enr->duree : -1.0f;
-	float vitesse = mieux->vitesse > 0.0f ? mieux->vitesse : 1.0f;
-	float t = mieux->depart + (tn - mieux->entree) * vitesse;
-	if(duree > 0.0f){
-		if(out->mode == 2) t = fmodf(t, duree);
-		else { float fin = mieux->fin; if(fin < 0.0f || fin > duree) fin = duree; if(t > fin) t = fin; }
-	}
-	out->t = t < 0.0f ? 0.0f : t;
 	return true;
 }
 
@@ -7153,17 +7169,24 @@ AnimationDuPieton(int ped, CPoseJouee *out)
 // nœuds. Supposé : la position de la piste est à l'échelle du modèle (outils/scene.h l'étire par un bassin de référence que
 // l'animation ne donne pas). Le binaire lit, lui, la position de l'os dans la
 // table des transformations du squelette ([[squelette + 0x14] + 8], 0x34 octets par os, la position en +0x24 : FUN_00572680) ;
-// supposé : ce que l'outil compose ici est ce que le lecteur d'animations du jeu y écrit (le fondu et les couches ne sont pas
-// suivis). Faux sans .nif gardé.
+// supposé : ce que l'outil compose ici est ce que le lecteur d'animations du jeu y écrit (les couches ne sont pas suivies).
+// Faux sans .nif gardé.
 static bool
-PoserOs(const CSqueletteOutil &s, const AgrAnim &a, float t, CVector out[CSqueletteOutil::OS])
+PoserOs(const CSqueletteOutil &s, const AgrAnim &a, float t, CVector out[CSqueletteOutil::OS], const AgrAnim *autre = nil, float tAutre = 0, float poids = 0)
 {
 	if(!s.nifLu) return false;
 	const CNifFile &f = s.nif;
+	// Le fondu : `autre` mêlée à `a` avec le poids `poids` (0 : `a` seule), os par os en interpolation sphérique, le bassin en
+	// linéaire, comme outils/scene.h (Reposer) mêle la marche et l'attente.
+	bool melange = autre && poids > 0.0f;
 	std::vector<NifMatrix33> pose(f.numBlocks, NifAxisRotation(0, 0));
 	for(int32 k = 1; k < s.n && k < AGR_OS; k++){
-		int32 b = s.bloc[k]; float q[4], m[3][3];
-		if(b < 0 || b >= f.numBlocks || !AgrRotation(a, k, t, q)) continue;
+		int32 b = s.bloc[k]; float q[4], q2[4], m[3][3];
+		if(b < 0 || b >= f.numBlocks) continue;
+		bool a1 = AgrRotation(a, k, t, q), a2 = melange && AgrRotation(*autre, k, tAutre, q2);
+		if(!a1 && !a2) continue;
+		if(a1 && a2){ float r[4]; AgrSlerp(q, q2, poids, r); memcpy(q, r, sizeof q); }
+		else if(a2) memcpy(q, q2, sizeof q);
 		AgrMatrice(q, m);
 		const NifMatrix33 &r = ((const NifAVObject*)f.blocks[b].data)->rotation;
 		for(int i = 0; i < 3; i++) for(int j = 0; j < 3; j++){
@@ -7172,12 +7195,22 @@ PoserOs(const CSqueletteOutil &s, const AgrAnim &a, float t, CVector out[CSquele
 		}
 	}
 	std::vector<CVector> decalage(f.numBlocks, CVector(0, 0, 0));
-	CVector rt, f0(0, 0, 0), ft(0, 0, 0);
 	int32 bb = s.n > 1 ? s.bloc[1] : -1;
-	if(bb >= 0 && bb < f.numBlocks && AgrPositionOs(a, 1, t, &rt)){
-		AgrPositionOs(a, AGR_OS - 1, 0, &f0); AgrPositionOs(a, AGR_OS - 1, t, &ft);
+	auto Bassin = [&](const AgrAnim &x, float tx, CVector *d) -> bool {
+		CVector rt, f0(0, 0, 0), ft(0, 0, 0);
+		if(!AgrPositionOs(x, 1, tx, &rt)) return false;
+		AgrPositionOs(x, AGR_OS - 1, 0, &f0); AgrPositionOs(x, AGR_OS - 1, tx, &ft);
 		const CVector &repos = ((const NifAVObject*)f.blocks[bb].data)->translation;
-		decalage[bb] = CVector(rt.x - (ft.x - f0.x) - repos.x, rt.y - (ft.y - f0.y) - repos.y, rt.z - repos.z);
+		*d = CVector(rt.x - (ft.x - f0.x) - repos.x, rt.y - (ft.y - f0.y) - repos.y, rt.z - repos.z);
+		return true;
+	};
+	if(bb >= 0 && bb < f.numBlocks){
+		CVector d1(0, 0, 0), d2(0, 0, 0);
+		bool b1 = Bassin(a, t, &d1), b2 = melange && Bassin(*autre, tAutre, &d2);
+		float w = melange ? poids : 0.0f;
+		if(!b2) d2 = d1;
+		if(!b1) d1 = d2;
+		if(b1 || b2) decalage[bb] = CVector(d1.x + w * (d2.x - d1.x), d1.y + w * (d2.y - d1.y), d1.z + w * (d2.z - d1.z));
 	}
 	std::vector<NifTransform> mondes(f.numBlocks);
 	NifWorldTransforms(f, mondes.data(), pose.data(), true, decalage.data());
@@ -7201,10 +7234,12 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 	m4.m[12] = p.pos.x; m4.m[13] = p.pos.y; m4.m[14] = p.pos.z;
 	m1.m[12] = a.x; m1.m[13] = a.y; m1.m[14] = a.z; m2.m[12] = b.x; m2.m[13] = b.y; m2.m[14] = b.z;
 	// Les os dans la pose de l'animation que joue le piéton (PoserOs), à défaut dans celle du fichier.
-	CPoseJouee pj;
-	bool joue = AnimationDuPieton(indice, &pj);
+	CPoseJouee pj, pq;
+	float poids = 1.0f;
+	bool joue = AnimationDuPieton(indice, &pj, &pq, &poids);
+	bool fondu = joue && poids < 1.0f && pq.a.anim;
 	CVector poses[CSqueletteOutil::OS];
-	bool pose = joue && pj.a.anim && PoserOs(*s, *pj.a.anim, pj.t, poses);
+	bool pose = joue && pj.a.anim && PoserOs(*s, *pj.a.anim, pj.t, poses, fondu ? pq.a.anim : nil, pq.t, 1.0f - poids);
 	const CVector *osPoses = pose ? poses : s->os;
 	CModelePieton ped;
 	ped.Construire(&m4.m[12], CModelePieton::Cap(m4.m), s->fiche, [&](int32 rang, float *o){
@@ -7235,7 +7270,9 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 			            "%s, les six sphères à %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m du sol\n",
 			            maintenant / 1000.0, indice, pj.a.enr ? pj.a.enr->nom.c_str() : "?", pj.hache, pj.a.rang, pj.a.groupe.empty() ? "?" : pj.a.groupe.c_str(),
 			            pj.a.anim ? "décodée" : "pas décodée", pj.a.enr ? pj.a.enr->duree : -1.0f, pj.mode, pj.t, pj.entree, arbres.CheminDe(NoeudJoue(indice)).c_str(),
-			            pose ? "les os posés par l'animation" : "les os dans la pose du fichier",
+			            !pose ? "les os dans la pose du fichier" : !fondu ? "les os posés par l'animation" :
+			            ("les os posés par l'animation, au poids " + std::to_string(poids).substr(0, 4) + " dans son fondu de " + std::to_string(pj.fondu).substr(0, 4) + " s depuis "
+			             + (pq.a.enr ? pq.a.enr->nom : std::string("?")) + " à " + std::to_string(pq.t).substr(0, 4) + " s").c_str(),
 			            ped.spheres[0].centre[2], ped.spheres[1].centre[2], ped.spheres[2].centre[2],
 			            ped.spheres[3].centre[2], ped.spheres[4].centre[2], ped.spheres[5].centre[2]);
 		}

@@ -133,6 +133,22 @@ public:
 	// vitesse (48) et le fondu (52), docs/cat.md. Le contrôleur ne les joue pas : l'outil y lit ce que le piéton anime.
 	struct PisteAnimation { float entree, vie; uint32 hache, masque; int32 mode, couche; float depart, fin, vitesse, fondu; };
 	std::vector<PisteAnimation> animations;
+	// L'animation que le nœud quitté jouait (celle que Animation() rend à l'instant où Jouer change de nœud) : le lecteur du
+	// jeu la garde le temps du fondu de la suivante (FUN_006b6570, la place de l'animation remplacée). `tNoeud` : le temps
+	// du nœud quitté à cet instant ; `quitte` : l'instant (s). ok faux : aucune.
+	struct Quittee { PisteAnimation p; float tNoeud = 0.0f, quitte = 0.0f; bool ok = false; };
+	Quittee quittee;
+	// La piste Animation vivante au temps tn du nœud joué : lancée (l'entrée atteinte) et sans vie ou pas encore à son bout ;
+	// de plusieurs, la dernière entrée, et à entrée égale la dernière de la liste (supposé : les couches, 36, et les masques,
+	// 28, ne sont pas suivis). nil : aucune.
+	const PisteAnimation *Animation(float tn) const {
+		const PisteAnimation *m = nil;
+		for(const PisteAnimation &p : animations){
+			if(p.entree > tn || (p.vie >= 0.0f && tn >= p.entree + p.vie)) continue;
+			if(m == nil || p.entree >= m->entree) m = &p;
+		}
+		return m;
+	}
 	std::vector<Poursuite> poursuites, poursuitesActives;
 	// Les pistes de l'IA (relevées dans AI_FightTutorial), suivies quand `sousControleurs` est posé :
 	// - ManageTargets (ManageTargetsTrack 0x934d14 ; lancement FUN_006273f0, mise à jour FUN_00627420, à chaque image tant

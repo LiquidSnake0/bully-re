@@ -328,6 +328,10 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	departs.clear();
 	regards.clear();
 	poursuites.clear();
+	{
+		const PisteAnimation *m = joue ? Animation(t - debut) : nil;
+		if(m){ quittee.p = *m; quittee.tNoeud = t - debut; quittee.quitte = t; quittee.ok = true; }
+	}
 	animations.clear();
 	ArreterCollisions();
 	joue = n;
