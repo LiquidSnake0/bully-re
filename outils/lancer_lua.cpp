@@ -6983,6 +6983,10 @@ struct CSqueletteOutil {
 	int n = 0;
 	CVector os[OS];
 	std::string noeud[OS];   // le nom du nœud du .nif pris pour chaque os
+	int32 bloc[OS];          // le bloc du .nif de chaque os
+	std::vector<uint8> donnees;   // le .nif, gardé (CNifFile y lit ses données) pour poser les os par l'animation
+	CNifFile nif;
+	bool nifLu = false;
 	std::string nom;
 	CModelePieton::Fiche fiche;
 };
@@ -7015,13 +7019,15 @@ SqueletteDuModele(int32 modele)
 		if(strcasecmp(CdStream::ms_images[i].m_path, "Stream\\World.img") == 0) monde = i;
 	const CDirectoryEntry *d = monde >= 0 ? CdStream::ms_images[monde].Find((s.nom + ".nif").c_str()) : nil;
 	if(d){
-		std::vector<uint8> buf(d->size * CDSTREAM_SECTOR_SIZE);
+		std::vector<uint8> &buf = s.donnees;
+		buf.resize(d->size * CDSTREAM_SECTOR_SIZE);
 		int32 fd = CFileMgr::OpenFile("Stream\\World.img", "rb", 1);
 		CFileMgr::Seek(fd, d->offset * CDSTREAM_SECTOR_SIZE, 0);
 		bool lu = CFileMgr::ReadExact(fd, buf.data(), (uint32)buf.size());
 		CFileMgr::CloseFile(fd);
-		CNifFile f;
+		CNifFile &f = s.nif;
 		if(lu && f.Load(buf.data(), (uint32)buf.size())){
+			s.nifLu = true;
 			std::vector<NifTransform> mondes(f.numBlocks);
 			NifWorldTransforms(f, mondes.data());
 			std::vector<int32> pile(1, NifFindNode(f, "Dummy"));
@@ -7031,10 +7037,10 @@ SqueletteDuModele(int32 modele)
 				const NifNode *nd = (const NifNode*)f.blocks[x].data;
 				const char *nom = nd->name >= 0 ? f.String(nd->name) : nil;
 				s.noeud[s.n] = nom ? nom : "";
+				s.bloc[s.n] = x;
 				s.os[s.n++] = mondes[x].t;
 				for(int32 i = nd->numChildren - 1; i >= 0; i--) pile.push_back(nd->children[i]);
 			}
-			f.Free();
 		}
 	}
 	bool rangs = true;
@@ -7148,6 +7154,35 @@ AnimationDuPieton(int ped, CPoseJouee *out)
 	return true;
 }
 
+// Les os d'un piéton dans la pose de son animation à l'instant t, dans le repère du modèle, comme outils/scene.h (Reposer) pose un
+// piéton de la visite : chaque os de 1 à 35 qui a une piste dans l'animation (AgrRotation, interpolée entre ses deux clés) prend
+// sa rotation à la place de celle du nœud du .nif (la pose rᵀ · m, composée après la rotation du nœud, la remplace) ; l'os 0
+// (Dummy) ne bouge pas le modèle ; puis NifWorldTransforms compose les nœuds. Le binaire lit, lui, la position de l'os dans la
+// table des transformations du squelette ([[squelette + 0x14] + 8], 0x34 octets par os, la position en +0x24 : FUN_00572680) ;
+// supposé : ce que l'outil compose ici est ce que le lecteur d'animations du jeu y écrit (le fondu et les couches ne sont pas
+// suivis). Faux sans .nif gardé.
+static bool
+PoserOs(const CSqueletteOutil &s, const AgrAnim &a, float t, CVector out[CSqueletteOutil::OS])
+{
+	if(!s.nifLu) return false;
+	const CNifFile &f = s.nif;
+	std::vector<NifMatrix33> pose(f.numBlocks, NifAxisRotation(0, 0));
+	for(int32 k = 1; k < s.n && k < AGR_OS; k++){
+		int32 b = s.bloc[k]; float q[4], m[3][3];
+		if(b < 0 || b >= f.numBlocks || !AgrRotation(a, k, t, q)) continue;
+		AgrMatrice(q, m);
+		const NifMatrix33 &r = ((const NifAVObject*)f.blocks[b].data)->rotation;
+		for(int i = 0; i < 3; i++) for(int j = 0; j < 3; j++){
+			float v = 0; for(int k2 = 0; k2 < 3; k2++) v += r.m[k2][i] * m[k2][j];
+			pose[b].m[i][j] = v;
+		}
+	}
+	std::vector<NifTransform> mondes(f.numBlocks);
+	NifWorldTransforms(f, mondes.data(), pose.data(), true);
+	for(int32 k = 0; k < s.n; k++) out[k] = mondes[s.bloc[k]].t;
+	return true;
+}
+
 // Le test fin d'un projectile contre un piéton, comme la méthode +0xa4 d'un CProjectile le fait (FUN_0046a340) : le modèle du
 // piéton refait par FUN_00572680 (six sphères sur six os), puis FUN_00469f70 (CCollisionBalayee::TestPieton) avec les sphères du
 // modèle du projectile, de `a` à `b`, et la matrice du piéton. Le cap de l'outil (en degrés, 0 vers +x) donne l'avant du piéton,
@@ -7163,9 +7198,15 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 	m4.m[0] = sn; m4.m[1] = -c; m4.m[4] = c; m4.m[5] = sn;
 	m4.m[12] = p.pos.x; m4.m[13] = p.pos.y; m4.m[14] = p.pos.z;
 	m1.m[12] = a.x; m1.m[13] = a.y; m1.m[14] = a.z; m2.m[12] = b.x; m2.m[13] = b.y; m2.m[14] = b.z;
+	// Les os dans la pose de l'animation que joue le piéton (PoserOs), à défaut dans celle du fichier.
+	CPoseJouee pj;
+	bool joue = AnimationDuPieton(indice, &pj);
+	CVector poses[CSqueletteOutil::OS];
+	bool pose = joue && pj.a.anim && PoserOs(*s, *pj.a.anim, pj.t, poses);
+	const CVector *osPoses = pose ? poses : s->os;
 	CModelePieton ped;
 	ped.Construire(&m4.m[12], CModelePieton::Cap(m4.m), s->fiche, [&](int32 rang, float *o){
-		const CVector &l = s->os[rang];
+		const CVector &l = osPoses[rang];
 		CB::Point(o, m4.m, &l.x);
 	});
 	if(!s->dit){
@@ -7176,23 +7217,25 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 			int r = f.os[k];
 			os += (k ? ", " : "") + std::to_string(r) + " (" + (r >= 0 && r < (int)osDesPietons.size() ? osDesPietons[r] : std::string("?")) + ", le nœud " + (r >= 0 && r < s->n ? s->noeud[r] : std::string("?")) + ")";
 		}
-		printf("%6.2f s  le modèle de collision du piéton %d, de modèle %d (%s) : six sphères sur les os %s de %s.nif (%d os, dans la pose du fichier, supposée), "
+		printf("%6.2f s  le modèle de collision du piéton %d, de modèle %d (%s) : six sphères sur les os %s de %s.nif (%d os, %s), "
 		       "de rayons %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m (la fiche FightCollisionButes %s), hautes de %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m ; l'englobante a %.2f m de rayon\n",
-		       maintenant / 1000.0, indice, p.modele, s->nom.c_str(), os.c_str(), s->nom.c_str(), s->n,
+		       maintenant / 1000.0, indice, p.modele, s->nom.c_str(), os.c_str(), s->nom.c_str(), s->n, pose ? "posés par l'animation que joue le piéton" : "dans la pose du fichier, supposée",
 		       f.rayon[0], f.rayon[1], f.rayon[2], f.rayon[3], f.rayon[4], f.rayon[5], s->fichePropre ? "du modèle" : "par défaut",
 		       ped.spheres[0].centre[2], ped.spheres[1].centre[2], ped.spheres[2].centre[2], ped.spheres[3].centre[2], ped.spheres[4].centre[2], ped.spheres[5].centre[2], ped.rayon);
 	}
 	{
-		// L'animation que joue le piéton, dite une fois par piéton et par animation.
+		// L'animation que joue le piéton, dite une fois par piéton et par animation, avec la hauteur de ses six sphères.
 		static std::set<std::pair<int, uint32>> dites;
-		CPoseJouee pj;
-		bool joue = AnimationDuPieton(indice, &pj);
 		if(dites.insert(std::make_pair(indice, joue ? pj.hache : 0u)).second){
 			if(!joue) printf("%6.2f s  le piéton %d ne joue aucune piste Animation (le nœud %s) : ses os restent dans la pose du fichier\n",
 			                 maintenant / 1000.0, indice, arbres.CheminDe(NoeudJoue(indice)).c_str());
-			else printf("%6.2f s  le piéton %d joue %s (%08x : n° %d de %s.agr, %s, %.2f s, mode %d), à %.2f s de l'animation (entrée à %.2f s du nœud %s)\n",
+			else printf("%6.2f s  le piéton %d joue %s (%08x : n° %d de %s.agr, %s, %.2f s, mode %d), à %.2f s de l'animation (entrée à %.2f s du nœud %s) : "
+			            "%s, les six sphères à %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m du sol\n",
 			            maintenant / 1000.0, indice, pj.a.enr ? pj.a.enr->nom.c_str() : "?", pj.hache, pj.a.rang, pj.a.groupe.empty() ? "?" : pj.a.groupe.c_str(),
-			            pj.a.anim ? "décodée" : "pas décodée", pj.a.enr ? pj.a.enr->duree : -1.0f, pj.mode, pj.t, pj.entree, arbres.CheminDe(NoeudJoue(indice)).c_str());
+			            pj.a.anim ? "décodée" : "pas décodée", pj.a.enr ? pj.a.enr->duree : -1.0f, pj.mode, pj.t, pj.entree, arbres.CheminDe(NoeudJoue(indice)).c_str(),
+			            pose ? "les os posés par l'animation" : "les os dans la pose du fichier",
+			            ped.spheres[0].centre[2], ped.spheres[1].centre[2], ped.spheres[2].centre[2],
+			            ped.spheres[3].centre[2], ped.spheres[4].centre[2], ped.spheres[5].centre[2]);
 		}
 	}
 	const std::vector<CB::SphereCol> &sp = SpheresDuProjectile(modeleProjectile);
