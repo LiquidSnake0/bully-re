@@ -131,26 +131,39 @@ chantier. Un point fini passe en bas, avec son commit.
      `FUN_005615a0`, `FUN_00564a00`, `FUN_005641c0`, la pose `FUN_00561790` qui remet les nœuds du fichier dans l'ordre de la
      mémoire, le constructeur `FUN_00561690`, et la descente `00561080` pour les modes 1 et 3). La règle supposée de la première
      image du vol (`q.sorti`) est retirée : le monde compte dès le premier pas. Restent supposés : la rotation du projectile (non
-     suivie), la pose des os d'un piéton (celle du fichier : point 1), l'échelle d'un objet (non suivie : aucune dans les missions), le
+     suivie), la pose des os d'un piéton (par l'animation depuis le 16.11 : point 1), l'échelle d'un objet (non suivie : aucune dans les missions), le
      tri des entités proches (l'outil prend la sphère englobante du modèle de l'objet). Dans l'ordre :
-     1. **la pose des os d'un piéton par l'animation** : ce qui reste du modèle d'un piéton. Le modèle est recréé
-        (`FUN_00572680`, `CModelePieton::Construire`, `src/collision/ModelePieton.h`, voir « Fait ») et branché dans l'outil
-        (`TesterPieton`, `SqueletteDuModele`, `CSqueletteOutil` dans `outils/lancer_lua.cpp`) : six sphères sur les os de la
-        fiche FightCollisionButes du modèle (Globals.cat, GlobalsBank/Globals/FIGHTING/<modèle> ; par défaut les os 2, 12, 16,
-        2, 4, 7 et les rayons 0,35, 0,35, 0,2, 0,1, 0,2, 0,2 m ; Jimmy : les os 2, 12, 18, 2, 4, 7 et les rayons 0,24, 0,24,
-        0,19, 0,1, 0,2, 0,2 m). **Supposé** : les os sont à la pose du fichier .nif (ses 36 nœuds sous « Dummy », dans l'ordre
-        des 36 os de MAINPED.HXD : vérifié par les noms sur les quinze modèles des missions, avec `FUN_0068e380`,
-        `CHxdFile::OsParNom`), tournée par le cap du piéton ; le binaire lit la pose de l'image (la table
-        [[squelette + 0x14] + 8] du +0x114 du piéton, des transformations de 0x34 octets, la position en +0x24). Un piéton
-        couché, accroupi ou le bras levé garde donc dans l'outil ses sphères debout. **Ce qu'il faudrait** : savoir quelle
-        animation joue un piéton de l'outil (le haché de la piste Animation du nœud d'action en cours, et son temps : l'outil
-        joue les actions sans poser d'os), puis `CHxdFile::Indice(haché, &groupe)`, le .agr du groupe dans World.img
-        (`AgrLireGroupe`, `HxdEtirer`, `src/anim/Agr.h`, `AgrHxd.h`, **non liés à lancer_lua**), `AgrRotation`,
-        `AgrPositionOs` et `AgrMatrice` par os, et `NifWorldTransforms(f, out, pose, true, decalage)` ; le code modèle est dans
-        `outils/scene.h` (lignes 215 à 280) et `outils/visite.cpp` (lignes 534 à 551). La CI ne bâtit pas lancer_lua.
-        `LANCER_SANS_OS` (variable d'environnement de l'outil) rend les trois sphères d'avant, pour comparer. C'est gros :
-        une séance entière, à ne pas entamer dans une séance courte. (L'écart de `src/vehicles/Bike.h` sur `FUN_0068e380`,
-        un pointeur au lieu d'un rang, est corrigé : 13.11, séance 5.) ;
+     1. **la pose des os d'un piéton par l'animation : ce qui reste** (16.11, voir « Fait »). L'outil pose les six sphères de
+        `FUN_00572680` sur les os de l'animation que joue le piéton (`PoserOs`, `AnimationDuPieton`, `InstantJoue`,
+        `AnimationParHache` dans `outils/lancer_lua.cpp` ; la liste `CActionController::animations`, `Animation`, `Masquees`,
+        `quittee` dans `src/core/ActionController.h`). Ce qui reste, dans l'ordre :
+        a. **la clé des parents pour les nœuds des arbres de style** : dans 1_04, le joueur sur l'arbre (`TreeClimb/Actions/ON_BOT`),
+           l'entrée de `Ambient/Scripted/Workout/Workout_Child` (piétons 5 à 9) et un nœud de `HitTree/Standing/PostHit/BellyUp`
+           (piéton 10) n'ont aucune piste Animation (ligne « ne joue aucune piste Animation ») : chercher si l'animation y vient
+           d'un Execute non résolu (comme `../../../ExecuteNodes/Free/RunBasic` de `Locomotion/Free/run`, résolu par la clé des
+           parents dans l'arbre de style : `J_Striker_A.cat`, `ExecuteNodes` monte `Walk_Jocks.act`, dont `Free/#6f88d663`
+           = « RunBasic » porte `LocomotionAnimationNew` C_PLAYER\RUN ; `test_actionbank` montre la pile du contexte qui marche
+           pour Fight_Tutorial) ou d'une piste d'un autre type (`AnimationLocoSync`, `AnimationParametric`…, non recueillies) ;
+        b. **les champs de `LocomotionAnimationNew`** (28 à 44 : 0, 0,633, 0,633, 0,3, 0,3 pour RUN) et la cadence de la boucle
+           par la vitesse du piéton : son lancement `FUN_0060e240` est lu (la copie dans les dix places du +0x54 de
+           [piéton + 0x18], puis le lecteur de locomotion 6bcb70), pas sa mise à jour (emplacement 3 : 00608760) ; l'outil la
+           joue en boucle à la vitesse 1, au fondu du HXD (supposé) ;
+        c. **le fondu et les couches du lecteur** : `FUN_006b6570` est lue jusqu'à la pose des poids (+0xc, +0x10, +0x14 de la
+           place de 20 octets) ; ce qu'ils deviennent ensuite (6bcad0, 6c0be0, le lecteur 0x20c4910 et 6c0d00 que
+           `FUN_0060ae00` appelle) n'est pas lu : l'outil monte le poids linéairement sur le fondu, garde l'animation quittée
+           figée, pose les couches à masque par interpolation sphérique au poids du masque, et choisit le fond par couche puis
+           par entrée. Le lancement de l'AnimationTrack (612360) et son arrêt (60af80) ne sont pas lus ;
+        d. **la stat 0x14 du joueur** : l'outil ne lui copie pas d'entrée de pedstats.dat (il n'est pas créé par `CreerPed`) ;
+           `StatVitesse` compte alors 100, comme `CScriptPedPool::PasDuControleur` ; le jeu la copie de l'entrée de son modèle
+           (`FUN_00478e30`, supposé). La fin des nœuds (`FinAnimation`) ne suit toujours pas la stat 0x14 ;
+        e. **la synchro de la marche** (l'octet 61, +0x3d, de l'AnimationTrack : la vitesse +0x54 au lieu de 48, lue dans
+           `FUN_0060ae00`, non suivie) et **l'échelle du bassin** (la position de la piste Root prise à l'échelle du modèle ;
+           `outils/scene.h` l'étire par un bassin de référence) ;
+        f. le groupe d'une animation à plusieurs enregistrements (172 hachés dans MAINPED : `C_PLAYER\BALL_HOLD` est le n° 3 de
+           W_Thrown.agr pour l'outil, le n° 6 de 2_G2CarnivalDate.agr pour `tools/cat.py`) : l'outil prend le premier
+           enregistrement ; le jeu prend celui du groupe chargé (supposé).
+        `LANCER_SANS_OS` rend toujours les trois sphères d'avant. Chaque ligne « le piéton N joue … » de lancer_lua dit
+        l'animation, son groupe, son instant, la stat 0x14, le fondu, les couches et la hauteur des six sphères ;
      1 bis. **les tests des deux autres parcours** d'une liste de secteur qui refont le modèle d'un piéton
         (`src/objects/Projectiles.h`, **sans appelant dans l'outil**). **Le lancer est lu de sa construction à ses listes**
         (13.11, séance 5, voir « Fait ») : `FUN_00562f10` (`ConstruireLancer`) le construit (le début en +0x4, la fin en +0x10,
@@ -353,6 +366,16 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- La pose des os d'un piéton par son animation (16.11 ; a8047c3, 2279610, 8fe74e5, a63e1cc, b4b9baf, 2a276f8, 7a41f3c, a1c5244, 3ce9197, 0abb278) : l'outil lit l'animation que joue un piéton
+  (les pistes Animation, HitAnimation et LocomotionAnimationNew que `CActionController::Pistes` recueille du nœud joué et des
+  nœuds de ses Execute, `FUN_005f3e20` ; le temps de `FUN_0060ae00`, la vitesse fois la stat 0x14 sur 100 ; le .agr par
+  `CHxdFile::Indice`, World.img ou Anim\), pose les os par ses rotations et le bassin par sa piste Root moins le trajet de la
+  flèche (`PoserOs`), mêle l'animation quittée sur le fondu de la piste ou de l'enregistrement HXD (`FUN_006b6570`), pose les
+  couches à masque par-dessus le fond (les poids des 46 masques de MAINPED.HXD, `FUN_00607340`), et joue la course
+  (`LocomotionAnimationNew`, lancement `FUN_0060e240`). Dans 1_04, les jocks courent (C_PLAYER\RUN), sautent (JOCK_JJ_IN,
+  JOCK_JJ_LOOP), reçoivent les billes (HIT_HEAD_JAB, HIT_KD_DROP sous BALL_HOLD masqué) et tombent (GROUND_BOUNCE_LEGSUP, le
+  bassin à 0,18 m) ; des rebonds de billes changent de sphère, les coups au but et les sept chronos ne changent pas. Tests :
+  `test_hxd` (les masques), `test_actionbank` (le choix des pistes et l'animation quittée).
 - Le lancer, de sa construction à ses listes, et la déclaration de la moto (13.11, séance 5 ; e494b5c, 0b01249, e1ffb24, e62e584,
   11ce5ad) : `FUN_00465a50` (`SphereTouche`, de 0x465a50 à 0x465af1, 162 octets) est le test des sphères de `FUN_00563aa0`, celui
   de `FUN_00465bc0` sans la vitesse ; `FUN_00563f30` (`LancerSurSecteurs`, de 0x563f30 à 0x5641b8, 649 octets) remet le
