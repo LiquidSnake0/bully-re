@@ -16,6 +16,7 @@
 #include "../common.h"
 #include "../core/ActionTree.h"
 #include <string>
+#include <strings.h>
 #include <vector>
 
 struct CHxdAnim {
@@ -43,6 +44,15 @@ public:
 	float version = 0;
 	uint32 mot = 0, motFinal = 0;
 	std::vector<std::string> masques, os;
+	// Les poids des masques d'os, un par os (36 dans MAINPED.HXD) : 1 l'os suit l'animation masquée, 0 non, entre les deux à
+	// moitié (0,5 : « UBO_Hd_Sp » sur la colonne). Le masque d'une piste Animation est son champ 28, un nom (« RightArm »,
+	// « UpperBody_ALL ») que FUN_00607340 cherche (docs/cat.md).
+	std::vector<std::vector<float>> poidsMasques;
+	// Le rang du masque de ce nom, sans tenir compte de la casse (les arbres écrivent « FACIAL », le HXD « Facial »), ou -1.
+	int32 Masque(const char *nom) const {
+		for(size_t i = 0; i < masques.size(); i++) if(strcasecmp(masques[i].c_str(), nom) == 0) return (int32)i;
+		return -1;
+	}
 	std::vector<CHxdAnim> anims;
 	std::vector<CHxdGroupe> groupes;
 	uint32 lus = 0;                    // octets consommés

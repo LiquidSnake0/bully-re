@@ -264,7 +264,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			const CActionNode *v = at ? b.Relatif(&n, f->ChaineCitee(at->decalage).c_str()) : nil;
 			if(v) suitesExecutees.push_back(v);
 		}else if(p.type == kAnimation || p.type == kAnimationCoup){
-			animations.push_back({a, Reel(p, 16, -1.0f), p.Mot(24), p.Mot(28), (int32)p.Mot(32), (int32)p.Mot(36),
+			const CActionAttribut *am = p.Champ(28);   // le masque d'os : un nom cité (FUN_00607340)
+			animations.push_back({a, Reel(p, 16, -1.0f), p.Mot(24), am ? f->ChaineCitee(am->decalage) : std::string(), (int32)p.Mot(32), (int32)p.Mot(36),
 			                      Reel(p, 40, 0.0f), Reel(p, 44, -1.0f), Reel(p, 48, 1.0f), Reel(p, 52, -1.0f)});
 		}else if(p.type == kExecute){
 			const CActionAttribut *at = p.Champ(32);

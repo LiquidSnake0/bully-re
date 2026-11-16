@@ -7171,8 +7171,11 @@ AnimationDuPieton(int ped, CPoseJouee *out, CPoseJouee *quittee = nil, float *po
 // table des transformations du squelette ([[squelette + 0x14] + 8], 0x34 octets par os, la position en +0x24 : FUN_00572680) ;
 // supposé : ce que l'outil compose ici est ce que le lecteur d'animations du jeu y écrit (les couches ne sont pas suivies).
 // Faux sans .nif gardé.
+// Une animation à masque posée par-dessus le fond : son instant et les poids de son masque (CHxdFile::poidsMasques).
+struct CCoucheOs { const AgrAnim *a; float t; const std::vector<float> *poids; };
 static bool
-PoserOs(const CSqueletteOutil &s, const AgrAnim &a, float t, CVector out[CSqueletteOutil::OS], const AgrAnim *autre = nil, float tAutre = 0, float poids = 0)
+PoserOs(const CSqueletteOutil &s, const AgrAnim &a, float t, CVector out[CSqueletteOutil::OS], const AgrAnim *autre = nil, float tAutre = 0, float poids = 0,
+        const std::vector<CCoucheOs> *couches = nil)
 {
 	if(!s.nifLu) return false;
 	const CNifFile &f = s.nif;
@@ -7187,6 +7190,14 @@ PoserOs(const CSqueletteOutil &s, const AgrAnim &a, float t, CVector out[CSquele
 		if(!a1 && !a2) continue;
 		if(a1 && a2){ float r[4]; AgrSlerp(q, q2, poids, r); memcpy(q, r, sizeof q); }
 		else if(a2) memcpy(q, q2, sizeof q);
+		// Les couches à masque, dans l'ordre : l'os va vers leur rotation du poids de son masque (supposé : une interpolation
+		// sphérique ; un os que le fond n'anime pas prend la couche entière si son poids est plein).
+		for(size_t c = 0; couches && c < couches->size(); c++){
+			const CCoucheOs &x = (*couches)[c];
+			float w = k < (int32)x.poids->size() ? (*x.poids)[k] : 0.0f, q3[4];
+			if(w <= 0.0f || !AgrRotation(*x.a, k, x.t, q3)) continue;
+			float r[4]; AgrSlerp(q, q3, w > 1.0f ? 1.0f : w, r); memcpy(q, r, sizeof q);
+		}
 		AgrMatrice(q, m);
 		const NifMatrix33 &r = ((const NifAVObject*)f.blocks[b].data)->rotation;
 		for(int i = 0; i < 3; i++) for(int j = 0; j < 3; j++){
@@ -7239,7 +7250,22 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 	bool joue = AnimationDuPieton(indice, &pj, &pq, &poids);
 	bool fondu = joue && poids < 1.0f && pq.a.anim;
 	CVector poses[CSqueletteOutil::OS];
-	bool pose = joue && pj.a.anim && PoserOs(*s, *pj.a.anim, pj.t, poses, fondu ? pq.a.anim : nil, pq.t, 1.0f - poids);
+	// Les couches à masque (CActionController::Masquees), leur masque cherché dans MAINPED.HXD par son nom.
+	std::vector<CCoucheOs> couches;
+	std::vector<CPoseJouee> pc;
+	std::string ditCouches;
+	if(joue){
+		auto ic = controleurs.find(indice);
+		float tn = ic->second.Temps(maintenant / 1000.0f);
+		for(const CActionController::PisteAnimation *m : ic->second.Masquees(tn)){
+			CPoseJouee x; InstantJoue(*m, tn, &x);
+			int32 r = hxdPietons.Masque(m->masque.c_str());
+			ditCouches += (ditCouches.empty() ? "" : ", ") + (x.a.enr ? x.a.enr->nom : std::string("?")) + " (masque " + m->masque + (r < 0 ? " inconnu" : "") + ", couche " + std::to_string(m->couche) + ")";
+			if(r < 0 || !x.a.anim) continue;
+			couches.push_back({x.a.anim, x.t, &hxdPietons.poidsMasques[r]});
+		}
+	}
+	bool pose = joue && pj.a.anim && PoserOs(*s, *pj.a.anim, pj.t, poses, fondu ? pq.a.anim : nil, pq.t, 1.0f - poids, &couches);
 	const CVector *osPoses = pose ? poses : s->os;
 	CModelePieton ped;
 	ped.Construire(&m4.m[12], CModelePieton::Cap(m4.m), s->fiche, [&](int32 rang, float *o){
@@ -7267,12 +7293,13 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 			if(!joue) printf("%6.2f s  le piéton %d ne joue aucune piste Animation (le nœud %s) : ses os restent dans la pose du fichier\n",
 			                 maintenant / 1000.0, indice, arbres.CheminDe(NoeudJoue(indice)).c_str());
 			else printf("%6.2f s  le piéton %d joue %s (%08x : n° %d de %s.agr, %s, %.2f s, mode %d), à %.2f s de l'animation (entrée à %.2f s du nœud %s) : "
-			            "%s, les six sphères à %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m du sol\n",
+			            "%s%s%s, les six sphères à %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m du sol\n",
 			            maintenant / 1000.0, indice, pj.a.enr ? pj.a.enr->nom.c_str() : "?", pj.hache, pj.a.rang, pj.a.groupe.empty() ? "?" : pj.a.groupe.c_str(),
 			            pj.a.anim ? "décodée" : "pas décodée", pj.a.enr ? pj.a.enr->duree : -1.0f, pj.mode, pj.t, pj.entree, arbres.CheminDe(NoeudJoue(indice)).c_str(),
 			            !pose ? "les os dans la pose du fichier" : !fondu ? "les os posés par l'animation" :
 			            ("les os posés par l'animation, au poids " + std::to_string(poids).substr(0, 4) + " dans son fondu de " + std::to_string(pj.fondu).substr(0, 4) + " s depuis "
 			             + (pq.a.enr ? pq.a.enr->nom : std::string("?")) + " à " + std::to_string(pq.t).substr(0, 4) + " s").c_str(),
+			            ditCouches.empty() ? "" : ", par-dessus ", ditCouches.c_str(),
 			            ped.spheres[0].centre[2], ped.spheres[1].centre[2], ped.spheres[2].centre[2],
 			            ped.spheres[3].centre[2], ped.spheres[4].centre[2], ped.spheres[5].centre[2]);
 		}
