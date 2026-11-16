@@ -48,7 +48,11 @@ public:
 	// moitié (0,5 : « UBO_Hd_Sp » sur la colonne). Le masque d'une piste Animation est son champ 28, un nom (« RightArm »,
 	// « UpperBody_ALL ») que FUN_00607340 cherche (docs/cat.md).
 	std::vector<std::vector<float>> poidsMasques;
-	// Le rang du masque de ce nom, sans tenir compte de la casse (les arbres écrivent « FACIAL », le HXD « Facial »), ou -1.
+	// FUN_00607340(nom, rang) (méthode du HXD en mémoire, ret 8, lue à l'assembleur de 0x607340 à 0x607390, 83 octets) : les
+	// masques sont comptés en +0xc et rangés en +0x8, 0x2c octets chacun, le nom en tête ; chacun est comparé au nom cherché par
+	// la fonction du CRT 85f5af (supposé : _stricmp, sans la casse ; elle lit d'abord la locale 0x20e6558) ; le premier égal
+	// l'emporte, son rang est écrit dans `rang` s'il est donné, son entrée est rendue ; nil sinon.
+	// Ici : le rang du masque de ce nom, sans tenir compte de la casse (les arbres écrivent « FACIAL », le HXD « Facial »), ou -1.
 	int32 Masque(const char *nom) const {
 		for(size_t i = 0; i < masques.size(); i++) if(strcasecmp(masques[i].c_str(), nom) == 0) return (int32)i;
 		return -1;

@@ -7115,7 +7115,10 @@ AnimationParHache(uint32 hache)
 // non suivie) ; en mode 2 il boucle sur la durée
 // de l'enregistrement HXD, sinon il s'arrête à la fin (la position 44 si elle est positive et plus courte, sinon la durée) : la
 // dernière pose reste.
-static float StatVitesse(int ped){ return pietons.Acceder(ped) ? pietons.Stat(ped, 0x14) / 100.0f : 1.0f; }
+// La stat 0x14 d'un piéton sur 100 ; 1 pour un piéton que l'outil n'a pas. Un piéton sans entrée de pedstats.dat (le joueur, que
+// l'outil ne crée pas par CreerPed) compte 100, comme CScriptPedPool::PasDuControleur le compte déjà (supposé : le jeu lui copie
+// l'entrée de son modèle, FUN_00478e30).
+static float StatVitesse(int ped){ return pietons.Acceder(ped) ? pietons.StatLue(ped, 0x14, 100) / 100.0f : 1.0f; }
 struct CPoseJouee { uint32 hache = 0; float t = 0, entree = 0, fondu = 0; int32 mode = 0; CAnimOutil a; };
 static void
 InstantJoue(const CActionController::PisteAnimation &p, float tn, CPoseJouee *out, float stat = 1.0f)
@@ -7300,7 +7303,7 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 			else printf("%6.2f s  le piéton %d joue %s (%08x : n° %d de %s.agr, %s, %.2f s, mode %d, la stat 0x14 à %d), à %.2f s de l'animation (entrée à %.2f s du nœud %s) : "
 			            "%s%s%s, les six sphères à %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m du sol\n",
 			            maintenant / 1000.0, indice, pj.a.enr ? pj.a.enr->nom.c_str() : "?", pj.hache, pj.a.rang, pj.a.groupe.empty() ? "?" : pj.a.groupe.c_str(),
-			            pj.a.anim ? "décodée" : "pas décodée", pj.a.enr ? pj.a.enr->duree : -1.0f, pj.mode, (int)pietons.Stat(indice, 0x14), pj.t, pj.entree, arbres.CheminDe(NoeudJoue(indice)).c_str(),
+			            pj.a.anim ? "décodée" : "pas décodée", pj.a.enr ? pj.a.enr->duree : -1.0f, pj.mode, (int)pietons.StatLue(indice, 0x14, 100), pj.t, pj.entree, arbres.CheminDe(NoeudJoue(indice)).c_str(),
 			            !pose ? "les os dans la pose du fichier" : !fondu ? "les os posés par l'animation" :
 			            ("les os posés par l'animation, au poids " + std::to_string(poids).substr(0, 4) + " dans son fondu de " + std::to_string(pj.fondu).substr(0, 4) + " s depuis "
 			             + (pq.a.enr ? pq.a.enr->nom : std::string("?")) + " à " + std::to_string(pq.t).substr(0, 4) + " s").c_str(),
