@@ -95,6 +95,23 @@ main(void)
 	VERIF(groupes == 423 && groupesSuivis == 423 && rattachees == 3913);
 	// MAINPED : 46 masques, 36 os, 3 365 animations, 425 groupes.
 	VERIF(mainped.masques.size() == 46 && mainped.os.size() == 36 && mainped.anims.size() == 3365 && mainped.groupes.size() == 425);
+	// Les poids des masques (un par os) et leur recherche par nom, sans la casse : « FACIAL » des arbres est « Facial ».
+	{
+		bool trenteSix = mainped.poidsMasques.size() == 46;
+		for(const std::vector<float> &w : mainped.poidsMasques) trenteSix = trenteSix && w.size() == 36;
+		VERIF(trenteSix);
+		int32 bras = mainped.Masque("RightArm"), visage = mainped.Masque("FACIAL"), defaut = mainped.Masque("default"), haut = mainped.Masque("UBO_Hd_Sp");
+		VERIF(visage >= 0 && visage == mainped.Masque("Facial") && mainped.Masque("pas_un_masque") == -1);
+		bool brasJuste = bras >= 0, visageJuste = visage >= 0, defautJuste = defaut >= 0, hautJuste = haut >= 0;
+		for(int k = 0; k < 36 && brasJuste && visageJuste && defautJuste && hautJuste; k++){
+			brasJuste = mainped.poidsMasques[bras][k] == (k >= 27 && k <= 34 ? 1.0f : 0.0f);
+			visageJuste = mainped.poidsMasques[visage][k] == (k >= 15 && k <= 18 ? 1.0f : 0.0f);
+			defautJuste = mainped.poidsMasques[defaut][k] == 1.0f;
+			hautJuste = (k >= 10 && k <= 14) ? mainped.poidsMasques[haut][k] > 0.0f && mainped.poidsMasques[haut][k] < 1.0f : mainped.poidsMasques[haut][k] == 0.0f;
+		}
+		VERIF(brasJuste && visageJuste && defautJuste && hautJuste);
+		printf("masques : RightArm sur les os 27 à 34, Facial (« FACIAL ») sur 15 à 18, UBO_Hd_Sp en partie sur 10 à 14, default partout\n");
+	}
 	// FUN_0068e380 : un os par son nom haché ; les deux que le binaire cherche (« Jaw », « Eyes ») et ceux des six sphères de Jimmy.
 	VERIF(mainped.OsParNom("Jaw") == 15 && mainped.OsParNom("Eyes") == 18 && mainped.OsParNom("eyes") == 18 && mainped.OsParNom("Coude") == -1);
 	VERIF(mainped.OsParNom("Pelvis") == 2 && mainped.OsParNom("Spine2") == 12 && mainped.OsParNom("Left Calf") == 4 && mainped.OsParNom("Right Calf") == 7 && mainped.OsParNom("EyeLids") == 16);
