@@ -7109,19 +7109,23 @@ AnimationParHache(uint32 hache)
 }
 
 // L'instant joué d'une piste Animation au temps tn de son nœud : la mise à jour de la piste (FUN_0060ae00, docs/cat.md) le fait
-// partir de la position 40 et avancer à la vitesse 48 (la stat 0x14 du piéton n'est pas suivie) ; en mode 2 il boucle sur la durée
+// partir de la position 40 et avancer à la vitesse 48, multipliée par la stat 0x14 du piéton sur 100 (`stat`, lue à l'assembleur
+// dans FUN_0060ae00, de 0x60ae5e à 0x60ae9c : GameGetPedStat(0x14), FUN_00476f10, en entier, divisé par le double 100 de
+// 0x900130, fois la vitesse +0x30 de la piste ; 1 sans piéton ; l'octet +0x3d, la synchro de la marche, prend la vitesse +0x54,
+// non suivie) ; en mode 2 il boucle sur la durée
 // de l'enregistrement HXD, sinon il s'arrête à la fin (la position 44 si elle est positive et plus courte, sinon la durée) : la
 // dernière pose reste.
+static float StatVitesse(int ped){ return pietons.Acceder(ped) ? pietons.Stat(ped, 0x14) / 100.0f : 1.0f; }
 struct CPoseJouee { uint32 hache = 0; float t = 0, entree = 0, fondu = 0; int32 mode = 0; CAnimOutil a; };
 static void
-InstantJoue(const CActionController::PisteAnimation &p, float tn, CPoseJouee *out)
+InstantJoue(const CActionController::PisteAnimation &p, float tn, CPoseJouee *out, float stat = 1.0f)
 {
 	out->hache = p.hache;
 	out->mode = p.mode;
 	out->entree = p.entree;
 	out->a = AnimationParHache(p.hache);
 	float duree = out->a.enr ? out->a.enr->duree : -1.0f;
-	float vitesse = p.vitesse > 0.0f ? p.vitesse : 1.0f;
+	float vitesse = (p.vitesse > 0.0f ? p.vitesse : 1.0f) * stat;
 	float t = p.depart + (tn - p.entree) * vitesse;
 	if(duree > 0.0f){
 		if(p.mode == 2) t = fmodf(t, duree);
@@ -7148,12 +7152,13 @@ AnimationDuPieton(int ped, CPoseJouee *out, CPoseJouee *quittee = nil, float *po
 	float tn = c.Temps(maintenant / 1000.0f);
 	const CActionController::PisteAnimation *m = c.Animation(tn);
 	if(m == nil) return false;
-	InstantJoue(*m, tn, out);
+	float stat = StatVitesse(ped);
+	InstantJoue(*m, tn, out, stat);
 	if(quittee && poids){
 		*poids = 1.0f;
 		float depuis = tn - m->entree;
 		if(c.quittee.ok && out->fondu > 0.0f && depuis < out->fondu && c.quittee.p.hache != m->hache){
-			InstantJoue(c.quittee.p, c.quittee.tNoeud, quittee);
+			InstantJoue(c.quittee.p, c.quittee.tNoeud, quittee, stat);
 			if(quittee->a.anim) *poids = depuis / out->fondu;
 		}
 	}
@@ -7258,7 +7263,7 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 		auto ic = controleurs.find(indice);
 		float tn = ic->second.Temps(maintenant / 1000.0f);
 		for(const CActionController::PisteAnimation *m : ic->second.Masquees(tn)){
-			CPoseJouee x; InstantJoue(*m, tn, &x);
+			CPoseJouee x; InstantJoue(*m, tn, &x, StatVitesse(indice));
 			int32 r = hxdPietons.Masque(m->masque.c_str());
 			ditCouches += (ditCouches.empty() ? "" : ", ") + (x.a.enr ? x.a.enr->nom : std::string("?")) + " (masque " + m->masque + (r < 0 ? " inconnu" : "") + ", couche " + std::to_string(m->couche) + ")";
 			if(r < 0 || !x.a.anim) continue;
@@ -7292,10 +7297,10 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 		if(dites.insert(std::make_pair(indice, joue ? pj.hache : 0u)).second){
 			if(!joue) printf("%6.2f s  le piéton %d ne joue aucune piste Animation (le nœud %s) : ses os restent dans la pose du fichier\n",
 			                 maintenant / 1000.0, indice, arbres.CheminDe(NoeudJoue(indice)).c_str());
-			else printf("%6.2f s  le piéton %d joue %s (%08x : n° %d de %s.agr, %s, %.2f s, mode %d), à %.2f s de l'animation (entrée à %.2f s du nœud %s) : "
+			else printf("%6.2f s  le piéton %d joue %s (%08x : n° %d de %s.agr, %s, %.2f s, mode %d, la stat 0x14 à %d), à %.2f s de l'animation (entrée à %.2f s du nœud %s) : "
 			            "%s%s%s, les six sphères à %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m du sol\n",
 			            maintenant / 1000.0, indice, pj.a.enr ? pj.a.enr->nom.c_str() : "?", pj.hache, pj.a.rang, pj.a.groupe.empty() ? "?" : pj.a.groupe.c_str(),
-			            pj.a.anim ? "décodée" : "pas décodée", pj.a.enr ? pj.a.enr->duree : -1.0f, pj.mode, pj.t, pj.entree, arbres.CheminDe(NoeudJoue(indice)).c_str(),
+			            pj.a.anim ? "décodée" : "pas décodée", pj.a.enr ? pj.a.enr->duree : -1.0f, pj.mode, (int)pietons.Stat(indice, 0x14), pj.t, pj.entree, arbres.CheminDe(NoeudJoue(indice)).c_str(),
 			            !pose ? "les os dans la pose du fichier" : !fondu ? "les os posés par l'animation" :
 			            ("les os posés par l'animation, au poids " + std::to_string(poids).substr(0, 4) + " dans son fondu de " + std::to_string(pj.fondu).substr(0, 4) + " s depuis "
 			             + (pq.a.enr ? pq.a.enr->nom : std::string("?")) + " à " + std::to_string(pq.t).substr(0, 4) + " s").c_str(),
