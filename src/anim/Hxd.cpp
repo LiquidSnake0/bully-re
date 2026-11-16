@@ -26,7 +26,10 @@ CHxdFile::Load(const uint8 *buf, uint32 n)
 	uint32 k = r.U32();
 	for(uint32 i = 0; i < k && r.ok; i++){
 		masques.push_back(r.Nom(0x20));
-		uint32 m = r.U32(); r.U32(); r.Sauter(4 * m);
+		uint32 m = r.U32(); r.U32();
+		std::vector<float> w;
+		for(uint32 j = 0; j < m && r.ok; j++) w.push_back(r.F32());
+		poidsMasques.push_back(w);
 	}
 	k = r.U32();
 	for(uint32 i = 0; i < k && r.ok; i++) os.push_back(r.Nom(0x20));

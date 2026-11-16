@@ -716,6 +716,13 @@ des sphères `FUN_00465a50`, le filtre `FUN_0045ed40`) est recréé sans appelan
 `src/vehicles/Bike.h` ne touche pas l'outil. Les sept missions gardent leurs temps et leurs journaux, ligne pour ligne, à
 chacun des cinq commits.
 
+Le 16.11, les os des piétons que les projectiles testent sont posés par leur animation (docs/suite.md, « Fait ») : dans `1_04`
+et dans `1_03` aux billes, chaque piéton testé écrit l'animation qu'il joue et la hauteur de ses six sphères ; dans `1_04`, des
+rebonds de billes changent de sphère ou de vitesse (74,12 s à 76,69 s), mais les 18 coups au but restent (3 dans `1_03` aux
+billes), et les sept missions gardent leurs temps à chacun des dix commits : 1_01 à 10,46 s, 1_02 à 132,92 s, 1_03 à 148,90 s
+(aux billes 147,97 s), 1_04 à 82,53 s, 1_05 à 180,31 s, 1_06_01 à 61,81 s, 1_07 à 150,88 s. Les autres missions ne changent
+pas d'une ligne : aucun projectile n'y teste un piéton.
+
 ## `1_05` (« Save Algie ») (06.11.2026)
 
 `1_05` s'enchaîne après `1_04`. Lancée seule (`build/outils/lancer_lua 90 --mission 1_05 --sans-cinematiques`), elle bouclait

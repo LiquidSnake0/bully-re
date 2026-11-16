@@ -54,6 +54,8 @@
 #include "../src/gamebryo/NifFile.h"
 #include "../src/gamebryo/NifSkin.h"
 #include "../src/anim/Hxd.h"
+#include "../src/anim/Agr.h"
+#include "../src/anim/AgrHxd.h"
 #include "../src/anim/AnimGroups.h"
 #include "../src/core/ConditionListe.h"
 #include "../src/audio/SpeechEvents.h"
@@ -6973,6 +6975,7 @@ TesterObjet(const CObjetOutil &o, CVueObjet &d, int32 modele, const CVector &a, 
 // celle de GlobalsBank/Globals (DAT_020c88a0, supposé).
 // Les noms des os de MAINPED.HXD, dans leur ordre : le rang d'un os dans une fiche FightCollisionButes est son rang ici.
 static std::vector<std::string> osDesPietons;
+static CHxdFile hxdPietons;   // MAINPED.HXD, gardé : le passage d'un haché d'animation à son groupe et à son rang (CHxdFile::Indice)
 
 struct CSqueletteOutil {
 	bool ok = false, dit = false, fichePropre = false;
@@ -6980,6 +6983,10 @@ struct CSqueletteOutil {
 	int n = 0;
 	CVector os[OS];
 	std::string noeud[OS];   // le nom du nœud du .nif pris pour chaque os
+	int32 bloc[OS];          // le bloc du .nif de chaque os
+	std::vector<uint8> donnees;   // le .nif, gardé (CNifFile y lit ses données) pour poser les os par l'animation
+	CNifFile nif;
+	bool nifLu = false;
 	std::string nom;
 	CModelePieton::Fiche fiche;
 };
@@ -7012,13 +7019,15 @@ SqueletteDuModele(int32 modele)
 		if(strcasecmp(CdStream::ms_images[i].m_path, "Stream\\World.img") == 0) monde = i;
 	const CDirectoryEntry *d = monde >= 0 ? CdStream::ms_images[monde].Find((s.nom + ".nif").c_str()) : nil;
 	if(d){
-		std::vector<uint8> buf(d->size * CDSTREAM_SECTOR_SIZE);
+		std::vector<uint8> &buf = s.donnees;
+		buf.resize(d->size * CDSTREAM_SECTOR_SIZE);
 		int32 fd = CFileMgr::OpenFile("Stream\\World.img", "rb", 1);
 		CFileMgr::Seek(fd, d->offset * CDSTREAM_SECTOR_SIZE, 0);
 		bool lu = CFileMgr::ReadExact(fd, buf.data(), (uint32)buf.size());
 		CFileMgr::CloseFile(fd);
-		CNifFile f;
+		CNifFile &f = s.nif;
 		if(lu && f.Load(buf.data(), (uint32)buf.size())){
+			s.nifLu = true;
 			std::vector<NifTransform> mondes(f.numBlocks);
 			NifWorldTransforms(f, mondes.data());
 			std::vector<int32> pile(1, NifFindNode(f, "Dummy"));
@@ -7028,10 +7037,10 @@ SqueletteDuModele(int32 modele)
 				const NifNode *nd = (const NifNode*)f.blocks[x].data;
 				const char *nom = nd->name >= 0 ? f.String(nd->name) : nil;
 				s.noeud[s.n] = nom ? nom : "";
+				s.bloc[s.n] = x;
 				s.os[s.n++] = mondes[x].t;
 				for(int32 i = nd->numChildren - 1; i >= 0; i--) pile.push_back(nd->children[i]);
 			}
-			f.Free();
 		}
 	}
 	bool rangs = true;
@@ -7043,6 +7052,189 @@ SqueletteDuModele(int32 modele)
 	}
 	s.ok = true;
 	return &s;
+}
+
+// Un fichier de Stream/World.img lu en entier (vide s'il n'y est pas).
+static std::vector<uint8>
+LireDuMonde(const std::string &nom)
+{
+	static int32 monde = -2;
+	if(monde == -2){
+		monde = -1;
+		for(int32 i = 0; i < CdStream::ms_numImages && monde < 0; i++)
+			if(strcasecmp(CdStream::ms_images[i].m_path, "Stream\\World.img") == 0) monde = i;
+	}
+	const CDirectoryEntry *d = monde >= 0 ? CdStream::ms_images[monde].Find(nom.c_str()) : nil;
+	if(d == nil) return std::vector<uint8>();
+	std::vector<uint8> buf(d->size * CDSTREAM_SECTOR_SIZE);
+	int32 fd = CFileMgr::OpenFile("Stream\\World.img", "rb", 1);
+	CFileMgr::Seek(fd, d->offset * CDSTREAM_SECTOR_SIZE, 0);
+	bool lu = CFileMgr::ReadExact(fd, buf.data(), (uint32)buf.size());
+	CFileMgr::CloseFile(fd);
+	if(!lu) buf.clear();
+	return buf;
+}
+
+// Une animation de piéton par son haché (celui de la position 24 d'une piste Animation, docs/cat.md) : son enregistrement dans
+// MAINPED.HXD donne son groupe et son rang dans le groupe (CHxdFile::Indice, le rattachement de FUN_006bf0e0) ; le groupe est le
+// .agr de même nom dans Stream/World.img (à défaut dans le dossier Anim), découpé et décodé (AgrLireGroupe, src/anim/Agr.h), chaque animation étirée sur la durée
+// de son enregistrement (HxdEtirer, l'évaluation FUN_006be250 qui divise le temps par le +0xc de l'enregistrement). Chaque groupe
+// est lu une fois. nil : un haché inconnu de MAINPED, un groupe absent de World.img ou une animation qui ne se décode pas.
+struct CAnimOutil { const AgrAnim *anim = nil; const CHxdAnim *enr = nil; std::string groupe; int32 rang = -1; };
+static CAnimOutil
+AnimationParHache(uint32 hache)
+{
+	static std::map<int32, std::vector<AgrAnim>> groupes;
+	CAnimOutil r;
+	for(const CHxdAnim &a : hxdPietons.anims) if((a.hachage & 0x7fffffff) == (hache & 0x7fffffff)){ r.enr = &a; break; }
+	if(r.enr == nil) return r;
+	int32 g = -1;
+	r.rang = hxdPietons.Indice(r.enr->hachage, &g);
+	if(g < 0 || g >= (int32)hxdPietons.groupes.size()) return r;
+	r.groupe = hxdPietons.groupes[g].nom;
+	auto it = groupes.find(g);
+	if(it == groupes.end()){
+		std::vector<AgrAnim> v;
+		std::vector<uint8> buf = LireDuMonde(r.groupe + ".agr");
+		if(buf.empty()){   // à défaut, Anim\<groupe>.agr (C_Player.agr n'est pas dans World.img), comme outils/visite.cpp
+			buf.resize(8 << 20);
+			int32 k = CFileMgr::LoadFile(("Anim\\" + r.groupe + ".agr").c_str(), buf.data(), (int32)buf.size(), "rb");
+			buf.resize(k > 0 ? (size_t)k : 0);
+		}
+		if(!buf.empty() && AgrLireGroupe(buf.data(), (uint32)buf.size(), v)) HxdEtirer(v, hxdPietons, r.groupe.c_str());
+		it = groupes.emplace(g, std::move(v)).first;
+	}
+	if(r.rang >= 0 && r.rang < (int32)it->second.size() && it->second[r.rang].decodee) r.anim = &it->second[r.rang];
+	return r;
+}
+
+// L'instant joué d'une piste Animation au temps tn de son nœud : la mise à jour de la piste (FUN_0060ae00, docs/cat.md) le fait
+// partir de la position 40 et avancer à la vitesse 48, multipliée par la stat 0x14 du piéton sur 100 (`stat`, lue à l'assembleur
+// dans FUN_0060ae00, de 0x60ae5e à 0x60ae9c : GameGetPedStat(0x14), FUN_00476f10, en entier, divisé par le double 100 de
+// 0x900130, fois la vitesse +0x30 de la piste ; 1 sans piéton ; l'octet +0x3d, la synchro de la marche, prend la vitesse +0x54,
+// non suivie) ; en mode 2 il boucle sur la durée
+// de l'enregistrement HXD, sinon il s'arrête à la fin (la position 44 si elle est positive et plus courte, sinon la durée) : la
+// dernière pose reste.
+// La stat 0x14 d'un piéton sur 100 ; 1 pour un piéton que l'outil n'a pas. Un piéton sans entrée de pedstats.dat (le joueur, que
+// l'outil ne crée pas par CreerPed) compte 100, comme CScriptPedPool::PasDuControleur le compte déjà (supposé : le jeu lui copie
+// l'entrée de son modèle, FUN_00478e30).
+static float StatVitesse(int ped){ return pietons.Acceder(ped) ? pietons.StatLue(ped, 0x14, 100) / 100.0f : 1.0f; }
+struct CPoseJouee { uint32 hache = 0; float t = 0, entree = 0, fondu = 0; int32 mode = 0; CAnimOutil a; };
+static void
+InstantJoue(const CActionController::PisteAnimation &p, float tn, CPoseJouee *out, float stat = 1.0f)
+{
+	out->hache = p.hache;
+	out->mode = p.mode;
+	out->entree = p.entree;
+	out->a = AnimationParHache(p.hache);
+	float duree = out->a.enr ? out->a.enr->duree : -1.0f;
+	float vitesse = (p.vitesse > 0.0f ? p.vitesse : 1.0f) * stat;
+	float t = p.depart + (tn - p.entree) * vitesse;
+	if(duree > 0.0f){
+		if(p.mode == 2) t = fmodf(t, duree);
+		else { float fin = p.fin; if(fin < 0.0f || fin > duree) fin = duree; if(t > fin) t = fin; }
+	}
+	out->t = t < 0.0f ? 0.0f : t;
+	// Le fondu (52) : négatif, celui de l'enregistrement HXD (+0x10), comme FUN_006b6570 le prend (lu à l'assembleur,
+	// 0x6b65eb à 0x6b6607) ; 0 : sans fondu.
+	out->fondu = p.fondu < 0.0f ? (out->a.enr ? out->a.enr->fondu : 0.0f) : p.fondu;
+}
+
+// L'animation que joue un piéton de l'outil, et son instant : la piste vivante (CActionController::Animation) des pistes
+// Animation et HitAnimation que son contrôleur d'actions a recueillies (celles du nœud joué, +0x10, et des nœuds que ses Execute
+// font jouer). `quittee`, s'il est donné : l'animation du nœud quitté et le poids de la nouvelle, quand la nouvelle est encore dans
+// son fondu (le temps depuis son lancement sous son fondu) ; le poids monte de 0 à 1 sur le fondu, linéairement (supposé : le lecteur
+// du jeu tient ses poids en +0xc, +0x10 et +0x14 de sa place, FUN_006b6570, non lus plus loin) ; l'animation quittée reste à
+// l'instant où elle a été quittée (supposé). Faux sans contrôleur ou sans piste vivante.
+static bool
+AnimationDuPieton(int ped, CPoseJouee *out, CPoseJouee *quittee = nil, float *poids = nil)
+{
+	auto it = controleurs.find(ped);
+	if(it == controleurs.end() || it->second.joue == nil) return false;
+	const CActionController &c = it->second;
+	float tn = c.Temps(maintenant / 1000.0f);
+	const CActionController::PisteAnimation *m = c.Animation(tn);
+	if(m == nil) return false;
+	float stat = StatVitesse(ped);
+	InstantJoue(*m, tn, out, stat);
+	if(quittee && poids){
+		*poids = 1.0f;
+		float depuis = tn - m->entree;
+		if(c.quittee.ok && out->fondu > 0.0f && depuis < out->fondu && c.quittee.p.hache != m->hache){
+			InstantJoue(c.quittee.p, c.quittee.tNoeud, quittee, stat);
+			if(quittee->a.anim) *poids = depuis / out->fondu;
+		}
+	}
+	return true;
+}
+
+// Les os d'un piéton dans la pose de son animation à l'instant t, dans le repère du modèle, comme outils/scene.h (Reposer) pose un
+// piéton de la visite : chaque os de 1 à 35 qui a une piste dans l'animation (AgrRotation, interpolée entre ses deux clés) prend
+// sa rotation à la place de celle du nœud du .nif (la pose rᵀ · m, composée après la rotation du nœud, la remplace) ; l'os 0
+// (Dummy) ne bouge pas le modèle ; le bassin (l'os 1, Root) prend la position de sa piste (AgrPositionOs, dans le repère de son
+// parent comme la translation du nœud), moins le trajet de la flèche au sol (l'os 35, ARROW) depuis le début de l'animation, en
+// x et en y : c'est le piéton entier qui avance de ce trajet (sa position), pas son bassin ; puis NifWorldTransforms compose les
+// nœuds. Supposé : la position de la piste est à l'échelle du modèle (outils/scene.h l'étire par un bassin de référence que
+// l'animation ne donne pas). Le binaire lit, lui, la position de l'os dans la
+// table des transformations du squelette ([[squelette + 0x14] + 8], 0x34 octets par os, la position en +0x24 : FUN_00572680) ;
+// supposé : ce que l'outil compose ici est ce que le lecteur d'animations du jeu y écrit (les couches ne sont pas suivies).
+// Faux sans .nif gardé.
+// Une animation à masque posée par-dessus le fond : son instant et les poids de son masque (CHxdFile::poidsMasques).
+struct CCoucheOs { const AgrAnim *a; float t; const std::vector<float> *poids; };
+static bool
+PoserOs(const CSqueletteOutil &s, const AgrAnim &a, float t, CVector out[CSqueletteOutil::OS], const AgrAnim *autre = nil, float tAutre = 0, float poids = 0,
+        const std::vector<CCoucheOs> *couches = nil)
+{
+	if(!s.nifLu) return false;
+	const CNifFile &f = s.nif;
+	// Le fondu : `autre` mêlée à `a` avec le poids `poids` (0 : `a` seule), os par os en interpolation sphérique, le bassin en
+	// linéaire, comme outils/scene.h (Reposer) mêle la marche et l'attente.
+	bool melange = autre && poids > 0.0f;
+	std::vector<NifMatrix33> pose(f.numBlocks, NifAxisRotation(0, 0));
+	for(int32 k = 1; k < s.n && k < AGR_OS; k++){
+		int32 b = s.bloc[k]; float q[4], q2[4], m[3][3];
+		if(b < 0 || b >= f.numBlocks) continue;
+		bool a1 = AgrRotation(a, k, t, q), a2 = melange && AgrRotation(*autre, k, tAutre, q2);
+		if(!a1 && !a2) continue;
+		if(a1 && a2){ float r[4]; AgrSlerp(q, q2, poids, r); memcpy(q, r, sizeof q); }
+		else if(a2) memcpy(q, q2, sizeof q);
+		// Les couches à masque, dans l'ordre : l'os va vers leur rotation du poids de son masque (supposé : une interpolation
+		// sphérique ; un os que le fond n'anime pas prend la couche entière si son poids est plein).
+		for(size_t c = 0; couches && c < couches->size(); c++){
+			const CCoucheOs &x = (*couches)[c];
+			float w = k < (int32)x.poids->size() ? (*x.poids)[k] : 0.0f, q3[4];
+			if(w <= 0.0f || !AgrRotation(*x.a, k, x.t, q3)) continue;
+			float r[4]; AgrSlerp(q, q3, w > 1.0f ? 1.0f : w, r); memcpy(q, r, sizeof q);
+		}
+		AgrMatrice(q, m);
+		const NifMatrix33 &r = ((const NifAVObject*)f.blocks[b].data)->rotation;
+		for(int i = 0; i < 3; i++) for(int j = 0; j < 3; j++){
+			float v = 0; for(int k2 = 0; k2 < 3; k2++) v += r.m[k2][i] * m[k2][j];
+			pose[b].m[i][j] = v;
+		}
+	}
+	std::vector<CVector> decalage(f.numBlocks, CVector(0, 0, 0));
+	int32 bb = s.n > 1 ? s.bloc[1] : -1;
+	auto Bassin = [&](const AgrAnim &x, float tx, CVector *d) -> bool {
+		CVector rt, f0(0, 0, 0), ft(0, 0, 0);
+		if(!AgrPositionOs(x, 1, tx, &rt)) return false;
+		AgrPositionOs(x, AGR_OS - 1, 0, &f0); AgrPositionOs(x, AGR_OS - 1, tx, &ft);
+		const CVector &repos = ((const NifAVObject*)f.blocks[bb].data)->translation;
+		*d = CVector(rt.x - (ft.x - f0.x) - repos.x, rt.y - (ft.y - f0.y) - repos.y, rt.z - repos.z);
+		return true;
+	};
+	if(bb >= 0 && bb < f.numBlocks){
+		CVector d1(0, 0, 0), d2(0, 0, 0);
+		bool b1 = Bassin(a, t, &d1), b2 = melange && Bassin(*autre, tAutre, &d2);
+		float w = melange ? poids : 0.0f;
+		if(!b2) d2 = d1;
+		if(!b1) d1 = d2;
+		if(b1 || b2) decalage[bb] = CVector(d1.x + w * (d2.x - d1.x), d1.y + w * (d2.y - d1.y), d1.z + w * (d2.z - d1.z));
+	}
+	std::vector<NifTransform> mondes(f.numBlocks);
+	NifWorldTransforms(f, mondes.data(), pose.data(), true, decalage.data());
+	for(int32 k = 0; k < s.n; k++) out[k] = mondes[s.bloc[k]].t;
+	return true;
 }
 
 // Le test fin d'un projectile contre un piéton, comme la méthode +0xa4 d'un CProjectile le fait (FUN_0046a340) : le modèle du
@@ -7060,9 +7252,32 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 	m4.m[0] = sn; m4.m[1] = -c; m4.m[4] = c; m4.m[5] = sn;
 	m4.m[12] = p.pos.x; m4.m[13] = p.pos.y; m4.m[14] = p.pos.z;
 	m1.m[12] = a.x; m1.m[13] = a.y; m1.m[14] = a.z; m2.m[12] = b.x; m2.m[13] = b.y; m2.m[14] = b.z;
+	// Les os dans la pose de l'animation que joue le piéton (PoserOs), à défaut dans celle du fichier.
+	CPoseJouee pj, pq;
+	float poids = 1.0f;
+	bool joue = AnimationDuPieton(indice, &pj, &pq, &poids);
+	bool fondu = joue && poids < 1.0f && pq.a.anim;
+	CVector poses[CSqueletteOutil::OS];
+	// Les couches à masque (CActionController::Masquees), leur masque cherché dans MAINPED.HXD par son nom.
+	std::vector<CCoucheOs> couches;
+	std::vector<CPoseJouee> pc;
+	std::string ditCouches;
+	if(joue){
+		auto ic = controleurs.find(indice);
+		float tn = ic->second.Temps(maintenant / 1000.0f);
+		for(const CActionController::PisteAnimation *m : ic->second.Masquees(tn)){
+			CPoseJouee x; InstantJoue(*m, tn, &x, StatVitesse(indice));
+			int32 r = hxdPietons.Masque(m->masque.c_str());
+			ditCouches += (ditCouches.empty() ? "" : ", ") + (x.a.enr ? x.a.enr->nom : std::string("?")) + " (masque " + m->masque + (r < 0 ? " inconnu" : "") + ", couche " + std::to_string(m->couche) + ")";
+			if(r < 0 || !x.a.anim) continue;
+			couches.push_back({x.a.anim, x.t, &hxdPietons.poidsMasques[r]});
+		}
+	}
+	bool pose = joue && pj.a.anim && PoserOs(*s, *pj.a.anim, pj.t, poses, fondu ? pq.a.anim : nil, pq.t, 1.0f - poids, &couches);
+	const CVector *osPoses = pose ? poses : s->os;
 	CModelePieton ped;
 	ped.Construire(&m4.m[12], CModelePieton::Cap(m4.m), s->fiche, [&](int32 rang, float *o){
-		const CVector &l = s->os[rang];
+		const CVector &l = osPoses[rang];
 		CB::Point(o, m4.m, &l.x);
 	});
 	if(!s->dit){
@@ -7073,11 +7288,29 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 			int r = f.os[k];
 			os += (k ? ", " : "") + std::to_string(r) + " (" + (r >= 0 && r < (int)osDesPietons.size() ? osDesPietons[r] : std::string("?")) + ", le nœud " + (r >= 0 && r < s->n ? s->noeud[r] : std::string("?")) + ")";
 		}
-		printf("%6.2f s  le modèle de collision du piéton %d, de modèle %d (%s) : six sphères sur les os %s de %s.nif (%d os, dans la pose du fichier, supposée), "
+		printf("%6.2f s  le modèle de collision du piéton %d, de modèle %d (%s) : six sphères sur les os %s de %s.nif (%d os, %s), "
 		       "de rayons %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m (la fiche FightCollisionButes %s), hautes de %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m ; l'englobante a %.2f m de rayon\n",
-		       maintenant / 1000.0, indice, p.modele, s->nom.c_str(), os.c_str(), s->nom.c_str(), s->n,
+		       maintenant / 1000.0, indice, p.modele, s->nom.c_str(), os.c_str(), s->nom.c_str(), s->n, pose ? "posés par l'animation que joue le piéton" : "dans la pose du fichier, supposée",
 		       f.rayon[0], f.rayon[1], f.rayon[2], f.rayon[3], f.rayon[4], f.rayon[5], s->fichePropre ? "du modèle" : "par défaut",
 		       ped.spheres[0].centre[2], ped.spheres[1].centre[2], ped.spheres[2].centre[2], ped.spheres[3].centre[2], ped.spheres[4].centre[2], ped.spheres[5].centre[2], ped.rayon);
+	}
+	{
+		// L'animation que joue le piéton, dite une fois par piéton et par animation, avec la hauteur de ses six sphères.
+		static std::set<std::pair<int, uint32>> dites;
+		if(dites.insert(std::make_pair(indice, joue ? pj.hache : 0u)).second){
+			if(!joue) printf("%6.2f s  le piéton %d ne joue aucune piste Animation (le nœud %s) : ses os restent dans la pose du fichier\n",
+			                 maintenant / 1000.0, indice, arbres.CheminDe(NoeudJoue(indice)).c_str());
+			else printf("%6.2f s  le piéton %d joue %s (%08x : n° %d de %s.agr, %s, %.2f s, mode %d, la stat 0x14 à %d), à %.2f s de l'animation (entrée à %.2f s du nœud %s) : "
+			            "%s%s%s, les six sphères à %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m du sol\n",
+			            maintenant / 1000.0, indice, pj.a.enr ? pj.a.enr->nom.c_str() : "?", pj.hache, pj.a.rang, pj.a.groupe.empty() ? "?" : pj.a.groupe.c_str(),
+			            pj.a.anim ? "décodée" : "pas décodée", pj.a.enr ? pj.a.enr->duree : -1.0f, pj.mode, (int)pietons.StatLue(indice, 0x14, 100), pj.t, pj.entree, arbres.CheminDe(NoeudJoue(indice)).c_str(),
+			            !pose ? "les os dans la pose du fichier" : !fondu ? "les os posés par l'animation" :
+			            ("les os posés par l'animation, au poids " + std::to_string(poids).substr(0, 4) + " dans son fondu de " + std::to_string(pj.fondu).substr(0, 4) + " s depuis "
+			             + (pq.a.enr ? pq.a.enr->nom : std::string("?")) + " à " + std::to_string(pq.t).substr(0, 4) + " s").c_str(),
+			            ditCouches.empty() ? "" : ", par-dessus ", ditCouches.c_str(),
+			            ped.spheres[0].centre[2], ped.spheres[1].centre[2], ped.spheres[2].centre[2],
+			            ped.spheres[3].centre[2], ped.spheres[4].centre[2], ped.spheres[5].centre[2]);
+		}
 	}
 	const std::vector<CB::SphereCol> &sp = SpheresDuProjectile(modeleProjectile);
 	CB::DonneesCol proj; proj.spheres = &sp[0]; proj.nSpheres = (int8)(sp.size() < 127 ? sp.size() : 127);
@@ -8370,7 +8603,7 @@ ChargerMissions(void)
 			const int32 MAX = 4 << 20;
 			uint8 *h = (uint8*)malloc(MAX);
 			int32 k = CFileMgr::LoadFile("Anim\\MAINPED.HXD", h, MAX, "rb");
-			CHxdFile mainped;
+			CHxdFile &mainped = hxdPietons;
 			if(k > 0 && mainped.Load(h, (uint32)k))
 				for(const CHxdAnim &a : mainped.anims) arbres.dureesAnimations[a.hachage & 0x7fffffff] = a.duree;
 			printf("%d durées d'animations lues dans MAINPED.HXD\n", (int)arbres.dureesAnimations.size());

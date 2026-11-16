@@ -15,6 +15,7 @@
 #pragma once
 #include "ActionBank.h"
 #include "Opportunite.h"
+#include <algorithm>
 
 class CActionController
 {
@@ -126,6 +127,39 @@ public:
 	struct Regard { float entree, vie; int32 genre; float decalage; };
 	std::vector<Regard> regards, regardsActifs;
 	struct Poursuite { float entree, vie; int32 genre; float arrivee; };
+	// Les pistes Animation et HitAnimation (AnimationTrack : lancement 612360 et arrêt 60af80, non lus ; mise à jour
+	// FUN_0060ae00 ; HitAnimationTrack, table 0x934cb8, une AnimationTrack) du nœud joué et des nœuds que ses Execute font
+	// jouer (FUN_005f3e20 : une seule liste), dans l'ordre de la liste : l'entrée (12, au plus tôt celle du nœud ajouté), la vie
+	// (16), le haché de l'animation (24), le masque d'os (28), le mode (32), la couche (36), le départ (40), la fin (44), la
+	// vitesse (48) et le fondu (52), docs/cat.md. Le contrôleur ne les joue pas : l'outil y lit ce que le piéton anime.
+	struct PisteAnimation { float entree, vie; uint32 hache; std::string masque; int32 mode, couche; float depart, fin, vitesse, fondu; };
+	std::vector<PisteAnimation> animations;
+	// L'animation que le nœud quitté jouait (celle que Animation() rend à l'instant où Jouer change de nœud) : le lecteur du
+	// jeu la garde le temps du fondu de la suivante (FUN_006b6570, la place de l'animation remplacée). `tNoeud` : le temps
+	// du nœud quitté à cet instant ; `quitte` : l'instant (s). ok faux : aucune.
+	struct Quittee { PisteAnimation p; float tNoeud = 0.0f, quitte = 0.0f; bool ok = false; };
+	Quittee quittee;
+	// Une piste Animation vivante au temps tn du nœud joué : lancée (l'entrée atteinte) et sans vie ou pas encore à son bout.
+	static bool Vivante(const PisteAnimation &p, float tn) { return p.entree <= tn && (p.vie < 0.0f || tn < p.entree + p.vie); }
+	// L'animation de fond au temps tn : des pistes vivantes sans masque (28), celle de la plus haute couche (36), puis de la
+	// dernière entrée, puis la dernière de la liste (supposé : l'ordre des couches du lecteur du jeu n'est pas lu). nil : aucune.
+	const PisteAnimation *Animation(float tn) const {
+		const PisteAnimation *m = nil;
+		for(const PisteAnimation &p : animations){
+			if(!Vivante(p, tn) || !p.masque.empty()) continue;
+			if(m == nil || p.couche > m->couche || (p.couche == m->couche && p.entree >= m->entree)) m = &p;
+		}
+		return m;
+	}
+	// Les pistes vivantes à masque, par couche puis par entrée (dans l'ordre de la liste à égalité) : posées par-dessus le fond,
+	// chacune sur les os de son masque (supposé).
+	std::vector<const PisteAnimation *> Masquees(float tn) const {
+		std::vector<const PisteAnimation *> v;
+		for(const PisteAnimation &p : animations) if(Vivante(p, tn) && !p.masque.empty()) v.push_back(&p);
+		std::stable_sort(v.begin(), v.end(), [](const PisteAnimation *a, const PisteAnimation *b){
+			return a->couche != b->couche ? a->couche < b->couche : a->entree < b->entree; });
+		return v;
+	}
 	std::vector<Poursuite> poursuites, poursuitesActives;
 	// Les pistes de l'IA (relevées dans AI_FightTutorial), suivies quand `sousControleurs` est posé :
 	// - ManageTargets (ManageTargetsTrack 0x934d14 ; lancement FUN_006273f0, mise à jour FUN_00627420, à chaque image tant

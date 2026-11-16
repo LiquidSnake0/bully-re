@@ -883,6 +883,30 @@ main(void)
 		c.minuterieAttaque = MinuterieAttaqueRemise(11000, 2.17f);
 		VERIF(ConditionAttackTimer(c, 2.0f, false, 3, 11000));
 	}
+	{
+		// Les pistes Animation recueillies (CActionController::animations) : le fond est la piste vivante sans masque de la
+		// plus haute couche, puis de la dernière entrée ; les pistes à masque passent par-dessus, par couche ; au changement de
+		// nœud, Jouer garde le fond quitté (quittee) avec le temps du nœud.
+		CActionController c;
+		typedef CActionController::PisteAnimation PA;
+		c.animations.push_back(PA{0.0f, -1.0f, 1, std::string(), 0, 0, 0.0f, -1.0f, 1.0f, -1.0f});        // fond, couche 0
+		c.animations.push_back(PA{0.0f, -1.0f, 2, std::string("FACIAL"), 2, 3, 0.0f, -1.0f, 1.0f, 0.1f}); // masque, couche 3
+		c.animations.push_back(PA{0.5f, -1.0f, 3, std::string(), 0, 0, 0.0f, -1.0f, 1.0f, -1.0f});        // fond, entrée 0,5
+		c.animations.push_back(PA{0.0f, 0.167f, 4, std::string(), 0, 1, 0.0f, -1.0f, 1.0f, -1.0f});       // couche 1, vie 0,167
+		c.animations.push_back(PA{0.2f, -1.0f, 5, std::string("RightArm"), 2, 2, 0.0f, -1.0f, 1.0f, 0.1f});
+		const PA *f0 = c.Animation(0.1f), *f1 = c.Animation(0.3f), *f2 = c.Animation(0.6f);
+		VERIF(f0 && f0->hache == 4 && f1 && f1->hache == 1 && f2 && f2->hache == 3);
+		std::vector<const PA *> m0 = c.Masquees(0.1f), m1 = c.Masquees(0.3f);
+		VERIF(m0.size() == 1 && m0[0]->hache == 2 && m1.size() == 2 && m1[0]->hache == 5 && m1[1]->hache == 2);
+		VERIF(!CActionController::Vivante(c.animations[3], 0.2f) && CActionController::Vivante(c.animations[3], 0.1f));
+		CActionBank vide;
+		const CActionNode *joue = c.joue;
+		c.joue = b.Global(); c.debut = 10.0f;
+		c.Jouer(vide, nil, 10.6f);
+		VERIF(c.quittee.ok && c.quittee.p.hache == 3 && c.quittee.tNoeud > 0.59f && c.quittee.tNoeud < 0.61f && c.animations.empty());
+		c.joue = joue;
+		printf("pistes Animation : le fond par couche et par entrée, les masques par-dessus, le fond quitté gardé\n");
+	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;
 }

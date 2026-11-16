@@ -104,7 +104,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kPassage = ActionHash("PropSetInTransition"), kDrapeauObjet = ActionHash("PropFlags"), kViseeAuto = ActionHash("WeaponPlayerFireAutoTarget"),
 	                    kActionObjet = ActionHash("PropSetPedAction"), kSynchro = ActionHash("Sync"),
                     kBoutonHistorique = ActionHash("ActionRegisterButtonHistory"),
-	                    kInteraction = ActionHash("PropInteract");
+	                    kInteraction = ActionHash("PropInteract"), kAnimation = ActionHash("Animation"),
+	                    kAnimationCoup = ActionHash("HitAnimation"), kAnimationLoco = ActionHash("LocomotionAnimationNew");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -262,6 +263,18 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			const CActionAttribut *at = p.Champ(32);
 			const CActionNode *v = at ? b.Relatif(&n, f->ChaineCitee(at->decalage).c_str()) : nil;
 			if(v) suitesExecutees.push_back(v);
+		}else if(p.type == kAnimation || p.type == kAnimationCoup){
+			const CActionAttribut *am = p.Champ(28);   // le masque d'os : un nom cité (FUN_00607340)
+			animations.push_back({a, Reel(p, 16, -1.0f), p.Mot(24), am ? f->ChaineCitee(am->decalage) : std::string(), (int32)p.Mot(32), (int32)p.Mot(36),
+			                      Reel(p, 40, 0.0f), Reel(p, 44, -1.0f), Reel(p, 48, 1.0f), Reel(p, 52, -1.0f)});
+		}else if(p.type == kAnimationLoco){
+			// LocomotionAnimationNew (table 0x930edc ; lancement FUN_0060e240, lu à l'assembleur de 0x60e240 à 0x60e33d) : la
+			// piste est copiée (0x34 octets, par les deux constructeurs 61a720 et 66bd40) dans la première des dix places libres du
+			// +0x54 du composant [piéton + 0x18], puis l'animation est donnée au lecteur de locomotion (6bcb70 sur 0x20c4910, avec le squelette
+			// +0x114 du piéton) : la boucle de marche ou de course, que la vitesse du piéton cadence (non lu). Supposé : une
+			// boucle (mode 2) à la vitesse 1, sans masque, en couche 0, au fondu de l'enregistrement HXD ; ses positions 28 à
+			// 44 (0, 0,633, 0,633, 0,3, 0,3 pour C_PLAYER\RUN dans Walk_Jocks.cat) ne sont pas lues.
+			animations.push_back({a, Reel(p, 16, -1.0f), p.Mot(24), std::string(), 2, 0, 0.0f, -1.0f, 1.0f, -1.0f});
 		}else if(p.type == kExecute){
 			const CActionAttribut *at = p.Champ(32);
 			if(at == nil) continue;
@@ -324,6 +337,11 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	departs.clear();
 	regards.clear();
 	poursuites.clear();
+	{
+		const PisteAnimation *m = joue ? Animation(t - debut) : nil;
+		if(m){ quittee.p = *m; quittee.tNoeud = t - debut; quittee.quitte = t; quittee.ok = true; }
+	}
+	animations.clear();
 	ArreterCollisions();
 	joue = n;
 	debut = t;

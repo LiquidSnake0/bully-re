@@ -1828,3 +1828,46 @@ la correction de `src/vehicles/Bike.h`.
   180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout**.
 - **Bilan** : 1 329 fonctions recréées (6,4 % des fonctions, 8,6 % du code), contre 1 325 (6,4 %, 8,6 %) ; 2 260 comprises
   (13,2 % du code), contre 2 256 (13,1 %). Cinq commits de moteur et celui-ci.
+
+## 16.11.2026, séance 1 (de 18 h 52 à 20 h 26)
+
+**Le chantier** : le point 1 de la suite, la pose des os d'un piéton par l'animation, une séance entière. Le modèle de collision
+d'un piéton (`FUN_00572680`, six sphères sur six os) prenait les os dans la pose du fichier .nif ; il les prend maintenant dans
+la pose de l'animation que le piéton joue, au moment où un projectile le teste.
+
+- **L'animation jouée** (a8047c3) : les pistes Animation du nœud joué, le temps de leur mise à jour (`FUN_0060ae00` : le départ
+  40, la vitesse 48, la boucle en mode 2, la fin 44), le haché vers le .agr par MAINPED.HXD (`CHxdFile::Indice`), lu dans
+  World.img ou à défaut dans Anim\ (C_Player.agr n'est pas dans World.img) ; Agr.cpp et AgrHxd.cpp liés à lancer_lua.
+- **Les os posés** (2279610) : `PoserOs`, les rotations des pistes à la place de celles du .nif (comme `outils/scene.h`), le
+  .nif gardé par `CSqueletteOutil`.
+- **Le bassin** (8fe74e5) : la piste de position de Root, moins le trajet de la flèche ARROW ; GROUND_BOUNCE_LEGSUP met le bassin
+  à 0,18 m au lieu de 0,91.
+- **Les pistes du contrôleur** (a63e1cc) : `CActionController::animations` recueille les pistes Animation et HitAnimation du
+  nœud joué et des nœuds de ses Execute (`FUN_005f3e20`) : les attentes (F_BULLY\IDLE, CV_MALE\IDLE) et les coups reçus
+  (HIT_HEAD_JAB) apparaissent.
+- **Le fondu** (b4b9baf) : `FUN_006b6570` lue (le fondu négatif prend le +0x10 de l'enregistrement, 0 sans fondu) ; le
+  contrôleur garde l'animation quittée (`quittee`), l'outil la mêle sur le fondu (supposé : un poids linéaire, l'ancienne figée).
+- **Les couches et les masques** (2a276f8) : les poids des 46 masques de MAINPED.HXD gardés (`poidsMasques`, `Masque`), le fond
+  sans masque par couche puis par entrée, les pistes à masque par-dessus ; HIT_KD_DROP redevient le fond, BALL_HOLD masqué
+  (FACIAL, couche 3) par-dessus.
+- **La stat 0x14** (7a41f3c) : lue dans `FUN_0060ae00` (0x60ae5e à 0x60ae9c) : la vitesse fois GameGetPedStat(0x14) sur le
+  double 100 de 0x900130, 1 sans piéton.
+- **Les tests** (a1c5244) : `test_hxd` (les poids de RightArm, Facial, UBO_Hd_Sp, default) et `test_actionbank` (le fond, les
+  masques, la vie, l'animation quittée).
+- **La course** (3ce9197) : `LocomotionAnimationNew` recueillie (lancement `FUN_0060e240` lu : la copie dans les dix places du
+  composant de locomotion, puis son lecteur), en boucle ; huit jocks courent (C_PLAYER\RUN) à 73,36 s.
+- **Le masque et la stat du joueur** (0abb278) : `FUN_00607340` lue (la recherche d'un masque par son nom, la comparaison du
+  CRT) ; deux adresses citées sans lecture retirées du compte ; la stat 0x14 d'un piéton sans entrée comptée 100.
+- **Ce qui se voit** : dans `1_04` et dans `1_03` aux billes, une ligne « le piéton N joue … » par piéton et par animation,
+  avec son groupe, son instant, la stat, le fondu, les couches et la hauteur des six sphères ; dans `1_04`, des rebonds de
+  billes changent de sphère ou de vitesse entre 74,12 s et 76,69 s ; les coups au but restent (18, et 3 aux billes).
+- **Ce qui reste** : voir `docs/suite.md`, point 1 (les nœuds encore sans animation, les champs de la locomotion, la suite du
+  lecteur de fondu, la synchro de la marche, l'échelle du bassin, les enregistrements en double).
+- **Les comptes des README** : chaque commit est parti d'un arbre qui ne contenait que lui. Deux messages se corrigent dans
+  le suivant : celui de a8047c3 comptait 31 lignes nouvelles dans 1_04 (34 en vrai), celui de a63e1cc disait le compte
+  inchangé (1 331 en vrai, puis 1 332 après le retrait de deux adresses non lues à 0abb278).
+- **REA amont** : pas demandé.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux billes 147,97 s), `1_04` à 82,53 s, `1_05` à
+  180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout**.
+- **Bilan** : 1 332 fonctions recréées (6,4 % des fonctions, 8,6 % du code), contre 1 329 ; 2 261 comprises (13,2 % du
+  code), contre 2 260. Dix commits de moteur et celui-ci.
