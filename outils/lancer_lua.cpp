@@ -6342,7 +6342,7 @@ PoserInfoArme(CScriptPed &p, const CActionController::InfoArme &d)
 //   (_DAT_00912870), et v = (cible − départ − (0, 0, ½ g T²)) / T, en mètres par pas ; les bornes +0x68 … +0x74 (-1 pour la bille)
 //   ne sont pas suivies ;
 // - les dégâts (CChargeArme::Degats) : (+0x50 − +0x4c) × charge + +0x4c, ou la charge × le +0x2c de la piste WeaponFire s'il n'est pas
-//   -1 ; × la statistique 0x1f du tireur / 100 (le joueur de l'outil, sans entrée de pedstats.dat, prend 100, comme STAT_PLAYER).
+//   -1 ; × la statistique 0x1f du tireur / 100 (le joueur a reçu STAT_PLAYER de son modèle 0 : 100 ; sans pedstats.dat, 100 aussi).
 // Les réglages du prochain tir (src/peds/Armes.h : WeaponFireOffset, WeaponFireStartOffset, WeaponFireRotation), des globales du
 // moteur que FUN_0065d160 remet à zéro après chaque tir.
 static CReglagesTir reglagesTir;
@@ -9403,6 +9403,18 @@ static std::vector<std::pair<uint32, int32>> dons;   // --donner ARME@s
 	ChargerCollectibles();   // CGame::Initialise : les collectibles avant les placements
 	ChargerObjets();
 	ChargerPedStats();
+	{
+		// Le joueur reçoit l'entrée de son modèle comme un autre : FUN_0049b1b0 (le constructeur du joueur, lu de 0x49b1b0
+		// à 0x49b27c : ebx nul, le modèle 0 posé par FUN_0047ffe0) appelle à 0x49b277 FUN_00478e30 avec un argument nul,
+		// qui prend alors l'entrée du modelinfo du modèle (+0x54) : STAT_PLAYER pour le modèle 0.
+		auto st = modeles.statDuPieton.find(0);
+		auto e = st == modeles.statDuPieton.end() ? statsParNom.end() : statsParNom.find(st->second);
+		if(e != statsParNom.end() && pietons.PoserStats(SCRIPT_PED_JOUEUR, e->second.m_fields)){
+			const CScriptPed *p = pietons.Acceder(SCRIPT_PED_JOUEUR);
+			printf("le joueur (modèle 0) : %s, %.0f points de vie, régénération %.0f, la stat 0x14 à %d, la stat 10 à %d, la stat 0x1f à %d\n",
+			       e->first.c_str(), p->santeMax, p->regeneration, p->stats[0x14], p->stats[10], p->stats[0x1f]);
+		}else printf("le joueur (modèle 0) : pas d'entrée de pedstats.dat, il garde 100 points de vie\n");
+	}
 	ChargerMissions();
 	// Le joueur, créé avec le monde (CPlayerPed, modèle 0) : FUN_00484d10 lui pose aussi les arbres de son modèle,
 	// /Global/Player (Act/Player.act) et /Global/PlayerAI.
