@@ -904,8 +904,14 @@ main(void)
 		c.joue = b.Global(); c.debut = 10.0f;
 		c.Jouer(vide, nil, 10.6f);
 		VERIF(c.quittee.ok && c.quittee.p.hache == 3 && c.quittee.tNoeud > 0.59f && c.quittee.tNoeud < 0.61f && c.animations.empty());
+		// Un nœud sans piste Animation, quitté à son tour : l'animation quittée d'avant reste (l'arrêt FUN_0060af80 ne
+		// retire pas la couche 0), avec son temps et son instant.
+		c.joue = b.Global(); c.debut = 10.6f;
+		VERIF(c.Animation(0.1f) == nil);
+		c.Jouer(vide, nil, 10.9f);
+		VERIF(c.quittee.ok && c.quittee.p.hache == 3 && c.quittee.tNoeud > 0.59f && c.quittee.tNoeud < 0.61f && c.quittee.quitte > 10.59f && c.quittee.quitte < 10.61f);
 		c.joue = joue;
-		printf("pistes Animation : le fond par couche et par entrée, les masques par-dessus, le fond quitté gardé\n");
+		printf("pistes Animation : le fond par couche et par entrée, les masques par-dessus, le fond quitté gardé, même après un nœud sans piste\n");
 	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;

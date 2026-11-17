@@ -127,8 +127,12 @@ public:
 	struct Regard { float entree, vie; int32 genre; float decalage; };
 	std::vector<Regard> regards, regardsActifs;
 	struct Poursuite { float entree, vie; int32 genre; float arrivee; };
-	// Les pistes Animation et HitAnimation (AnimationTrack : lancement 612360 et arrêt 60af80, non lus ; mise à jour
-	// FUN_0060ae00 ; HitAnimationTrack, table 0x934cb8, une AnimationTrack) du nœud joué et des nœuds que ses Execute font
+	// Les pistes Animation et HitAnimation (AnimationTrack : lancement 612360, non lu ; mise à jour FUN_0060ae00 ; arrêt
+	// FUN_0060af80, lu de 0x60af80 à 0x60afd9 : la méthode +0x14 de la piste (60afe0, qui choisit le squelette +0x4c), faux
+	// sans squelette ; si le champ 36 (+0x24) est positif, la place que 6b1df0 rend pour ce rang parmi les sept du
+	// squelette (+0x18) est retirée par 6bd320 sur le lecteur 0x20c4910, avec le champ 56 (+0x38) ; puis, pour un
+	// piéton dont l'octet 60 (+0x3c) de la piste est levé, le mot +0xe4 du piéton reprend l'octet +0x50 de la piste. **Rien
+	// n'est retiré quand le champ 36 vaut 0** : l'animation de la couche 0 reste au lecteur après son nœud ; HitAnimationTrack, table 0x934cb8, une AnimationTrack) du nœud joué et des nœuds que ses Execute font
 	// jouer (FUN_005f3e20 : une seule liste), dans l'ordre de la liste : l'entrée (12, au plus tôt celle du nœud ajouté), la vie
 	// (16), le haché de l'animation (24), le masque d'os (28), le mode (32), la couche (36), le départ (40), la fin (44), la
 	// vitesse (48) et le fondu (52), docs/cat.md. Le contrôleur ne les joue pas : l'outil y lit ce que le piéton anime.
@@ -136,7 +140,8 @@ public:
 	std::vector<PisteAnimation> animations;
 	// L'animation que le nœud quitté jouait (celle que Animation() rend à l'instant où Jouer change de nœud) : le lecteur du
 	// jeu la garde le temps du fondu de la suivante (FUN_006b6570, la place de l'animation remplacée). `tNoeud` : le temps
-	// du nœud quitté à cet instant ; `quitte` : l'instant (s). ok faux : aucune.
+	// du nœud quitté à cet instant ; `quitte` : l'instant (s). ok faux : aucune. Un nœud quitté sans piste vivante la laisse
+	// telle quelle : c'est toujours elle que le lecteur porte (l'arrêt FUN_0060af80 ne retire pas la couche 0).
 	struct Quittee { PisteAnimation p; float tNoeud = 0.0f, quitte = 0.0f; bool ok = false; };
 	Quittee quittee;
 	// Une piste Animation vivante au temps tn du nœud joué : lancée (l'entrée atteinte) et sans vie ou pas encore à son bout.

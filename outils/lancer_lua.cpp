@@ -7145,17 +7145,27 @@ InstantJoue(const CActionController::PisteAnimation &p, float tn, CPoseJouee *ou
 // font jouer). `quittee`, s'il est donné : l'animation du nœud quitté et le poids de la nouvelle, quand la nouvelle est encore dans
 // son fondu (le temps depuis son lancement sous son fondu) ; le poids monte de 0 à 1 sur le fondu, linéairement (supposé : le lecteur
 // du jeu tient ses poids en +0xc, +0x10 et +0x14 de sa place, FUN_006b6570, non lus plus loin) ; l'animation quittée reste à
-// l'instant où elle a été quittée (supposé). Faux sans contrôleur ou sans piste vivante.
+// l'instant où elle a été quittée (supposé). Un nœud sans piste Animation vivante garde l'animation du nœud quitté, qui continue
+// (`garde`) : l'arrêt d'une AnimationTrack (FUN_0060af80, lue de 0x60af80 à 0x60afd9) ne retire rien de la couche 0 du lecteur, il
+// ne retire que l'animation d'une couche 1 à 6 (FUN_006bd320, sur la place que FUN_006b1df0 rend pour le champ 36 de la piste) ;
+// supposé : le lecteur continue d'avancer l'animation gardée (sa mise à jour n'est pas lue). Faux sans contrôleur, ou sans piste
+// vivante ni animation quittée.
 static bool
-AnimationDuPieton(int ped, CPoseJouee *out, CPoseJouee *quittee = nil, float *poids = nil)
+AnimationDuPieton(int ped, CPoseJouee *out, CPoseJouee *quittee = nil, float *poids = nil, bool *garde = nil)
 {
 	auto it = controleurs.find(ped);
 	if(it == controleurs.end() || it->second.joue == nil) return false;
 	const CActionController &c = it->second;
 	float tn = c.Temps(maintenant / 1000.0f);
 	const CActionController::PisteAnimation *m = c.Animation(tn);
-	if(m == nil) return false;
 	float stat = StatVitesse(ped);
+	if(m == nil){
+		if(!c.quittee.ok) return false;
+		InstantJoue(c.quittee.p, c.quittee.tNoeud + (maintenant / 1000.0f - c.quittee.quitte), out, stat);
+		if(poids) *poids = 1.0f;
+		if(garde) *garde = true;
+		return true;
+	}
 	InstantJoue(*m, tn, out, stat);
 	if(quittee && poids){
 		*poids = 1.0f;
@@ -7255,7 +7265,8 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 	// Les os dans la pose de l'animation que joue le piéton (PoserOs), à défaut dans celle du fichier.
 	CPoseJouee pj, pq;
 	float poids = 1.0f;
-	bool joue = AnimationDuPieton(indice, &pj, &pq, &poids);
+	bool garde = false;
+	bool joue = AnimationDuPieton(indice, &pj, &pq, &poids, &garde);
 	bool fondu = joue && poids < 1.0f && pq.a.anim;
 	CVector poses[CSqueletteOutil::OS];
 	// Les couches à masque (CActionController::Masquees), leur masque cherché dans MAINPED.HXD par son nom.
@@ -7297,8 +7308,14 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 	{
 		// L'animation que joue le piéton, dite une fois par piéton et par animation, avec la hauteur de ses six sphères.
 		static std::set<std::pair<int, uint32>> dites;
-		if(dites.insert(std::make_pair(indice, joue ? pj.hache : 0u)).second){
-			if(!joue) printf("%6.2f s  le piéton %d ne joue aucune piste Animation (le nœud %s) : ses os restent dans la pose du fichier\n",
+		if(dites.insert(std::make_pair(indice, !joue ? 0u : garde ? pj.hache ^ 0x80000000u : pj.hache)).second){
+			if(garde) printf("%6.2f s  le piéton %d garde %s (%08x, mode %d), à %.2f s de l'animation : le nœud %s n'a aucune piste Animation vivante, et l'arrêt de la piste "
+			                 "du nœud quitté laisse son animation sur la couche 0 (FUN_0060af80) : %s, les six sphères à %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m du sol\n",
+			                 maintenant / 1000.0, indice, pj.a.enr ? pj.a.enr->nom.c_str() : "?", pj.hache, pj.mode, pj.t, arbres.CheminDe(NoeudJoue(indice)).c_str(),
+			                 pose ? "les os posés par l'animation" : "les os dans la pose du fichier",
+			                 ped.spheres[0].centre[2], ped.spheres[1].centre[2], ped.spheres[2].centre[2],
+			                 ped.spheres[3].centre[2], ped.spheres[4].centre[2], ped.spheres[5].centre[2]);
+			else if(!joue) printf("%6.2f s  le piéton %d ne joue aucune piste Animation (le nœud %s) : ses os restent dans la pose du fichier\n",
 			                 maintenant / 1000.0, indice, arbres.CheminDe(NoeudJoue(indice)).c_str());
 			else printf("%6.2f s  le piéton %d joue %s (%08x : n° %d de %s.agr, %s, %.2f s, mode %d, la stat 0x14 à %d), à %.2f s de l'animation (entrée à %.2f s du nœud %s) : "
 			            "%s%s%s, les six sphères à %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m du sol\n",
