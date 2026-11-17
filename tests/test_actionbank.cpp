@@ -917,8 +917,28 @@ main(void)
 		CActionBank vide;
 		const CActionNode *joue = c.joue;
 		c.joue = b.Global(); c.debut = 10.0f;
+		{
+			// Les couches en sortie : à 0,3 s du nœud, la couche 1 (vie 0,167) sort depuis 0,133 s ; les rangs 2 et 3 vivent.
+			std::vector<CActionController::Sortante> s0 = c.Sortantes(0.3f, 10.3f), s1 = c.Sortantes(0.1f, 10.1f);
+			VERIF(s1.empty() && s0.size() == 1 && s0[0].p.hache == 4 && s0[0].depuis > 0.13f && s0[0].depuis < 0.136f && s0[0].sortie == -1.0f);
+		}
+		c.animations[1].sortie = 0.5f;
 		c.Jouer(vide, nil, 10.6f);
 		VERIF(c.quittee.ok && c.quittee.p.hache == 3 && c.quittee.tNoeud > 0.59f && c.quittee.tNoeud < 0.61f && c.animations.empty());
+		{
+			// Le nœud quitté laisse ses trois couches en sortie : le rang 1 depuis la fin de sa vie (10,167 s), les rangs 2
+			// et 3 depuis l'instant où le nœud a été quitté, chacune avec le champ 56 de sa piste ; une piste du nœud joué
+			// qui reprend le rang 3 remplace la couche qui sortait.
+			c.joue = b.Global(); c.debut = 10.6f;
+			std::vector<CActionController::Sortante> s = c.Sortantes(0.1f, 10.7f);
+			VERIF(s.size() == 3 && s[0].p.hache == 4 && s[0].depuis > 0.53f && s[0].depuis < 0.536f
+			      && s[1].p.hache == 5 && s[1].depuis > 0.09f && s[1].depuis < 0.11f && s[1].tNoeud > 0.59f && s[1].sortie == -1.0f
+			      && s[2].p.hache == 2 && s[2].sortie == 0.5f);
+			c.animations.push_back(PA{0.0f, -1.0f, 11, std::string(), 0, 3, 0.0f, -1.0f, 1.0f, -1.0f});
+			s = c.Sortantes(0.1f, 10.7f);
+			VERIF(s.size() == 2 && s[1].p.hache == 5 && c.Couches(0.1f).size() == 1);
+			c.animations.clear();
+		}
 		// Un nœud sans piste Animation, quitté à son tour : l'animation quittée d'avant reste (l'arrêt FUN_0060af80 ne
 		// retire pas la couche 0), avec son temps et son instant.
 		c.joue = b.Global(); c.debut = 10.6f;
@@ -926,7 +946,7 @@ main(void)
 		c.Jouer(vide, nil, 10.9f);
 		VERIF(c.quittee.ok && c.quittee.p.hache == 3 && c.quittee.tNoeud > 0.59f && c.quittee.tNoeud < 0.61f && c.quittee.quitte > 10.59f && c.quittee.quitte < 10.61f);
 		c.joue = joue;
-		printf("pistes Animation : la couche 0 par la dernière lancée, les rangs 1 à 6 par-dessus, la couche 0 quittée gardée, même après un nœud sans piste\n");
+		printf("pistes Animation : la couche 0 par la dernière lancée, les rangs 1 à 6 par-dessus, la couche 0 quittée gardée, même après un nœud sans piste, les couches en sortie à l'arrêt de leur piste et du nœud\n");
 	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;

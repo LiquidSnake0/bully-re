@@ -137,7 +137,8 @@ public:
 	// jouer (FUN_005f3e20 : une seule liste), dans l'ordre de la liste : l'entrée (12, au plus tôt celle du nœud ajouté), la vie
 	// (16), le haché de l'animation (24), le masque d'os (28), le mode (32), la couche (36), le départ (40), la fin (44), la
 	// vitesse (48) et le fondu (52), docs/cat.md. Le contrôleur ne les joue pas : l'outil y lit ce que le piéton anime.
-	struct PisteAnimation { float entree, vie; uint32 hache; std::string masque; int32 mode, couche; float depart, fin, vitesse, fondu; };
+	struct PisteAnimation { float entree, vie; uint32 hache; std::string masque; int32 mode, couche; float depart, fin, vitesse, fondu;
+	                        float sortie = -1.0f; };   // le champ 56 (+0x38) : le fondu de sortie de sa couche, à son arrêt
 	std::vector<PisteAnimation> animations;
 	// L'animation que le nœud quitté jouait (celle que Animation() rend à l'instant où Jouer change de nœud) : le lecteur du
 	// jeu la garde le temps du fondu de la suivante (FUN_006b6570, la place de l'animation remplacée). `tNoeud` : le temps
@@ -145,6 +146,14 @@ public:
 	// telle quelle : c'est toujours elle que le lecteur porte (l'arrêt FUN_0060af80 ne retire pas la couche 0).
 	struct Quittee { PisteAnimation p; float tNoeud = 0.0f, quitte = 0.0f; bool ok = false; };
 	Quittee quittee;
+	// Une couche 1 à 6 en sortie : son animation, le temps du nœud à l'arrêt (`tNoeud`),
+	// le temps écoulé depuis l'arrêt (`depuis`) et le champ 56 de la piste arrêtée (`sortie`). L'arrêt d'une piste de rang
+	// positif (FUN_0060af80) passe la place de son rang à FUN_006bd320 avec ce champ : un fondu d'au moins 0,001 s laisse la
+	// place en sortie (+0x10 et +0x14), en dessous elle est rendue aussitôt (CHxdFile::FonduDeSortie dit le fondu).
+	struct Sortante { PisteAnimation p; float tNoeud = 0.0f, depuis = 0.0f, sortie = -1.0f; };
+	// Les couches du nœud quitté, vivantes ou déjà en sortie quand Jouer l'a quitté, et l'instant de leur arrêt (`depuis`
+	// y est cet instant, en secondes du jeu). Supposé : l'arrêt du nœud arrête toutes ses pistes à la même image.
+	std::vector<Sortante> couchesQuittees;
 	// Une piste Animation vivante au temps tn du nœud joué : lancée (l'entrée atteinte) et sans vie ou pas encore à son bout.
 	static bool Vivante(const PisteAnimation &p, float tn) { return p.entree <= tn && (p.vie < 0.0f || tn < p.entree + p.vie); }
 	// Le rang de la couche d'une piste parmi les sept places d'un squelette (+0x18 ; le champ 36). Le lancement
@@ -174,14 +183,41 @@ public:
 	std::vector<const PisteAnimation *> Couches(float tn) const {
 		std::vector<const PisteAnimation *> v;
 		for(int32 r = 1; r <= 6; r++){
-			const PisteAnimation *m = nil;
-			for(const PisteAnimation &p : animations)
-				if(Rang(p) == r && p.entree <= tn && (m == nil || p.entree >= m->entree)) m = &p;
-			if(m == nil || !Vivante(*m, tn)) continue;
-			bool retiree = false;
-			for(const PisteAnimation &p : animations)
-				if(&p != m && Rang(p) == r && p.vie >= 0.0f && p.entree + p.vie <= tn && p.entree + p.vie > m->entree) retiree = true;
-			if(!retiree) v.push_back(m);
+			const PisteAnimation *arretee = nil;
+			const PisteAnimation *m = CoucheDuRang(r, tn, &arretee);
+			if(m && arretee == nil) v.push_back(m);
+		}
+		return v;
+	}
+	// La place d'un rang de 1 à 6 au temps tn : la dernière piste lancée de ce rang (nil : aucune), et dans `arretee` la
+	// première piste du rang qui a fini sa vie depuis ce lancement (nil : la place vit) : c'est son arrêt qui met la place en
+	// sortie, avec son champ 56 à elle.
+	const PisteAnimation *CoucheDuRang(int32 r, float tn, const PisteAnimation **arretee) const {
+		const PisteAnimation *m = nil;
+		*arretee = nil;
+		for(const PisteAnimation &p : animations)
+			if(Rang(p) == r && p.entree <= tn && (m == nil || p.entree >= m->entree)) m = &p;
+		if(m == nil) return nil;
+		for(const PisteAnimation &p : animations){
+			if(Rang(p) != r || p.vie < 0.0f || p.entree + p.vie > tn) continue;
+			if(&p != m && p.entree + p.vie <= m->entree) continue;
+			if(*arretee == nil || p.entree + p.vie < (*arretee)->entree + (*arretee)->vie) *arretee = &p;
+		}
+		return m;
+	}
+	// Les couches 1 à 6 en sortie au temps tn du nœud joué, dans l'ordre des rangs : celles du nœud dont une piste du rang
+	// a fini sa vie, puis celles du nœud quitté (`maintenant` : l'instant du jeu) dont le rang n'a pas été repris par une piste
+	// du nœud joué (le lancement remplace la place du rang, 6bcad0). L'appelant les garde tant que `depuis` est sous leur
+	// fondu de sortie.
+	std::vector<Sortante> Sortantes(float tn, float maintenant) const {
+		std::vector<Sortante> v;
+		for(int32 r = 1; r <= 6; r++){
+			const PisteAnimation *arretee = nil;
+			const PisteAnimation *m = CoucheDuRang(r, tn, &arretee);
+			if(m && arretee) v.push_back({*m, arretee->entree + arretee->vie, tn - (arretee->entree + arretee->vie), arretee->sortie});
+			if(m) continue;
+			for(const Sortante &q : couchesQuittees)
+				if(Rang(q.p) == r) v.push_back({q.p, q.tNoeud, maintenant - q.depuis, q.sortie});
 		}
 		return v;
 	}

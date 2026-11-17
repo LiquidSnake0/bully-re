@@ -7196,7 +7196,8 @@ AnimationDuPieton(int ped, CPoseJouee *out, CPoseJouee *quittee = nil, float *po
 // supposé : ce que l'outil compose ici est ce que le lecteur d'animations du jeu y écrit (les couches ne sont pas suivies).
 // Faux sans .nif gardé.
 // Une animation à masque posée par-dessus le fond : son instant et les poids de son masque (CHxdFile::poidsMasques).
-struct CCoucheOs { const AgrAnim *a; float t; const std::vector<float> *poids; };
+// `facteur` : le poids de la couche entière (1 : installée ; de 1 à 0 pendant sa sortie).
+struct CCoucheOs { const AgrAnim *a; float t; const std::vector<float> *poids; float facteur = 1.0f; };
 static bool
 PoserOs(const CSqueletteOutil &s, const AgrAnim &a, float t, CVector out[CSqueletteOutil::OS], const AgrAnim *autre = nil, float tAutre = 0, float poids = 0,
         const std::vector<CCoucheOs> *couches = nil)
@@ -7218,7 +7219,7 @@ PoserOs(const CSqueletteOutil &s, const AgrAnim &a, float t, CVector out[CSquele
 		// sphérique ; un os que le fond n'anime pas prend la couche entière si son poids est plein).
 		for(size_t c = 0; couches && c < couches->size(); c++){
 			const CCoucheOs &x = (*couches)[c];
-			float w = k < (int32)x.poids->size() ? (*x.poids)[k] : 0.0f, q3[4];
+			float w = (k < (int32)x.poids->size() ? (*x.poids)[k] : 0.0f) * x.facteur, q3[4];
 			if(w <= 0.0f || !AgrRotation(*x.a, k, x.t, q3)) continue;
 			float r[4]; AgrSlerp(q, q3, w > 1.0f ? 1.0f : w, r); memcpy(q, r, sizeof q);
 		}
@@ -7289,6 +7290,21 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 			ditCouches += (ditCouches.empty() ? "" : ", ") + (x.a.enr ? x.a.enr->nom : std::string("?")) + " (masque " + (nomme ? m->masque : r >= 0 ? hxdPietons.masques[r] + ", le premier du fichier" : std::string("absent")) + ", couche " + std::to_string(m->couche) + ")";
 			if(r < 0 || !x.a.anim) continue;
 			couches.push_back({x.a.anim, x.t, &hxdPietons.poidsMasques[r]});
+		}
+		// Les couches en sortie (CActionController::Sortantes) : leur fondu de sortie par CHxdFile::FonduDeSortie
+		// (FUN_006bd320) ; supposé : le poids de la couche descend de 1 à 0 sur ce fondu, linéairement, et son animation
+		// avance toujours (la mise à jour des places du lecteur n'est pas lue).
+		for(const CActionController::Sortante &q : ic->second.Sortantes(tn, maintenant / 1000.0f)){
+			float f = hxdPietons.FonduDeSortie(CActionController::Rang(q.p), q.p.masque, q.sortie);
+			int32 r = hxdPietons.MasqueDeCouche(q.p.masque);
+			if(f <= 0.0f || q.depuis < 0.0f || q.depuis >= f || r < 0) continue;
+			CPoseJouee x; InstantJoue(q.p, q.tNoeud + q.depuis, &x, StatVitesse(indice));
+			char dit[160];
+			snprintf(dit, sizeof dit, " (masque %s, couche %d, en sortie depuis %.2f s sur %.2f s, poids %.2f)", hxdPietons.masques[r].c_str(), q.p.couche, q.depuis, f, 1.0f - q.depuis / f);
+			ditCouches += (ditCouches.empty() ? "" : ", ") + (x.a.enr ? x.a.enr->nom : std::string("?")) + dit;
+			if(!x.a.anim) continue;
+			pc.push_back(x);
+			couches.push_back({x.a.anim, x.t, &hxdPietons.poidsMasques[r], 1.0f - q.depuis / f});
 		}
 	}
 	bool pose = joue && pj.a.anim && PoserOs(*s, *pj.a.anim, pj.t, poses, fondu ? pq.a.anim : nil, pq.t, 1.0f - poids, &couches);

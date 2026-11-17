@@ -48,6 +48,21 @@ public:
 	// moitié (0,5 : « UBO_Hd_Sp » sur la colonne). Le masque d'une piste Animation est son champ 28, un nom (« RightArm »,
 	// « UpperBody_ALL ») que FUN_00607340 cherche (docs/cat.md).
 	std::vector<std::vector<float>> poidsMasques;
+	// Le flottant qui suit le compte des poids dans le fichier : le +0x28 du masque en mémoire, le fondu de sortie d'une couche
+	// qui porte ce masque quand sa piste n'en donne pas (FUN_006bd320). 0,3 s pour 44 des 46 masques de MAINPED.HXD, 1 s pour
+	// « Conv » et « FlashLightAimHoriz ».
+	std::vector<float> fonduMasques;
+	// Le fondu de sortie d'une couche à l'arrêt de sa piste, comme FUN_006bd320 le choisit (lue de 0x6bd320 à 0x6bd463) : nul
+	// pour le rang 0 ; sinon le champ 56 de la piste, ou, s'il vaut -1 (0x9009ac) et que la place porte un masque (+0x8), le
+	// flottant +0x28 de ce masque ; un fondu de moins de 0,001 en valeur absolue (0x900c04) retire la place aussitôt (rendu
+	// 0 ici), sinon il est écrit en +0x10 et +0x14 de la place, qui reste le temps de sortir.
+	float FonduDeSortie(int32 rang, const std::string &masque, float champ56) const {
+		if(rang <= 0) return 0.0f;
+		float f = champ56;
+		int32 r = MasqueDeCouche(masque);
+		if(f == -1.0f && r >= 0 && r < (int32)fonduMasques.size()) f = fonduMasques[r];
+		return (f < 0.0f ? -f : f) < 0.001f ? 0.0f : f;
+	}
 	// FUN_00607340(nom, rang) (méthode du HXD en mémoire, ret 8, lue à l'assembleur de 0x607340 à 0x607390, 83 octets) : les
 	// masques sont comptés en +0xc et rangés en +0x8, 0x2c octets chacun, le nom en tête ; chacun est comparé au nom cherché par
 	// la fonction du CRT 85f5af (supposé : _stricmp, sans la casse ; elle lit d'abord la locale 0x20e6558) ; le premier égal

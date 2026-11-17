@@ -110,6 +110,18 @@ main(void)
 			hautJuste = (k >= 10 && k <= 14) ? mainped.poidsMasques[haut][k] > 0.0f && mainped.poidsMasques[haut][k] < 1.0f : mainped.poidsMasques[haut][k] == 0.0f;
 		}
 		VERIF(brasJuste && visageJuste && defautJuste && hautJuste);
+		// Le fondu de sortie des masques (le flottant après le compte des poids) : 0,3 s, sauf Conv et FlashLightAimHoriz à 1 s ;
+		// FonduDeSortie (FUN_006bd320) : rien pour le rang 0, le champ 56 de la piste, à -1 le fondu du masque de la couche
+		// (le premier du fichier sans nom), et rien sous 0,001 s.
+		int trois = 0, un = 0;
+		for(float x : mainped.fonduMasques){ if(x > 0.299f && x < 0.301f) trois++; else if(x == 1.0f) un++; }
+		int32 conv = mainped.Masque("Conv"), lampe = mainped.Masque("FlashLightAimHoriz");
+		VERIF(mainped.fonduMasques.size() == 46 && trois == 44 && un == 2 && conv >= 0 && lampe >= 0 && mainped.fonduMasques[conv] == 1.0f && mainped.fonduMasques[lampe] == 1.0f);
+		VERIF(mainped.FonduDeSortie(0, "Facial", 0.5f) == 0.0f && mainped.FonduDeSortie(3, "Facial", 0.5f) == 0.5f
+		      && mainped.FonduDeSortie(3, "FACIAL", -1.0f) == mainped.fonduMasques[visage] && mainped.FonduDeSortie(2, "Conv", -1.0f) == 1.0f
+		      && mainped.FonduDeSortie(1, "", -1.0f) == mainped.fonduMasques[0] && mainped.FonduDeSortie(1, "", 0.0f) == 0.0f
+		      && mainped.FonduDeSortie(1, "", 0.0005f) == 0.0f);
+		printf("fondu de sortie des masques : 0,3 s pour %d, 1 s pour %d (Conv, FlashLightAimHoriz)\n", trois, un);
 		printf("masques : RightArm sur les os 27 à 34, Facial (« FACIAL ») sur 15 à 18, UBO_Hd_Sp en partie sur 10 à 14, default partout\n");
 	}
 	// FUN_0068e380 : un os par son nom haché ; les deux que le binaire cherche (« Jaw », « Eyes ») et ceux des six sphères de Jimmy.
