@@ -49,7 +49,7 @@ public:
 	// « UpperBody_ALL ») que FUN_00607340 cherche (docs/cat.md).
 	std::vector<std::vector<float>> poidsMasques;
 	// Le flottant qui suit le compte des poids dans le fichier : le +0x28 du masque en mémoire, le fondu de sortie d'une couche
-	// qui porte ce masque quand sa piste n'en donne pas (FUN_006bd320). 0,3 s pour 44 des 46 masques de MAINPED.HXD, 1 s pour
+	// qui porte ce masque quand sa piste n'en donne pas (FUN_006bd320). 0,3 s pour 43 des 46 masques de MAINPED.HXD, 0 pour « FlashLightAimVert », 1 s pour
 	// « Conv » et « FlashLightAimHoriz ».
 	std::vector<float> fonduMasques;
 	// Le fondu de sortie d'une couche à l'arrêt de sa piste, comme FUN_006bd320 le choisit (lue de 0x6bd320 à 0x6bd463) : nul
