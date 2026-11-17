@@ -5,15 +5,15 @@ Combien des fonctions de `bully.exe` le dépôt a recréées. Généré par
 
 | | Fonctions | % du nombre | Octets de code | % du code |
 |---|---:|---:|---:|---:|
-| **Recréées** (citées dans `src/`) | 1 335 | 6,4 % | 386 930 | **8,6 %** |
-| Comprises (code, docs, outils, noms) | 2 266 | 10,9 % | 591 257 | 13,2 % |
+| **Recréées** (citées dans `src/`) | 1 336 | 6,4 % | 387 159 | **8,6 %** |
+| Comprises (code, docs, outils, noms) | 2 267 | 10,9 % | 591 486 | 13,2 % |
 | Total de l'exe | 20 819 | 100 % | 4 480 993 | 100 % |
 
 ## Par sous-système (fonctions citées dans `src/`)
 
 | Dossier | Fonctions | Octets |
 |---|---:|---:|
-| `src/core` | 443 | 133 783 |
+| `src/core` | 444 | 134 012 |
 | `src/peds` | 525 | 127 930 |
 | `src/objects` | 239 | 80 838 |
 | `src/collision` | 47 | 22 755 |
