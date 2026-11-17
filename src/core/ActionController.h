@@ -127,7 +127,8 @@ public:
 	struct Regard { float entree, vie; int32 genre; float decalage; };
 	std::vector<Regard> regards, regardsActifs;
 	struct Poursuite { float entree, vie; int32 genre; float arrivee; };
-	// Les pistes Animation et HitAnimation (AnimationTrack : lancement 612360, non lu ; mise à jour FUN_0060ae00 ; arrêt
+	// Les pistes Animation et HitAnimation (AnimationTrack : lancement FUN_00612360, lu de 0x612360 à 0x6126c1 : voir
+	// Animation et Couches plus bas ; mise à jour FUN_0060ae00 ; arrêt
 	// FUN_0060af80, lu de 0x60af80 à 0x60afd9 : la méthode +0x14 de la piste (60afe0, qui choisit le squelette +0x4c), faux
 	// sans squelette ; si le champ 36 (+0x24) est positif, la place que 6b1df0 rend pour ce rang parmi les sept du
 	// squelette (+0x18) est retirée par 6bd320 sur le lecteur 0x20c4910, avec le champ 56 (+0x38) ; puis, pour un
@@ -146,23 +147,42 @@ public:
 	Quittee quittee;
 	// Une piste Animation vivante au temps tn du nœud joué : lancée (l'entrée atteinte) et sans vie ou pas encore à son bout.
 	static bool Vivante(const PisteAnimation &p, float tn) { return p.entree <= tn && (p.vie < 0.0f || tn < p.entree + p.vie); }
-	// L'animation de fond au temps tn : des pistes vivantes sans masque (28), celle de la plus haute couche (36), puis de la
-	// dernière entrée, puis la dernière de la liste (supposé : l'ordre des couches du lecteur du jeu n'est pas lu). nil : aucune.
+	// Le rang de la couche d'une piste parmi les sept places d'un squelette (+0x18 ; le champ 36). Le lancement
+	// FUN_00612360 demande une place neuve pour ce rang (6b9220 : rien pour un rang de 7 ou plus, la place porte son rang en
+	// +0x44) ; **le masque d'os (28) n'est cherché que pour un rang positif** (0x6123d0 à 0x6123f8 : FUN_00607340 par le nom,
+	// à défaut ou sans nom le premier masque du fichier, CHxdFile::MasqueDeCouche), et posé en +0x8 de la place : la couche 0
+	// n'a pas de masque, même si sa piste en nomme un (79 pistes des arbres). Puis l'animation est cherchée par son haché
+	// (607610 ; absente, 612270, non lu), le fondu (52) nul lève le bit 1 des drapeaux (sans fondu), négatif devient -1
+	// (celui de l'enregistrement, FUN_006b6570), le mode 2 lève le bit 2 (la boucle), la vitesse (48) fois la stat 0x14 du
+	// piéton sur 100 va en +0x54, et le lecteur lance l'animation sur la place (6c0be0, puis 6bcad0 : la place prend la case
+	// de son rang, **celle qui y était est remplacée**, gardée par 6b9130 dans la liste de sa couche si elle a déjà joué) et
+	// la met à son départ (40) borné à sa durée (6c0d30). Hors de 0 à 6, l'outil compte 0 (supposé : 6b9220 rend alors
+	// une place nulle et 6c0be0 prend la première case occupée).
+	static int32 Rang(const PisteAnimation &p) { return p.couche >= 1 && p.couche <= 6 ? p.couche : 0; }
+	// L'animation de la couche 0 au temps tn : la dernière piste de rang 0 lancée (l'entrée atteinte ; à égalité, la dernière
+	// de la liste, lancée après), **qu'elle vive encore ou non** : son arrêt (FUN_0060af80) ne retire rien. nil : aucune.
 	const PisteAnimation *Animation(float tn) const {
 		const PisteAnimation *m = nil;
-		for(const PisteAnimation &p : animations){
-			if(!Vivante(p, tn) || !p.masque.empty()) continue;
-			if(m == nil || p.couche > m->couche || (p.couche == m->couche && p.entree >= m->entree)) m = &p;
-		}
+		for(const PisteAnimation &p : animations)
+			if(Rang(p) == 0 && p.entree <= tn && (m == nil || p.entree >= m->entree)) m = &p;
 		return m;
 	}
-	// Les pistes vivantes à masque, par couche puis par entrée (dans l'ordre de la liste à égalité) : posées par-dessus le fond,
-	// chacune sur les os de son masque (supposé).
-	std::vector<const PisteAnimation *> Masquees(float tn) const {
+	// Les animations des couches 1 à 6 au temps tn, dans l'ordre des rangs : pour chaque rang, la dernière piste lancée, sauf
+	// si elle a fini sa vie (16) ou si une autre piste du même rang a fini la sienne depuis (l'arrêt FUN_0060af80 retire la
+	// place du rang, quelle que soit la piste qui l'a posée). L'outil les pose par-dessus la couche 0, chacune sur les os de
+	// son masque (supposé : l'ordre des rangs ; le mélange des couches par le lecteur n'est pas lu).
+	std::vector<const PisteAnimation *> Couches(float tn) const {
 		std::vector<const PisteAnimation *> v;
-		for(const PisteAnimation &p : animations) if(Vivante(p, tn) && !p.masque.empty()) v.push_back(&p);
-		std::stable_sort(v.begin(), v.end(), [](const PisteAnimation *a, const PisteAnimation *b){
-			return a->couche != b->couche ? a->couche < b->couche : a->entree < b->entree; });
+		for(int32 r = 1; r <= 6; r++){
+			const PisteAnimation *m = nil;
+			for(const PisteAnimation &p : animations)
+				if(Rang(p) == r && p.entree <= tn && (m == nil || p.entree >= m->entree)) m = &p;
+			if(m == nil || !Vivante(*m, tn)) continue;
+			bool retiree = false;
+			for(const PisteAnimation &p : animations)
+				if(&p != m && Rang(p) == r && p.vie >= 0.0f && p.entree + p.vie <= tn && p.entree + p.vie > m->entree) retiree = true;
+			if(!retiree) v.push_back(m);
+		}
 		return v;
 	}
 	std::vector<Poursuite> poursuites, poursuitesActives;

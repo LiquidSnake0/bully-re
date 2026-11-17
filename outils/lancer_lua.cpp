@@ -7129,7 +7129,10 @@ InstantJoue(const CActionController::PisteAnimation &p, float tn, CPoseJouee *ou
 	out->a = AnimationParHache(p.hache);
 	float duree = out->a.enr ? out->a.enr->duree : -1.0f;
 	float vitesse = (p.vitesse > 0.0f ? p.vitesse : 1.0f) * stat;
-	float t = p.depart + (tn - p.entree) * vitesse;
+	// Le départ (40) borné à la durée de l'enregistrement, comme FUN_006c0d30 le pose sur la place (lu de 0x6c0d30 à 0x6c0dc0 :
+	// négatif, 0 ; au-delà du +0xc de l'enregistrement, cette durée).
+	float depart = p.depart < 0.0f ? 0.0f : duree > 0.0f && p.depart > duree ? duree : p.depart;
+	float t = depart + (tn - p.entree) * vitesse;
 	if(duree > 0.0f){
 		if(p.mode == 2) t = fmodf(t, duree);
 		else { float fin = p.fin; if(fin < 0.0f || fin > duree) fin = duree; if(t > fin) t = fin; }
@@ -7140,9 +7143,12 @@ InstantJoue(const CActionController::PisteAnimation &p, float tn, CPoseJouee *ou
 	out->fondu = p.fondu < 0.0f ? (out->a.enr ? out->a.enr->fondu : 0.0f) : p.fondu;
 }
 
-// L'animation que joue un piéton de l'outil, et son instant : la piste vivante (CActionController::Animation) des pistes
-// Animation et HitAnimation que son contrôleur d'actions a recueillies (celles du nœud joué, +0x10, et des nœuds que ses Execute
-// font jouer). `quittee`, s'il est donné : l'animation du nœud quitté et le poids de la nouvelle, quand la nouvelle est encore dans
+// L'animation que joue un piéton de l'outil, et son instant : la piste de la couche 0 (CActionController::Animation, la dernière
+// lancée, FUN_00612360) des pistes Animation et HitAnimation que son contrôleur d'actions a recueillies (celles du nœud joué,
+// +0x10, et des nœuds que ses Execute font jouer). Le lancement est lu en entier : la place neuve du rang (FUN_006b9220), le
+// masque pour un rang positif (FUN_00607340, sinon FUN_00607320 au rang 0), l'animation par son haché (FUN_00607610), le lecteur
+// (FUN_006c0be0, qui passe par FUN_006bcad0 : la place remplace celle de son rang, que FUN_006b9130 garde dans la liste de sa
+// couche, au plus [0xbb6128] - 1 places, la moins lourde en +0xc rendue d'abord), le départ (FUN_006c0d30). `quittee`, s'il est donné : l'animation du nœud quitté et le poids de la nouvelle, quand la nouvelle est encore dans
 // son fondu (le temps depuis son lancement sous son fondu) ; le poids monte de 0 à 1 sur le fondu, linéairement (supposé : le lecteur
 // du jeu tient ses poids en +0xc, +0x10 et +0x14 de sa place, FUN_006b6570, non lus plus loin) ; l'animation quittée reste à
 // l'instant où elle a été quittée (supposé). Un nœud sans piste Animation vivante garde l'animation du nœud quitté, qui continue
@@ -7269,17 +7275,18 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 	bool joue = AnimationDuPieton(indice, &pj, &pq, &poids, &garde);
 	bool fondu = joue && poids < 1.0f && pq.a.anim;
 	CVector poses[CSqueletteOutil::OS];
-	// Les couches à masque (CActionController::Masquees), leur masque cherché dans MAINPED.HXD par son nom.
+	// Les couches 1 à 6 (CActionController::Couches), leur masque cherché dans MAINPED.HXD par son nom, à défaut le premier du fichier.
 	std::vector<CCoucheOs> couches;
 	std::vector<CPoseJouee> pc;
 	std::string ditCouches;
 	if(joue){
 		auto ic = controleurs.find(indice);
 		float tn = ic->second.Temps(maintenant / 1000.0f);
-		for(const CActionController::PisteAnimation *m : ic->second.Masquees(tn)){
+		for(const CActionController::PisteAnimation *m : ic->second.Couches(tn)){
 			CPoseJouee x; InstantJoue(*m, tn, &x, StatVitesse(indice));
-			int32 r = hxdPietons.Masque(m->masque.c_str());
-			ditCouches += (ditCouches.empty() ? "" : ", ") + (x.a.enr ? x.a.enr->nom : std::string("?")) + " (masque " + m->masque + (r < 0 ? " inconnu" : "") + ", couche " + std::to_string(m->couche) + ")";
+			int32 r = hxdPietons.MasqueDeCouche(m->masque);
+			bool nomme = !m->masque.empty() && hxdPietons.Masque(m->masque.c_str()) >= 0;
+			ditCouches += (ditCouches.empty() ? "" : ", ") + (x.a.enr ? x.a.enr->nom : std::string("?")) + " (masque " + (nomme ? m->masque : r >= 0 ? hxdPietons.masques[r] + ", le premier du fichier" : std::string("absent")) + ", couche " + std::to_string(m->couche) + ")";
 			if(r < 0 || !x.a.anim) continue;
 			couches.push_back({x.a.anim, x.t, &hxdPietons.poidsMasques[r]});
 		}

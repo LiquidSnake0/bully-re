@@ -884,9 +884,10 @@ main(void)
 		VERIF(ConditionAttackTimer(c, 2.0f, false, 3, 11000));
 	}
 	{
-		// Les pistes Animation recueillies (CActionController::animations) : le fond est la piste vivante sans masque de la
-		// plus haute couche, puis de la dernière entrée ; les pistes à masque passent par-dessus, par couche ; au changement de
-		// nœud, Jouer garde le fond quitté (quittee) avec le temps du nœud.
+		// Les pistes Animation recueillies (CActionController::animations), par rang de couche comme FUN_00612360 les lance :
+		// la couche 0 porte la dernière piste de rang 0 lancée, finie ou non, masque nommé ou non ; chaque rang de 1 à 6 porte
+		// la dernière lancée tant qu'elle vit ; au changement de nœud, Jouer garde la couche 0 quittée (quittee) avec le
+		// temps du nœud.
 		CActionController c;
 		typedef CActionController::PisteAnimation PA;
 		c.animations.push_back(PA{0.0f, -1.0f, 1, std::string(), 0, 0, 0.0f, -1.0f, 1.0f, -1.0f});        // fond, couche 0
@@ -895,10 +896,24 @@ main(void)
 		c.animations.push_back(PA{0.0f, 0.167f, 4, std::string(), 0, 1, 0.0f, -1.0f, 1.0f, -1.0f});       // couche 1, vie 0,167
 		c.animations.push_back(PA{0.2f, -1.0f, 5, std::string("RightArm"), 2, 2, 0.0f, -1.0f, 1.0f, 0.1f});
 		const PA *f0 = c.Animation(0.1f), *f1 = c.Animation(0.3f), *f2 = c.Animation(0.6f);
-		VERIF(f0 && f0->hache == 4 && f1 && f1->hache == 1 && f2 && f2->hache == 3);
-		std::vector<const PA *> m0 = c.Masquees(0.1f), m1 = c.Masquees(0.3f);
-		VERIF(m0.size() == 1 && m0[0]->hache == 2 && m1.size() == 2 && m1[0]->hache == 5 && m1[1]->hache == 2);
+		VERIF(f0 && f0->hache == 1 && f1 && f1->hache == 1 && f2 && f2->hache == 3);
+		std::vector<const PA *> m0 = c.Couches(0.1f), m1 = c.Couches(0.3f);
+		VERIF(m0.size() == 2 && m0[0]->hache == 4 && m0[1]->hache == 2 && m1.size() == 2 && m1[0]->hache == 5 && m1[1]->hache == 2);
 		VERIF(!CActionController::Vivante(c.animations[3], 0.2f) && CActionController::Vivante(c.animations[3], 0.1f));
+		{
+			// Une piste de rang 0 qui nomme un masque reste la couche 0 ; finie (vie 0,2), elle y reste ; un rang hors de 0 à
+			// 6 compte 0 ; deux pistes du même rang : la seconde remplace la première, la fin de la première retire la place.
+			CActionController d;
+			d.animations.push_back(PA{0.0f, 0.2f, 7, std::string("Head"), 0, 0, 0.0f, -1.0f, 1.0f, -1.0f});
+			d.animations.push_back(PA{0.0f, 0.5f, 8, std::string(), 0, 2, 0.0f, -1.0f, 1.0f, -1.0f});
+			d.animations.push_back(PA{0.3f, -1.0f, 9, std::string("Head"), 0, 2, 0.0f, -1.0f, 1.0f, -1.0f});
+			const PA *g0 = d.Animation(0.1f), *g1 = d.Animation(0.9f);
+			VERIF(g0 && g0->hache == 7 && g1 && g1->hache == 7 && d.Animation(-0.1f) == nil);
+			std::vector<const PA *> k0 = d.Couches(0.1f), k1 = d.Couches(0.4f), k2 = d.Couches(0.6f);
+			VERIF(k0.size() == 1 && k0[0]->hache == 8 && k1.size() == 1 && k1[0]->hache == 9 && k2.empty());
+			d.animations.push_back(PA{0.0f, -1.0f, 10, std::string(), 0, 9, 0.0f, -1.0f, 1.0f, -1.0f});
+			VERIF(CActionController::Rang(d.animations[3]) == 0 && d.Animation(0.1f)->hache == 10);
+		}
 		CActionBank vide;
 		const CActionNode *joue = c.joue;
 		c.joue = b.Global(); c.debut = 10.0f;
@@ -911,7 +926,7 @@ main(void)
 		c.Jouer(vide, nil, 10.9f);
 		VERIF(c.quittee.ok && c.quittee.p.hache == 3 && c.quittee.tNoeud > 0.59f && c.quittee.tNoeud < 0.61f && c.quittee.quitte > 10.59f && c.quittee.quitte < 10.61f);
 		c.joue = joue;
-		printf("pistes Animation : le fond par couche et par entrée, les masques par-dessus, le fond quitté gardé, même après un nœud sans piste\n");
+		printf("pistes Animation : la couche 0 par la dernière lancée, les rangs 1 à 6 par-dessus, la couche 0 quittée gardée, même après un nœud sans piste\n");
 	}
 	printf("test_actionbank : %s\n", echecs ? "ECHEC" : "ok");
 	return echecs ? 1 : 0;

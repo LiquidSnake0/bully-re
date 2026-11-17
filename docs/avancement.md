@@ -5,21 +5,21 @@ Combien des fonctions de `bully.exe` le dépôt a recréées. Généré par
 
 | | Fonctions | % du nombre | Octets de code | % du code |
 |---|---:|---:|---:|---:|
-| **Recréées** (citées dans `src/`) | 1 333 | 6,4 % | 386 039 | **8,6 %** |
-| Comprises (code, docs, outils, noms) | 2 261 | 10,9 % | 590 789 | 13,2 % |
+| **Recréées** (citées dans `src/`) | 1 335 | 6,4 % | 386 930 | **8,6 %** |
+| Comprises (code, docs, outils, noms) | 2 266 | 10,9 % | 591 257 | 13,2 % |
 | Total de l'exe | 20 819 | 100 % | 4 480 993 | 100 % |
 
 ## Par sous-système (fonctions citées dans `src/`)
 
 | Dossier | Fonctions | Octets |
 |---|---:|---:|
-| `src/core` | 442 | 132 915 |
+| `src/core` | 443 | 133 783 |
 | `src/peds` | 525 | 127 930 |
 | `src/objects` | 239 | 80 838 |
 | `src/collision` | 47 | 22 755 |
 | `src/entities` | 84 | 19 513 |
 | `src/hud` | 67 | 15 569 |
-| `src/anim` | 29 | 13 318 |
+| `src/anim` | 31 | 14 209 |
 | `src/vehicles` | 46 | 12 299 |
 | `src/cutscene` | 4 | 8 383 |
 | `src/audio` | 18 | 5 905 |

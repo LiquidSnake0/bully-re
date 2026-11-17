@@ -53,6 +53,13 @@ public:
 	// la fonction du CRT 85f5af (supposé : _stricmp, sans la casse ; elle lit d'abord la locale 0x20e6558) ; le premier égal
 	// l'emporte, son rang est écrit dans `rang` s'il est donné, son entrée est rendue ; nil sinon.
 	// Ici : le rang du masque de ce nom, sans tenir compte de la casse (les arbres écrivent « FACIAL », le HXD « Facial »), ou -1.
+	// Le masque d'une piste lancée sur une couche 1 à 6 (FUN_00612360, de 0x6123d0 à 0x6123f8) : celui de son nom, à défaut
+	// ou sans nom le premier du fichier (FUN_00607320 rend le masque d'un rang, 0 hors du compte +0xc ; elle est appelée
+	// avec le rang 0 : « default » dans MAINPED.HXD, tous les os au poids 1). -1 pour un fichier sans masque.
+	int32 MasqueDeCouche(const std::string &nom) const {
+		int32 r = nom.empty() ? -1 : Masque(nom.c_str());
+		return r >= 0 ? r : masques.empty() ? -1 : 0;
+	}
 	int32 Masque(const char *nom) const {
 		for(size_t i = 0; i < masques.size(); i++) if(strcasecmp(masques[i].c_str(), nom) == 0) return (int32)i;
 		return -1;
