@@ -607,6 +607,295 @@ struct CCollisionBalayee {
 		}
 		return touche;
 	}
+	// FUN_00569f10(début, fin, rayon, m, modèle, contact, distance, drapeaux, a9, a10) (cdecl, dix arguments, lue à l'assembleur de
+	// 0x569f10 à 0x56ab77, 3 175 octets) : le test d'un lancer (une sphère de ce rayon qui va du début à la fin) contre le modèle
+	// de collision d'une entité posé par la matrice m ; FUN_00563aa0 (LancerSurListe, Projectiles.h) le donne avec un
+	// contact neuf, a9 = 0xf et a10 = 1. C'est le test général réduit à une sphère sans modèle : les mêmes appuis, dans le même
+	// ordre. Des données nulles (+0x38 du modèle) : 0. Le bit 9 (0x200) des drapeaux doit valoir « le mot +0x18 des données n'est
+	// pas nul » (`mot18` ; ce que dit ce mot n'est pas lu), sinon 0. Puis : l'inverse de m (FUN_00413620), d = fin − début
+	// (FUN_00414a20), et la fraction du contact n'est pas remise à FLT_MAX : celle qu'il porte en entrant borne le test.
+	//  - bit 1 de a9 : chaque sphère du modèle posée par m (FUN_0045d3b0), FUN_00576a00 avec t = 1 et le déplacement nul 0xbcc564 ;
+	//    une fraction f strictement plus petite que celle du contact (fld f, fld +0x24, fcomp st(1), test ah,0x41, jne) la
+	//    remplace : le point, le mot +0x10 de la sphère en +0x22, son rang en +0x1c, la distance rendue (*a7) = f, la normale
+	//    (début + f d) − la sphère, normalisée (FUN_00412850, FUN_00414cc0) ; le +0x20 du contact n'est pas écrit ;
+	//  - le début posé dans l'espace du modèle par l'inverse (FUN_0045d3b0), d tourné par l'inverse (FUN_00414560), de longueur L
+	//    (FUN_0085c4d0 sur |(x² + y²) + z²|, arrondie) ;
+	//  - bit 2 : chaque boîte par la fonction `boite` (00576660) ; une distance f < L, et f / L strictement plus petite que la
+	//    fraction du contact : la normale tournée par m, le point posé par m, la fraction f / L, le mot +0x20 de la boîte en
+	//    +0x22, la distance rendue = f / L ; +0x1c et +0x20 du contact ne sont pas écrits ; pas de cas « la sphère est dans la
+	//    boîte » (l'argument 11 du test général) ;
+	//  - bit 8, s'il y a des triangles (+0x1c) : chacun (tous dans l'ordre, ou ceux que rend l'arbre +0x14 pour le centre et la
+	//    portée L + rayon : 005616a0 avec un dernier argument nul, puis 00561750, 0xffff à la fin) : ses sommets (FUN_0056e530),
+	//    sa normale (v2 − v0) × (v1 − v0) normalisée (FUN_004145e0), FUN_00575510 ; f < L et f / L strictement plus petite que la
+	//    fraction du contact : la normale (avec a10, celle que rend FUN_00575510, sinon celle du triangle) tournée par m, le point
+	//    posé par m, la fraction, la surface du triangle (+6) en +0x22 et 0 en +0x23, la distance rendue = f / L.
+	// Elle rend 1 si quelque chose a remplacé le contact. Pas de sortie au premier contact, pas de compte des contacts, pas
+	// d'octets rendus (les arguments 10, 14 du test général n'existent pas ici). `C` est le contact (point, normale, o1c, o22,
+	// fraction), `MB` les données du modèle (comme pour TestGeneral).
+	template<class C, class MB, class B, class K>
+	static uint8 TestLancer(const float *debut, const float *fin, float rayon, const float *m, const MB *b, bool mot18, C *contact,
+	                        float *distance, uint32 drapeaux, uint8 a9, bool a10, B &&boite, K &&candidats) {
+		if(!b) return 0;
+		if((((drapeaux >> 9) & 1) != 0) != mot18) return 0;
+		Matrice inv;
+		Inverser(m, inv.m);
+		float d[3];
+		for(int i = 0; i < 3; i++) d[i] = (float)(fin[i] - debut[i]);
+		const float s[4] = {debut[0], debut[1], debut[2], rayon};
+		static const float zero[3] = {0.0f, 0.0f, 0.0f};
+		uint8 touche = 0;
+		if(a9 & 1) {
+			for(int j = 0; j < b->nSpheres; j++) {
+				const SphereCol &sb = b->spheres[j];
+				float cb[4], pt[3];
+				Point(cb, m, sb.centre);
+				cb[3] = sb.rayon;
+				float f = contact->fraction;
+				if(!SpheresBalayees(s, cb, 1.0f, d, zero, &f, pt) || !(f < contact->fraction)) continue;
+				contact->fraction = f;
+				for(int k = 0; k < 3; k++) contact->point[k] = pt[k];
+				contact->o22 = sb.Mot();
+				contact->o1c = (uint32)j;
+				*distance = f;
+				touche = 1;
+				float n[3];
+				for(int k = 0; k < 3; k++) n[k] = (float)((float)((float)((double)d[k] * f) + s[k]) - cb[k]);
+				Normaliser(n);
+				for(int k = 0; k < 3; k++) contact->normale[k] = n[k];
+			}
+		}
+		float sl[4], rb[3];
+		Point(sl, inv.m, debut);
+		sl[3] = rayon;
+		Tourner(rb, inv.m, d);
+		float L = (float)std::sqrt(std::fabs((double)(float)(((double)rb[0] * rb[0] + (double)rb[1] * rb[1]) + (double)rb[2] * rb[2])));
+		uint8 octet = 0;
+		int32 compte = 0;
+		float nB[3] = {0, 0, 0}, pB[3] = {0, 0, 0};
+		if(a9 & 2) {
+			for(int j = 0; j < b->nBoites; j++) {
+				const BoiteCol &bx = b->boites[j];
+				float f = contact->fraction;
+				if(!boite(bx, sl, rb, &f, nB, pB, &octet, &compte) || !(f < L)) continue;
+				float q = (float)((double)f / L);
+				if(!(q < contact->fraction)) continue;
+				float nw[3], pw[3];
+				Tourner(nw, m, nB);
+				Point(pw, m, pB);
+				contact->fraction = q;
+				for(int k = 0; k < 3; k++) { contact->normale[k] = nw[k]; contact->point[k] = pw[k]; }
+				contact->o22 = bx.Mot();
+				*distance = q;
+				touche = 1;
+			}
+		}
+		if(b->nTriangles > 0 && (a9 & 8)) {
+			auto visiter = [&](int k) {
+				float v0[3], v1[3], v2[3], e1[3], e2[3], nt[3];
+				uint8 surface;
+				b->Triangle(k, v0, v1, v2, &surface);
+				for(int q = 0; q < 3; q++) { e1[q] = (float)(v1[q] - v0[q]); e2[q] = (float)(v2[q] - v0[q]); }
+				nt[0] = (float)((double)e2[1] * e1[2] - (double)e2[2] * e1[1]);
+				nt[1] = (float)((double)e2[2] * e1[0] - (double)e1[2] * e2[0]);
+				nt[2] = (float)((double)e1[1] * e2[0] - (double)e2[1] * e1[0]);
+				Normaliser(nt);
+				const float *som[3] = {v0, v1, v2};
+				float f = contact->fraction;
+				if(!SphereTriangle(som, nt, sl, rb, &f, nB, pB, &octet) || !(f < L)) return;
+				float q = (float)((double)f / L);
+				if(!(q < contact->fraction)) return;
+				float nw[3], pw[3];
+				Tourner(nw, m, a10 ? nB : nt);
+				Point(pw, m, pB);
+				contact->fraction = q;
+				for(int z = 0; z < 3; z++) { contact->normale[z] = nw[z]; contact->point[z] = pw[z]; }
+				contact->o22 = surface;
+				*distance = q;
+				touche = 1;
+			};
+			if(b->arbre) candidats(sl, (float)((double)L + rayon), visiter);
+			else for(int k = 0; k < b->nTriangles; k++) visiter(k);
+		}
+		return touche;
+	}
+	// FUN_00569240(segment, sphère, contact, fraction) (cdecl, lue à l'assembleur de 0x569240 à 0x56945c) : une ligne contre une
+	// sphère, la primitive des sphères du test d'une ligne (FUN_0056aee0). d = fin − début, v = centre − début (FUN_00414a20),
+	// a = d · d, b = −(v · d), le discriminant b² − (v · v − r²) a : négatif, 0 (un NaN continue : test ah,5 puis jp). La fraction
+	// t = (v · d − √|disc|) / a (FUN_0085c4d0 sur la valeur absolue), la première des deux rencontres ; t < 0 ou t > 1 : 0 (une
+	// ligne qui part de dedans la sphère ne la touche donc pas) ; la fraction en cours doit être strictement plus grande que t
+	// (fld la fraction, fcompp, test ah,0x41, jne), sinon 0. Touché : le point début + t d (FUN_00412850) en +0 du contact, la
+	// normale (le point − le centre, normalisée par FUN_00414cc0) en +0x10, le mot +0x10 de la sphère en +0x22, les octets +0x20
+	// et +0x21 à zéro, t dans la fraction, et 1. Aucun garde sur a nul (un segment de longueur nulle divise par zéro, comme lu).
+	template<class C>
+	static uint8 LigneSphere(const float *segment, const SphereCol &sp, C *contact, float *fraction) {
+		const float *debut = segment, *fin = segment + 4;
+		float d[3], v[3];
+		for(int i = 0; i < 3; i++) { d[i] = (float)(fin[i] - debut[i]); }
+		const float a = (float)((double)d[0] * d[0] + (double)d[1] * d[1] + (double)d[2] * d[2]);
+		for(int i = 0; i < 3; i++) { v[i] = (float)(sp.centre[i] - debut[i]); }
+		const float b = -(float)((double)v[0] * d[0] + (double)v[1] * d[1] + (double)v[2] * d[2]);
+		const float bb = (float)((double)b * b);
+		const float vv = (float)((double)v[2] * v[2] + ((double)v[0] * v[0] + (double)v[1] * v[1]));
+		const float rr = (float)((double)sp.rayon * sp.rayon);
+		const float c = (float)(vv - rr);
+		const float disc = (float)((double)bb - (double)c * a);
+		if(disc < 0.0f) return 0;
+		const float moinsB = -b;
+		const float racine = (float)std::sqrt(std::fabs((double)disc));
+		const float t = (float)(((double)moinsB - racine) / a);
+		if(t < 0.0f) return 0;
+		if(1.0f < t) return 0;
+		if(!(*fraction > t)) return 0;
+		float n[3];
+		for(int i = 0; i < 3; i++) {
+			const float td = (float)(t * d[i]);
+			contact->point[i] = (float)(debut[i] + td);
+			n[i] = (float)(contact->point[i] - sp.centre[i]);
+		}
+		Normaliser(n);
+		for(int i = 0; i < 3; i++) contact->normale[i] = n[i];
+		contact->o22 = sp.Mot();
+		contact->o20 = 0;
+		*fraction = t;
+		return 1;
+	}
+	// FUN_005648d0(v0, v1, v2, normale, &d, &axe) (cdecl, lue à l'assembleur de 0x5648d0 à 0x5649fb) : le plan d'un triangle. La
+	// normale (v2 − v0) × (v1 − v0) (FUN_00414a20 deux fois, FUN_004145e0), normalisée (FUN_00414cc0) ; d = v0 · normale. Si le
+	// sixième argument n'est pas nul, l'axe dominant de la normale : x quand |nx| dépasse strictement |ny| et |nz| (0, ou 1 quand
+	// nx ≤ 0) ; sinon y quand |ny| dépasse strictement |nz| (2, ou 3 quand ny ≤ 0) ; sinon z (4, ou 5 quand nz ≤ 0).
+	static void PlanDuTriangle(const float *v0, const float *v1, const float *v2, float *n, float *d, uint8 *axe) {
+		float e1[3], e2[3];
+		for(int q = 0; q < 3; q++) { e1[q] = (float)(v1[q] - v0[q]); e2[q] = (float)(v2[q] - v0[q]); }
+		n[0] = (float)((double)e2[1] * e1[2] - (double)e2[2] * e1[1]);
+		n[1] = (float)((double)e2[2] * e1[0] - (double)e1[2] * e2[0]);
+		n[2] = (float)((double)e1[1] * e2[0] - (double)e2[1] * e1[0]);
+		Normaliser(n);
+		*d = (float)(((double)v0[1] * n[1] + (double)v0[0] * n[0]) + (double)v0[2] * n[2]);
+		if(!axe) return;
+		const float ax = std::fabs(n[0]), ay = std::fabs(n[1]), az = std::fabs(n[2]);
+		if(ay < ax && az < ax) *axe = (0.0f < n[0]) ? 0 : 1;
+		else if(az < ay) *axe = (0.0f < n[1]) ? 2 : 3;
+		else *axe = (0.0f < n[2]) ? 4 : 5;
+	}
+	// FUN_00567640(segment, sommets, triangle, contact, fraction) (cdecl, lue à l'assembleur de 0x567640 à 0x567bbb, avec sa table
+	// de cinq sauts en 0x567bbc) : une ligne contre un triangle, la primitive des triangles du test d'une ligne (FUN_0056aee0).
+	// Les trois sommets (entiers de 16 bits fois le double 1/128, comme FUN_0056e530), le plan (FUN_005648d0). Les distances au
+	// plan du début et de la fin (le point · la normale − d) : un produit strictement positif (les deux bouts du même côté), 0. d
+	// = fin − début (FUN_00414a20) ; d · normale nul : 0 (une ligne dans le plan). t = (d − début · normale) / (d · normale), le
+	// point P = début + t d (FUN_00412850). Puis le triangle et P à plat sur les deux axes autres que l'axe dominant ((y, z) pour
+	// x, (z, x) pour y, (x, y) pour z), le deuxième et le troisième sommet échangés quand la normale est négative sur cet axe (les
+	// axes 1, 3 et 5), et trois produits en croix : (pb − p0) × (P − p0) négatif, 0 ; (pa − p0) × (P − p0) strictement positif,
+	// 0 ; (pa − pb) × (P − pb) négatif, 0 (pa le deuxième sommet à plat, pb le troisième ; un point sur une arête passe). La
+	// fraction en cours doit être strictement plus grande que t, sinon 0. Touché : le point début + d × t (FUN_00412200,
+	// FUN_00412850) en +0 du contact, la normale du triangle telle quelle en +0x10 (pas retournée vers le début : une ligne touche
+	// un triangle par ses deux faces), la surface (+6 du triangle) en +0x22, les octets +0x20, +0x21 et +0x23 à zéro, t dans la
+	// fraction, et 1.
+	template<class C>
+	static uint8 LigneTriangle(const float *segment, const int16 *sommets, const TriangleCol &tr, C *contact, float *fraction) {
+		const float *debut = segment, *fin = segment + 4;
+		float v0[3], v1[3], v2[3], n[3] = {0.0f, 0.0f, 0.0f}, dp = 0.0f;
+		uint8 axe = 0;
+		Sommet(v0, sommets, tr.a); Sommet(v1, sommets, tr.b); Sommet(v2, sommets, tr.c);
+		PlanDuTriangle(v0, v1, v2, n, &dp, &axe);
+		const float fn = (float)(((double)fin[0] * n[0] + (double)fin[1] * n[1]) + (double)fin[2] * n[2]);
+		const float distFin = (float)(fn - dp);
+		const float dn0 = (float)(((double)debut[0] * n[0] + (double)debut[1] * n[1]) + (double)debut[2] * n[2]);
+		const float distDeb = (float)(dn0 - dp);
+		if((double)distFin * distDeb > 0.0) return 0;
+		float d[3];
+		for(int i = 0; i < 3; i++) d[i] = (float)(fin[i] - debut[i]);
+		const float dn = (float)(((double)d[0] * n[0] + (double)d[1] * n[1]) + (double)d[2] * n[2]);
+		if(!(dn > 0.0f) && !(dn < 0.0f)) return 0;
+		const float t = (float)(((((double)dp - (double)debut[0] * n[0]) - (double)debut[1] * n[1]) - (double)debut[2] * n[2]) / dn);
+		float P[3];
+		for(int i = 0; i < 3; i++) { const float td = (float)((double)t * d[i]); P[i] = (float)(debut[i] + td); }
+		// À plat : u, w les deux axes gardés ; pa et pb le deuxième et le troisième sommet, échangés sur les axes impairs.
+		const int u = (axe <= 1 || axe > 5) ? 1 : (axe <= 3 ? 2 : 0), w = (axe <= 1 || axe > 5) ? 2 : (axe <= 3 ? 0 : 1);
+		const bool echange = axe == 1 || axe == 3 || axe == 5;
+		const float *sa = echange ? v2 : v1, *sb = echange ? v1 : v2;
+		const double A = v0[u], B = v0[w], E = sa[u], F = sa[w], Cc = sb[u], D = sb[w], G = P[u], H = P[w];
+		const double c1 = (Cc - A) * (H - B) - (D - B) * (G - A);
+		if(c1 < 0.0) return 0;
+		const double c2 = (H - B) * (E - A) - (G - A) * (F - B);
+		if(c2 > 0.0) return 0;
+		const double c3 = (H - D) * (E - Cc) - (G - Cc) * (F - D);
+		if(c3 < 0.0) return 0;
+		if(!(*fraction > t)) return 0;
+		for(int i = 0; i < 3; i++) {
+			const float td = (float)((double)d[i] * t);
+			contact->point[i] = (float)(debut[i] + td);
+			contact->normale[i] = n[i];
+		}
+		contact->o22 = tr.surface;
+		contact->o20 = 0;
+		*fraction = t;
+		return 1;
+	}
+	// FUN_0056aee0(segment, m, modèle, contact, fraction, drapeaux, sans41) (cdecl à sept arguments, lue à l'assembleur de 0x56aee0 à
+	// 0x56b36b) : le test d'une ligne contre le modèle de collision d'une entité, celui que la vue sur une liste (FUN_0045f520,
+	// VueSurListe dans Projectiles.h) appelle par son crochet Tester. Le cadre : ses primitives sont des arguments ; celle des sphères
+	// est LigneSphere, celle des triangles LigneTriangle, les deux autres (la boîte du modèle, une boîte) ne sont pas lues. Des données nulles (+0x38 du modèle) rendent 0 ; le bit 9 des drapeaux doit valoir « le mot +0x18
+	// des données n'est pas nul », sinon 0 (comme FUN_00569f10). L'inverse de la matrice (FUN_00413620), puis les deux points du
+	// segment (au pas de 0x10) posés dans l'espace du modèle (00414c60, qui pose n points par une matrice). Si la fraction donnée
+	// est strictement sous 1 (fld1, fcomp, test ah,0x41, jne), la fin locale est ramenée à début + (fin − début) × fraction. La
+	// boîte du modèle (+0x10 et +0x20 du modèle) contre le segment local (00564d40, `englobe`) : faux, 0. Une fraction locale part
+	// de 1. Sans le bit 9 : chaque sphère (octet +0x1e, pas de 0x14) puis chaque boîte (octet +0x1f, pas de 0x24) dont la surface
+	// (+0x10 de la sphère, +0x20 de la boîte) n'est pas sautée, par FUN_00569240 (`sphere`, LigneSphere) et 00569460 (`boite`), qui reçoivent le
+	// segment local, la forme, le contact et la fraction locale. Les triangles (mot +0x1c non nul) dans tous les cas : ceux que rend
+	// l'arbre +0x14 pour le segment (00561700 puis 00561750, jusqu'à 0xffff ; `candidats`), ou tous dans l'ordre, chacun dont la
+	// surface (+6) n'est pas sautée par FUN_00567640 (`triangle`, LigneTriangle, avec les sommets +0xc). Les surfaces sautées : 0xf, 0x10, 0x19, 0x34,
+	// 0x14 et 0x41 avec le bit 6 des drapeaux ; 0x10, 0x19, 0x34, 0x14 et 0x41 avec le bit 8 ; 0x41 avec le septième argument (ce
+	// que disent ces surfaces n'est pas lu ici). À la fin, une fraction locale strictement sous 1 (fld1, fcomp, test ah,0x41, jne) :
+	// le point du contact (+0) posé par la matrice (FUN_0041a850), sa normale (+0x10) tournée par elle (FUN_00414560), la fraction
+	// donnée multipliée par la locale, et 1 ; sinon 0, rien d'écrit. `segment` : huit flottants, les points en [0] et [4].
+	template<class C, class MB, class E, class S, class X, class T, class K>
+	static uint8 TestLigne(const float *segment, const float *m, const MB *b, bool mot18, C *contact, float *fraction, uint32 drapeaux,
+	                       bool sans41, E &&englobe, S &&sphere, X &&boite, T &&triangle, K &&candidats) {
+		if(!b) return 0;
+		const bool b6 = ((drapeaux >> 6) & 1) != 0, b8 = ((drapeaux >> 8) & 1) != 0, b9 = ((drapeaux >> 9) & 1) != 0;
+		if(b9 != mot18) return 0;
+		Matrice inv;
+		Inverser(m, inv.m);
+		float l[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+		Point(l, inv.m, segment);
+		Point(l + 4, inv.m, segment + 4);
+		if(1.0f > *fraction) {
+			const float f = *fraction;
+			for(int i = 0; i < 3; i++) {
+				const float d = (float)(l[4 + i] - l[i]);
+				const float p = (float)(d * f);
+				l[4 + i] = (float)(l[i] + p);
+			}
+		}
+		if(!englobe(l)) return 0;
+		float locale = 1.0f;
+		auto sautee = [&](uint8 s) {
+			const bool cinq = s == 0x10 || s == 0x19 || s == 0x34 || s == 0x14 || s == 0x41;
+			if(b6 && (s == 0xf || cinq)) return true;
+			if(b8 && cinq) return true;
+			return sans41 && s == 0x41;
+		};
+		if(!b9) {
+			for(int j = 0; j < b->nSpheres; j++)
+				if(!sautee(b->spheres[j].surface)) sphere(l, b->spheres[j], contact, &locale);
+			for(int j = 0; j < b->nBoites; j++)
+				if(!sautee(b->boites[j].surface)) boite(l, b->boites[j], contact, &locale);
+		}
+		if(b->nTriangles != 0) {
+			auto visiter = [&](int k) {
+				if(!sautee(b->triangles[k].surface)) triangle(l, b->sommets, b->triangles[k], contact, &locale);
+			};
+			if(b->arbre) candidats(l, visiter);
+			else for(int k = 0; k < b->nTriangles; k++) visiter(k);
+		}
+		if(!(1.0f > locale)) return 0;
+		float pt[3], n[3];
+		Point(pt, m, contact->point);
+		Tourner(n, m, contact->normale);
+		for(int i = 0; i < 3; i++) { contact->point[i] = pt[i]; contact->normale[i] = n[i]; }
+		*fraction = (float)(*fraction * locale);
+		return 1;
+	}
 	// FUN_00469f70(m1, m2, a, m4, b, contact) (méthode de l'entité qui balaie, ret 0x18, lue à l'assembleur de 0x469f70 à 0x46a333,
 	// 966 octets) : le test fin d'un projectile contre un piéton, que la méthode +0xa4 d'un CProjectile (FUN_0046a340) choisit pour
 	// un piéton qui n'est ni le rat ni un chien ; a est le modèle du projectile qui va de m1 à m2, b le modèle du piéton (le mot

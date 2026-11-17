@@ -137,31 +137,29 @@ chantier. Un point fini passe en bas, avec son commit.
         `FUN_00572680` sur les os de l'animation que joue le piéton (`PoserOs`, `AnimationDuPieton`, `InstantJoue`,
         `AnimationParHache` dans `outils/lancer_lua.cpp` ; la liste `CActionController::animations`, `Animation`, `Masquees`,
         `quittee` dans `src/core/ActionController.h`). Ce qui reste, dans l'ordre :
-        a. **la clé des parents pour les nœuds des arbres de style** : dans 1_04, le joueur sur l'arbre (`TreeClimb/Actions/ON_BOT`),
-           l'entrée de `Ambient/Scripted/Workout/Workout_Child` (piétons 5 à 9) et un nœud de `HitTree/Standing/PostHit/BellyUp`
-           (piéton 10) n'ont aucune piste Animation (ligne « ne joue aucune piste Animation ») : chercher si l'animation y vient
-           d'un Execute non résolu (comme `../../../ExecuteNodes/Free/RunBasic` de `Locomotion/Free/run`, résolu par la clé des
-           parents dans l'arbre de style : `J_Striker_A.cat`, `ExecuteNodes` monte `Walk_Jocks.act`, dont `Free/#6f88d663`
-           = « RunBasic » porte `LocomotionAnimationNew` C_PLAYER\RUN ; `test_actionbank` montre la pile du contexte qui marche
-           pour Fight_Tutorial) ou d'une piste d'un autre type (`AnimationLocoSync`, `AnimationParametric`…, non recueillies) ;
-        b. **les champs de `LocomotionAnimationNew`** (28 à 44 : 0, 0,633, 0,633, 0,3, 0,3 pour RUN) et la cadence de la boucle
+        a. **les champs de `LocomotionAnimationNew`** (28 à 44 : 0, 0,633, 0,633, 0,3, 0,3 pour RUN) et la cadence de la boucle
            par la vitesse du piéton : son lancement `FUN_0060e240` est lu (la copie dans les dix places du +0x54 de
-           [piéton + 0x18], puis le lecteur de locomotion 6bcb70), pas sa mise à jour (emplacement 3 : 00608760) ; l'outil la
-           joue en boucle à la vitesse 1, au fondu du HXD (supposé) ;
-        c. **le fondu et les couches du lecteur** : `FUN_006b6570` est lue jusqu'à la pose des poids (+0xc, +0x10, +0x14 de la
-           place de 20 octets) ; ce qu'ils deviennent ensuite (6bcad0, 6c0be0, le lecteur 0x20c4910 et 6c0d00 que
-           `FUN_0060ae00` appelle) n'est pas lu : l'outil monte le poids linéairement sur le fondu, garde l'animation quittée
-           figée, pose les couches à masque par interpolation sphérique au poids du masque, et choisit le fond par couche puis
-           par entrée. Le lancement de l'AnimationTrack (612360) et son arrêt (60af80) ne sont pas lus ;
-        d. **la stat 0x14 du joueur** : l'outil ne lui copie pas d'entrée de pedstats.dat (il n'est pas créé par `CreerPed`) ;
-           `StatVitesse` compte alors 100, comme `CScriptPedPool::PasDuControleur` ; le jeu la copie de l'entrée de son modèle
-           (`FUN_00478e30`, supposé). La fin des nœuds (`FinAnimation`) ne suit toujours pas la stat 0x14 ;
-        e. **la synchro de la marche** (l'octet 61, +0x3d, de l'AnimationTrack : la vitesse +0x54 au lieu de 48, lue dans
+           [piéton + 0x18], puis le lecteur de locomotion 6bcb70), pas sa mise à jour. Écarté le 17.11 : 00608760 (69 octets)
+           n'est pas la cadence (si [[this+0x30]+0x18] n'est pas nul et que le réel [[this+0x30]+0x14] est positif ou nul, il
+           est écrit en [+0x18]+0x88 puis remis au réel 0x9009ac, supposé −1) ; 6bcb70 (86 octets) appelle 6b9130 puis pose
+           l'objet dans la place [edi + rang × 4 + 0x18] et monte le compte +0x88. La cadence reste à trouver : l'outil joue
+           la boucle à la vitesse 1, au fondu du HXD (supposé) ;
+        b. **la mise à jour des places du lecteur** : le lancement (`FUN_00612360`), l'arrêt (`FUN_0060af80`) et la sortie
+           d'une couche (`FUN_006bd320`) sont lus et recréés (17.11, voir « Fait »). `FUN_006b6570` est relue : un fondu nul
+           pose +0xc = 1 et +0x10 = +0x14 = 0 ; sinon +0x10 = +0x14 = −fondu (un fondu négatif en argument prend celui de
+           l'enregistrement, +0x10) et +0xc = 0. **La fonction qui fait monter ce compteur n'est pas trouvée.** Écartées le
+           17.11, lues sans y trouver la mise à jour des poids ni des places : 6b6900 (le déplacement de la racine), 6bd810
+           (l'évaluation de la pose), 6b4ef0, 6b5090 et 6bb690 (l'interpolation sphérique entre deux clés). Restent à lire :
+           6bcad0, 6c0be0, le lecteur 0x20c4910 et 6c0d00 que `FUN_0060ae00` appelle. L'outil monte le poids linéairement
+           sur le fondu et le descend de même à la sortie (supposé) ;
+        c. **la synchro de la marche** (l'octet 61, +0x3d, de l'AnimationTrack : la vitesse +0x54 au lieu de 48, lue dans
            `FUN_0060ae00`, non suivie) et **l'échelle du bassin** (la position de la piste Root prise à l'échelle du modèle ;
-           `outils/scene.h` l'étire par un bassin de référence) ;
-        f. le groupe d'une animation à plusieurs enregistrements (172 hachés dans MAINPED : `C_PLAYER\BALL_HOLD` est le n° 3 de
-           W_Thrown.agr pour l'outil, le n° 6 de 2_G2CarnivalDate.agr pour `tools/cat.py`) : l'outil prend le premier
-           enregistrement ; le jeu prend celui du groupe chargé (supposé).
+           `outils/scene.h` l'étire par un bassin de référence ; le joueur sur l'arbre de 1_04 est posé au sol sous l'arbre,
+           son bassin à 1,20 m : supposé) ;
+        d. la fin des nœuds (`FinAnimation`) ne suit toujours pas la stat 0x14 ; le joueur a maintenant STAT_PLAYER
+           (`FUN_0049b1b0` → `FUN_00478e30`), dont la stat 0x14 vaut 100 : rien ne change tant qu'elle reste à 100.
+        Faits le 17.11 (voir « Fait ») : le nœud sans piste garde l'animation du nœud quitté, le nœud d'un Spawn anime le
+        même piéton, le premier enregistrement dont le groupe est chargé, les stats du joueur.
         `LANCER_SANS_OS` rend toujours les trois sphères d'avant. Chaque ligne « le piéton N joue … » de lancer_lua dit
         l'animation, son groupe, son instant, la stat 0x14, le fondu, les couches et la hauteur des six sphères ;
      1 bis. **les tests des deux autres parcours** d'une liste de secteur qui refont le modèle d'un piéton
@@ -172,10 +170,11 @@ chantier. Un point fini passe en bas, avec son commit.
         (`LancerSurSecteurs`) le lance sur les secteurs du carré de cette sphère et les listes choisies par ses drapeaux,
         `FUN_00563aa0` (`LancerSurListe`) sur une liste, avec le test des sphères `FUN_00465a50` (`SphereTouche`, centré au
         début, de rayon la longueur du trajet plus le rayon). Dans l'ordre :
-        a. **le test `00569f10`** (3 175 octets, non lu ; cdecl à dix arguments : le début, la fin, le rayon, la matrice de
-           l'entité, le modèle, un contact local, une distance locale, les drapeaux, 0xf et 1 ; supposé : une capsule contre
-           le modèle de collision, puisque ses trois premiers arguments sont un trajet de sphère) : le dernier morceau du
-           lancer. Il sert aussi le modèle d'un piéton (les six sphères, quand +0x42 est levé) ;
+        a. **le test du lancer est lu** (17.11) : `FUN_00569f10` (`CCollisionBalayee::TestLancer`, `src/collision/Balayes.h`)
+           n'est pas une capsule mais le test général réduit à une sphère sans modèle : les sphères par `FUN_00576a00`, les
+           boîtes par 00576660 (argument), les triangles par `FUN_00575510`, la fraction du contact en entrant comme borne, le
+           bit 9 des drapeaux contre le mot +0x18 des données (**ce que dit ce mot n'est pas lu**). Reste à le brancher : il
+           lui faut un appelant (point b) ;
         b. **qui lance** : les cinq appelants de `FUN_00562f10` et de `FUN_00563f30` (les mêmes : 004fe060, 978 octets ;
            00504350, 1 077 ; 00505600, 1 796 ; 00507b10, 624 ; 00680f50, 1 639) ne sont pas lus en entier. Seul l'appel de
            00507b10 est lu (de 0x507b10 à 0x507c6d) : rayon 0,3 (0x911e30), drapeaux 0x8b (les listes +0, +8, +4 d'un secteur,
@@ -184,14 +183,25 @@ chantier. Un point fini passe en bas, avec son commit.
            un point tiré du contact (00414a20, 00412850, non suivi) ; puis la chaîne « ConversationPath » (0x9146b0) cherchée
            par 005ed1b0 sur le mot 0xd13cb4. Lire la suite de 00507b10 dirait à quoi sert ce chemin ;
         c. **la ligne** : `FUN_0045f520` (`VueSurListe`, avec le filtre d'entrée `FUN_0041c3f0`, `Entre`) appelle le test
-           `0056aee0` (1 165 octets, non lu, cdecl à sept arguments ; c'est aussi une des appelantes du mode 2 de l'arbre,
-           point 3) ; sa seule appelante, `FUN_00460f60` (`VueSurSecteur`), est recréée : la ligne sur les cinq listes d'un
+           `FUN_0056aee0`, **lu le 17.11** (`CCollisionBalayee::TestLigne` : le segment posé dans l'espace du modèle, coupé à
+           la fraction donnée, la boîte du modèle, puis les sphères, les boîtes et les triangles, avec trois filtres de
+           surface : le bit 6 des drapeaux saute 0xf, 0x10, 0x19, 0x34, 0x14 et 0x41, le bit 8 les mêmes sauf 0xf, le septième
+           argument 0x41 ; **ce que désignent ces surfaces n'est pas lu**, à chercher dans surface.dat). Deux de ses primitives
+           sont recréées : `FUN_00569240` (`LigneSphere`) et `FUN_00567640` (`LigneTriangle`, avec le plan `FUN_005648d0`,
+           `PlanDuTriangle` : une ligne touche un triangle par ses deux faces). **Restent en arguments, non lues** : 00564d40
+           (2 605 octets : le segment contre la boîte du modèle, c'est aussi le mode 2 de l'arbre, point 3), 00569460 (2 050
+           octets : une ligne contre une boîte) et le parcours de l'arbre pour un segment (00561700, 78 octets, lue : elle pose
+           le segment en 0xcf2194, le mode 2 en 0xcf217c, puis 00561080 et `FUN_005615a0` ; il lui manque le mode 2 de la
+           descente 00561080). 00414c60 (90 octets, lue, pas recréée à part : n points posés par une matrice). L'appelante de
+           `FUN_0045f520`, `FUN_00460f60` (`VueSurSecteur`), est recréée : la ligne sur les cinq listes d'un
            secteur, par les bits 1 (+0), 2 (+8), 4 (+0xc, **la liste des piétons**, la seule qui reçoive les six sphères et les
            octets 0xc1ae74 et 0xc1ae75), 8 (+4) et 0x10 (+0x10) des drapeaux ; la seule appelante de celle-ci est `00461d50`
            (2 444 octets, 34 appelants, non lue : elle dirait ce qu'est cette ligne, supposé la ligne de vue) ; les globales de
            `FUN_0045f520` (les octets 0xc1ae74, 0xc1ae75, 0xc1ae6c et 0xc1ae82, le mot 0xc1ae70, la table 0xc1aa64 et son
            compte 0xc1ae68, le code 0xc1ae88) n'ont pas d'écrivain connu, sauf le mot 0xc1ae70 (mis à zéro par 00507b10) et le
-           code 0xc1ae88 (monté par `FUN_00563f30` et par le déplacement) : chercher qui écrit les autres.
+           code 0xc1ae88 (monté par `FUN_00563f30` et par le déplacement) : chercher qui écrit les autres. **Le plus court
+           chemin vers quelque chose qui se voit dans une mission** : lire 00564d40 et le mode 2 de la descente, puis donner
+           à l'outil une ligne de vue sur le monde (les triangles de la zone par `LigneTriangle`) ;
         Rien de cela ne change une mission tant que l'outil n'a ni lancer ni ligne de vue ;
      2. **le monde par placements** : le binaire balaie les bâtiments des secteurs, chacun son modèle posé par sa matrice et
         parcouru par son arbre (`CArbreCollision`, mode 1) ; l'outil a fondu la zone en un seul modèle et sa grille (`CVueMonde`,
@@ -366,6 +376,17 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- La suite de la pose des os et les tests du lancer et de la ligne (17.11 ; ab28724, 55edeea, 06d445d, 422c189, 2bb2df5, 3e14b3a, 53e2172, a1d0608, c2e9570, be9ac7a, b726155) :
+  l'arrêt d'une piste Animation (`FUN_0060af80` : la couche 0 reste, un nœud sans piste garde l'animation du nœud quitté) ; son
+  lancement (`FUN_00612360` : sept couches par rang, le masque seulement au-dessus de la couche 0) ; le nœud lancé par une piste
+  Spawn anime le même piéton (le joueur sur l'arbre de `1_04` joue TREE\TREE_IDLE_B à 73,59 s) ; la sortie d'une couche
+  (`FUN_006bd320` : le champ 56, à défaut le fondu de son masque ; dans MAINPED.HXD 43 masques à 0,3 s, « Conv » et
+  « FlashLightAimHoriz » à 1 s, « FlashLightAimVert » à 0) ; l'animation d'un haché à plusieurs enregistrements (`FUN_006b1c00`,
+  `FUN_00607610` : le premier dont le groupe est chargé) ; le joueur reçoit STAT_PLAYER (`FUN_0049b1b0` → `FUN_00478e30` : 200
+  points de vie, la réserve de sprint à 60) ; puis, sans appelant dans l'outil et vus dans `test_marche` seulement : le test du
+  lancer `FUN_00569f10` (`TestLancer`), le cadre du test d'une ligne `FUN_0056aee0` (`TestLigne`), une ligne contre une sphère
+  `FUN_00569240` (`LigneSphere`), le plan d'un triangle `FUN_005648d0` et une ligne contre un triangle `FUN_00567640`
+  (`LigneTriangle`). Les sept missions gardent leurs temps.
 - La pose des os d'un piéton par son animation (16.11 ; a8047c3, 2279610, 8fe74e5, a63e1cc, b4b9baf, 2a276f8, 7a41f3c, a1c5244, 3ce9197, 0abb278) : l'outil lit l'animation que joue un piéton
   (les pistes Animation, HitAnimation et LocomotionAnimationNew que `CActionController::Pistes` recueille du nœud joué et des
   nœuds de ses Execute, `FUN_005f3e20` ; le temps de `FUN_0060ae00`, la vitesse fois la stat 0x14 sur 100 ; le .agr par

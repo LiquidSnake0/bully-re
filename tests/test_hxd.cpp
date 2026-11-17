@@ -110,6 +110,19 @@ main(void)
 			hautJuste = (k >= 10 && k <= 14) ? mainped.poidsMasques[haut][k] > 0.0f && mainped.poidsMasques[haut][k] < 1.0f : mainped.poidsMasques[haut][k] == 0.0f;
 		}
 		VERIF(brasJuste && visageJuste && defautJuste && hautJuste);
+		// Le fondu de sortie des masques (le flottant après le compte des poids) : 0,3 s, sauf Conv et FlashLightAimHoriz à 1 s et FlashLightAimVert à 0 ;
+		// FonduDeSortie (FUN_006bd320) : rien pour le rang 0, le champ 56 de la piste, à -1 le fondu du masque de la couche
+		// (le premier du fichier sans nom), et rien sous 0,001 s.
+		int trois = 0, un = 0;
+		std::string nul;
+		for(size_t k = 0; k < mainped.fonduMasques.size(); k++){ float x = mainped.fonduMasques[k]; if(x > 0.299f && x < 0.301f) trois++; else if(x == 1.0f) un++; else if(x == 0.0f) nul += (nul.empty() ? "" : ", ") + (k < mainped.masques.size() ? mainped.masques[k] : std::string("?")); }
+		int32 conv = mainped.Masque("Conv"), lampe = mainped.Masque("FlashLightAimHoriz");
+		VERIF(mainped.fonduMasques.size() == 46 && trois == 43 && un == 2 && !nul.empty() && nul.find(',') == std::string::npos && conv >= 0 && lampe >= 0 && mainped.fonduMasques[conv] == 1.0f && mainped.fonduMasques[lampe] == 1.0f);
+		VERIF(mainped.FonduDeSortie(0, "Facial", 0.5f) == 0.0f && mainped.FonduDeSortie(3, "Facial", 0.5f) == 0.5f
+		      && mainped.FonduDeSortie(3, "FACIAL", -1.0f) == mainped.fonduMasques[visage] && mainped.FonduDeSortie(2, "Conv", -1.0f) == 1.0f
+		      && mainped.FonduDeSortie(1, "", -1.0f) == mainped.fonduMasques[0] && mainped.FonduDeSortie(1, "", 0.0f) == 0.0f
+		      && mainped.FonduDeSortie(1, "", 0.0005f) == 0.0f);
+		printf("fondu de sortie des masques : 0,3 s pour %d, 1 s pour %d (Conv, FlashLightAimHoriz), nul pour « %s »\n", trois, un, nul.c_str());
 		printf("masques : RightArm sur les os 27 à 34, Facial (« FACIAL ») sur 15 à 18, UBO_Hd_Sp en partie sur 10 à 14, default partout\n");
 	}
 	// FUN_0068e380 : un os par son nom haché ; les deux que le binaire cherche (« Jaw », « Eyes ») et ceux des six sphères de Jimmy.
@@ -124,6 +137,17 @@ main(void)
 	VERIF(k && fabsf(k->duree - 4.433f) < 0.01f && k->taille == 5044 + 4);
 	int32 gk = -1;
 	VERIF(mainped.Indice(ActionHash("NPC_LOVE\\KISS_HARD_B"), &gk) == 8 && gk >= 0 && mainped.groupes[gk].nom == "NPC_Love");
+	// Un haché à plusieurs enregistrements : le jeu prend le premier dont le groupe est chargé (FUN_006b1c00) ; C_PLAYER\BALL_HOLD
+	// est le n° 3 de W_Thrown.agr ou le n° 6 de 2_G2CarnivalDate.agr selon le groupe chargé, et rien sans groupe chargé.
+	{
+		uint32 h = ActionHash("C_PLAYER\\BALL_HOLD");
+		auto par = [&](const char *g){ return mainped.ChercherCharge(h, [&](const CHxdAnim &a){ return a.groupe < mainped.groupes.size() && mainped.groupes[a.groupe].nom == g; }); };
+		const CHxdAnim *lance = par("W_Thrown"), *foire = par("2_G2CarnivalDate"), *rien = par("pas_un_groupe");
+		const CHxdAnim *tous = mainped.ChercherCharge(h, [](const CHxdAnim &){ return true; });
+		VERIF(lance && foire && lance != foire && rien == nil && mainped.IndiceDe(lance) == 3 && mainped.IndiceDe(foire) == 6);
+		VERIF(tous == mainped.Chercher(h) && mainped.IndiceDe(tous) == mainped.Indice(h));
+		printf("C_PLAYER\\BALL_HOLD : le n° %d de W_Thrown.agr ou le n° %d de 2_G2CarnivalDate.agr selon le groupe chargé\n", mainped.IndiceDe(lance), mainped.IndiceDe(foire));
+	}
 	// Les groupes : Grap y compte 182 104 octets, le fichier 181 868, soit 4 de plus par animation (59).
 	bool grap = false;
 	for(const CHxdGroupe &g : mainped.groupes) if(g.nom == "Grap") grap = g.taille == 181868 + 4 * 59;

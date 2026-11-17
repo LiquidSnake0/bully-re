@@ -266,7 +266,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 		}else if(p.type == kAnimation || p.type == kAnimationCoup){
 			const CActionAttribut *am = p.Champ(28);   // le masque d'os : un nom cité (FUN_00607340)
 			animations.push_back({a, Reel(p, 16, -1.0f), p.Mot(24), am ? f->ChaineCitee(am->decalage) : std::string(), (int32)p.Mot(32), (int32)p.Mot(36),
-			                      Reel(p, 40, 0.0f), Reel(p, 44, -1.0f), Reel(p, 48, 1.0f), Reel(p, 52, -1.0f)});
+			                      Reel(p, 40, 0.0f), Reel(p, 44, -1.0f), Reel(p, 48, 1.0f), Reel(p, 52, -1.0f), Reel(p, 56, -1.0f)});
 		}else if(p.type == kAnimationLoco){
 			// LocomotionAnimationNew (table 0x930edc ; lancement FUN_0060e240, lu à l'assembleur de 0x60e240 à 0x60e33d) : la
 			// piste est copiée (0x34 octets, par les deux constructeurs 61a720 et 66bd40) dans la première des dix places libres du
@@ -274,7 +274,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			// +0x114 du piéton) : la boucle de marche ou de course, que la vitesse du piéton cadence (non lu). Supposé : une
 			// boucle (mode 2) à la vitesse 1, sans masque, en couche 0, au fondu de l'enregistrement HXD ; ses positions 28 à
 			// 44 (0, 0,633, 0,633, 0,3, 0,3 pour C_PLAYER\RUN dans Walk_Jocks.cat) ne sont pas lues.
-			animations.push_back({a, Reel(p, 16, -1.0f), p.Mot(24), std::string(), 2, 0, 0.0f, -1.0f, 1.0f, -1.0f});
+			animations.push_back({a, Reel(p, 16, -1.0f), p.Mot(24), std::string(), 2, 0, 0.0f, -1.0f, 1.0f, -1.0f, -1.0f});
 		}else if(p.type == kExecute){
 			const CActionAttribut *at = p.Champ(32);
 			if(at == nil) continue;
@@ -286,11 +286,19 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 }
 
 // Un nœud qu'une piste spawn fait jouer à côté (lancement FUN_005f8860) : l'outil n'en garde que les pistes FaceTarget et
-// SeekEntityPosition, qui vivent avec la piste spawn ; ce nœud n'a pas d'autre effet sur le nœud joué.
+// SeekEntityPosition, qui vivent avec la piste spawn, et ses pistes Animation et HitAnimation. Le lancement, relu de 0x5f8860 à
+// 0x5f88e4 : le contexte de la piste (+0x2c) est d'abord **une copie de celui du nœud qui la porte** (5f8770, lue de
+// 5f8770 à 0x5f8854 : les mots +0 à +0x54 un à un, dont le piéton +0x8 et l'objet +0xc, chacun inscrit par 465680 et l'ancien
+// désinscrit par 465690), puis il reçoit le contrôleur de la piste (+0x84) et le nœud visé pour racine. Une AnimationTrack du
+// nœud lancé prend donc le squelette du même piéton (sa méthode +0x14 lit le piéton du contexte) et se range dans les mêmes
+// sept couches que celles du nœud joué (FUN_00612360) : ON_BOT de pxTree.cat n'a pas de piste Animation, sa Spawn
+// « ../Tree_Action/IdleB » lance TREE\TREE_IDLE_B en couche 0. Supposé : la piste est lancée à l'image du lancement de la
+// Spawn (son entrée, au plus tôt celle de la Spawn) ; la vie de la Spawn (16) n'arrête pas ici ses couches 1 à 6.
 void
 CActionController::PistesLancees(const CActionBank &b, const CActionNode &n, float entree, int prof, const CJugeAction *juge)
 {
-	static const uint32 kRegard = ActionHash("FaceTarget"), kPoursuite = ActionHash("SeekEntityPosition");
+	static const uint32 kRegard = ActionHash("FaceTarget"), kPoursuite = ActionHash("SeekEntityPosition"),
+	                    kAnimation = ActionHash("Animation"), kAnimationCoup = ActionHash("HitAnimation");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	for(int32 dp : n.pistes){
@@ -300,6 +308,11 @@ CActionController::PistesLancees(const CActionBank &b, const CActionNode &n, flo
 		if(a < entree) a = entree;
 		if(p.type == kRegard) regards.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(32), Reel(p, 40, 0.0f)});
 		else if(p.type == kPoursuite) poursuites.push_back({a, Reel(p, 16, -1.0f), (int32)p.Mot(28), Reel(p, 40, 0.0f)});
+		else if(p.type == kAnimation || p.type == kAnimationCoup){
+			const CActionAttribut *am = p.Champ(28);
+			animations.push_back({a, Reel(p, 16, -1.0f), p.Mot(24), am ? f->ChaineCitee(am->decalage) : std::string(), (int32)p.Mot(32), (int32)p.Mot(36),
+			                      Reel(p, 40, 0.0f), Reel(p, 44, -1.0f), Reel(p, 48, 1.0f), Reel(p, 52, -1.0f), Reel(p, 56, -1.0f)});
+		}
 	}
 }
 
@@ -340,6 +353,18 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	{
 		const PisteAnimation *m = joue ? Animation(t - debut) : nil;
 		if(m){ quittee.p = *m; quittee.tNoeud = t - debut; quittee.quitte = t; quittee.ok = true; }
+		// Les couches 1 à 6 : l'arrêt de leur piste (FUN_0060af80) les met en sortie ; celles qui sortaient déjà gardent
+		// l'instant de leur arrêt.
+		std::vector<Sortante> s;
+		for(int32 r = 1; joue && r <= 6; r++){
+			const PisteAnimation *arretee = nil;
+			const PisteAnimation *c = CoucheDuRang(r, t - debut, &arretee);
+			if(c == nil){
+				for(const Sortante &q : couchesQuittees) if(Rang(q.p) == r) s.push_back(q);
+			}else if(arretee) s.push_back({*c, arretee->entree + arretee->vie, debut + arretee->entree + arretee->vie, arretee->sortie});
+			else s.push_back({*c, t - debut, t, c->sortie});
+		}
+		if(joue) couchesQuittees = s;
 	}
 	animations.clear();
 	ArreterCollisions();

@@ -1871,3 +1871,41 @@ la pose de l'animation que le piéton joue, au moment où un projectile le teste
   180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout**.
 - **Bilan** : 1 332 fonctions recréées (6,4 % des fonctions, 8,6 % du code), contre 1 329 ; 2 261 comprises (13,2 % du
   code), contre 2 260. Dix commits de moteur et celui-ci.
+
+## 17.11.2026, séance 1 (de 19 h 37 à 21 h 08)
+
+Le chantier : ce qui restait de la pose des os par l'animation (point 1 de `docs/suite.md`), puis les tests du lancer et de la
+ligne (point 1 bis). Dix commits de moteur, un commit de réparation de deux essais, et celui-ci.
+
+- **L'arrêt d'une piste Animation** (ab28724, `FUN_0060af80`) : la couche 0 reste ; dans `1_04`, les sept lignes « ne joue
+  aucune piste Animation » deviennent « le piéton N garde … ».
+- **Son lancement** (55edeea, `FUN_00612360`) : sept couches par rang, le masque seulement au-dessus de la couche 0 ; vu dans
+  `test_actionbank`.
+- **Le nœud lancé par une piste Spawn anime le même piéton** (06d445d) : à 73,59 s de `1_04`, le joueur en bas de l'arbre
+  joue TREE\TREE_IDLE_B, le bassin à 1,20 m au lieu de 0,86 m.
+- **La sortie d'une couche** (422c189, `FUN_006bd320`) : le champ 56, à défaut le fondu du masque ; dans `1_04`, la couche
+  C_PLAYER\BALL_HOLD de cinq piétons touchés sort sur 0,23 s (de 76,76 s à 77,91 s).
+- **Le haché à plusieurs enregistrements** (2bb2df5, `FUN_006b1c00`, `FUN_00607610`) : le premier dont le groupe est chargé ;
+  24 lignes de `1_04` disent le choix (F_JOCKS\JOCK_JJ_LOOP, n° 2 de Hang_Workout.agr).
+- **Les stats du joueur** (3e14b3a, `FUN_0049b1b0` → `FUN_00478e30`) : STAT_PLAYER, 200 points de vie, réserve de sprint 60 ;
+  1 011 lignes changent dans `1_03` (le joueur immobile prend la feuille #09da16c0 de IDLE et ses AmbientSpawn au lieu de
+  #5ab79a15), `PedSetHealth(0, 150)` n'est plus appelé à 22,31 s de `1_02` ; aucun temps ne change.
+- **Le test du lancer** (53e2172, `FUN_00569f10`, `TestLancer`) : pas une capsule, le test général réduit à une sphère.
+- **Le cadre du test d'une ligne** (c2e9570, `FUN_0056aee0`, `TestLigne`), **une ligne contre une sphère** (be9ac7a,
+  `FUN_00569240`) et **contre un triangle** (b726155, `FUN_00567640`, avec le plan `FUN_005648d0`). Sans appelant dans l'outil :
+  cela se voit dans `test_marche` seulement.
+- **Mes erreurs de la séance**, corrigées en cours de route : (1) le commit 06d445d comptait une fonction de trop (une
+  adresse de début de fonction non recréée dans un commentaire de `src`), retirée à 422c189 ; (2) `test_hxd` échouait de
+  422c189 à 53e2172 et `test_marche` à 53e2172, alors que les messages de ces quatre commits disent « 0 en erreur » : je ne
+  lisais que la dernière ligne des suites. Le compte de 44 masques à 0,3 s écrit dans le message de 422c189 était inventé
+  (43 en vrai, « FlashLightAimVert » à 0). Réparé à a1d0608, qui le dit ; depuis, chaque ligne « KO » est lue ; (3) une
+  adresse d'appelante écrite de mémoire dans un commentaire, fausse, remplacée par celle de l'index avant le commit c2e9570.
+- **Ce qui reste** : voir `docs/suite.md`, points 1 (la cadence de la locomotion, la mise à jour des places du lecteur, avec
+  les fonctions écartées) et 1 bis (les appelants du lancer ; pour la ligne, 00564d40, 00569460 et le mode 2 de l'arbre).
+- **Les comptes des README** : chaque commit est parti d'un arbre qui ne contenait que lui ; le seul écart est celui de
+  06d445d, dit plus haut.
+- **REA amont** : pas demandé.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux billes 147,97 s), `1_04` à 82,53 s, `1_05` à
+  180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit vérifié, **inchangées de bout en bout** (le
+  commit a1d0608, qui ne touche que deux essais et un commentaire, n'a pas rejoué les missions).
+- **Bilan** : 1 342 fonctions recréées (8,8 % du code), contre 1 332 ; 2 271 comprises, contre 2 261.

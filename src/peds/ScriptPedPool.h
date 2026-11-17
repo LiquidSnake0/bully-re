@@ -527,8 +527,8 @@ public:
 	bool PoserStats(int handle, const int32 colonnes[64]);
 	// GameGetPedStat (FUN_00476f10) : la colonne n ; le cas des modèles uniques de la colonne 6 n'est pas suivi.
 	int32 Stat(int handle, int n) const;
-	// La colonne n d'un piéton qui a reçu son entrée de pedstats.dat, `sansEntree` sinon (dans l'outil, le joueur, qui ne reçoit pas
-	// encore STAT_PLAYER de son modèle 0 ; 0 pour une poignée invalide).
+	// La colonne n d'un piéton qui a reçu son entrée de pedstats.dat, `sansEntree` sinon (dans l'outil, quand pedstats.dat
+	// manque ; le joueur reçoit STAT_PLAYER de son modèle 0 ; 0 pour une poignée invalide).
 	int32 StatLue(int handle, int n, int32 sansEntree) const;
 	// L'objet arme du piéton (+0x1d0, un CWeapon de 0x2d0 octets ; lu dans l'index le 06.11.2026). Son constructeur (FUN_004da610 :
 	// la charge +0x128 à 0, les huit drapeaux +0x26c à 0 par FUN_004e8c20, +0x120 et +0x124 à -1, +0x140 et +0x264 à 0) donne les
@@ -554,8 +554,8 @@ public:
 		float b = (float)((double)vitesseAnimation / 100.0);
 		return a * b;
 	}
-	// Le même pour un piéton du pool : sa colonne V. Un piéton sans entrée de pedstats.dat (dans l'outil, le joueur, qui ne reçoit pas
-	// encore STAT_PLAYER de son modèle 0) prend 100, la valeur de toutes les entrées, STAT_PLAYER compris.
+	// Le même pour un piéton du pool : sa colonne V. Un piéton sans entrée de pedstats.dat (dans l'outil, quand le fichier
+	// manque) prend 100, la valeur de toutes les entrées, STAT_PLAYER compris.
 	float PasDuControleur(int handle, float pasTimer) const;
 	// GameSetPedStat (FUN_00476fa0) : la colonne n ; 4 (santé maximale) ramène la santé sous le nouveau maximum,
 	// 5 pose la régénération. Les autres cas (2, 3, 0x10, 0x16, 0x17 : vision, vitesse) ne sont pas suivis.

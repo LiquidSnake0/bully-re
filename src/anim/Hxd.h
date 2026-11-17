@@ -48,11 +48,33 @@ public:
 	// moitié (0,5 : « UBO_Hd_Sp » sur la colonne). Le masque d'une piste Animation est son champ 28, un nom (« RightArm »,
 	// « UpperBody_ALL ») que FUN_00607340 cherche (docs/cat.md).
 	std::vector<std::vector<float>> poidsMasques;
+	// Le flottant qui suit le compte des poids dans le fichier : le +0x28 du masque en mémoire, le fondu de sortie d'une couche
+	// qui porte ce masque quand sa piste n'en donne pas (FUN_006bd320). 0,3 s pour 43 des 46 masques de MAINPED.HXD, 0 pour « FlashLightAimVert », 1 s pour
+	// « Conv » et « FlashLightAimHoriz ».
+	std::vector<float> fonduMasques;
+	// Le fondu de sortie d'une couche à l'arrêt de sa piste, comme FUN_006bd320 le choisit (lue de 0x6bd320 à 0x6bd463) : nul
+	// pour le rang 0 ; sinon le champ 56 de la piste, ou, s'il vaut -1 (0x9009ac) et que la place porte un masque (+0x8), le
+	// flottant +0x28 de ce masque ; un fondu de moins de 0,001 en valeur absolue (0x900c04) retire la place aussitôt (rendu
+	// 0 ici), sinon il est écrit en +0x10 et +0x14 de la place, qui reste le temps de sortir.
+	float FonduDeSortie(int32 rang, const std::string &masque, float champ56) const {
+		if(rang <= 0) return 0.0f;
+		float f = champ56;
+		int32 r = MasqueDeCouche(masque);
+		if(f == -1.0f && r >= 0 && r < (int32)fonduMasques.size()) f = fonduMasques[r];
+		return (f < 0.0f ? -f : f) < 0.001f ? 0.0f : f;
+	}
 	// FUN_00607340(nom, rang) (méthode du HXD en mémoire, ret 8, lue à l'assembleur de 0x607340 à 0x607390, 83 octets) : les
 	// masques sont comptés en +0xc et rangés en +0x8, 0x2c octets chacun, le nom en tête ; chacun est comparé au nom cherché par
 	// la fonction du CRT 85f5af (supposé : _stricmp, sans la casse ; elle lit d'abord la locale 0x20e6558) ; le premier égal
 	// l'emporte, son rang est écrit dans `rang` s'il est donné, son entrée est rendue ; nil sinon.
 	// Ici : le rang du masque de ce nom, sans tenir compte de la casse (les arbres écrivent « FACIAL », le HXD « Facial »), ou -1.
+	// Le masque d'une piste lancée sur une couche 1 à 6 (FUN_00612360, de 0x6123d0 à 0x6123f8) : celui de son nom, à défaut
+	// ou sans nom le premier du fichier (FUN_00607320 rend le masque d'un rang, 0 hors du compte +0xc ; elle est appelée
+	// avec le rang 0 : « default » dans MAINPED.HXD, tous les os au poids 1). -1 pour un fichier sans masque.
+	int32 MasqueDeCouche(const std::string &nom) const {
+		int32 r = nom.empty() ? -1 : Masque(nom.c_str());
+		return r >= 0 ? r : masques.empty() ? -1 : 0;
+	}
 	int32 Masque(const char *nom) const {
 		for(size_t i = 0; i < masques.size(); i++) if(strcasecmp(masques[i].c_str(), nom) == 0) return (int32)i;
 		return -1;
@@ -89,6 +111,23 @@ public:
 			if(groupeTrouve) *groupeTrouve = (int32)anims[i].groupe;
 			return k;
 		}
+		return -1;
+	}
+	// L'animation d'un haché comme le jeu la cherche (FUN_006b1c00, lue de 0x6b1c00 à 0x6b1c60, sur la table des
+	// enregistrements +0x10 du fichier, que FUN_00607610 appelle pour une piste Animation) : **le premier enregistrement de
+	// ce haché dont le premier mot (+0x0) n'est pas nul**, dans l'ordre du fichier ; ce mot est l'animation décodée que le
+	// rattachement de son groupe y écrit (FUN_006bf0e0, à 0x6bf2f9 : le retour de 6be480) : entre plusieurs
+	// enregistrements du même haché (172 hachés de MAINPED.HXD), c'est celui d'un groupe chargé qui est pris, et sans
+	// aucun chargé la recherche rend 0 (la piste ne lance rien). `charge` dit si le groupe d'un enregistrement est chargé.
+	// (Un haché nul avec un nom : le haché du nom, 576d80 ; non refait ici.)
+	template<class F> const CHxdAnim *ChercherCharge(uint32 hachage, F charge) const {
+		for(const CHxdAnim &a : anims) if(a.hachage == hachage && charge(a)) return &a;
+		return nil;
+	}
+	// Le rang d'un enregistrement dans le .agr de son groupe (le rattachement, comme Indice).
+	int32 IndiceDe(const CHxdAnim *e) const {
+		int32 k = 0;
+		for(const CHxdAnim &a : anims){ if(&a == e) return k; k += a.groupe == e->groupe; }
 		return -1;
 	}
 };
