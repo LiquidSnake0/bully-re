@@ -607,6 +607,117 @@ struct CCollisionBalayee {
 		}
 		return touche;
 	}
+	// FUN_00569f10(début, fin, rayon, m, modèle, contact, distance, drapeaux, a9, a10) (cdecl, dix arguments, lue à l'assembleur de
+	// 0x569f10 à 0x56ab77, 3 175 octets) : le test d'un lancer (une sphère de ce rayon qui va du début à la fin) contre le modèle
+	// de collision d'une entité posé par la matrice m ; FUN_00563aa0 (LancerSurListe, Projectiles.h) le donne avec un
+	// contact neuf, a9 = 0xf et a10 = 1. C'est le test général réduit à une sphère sans modèle : les mêmes appuis, dans le même
+	// ordre. Des données nulles (+0x38 du modèle) : 0. Le bit 9 (0x200) des drapeaux doit valoir « le mot +0x18 des données n'est
+	// pas nul » (`mot18` ; ce que dit ce mot n'est pas lu), sinon 0. Puis : l'inverse de m (FUN_00413620), d = fin − début
+	// (FUN_00414a20), et la fraction du contact n'est pas remise à FLT_MAX : celle qu'il porte en entrant borne le test.
+	//  - bit 1 de a9 : chaque sphère du modèle posée par m (FUN_0045d3b0), FUN_00576a00 avec t = 1 et le déplacement nul 0xbcc564 ;
+	//    une fraction f strictement plus petite que celle du contact (fld f, fld +0x24, fcomp st(1), test ah,0x41, jne) la
+	//    remplace : le point, le mot +0x10 de la sphère en +0x22, son rang en +0x1c, la distance rendue (*a7) = f, la normale
+	//    (début + f d) − la sphère, normalisée (FUN_00412850, FUN_00414cc0) ; le +0x20 du contact n'est pas écrit ;
+	//  - le début posé dans l'espace du modèle par l'inverse (FUN_0045d3b0), d tourné par l'inverse (FUN_00414560), de longueur L
+	//    (FUN_0085c4d0 sur |(x² + y²) + z²|, arrondie) ;
+	//  - bit 2 : chaque boîte par la fonction `boite` (00576660) ; une distance f < L, et f / L strictement plus petite que la
+	//    fraction du contact : la normale tournée par m, le point posé par m, la fraction f / L, le mot +0x20 de la boîte en
+	//    +0x22, la distance rendue = f / L ; +0x1c et +0x20 du contact ne sont pas écrits ; pas de cas « la sphère est dans la
+	//    boîte » (l'argument 11 du test général) ;
+	//  - bit 8, s'il y a des triangles (+0x1c) : chacun (tous dans l'ordre, ou ceux que rend l'arbre +0x14 pour le centre et la
+	//    portée L + rayon : 005616a0 avec un dernier argument nul, puis 00561750, 0xffff à la fin) : ses sommets (FUN_0056e530),
+	//    sa normale (v2 − v0) × (v1 − v0) normalisée (FUN_004145e0), FUN_00575510 ; f < L et f / L strictement plus petite que la
+	//    fraction du contact : la normale (avec a10, celle que rend FUN_00575510, sinon celle du triangle) tournée par m, le point
+	//    posé par m, la fraction, la surface du triangle (+6) en +0x22 et 0 en +0x23, la distance rendue = f / L.
+	// Elle rend 1 si quelque chose a remplacé le contact. Pas de sortie au premier contact, pas de compte des contacts, pas
+	// d'octets rendus (les arguments 10, 14 du test général n'existent pas ici). `C` est le contact (point, normale, o1c, o22,
+	// fraction), `MB` les données du modèle (comme pour TestGeneral).
+	template<class C, class MB, class B, class K>
+	static uint8 TestLancer(const float *debut, const float *fin, float rayon, const float *m, const MB *b, bool mot18, C *contact,
+	                        float *distance, uint32 drapeaux, uint8 a9, bool a10, B &&boite, K &&candidats) {
+		if(!b) return 0;
+		if((((drapeaux >> 9) & 1) != 0) != mot18) return 0;
+		Matrice inv;
+		Inverser(m, inv.m);
+		float d[3];
+		for(int i = 0; i < 3; i++) d[i] = (float)(fin[i] - debut[i]);
+		const float s[4] = {debut[0], debut[1], debut[2], rayon};
+		static const float zero[3] = {0.0f, 0.0f, 0.0f};
+		uint8 touche = 0;
+		if(a9 & 1) {
+			for(int j = 0; j < b->nSpheres; j++) {
+				const SphereCol &sb = b->spheres[j];
+				float cb[4], pt[3];
+				Point(cb, m, sb.centre);
+				cb[3] = sb.rayon;
+				float f = contact->fraction;
+				if(!SpheresBalayees(s, cb, 1.0f, d, zero, &f, pt) || !(f < contact->fraction)) continue;
+				contact->fraction = f;
+				for(int k = 0; k < 3; k++) contact->point[k] = pt[k];
+				contact->o22 = sb.Mot();
+				contact->o1c = (uint32)j;
+				*distance = f;
+				touche = 1;
+				float n[3];
+				for(int k = 0; k < 3; k++) n[k] = (float)((float)((float)((double)d[k] * f) + s[k]) - cb[k]);
+				Normaliser(n);
+				for(int k = 0; k < 3; k++) contact->normale[k] = n[k];
+			}
+		}
+		float sl[4], rb[3];
+		Point(sl, inv.m, debut);
+		sl[3] = rayon;
+		Tourner(rb, inv.m, d);
+		float L = (float)std::sqrt(std::fabs((double)(float)(((double)rb[0] * rb[0] + (double)rb[1] * rb[1]) + (double)rb[2] * rb[2])));
+		uint8 octet = 0;
+		int32 compte = 0;
+		float nB[3] = {0, 0, 0}, pB[3] = {0, 0, 0};
+		if(a9 & 2) {
+			for(int j = 0; j < b->nBoites; j++) {
+				const BoiteCol &bx = b->boites[j];
+				float f = contact->fraction;
+				if(!boite(bx, sl, rb, &f, nB, pB, &octet, &compte) || !(f < L)) continue;
+				float q = (float)((double)f / L);
+				if(!(q < contact->fraction)) continue;
+				float nw[3], pw[3];
+				Tourner(nw, m, nB);
+				Point(pw, m, pB);
+				contact->fraction = q;
+				for(int k = 0; k < 3; k++) { contact->normale[k] = nw[k]; contact->point[k] = pw[k]; }
+				contact->o22 = bx.Mot();
+				*distance = q;
+				touche = 1;
+			}
+		}
+		if(b->nTriangles > 0 && (a9 & 8)) {
+			auto visiter = [&](int k) {
+				float v0[3], v1[3], v2[3], e1[3], e2[3], nt[3];
+				uint8 surface;
+				b->Triangle(k, v0, v1, v2, &surface);
+				for(int q = 0; q < 3; q++) { e1[q] = (float)(v1[q] - v0[q]); e2[q] = (float)(v2[q] - v0[q]); }
+				nt[0] = (float)((double)e2[1] * e1[2] - (double)e2[2] * e1[1]);
+				nt[1] = (float)((double)e2[2] * e1[0] - (double)e1[2] * e2[0]);
+				nt[2] = (float)((double)e1[1] * e2[0] - (double)e2[1] * e1[0]);
+				Normaliser(nt);
+				const float *som[3] = {v0, v1, v2};
+				float f = contact->fraction;
+				if(!SphereTriangle(som, nt, sl, rb, &f, nB, pB, &octet) || !(f < L)) return;
+				float q = (float)((double)f / L);
+				if(!(q < contact->fraction)) return;
+				float nw[3], pw[3];
+				Tourner(nw, m, a10 ? nB : nt);
+				Point(pw, m, pB);
+				contact->fraction = q;
+				for(int z = 0; z < 3; z++) { contact->normale[z] = nw[z]; contact->point[z] = pw[z]; }
+				contact->o22 = surface;
+				*distance = q;
+				touche = 1;
+			};
+			if(b->arbre) candidats(sl, (float)((double)L + rayon), visiter);
+			else for(int k = 0; k < b->nTriangles; k++) visiter(k);
+		}
+		return touche;
+	}
 	// FUN_00469f70(m1, m2, a, m4, b, contact) (méthode de l'entité qui balaie, ret 0x18, lue à l'assembleur de 0x469f70 à 0x46a333,
 	// 966 octets) : le test fin d'un projectile contre un piéton, que la méthode +0xa4 d'un CProjectile (FUN_0046a340) choisit pour
 	// un piéton qui n'est ni le rat ni un chien ; a est le modèle du projectile qui va de m1 à m2, b le modèle du piéton (le mot

@@ -254,6 +254,40 @@ main(void)
 			         && pres(c.fraction, 0.5f) && pres(c.normale[1], -1.0f) && pres(c.point[1], 2.5f) && c.o22 == (5 | 1 << 8) && c.o20 == 2,
 			         "FUN_0056c770 : la sphère de b tournée, à la moitié, la normale des centres, les mots +0x10 des deux sphères");
 			Verifier(B::TestGeneral(m1.m, m2.m, &ma, m4.m, m4.m, &mb, &c, false, false, false, false, true, 0xf, nullptr, true, pas, tous) == 0, "FUN_0056c770 : l'argument 12 saute la sphère dont l'octet +0x11 n'est pas nul");
+			// Le test du lancer (FUN_00569f10) contre le même modèle : une sphère de 0,5 m qui tombe de 3 m en (11, 1).
+			{
+				const float haut[3] = {11, 1, 2}, bas[3] = {11, 1, -1};
+				Contact l;
+				l.fraction = 3.4028234663852886e+38f;
+				float dist = -1.0f;
+				Verifier(B::TestLancer(haut, bas, 0.5f, m4.m, &mb, false, &l, &dist, 0x8b, 0xf, true, pas, tous) == 1 && pres(l.fraction, 0.5f) && pres(dist, 0.5f)
+				         && pres(l.normale[2], 1.0f) && pres(l.point[0], 11.0f) && pres(l.point[1], 1.0f) && pres(l.point[2], 0.0f) && l.o22 == 8 && l.o1c == 9 && l.o20 == 0,
+				         "FUN_00569f10 : le sol à la moitié du trajet, la distance rendue, la surface en +0x22, +0x1c et +0x20 pas écrits");
+				// Le contact garde sa fraction en entrant : un contact déjà plus proche (0,4) n'est pas remplacé.
+				Contact pres04;
+				pres04.fraction = 0.4f;
+				dist = -1.0f;
+				Verifier(B::TestLancer(haut, bas, 0.5f, m4.m, &mb, false, &pres04, &dist, 0x8b, 0xf, true, pas, tous) == 0 && pres04.fraction == 0.4f && dist == -1.0f,
+				         "FUN_00569f10 : la fraction du contact en entrant borne le test");
+				// Le bit 9 des drapeaux doit valoir le mot +0x18 des données.
+				Contact refus;
+				refus.fraction = 3.4028234663852886e+38f;
+				Verifier(B::TestLancer(haut, bas, 0.5f, m4.m, &mb, false, &refus, &dist, 0x28b, 0xf, true, pas, tous) == 0
+				         && B::TestLancer(haut, bas, 0.5f, m4.m, &mb, true, &refus, &dist, 0x8b, 0xf, true, pas, tous) == 0
+				         && B::TestLancer(haut, bas, 0.5f, m4.m, &mb, true, &refus, &dist, 0x28b, 0xf, true, pas, tous) == 1,
+				         "FUN_00569f10 : le bit 9 des drapeaux contre le mot +0x18 des données");
+				// La sphère du modèle, en (13, 0, 1) : la sphère lancée de 3 m au-dessus la touche aux deux tiers.
+				const float dessus[3] = {13, 0, 4}, centre[3] = {13, 0, 1};
+				Contact sp;
+				sp.fraction = 3.4028234663852886e+38f;
+				dist = -1.0f;
+				Verifier(B::TestLancer(dessus, centre, 0.5f, m4.m, &mb, false, &sp, &dist, 0x8b, 0xf, true, pas, tous) == 1 && pres(sp.fraction, 2.0f / 3.0f) && pres(dist, 2.0f / 3.0f)
+				         && sp.o1c == 0 && sp.o22 == 0x105 && pres(sp.normale[2], 1.0f) && pres(sp.point[2], 1.5f),
+				         "FUN_00569f10 : la sphère du modèle, son rang en +0x1c, son mot en +0x22, la normale vers la sphère lancée");
+				Contact sans;
+				sans.fraction = 3.4028234663852886e+38f;
+				Verifier(B::TestLancer(dessus, centre, 0.5f, m4.m, &mb, false, &sans, &dist, 0x8b, 0xe, true, pas, tous) == 0, "FUN_00569f10 : sans le bit 1, pas de sphères");
+			}
 			// Une boîte : la fonction des boîtes reçoit la sphère et le déplacement dans l'espace de b ; sa normale est tournée par m4.
 			B::BoiteCol bx[1] = {{{-1, -1, -1}, 0, {1, 1, 1}, 0, 4, 3, {0, 0}}};
 			mb.boites = bx; mb.nBoites = 1;

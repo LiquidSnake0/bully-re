@@ -699,7 +699,7 @@ struct CVolProjectile {
 	//  +0x4  trois réels : le centre du test des sphères (FUN_00465a50, `SphereTouche`, méthode de l'entité, avec le rayon donné) et le premier
 	//        argument du test ; +0x10 trois réels et +0x1c un réel, ses deuxième et troisième arguments. FUN_00563f30 fait
 	//        de +0x10 un point (l'écart +0x10 − +0x4) et de +0x1c un rayon ajouté à la longueur de cet écart : supposé, le
-	//        départ, l'arrivée et l'épaisseur d'un trajet (une capsule ; 00569f10 n'est pas lue) ;
+	//        départ, l'arrivée et l'épaisseur d'un trajet (une sphère balayée : FUN_00569f10, CCollisionBalayee::TestLancer dans Balayes.h) ;
 	//  +0x20 des drapeaux, passés au test ; le bit 0x80 : le filtre +0x44 (cdecl, l'entité ; vrai : passée) est appelé ;
 	//  +0x34 le meilleur contact, +0x38 mis à 1 quand il est pris, +0x3c sa distance ;
 	//  +0x41 un octet : non nul, un contact de surface 0x41 (l'octet +0x22 du contact) ne compte pas ;
@@ -710,7 +710,7 @@ struct CVolProjectile {
 	// d'entrée du balayage (+0x20 non nul, et +0x1c ou +0x60 non nul, et le bit du modèle, et +0xf4 nul), ou sinon +0x42 du lancer
 	// et +0x100 de l'entité non nuls ; le filtre +0x44 ; le test des sphères ; pour un piéton, FUN_004761a0 quand le +0x0 du lancer
 	// n'est pas nul ; le modèle ; un contact local neuf (les réels de +0x0 et de +0x10 nuls, la référence nulle, la fraction à
-	// FLT_MAX, le réel 0x9009b8) et le test 00569f10 (3 175 octets, non lue, cdecl à dix arguments : &lancer + 4, &lancer + 0x10,
+	// FLT_MAX, le réel 0x9009b8) et le test FUN_00569f10 (CCollisionBalayee::TestLancer, Balayes.h ; cdecl à dix arguments : &lancer + 4, &lancer + 0x10,
 	// le réel +0x1c, la matrice de l'entité (FUN_0046dbd0), le modèle, le contact local, une distance locale, les drapeaux, 0xf et
 	// 1). Vrai, et pas la surface 0x41 d'un lancer au +0x41 non nul : quand la meilleure distance est strictement plus grande que
 	// la distance rendue (fld la rendue, fld +0x3c, fcomp st(1), test ah,0x41, jne), +0x3c la prend, le meilleur contact copie le
