@@ -341,6 +341,43 @@ main(void)
 				B::TestLigne(seg, m4.m, &ml, true, &c, &f, 0x200, false, englobe, sphere, boite, triangle, arbre);
 				Verifier(nE == 1 && nS == 0 && nB == 0 && nK == 1 && nT == 1, "FUN_0056aee0 : avec le bit 9, les triangles seuls, ceux que rend l'arbre");
 			}
+			// Une ligne contre une sphère (FUN_00569240) : la sphère de 0,5 m en (3, 0, 1), une ligne de 6 m qui descend sur elle.
+			{
+				const B::SphereCol sp = {{3, 0, 1}, 0.5f, 5, 1, {0, 0}};
+				const float desc[8] = {3, 0, 4, 0, 3, 0, -2, 0}, mont[8] = {3, 0, -2, 0, 3, 0, 4, 0}, cote[8] = {4, 0, 4, 0, 4, 0, -2, 0};
+				const float dedans[8] = {3, 0, 1, 0, 3, 0, 4, 0}, court[8] = {3, 0, 4, 0, 3, 0, 2, 0}, rase[8] = {3.5f, 0, 4, 0, 3.5f, 0, -2, 0};
+				Contact c;
+				c.o20 = 7;
+				float f = 1.0f;
+				Verifier(B::LigneSphere(desc, sp, &c, &f) == 1 && pres(f, 2.5f / 6.0f) && pres(c.point[0], 3.0f) && pres(c.point[2], 1.5f) && pres(c.normale[2], 1.0f)
+				         && c.o22 == 0x105 && c.o20 == 0, "FUN_00569240 : le dessus de la sphère à 2,5 m sur 6, la normale vers le haut, le mot de la sphère en +0x22, +0x20 à zéro");
+				Contact c2;
+				Verifier(B::LigneSphere(desc, sp, &c2, &f) == 0 && c2.o22 == 0, "FUN_00569240 : la fraction en cours, égale, n'est pas remplacée");
+				f = 1.0f;
+				Verifier(B::LigneSphere(mont, sp, &c2, &f) == 1 && pres(f, 2.5f / 6.0f) && pres(c2.point[2], 0.5f) && pres(c2.normale[2], -1.0f), "FUN_00569240 : par en dessous, le bas de la sphère");
+				f = 1.0f;
+				Verifier(B::LigneSphere(cote, sp, &c2, &f) == 0 && f == 1.0f, "FUN_00569240 : à 1 m de l'axe, rien");
+				Verifier(B::LigneSphere(dedans, sp, &c2, &f) == 0, "FUN_00569240 : une ligne qui part du centre ne touche pas la sphère (t négatif)");
+				Verifier(B::LigneSphere(court, sp, &c2, &f) == 0, "FUN_00569240 : une ligne qui s'arrête avant la sphère (t > 1)");
+				printf("  ligne tangente à la sphère : %d\n", (int)B::LigneSphere(rase, sp, &c2, &f));
+				// Dans le cadre (FUN_0056aee0), le modèle tourné d'un quart de tour : la même ligne en (10, 3) du monde.
+				B::DonneesCol ml;
+				ml.spheres = &sp; ml.nSpheres = 1;
+				const float seg[8] = {10, 3, 4, 0, 10, 3, -2, 0};
+				auto oui = [](const float *) { return true; };
+				auto sphere = [](const float *l, const B::SphereCol &s, Contact *k, float *fr) { B::LigneSphere(l, s, k, fr); };
+				auto boite = [](const float *, const B::BoiteCol &, Contact *, float *) {};
+				auto triangle = [](const float *, const int16 *, const B::TriangleCol &, Contact *, float *) {};
+				auto arbre = [](const float *, const std::function<void(int)> &) {};
+				Contact m;
+				f = 1.0f;
+				Verifier(B::TestLigne(seg, m4.m, &ml, false, &m, &f, 0, false, oui, sphere, boite, triangle, arbre) == 1 && pres(f, 2.5f / 6.0f)
+				         && pres(m.point[0], 10.0f) && pres(m.point[1], 3.0f) && pres(m.point[2], 1.5f) && pres(m.normale[2], 1.0f) && m.o22 == 0x105,
+				         "FUN_0056aee0 avec FUN_00569240 : la sphère du modèle tourné, touchée en (10, 3, 1,5) du monde");
+				f = 0.4f;
+				Verifier(B::TestLigne(seg, m4.m, &ml, false, &m, &f, 0, false, oui, sphere, boite, triangle, arbre) == 0 && f == 0.4f,
+				         "FUN_0056aee0 avec FUN_00569240 : la ligne coupée à 0,4 s'arrête à 10 cm de la sphère");
+			}
 			// Une boîte : la fonction des boîtes reçoit la sphère et le déplacement dans l'espace de b ; sa normale est tournée par m4.
 			B::BoiteCol bx[1] = {{{-1, -1, -1}, 0, {1, 1, 1}, 0, 4, 3, {0, 0}}};
 			mb.boites = bx; mb.nBoites = 1;

@@ -718,16 +718,57 @@ struct CCollisionBalayee {
 		}
 		return touche;
 	}
+	// FUN_00569240(segment, sphère, contact, fraction) (cdecl, lue à l'assembleur de 0x569240 à 0x56945c) : une ligne contre une
+	// sphère, la primitive des sphères du test d'une ligne (FUN_0056aee0). d = fin − début, v = centre − début (FUN_00414a20),
+	// a = d · d, b = −(v · d), le discriminant b² − (v · v − r²) a : négatif, 0 (un NaN continue : test ah,5 puis jp). La fraction
+	// t = (v · d − √|disc|) / a (FUN_0085c4d0 sur la valeur absolue), la première des deux rencontres ; t < 0 ou t > 1 : 0 (une
+	// ligne qui part de dedans la sphère ne la touche donc pas) ; la fraction en cours doit être strictement plus grande que t
+	// (fld la fraction, fcompp, test ah,0x41, jne), sinon 0. Touché : le point début + t d (FUN_00412850) en +0 du contact, la
+	// normale (le point − le centre, normalisée par FUN_00414cc0) en +0x10, le mot +0x10 de la sphère en +0x22, les octets +0x20
+	// et +0x21 à zéro, t dans la fraction, et 1. Aucun garde sur a nul (un segment de longueur nulle divise par zéro, comme lu).
+	template<class C>
+	static uint8 LigneSphere(const float *segment, const SphereCol &sp, C *contact, float *fraction) {
+		const float *debut = segment, *fin = segment + 4;
+		float d[3], v[3];
+		for(int i = 0; i < 3; i++) { d[i] = (float)(fin[i] - debut[i]); }
+		const float a = (float)((double)d[0] * d[0] + (double)d[1] * d[1] + (double)d[2] * d[2]);
+		for(int i = 0; i < 3; i++) { v[i] = (float)(sp.centre[i] - debut[i]); }
+		const float b = -(float)((double)v[0] * d[0] + (double)v[1] * d[1] + (double)v[2] * d[2]);
+		const float bb = (float)((double)b * b);
+		const float vv = (float)((double)v[2] * v[2] + ((double)v[0] * v[0] + (double)v[1] * v[1]));
+		const float rr = (float)((double)sp.rayon * sp.rayon);
+		const float c = (float)(vv - rr);
+		const float disc = (float)((double)bb - (double)c * a);
+		if(disc < 0.0f) return 0;
+		const float moinsB = -b;
+		const float racine = (float)std::sqrt(std::fabs((double)disc));
+		const float t = (float)(((double)moinsB - racine) / a);
+		if(t < 0.0f) return 0;
+		if(1.0f < t) return 0;
+		if(!(*fraction > t)) return 0;
+		float n[3];
+		for(int i = 0; i < 3; i++) {
+			const float td = (float)(t * d[i]);
+			contact->point[i] = (float)(debut[i] + td);
+			n[i] = (float)(contact->point[i] - sp.centre[i]);
+		}
+		Normaliser(n);
+		for(int i = 0; i < 3; i++) contact->normale[i] = n[i];
+		contact->o22 = sp.Mot();
+		contact->o20 = 0;
+		*fraction = t;
+		return 1;
+	}
 	// FUN_0056aee0(segment, m, modèle, contact, fraction, drapeaux, sans41) (cdecl à sept arguments, lue à l'assembleur de 0x56aee0 à
 	// 0x56b36b) : le test d'une ligne contre le modèle de collision d'une entité, celui que la vue sur une liste (FUN_0045f520,
-	// VueSurListe dans Projectiles.h) appelle par son crochet Tester. Le cadre seulement : ses quatre primitives ne sont pas lues
-	// et sont des arguments. Des données nulles (+0x38 du modèle) rendent 0 ; le bit 9 des drapeaux doit valoir « le mot +0x18
+	// VueSurListe dans Projectiles.h) appelle par son crochet Tester. Le cadre : ses primitives sont des arguments ; celle des sphères
+	// est LigneSphere, les trois autres ne sont pas lues. Des données nulles (+0x38 du modèle) rendent 0 ; le bit 9 des drapeaux doit valoir « le mot +0x18
 	// des données n'est pas nul », sinon 0 (comme FUN_00569f10). L'inverse de la matrice (FUN_00413620), puis les deux points du
 	// segment (au pas de 0x10) posés dans l'espace du modèle (00414c60, qui pose n points par une matrice). Si la fraction donnée
 	// est strictement sous 1 (fld1, fcomp, test ah,0x41, jne), la fin locale est ramenée à début + (fin − début) × fraction. La
 	// boîte du modèle (+0x10 et +0x20 du modèle) contre le segment local (00564d40, `englobe`) : faux, 0. Une fraction locale part
 	// de 1. Sans le bit 9 : chaque sphère (octet +0x1e, pas de 0x14) puis chaque boîte (octet +0x1f, pas de 0x24) dont la surface
-	// (+0x10 de la sphère, +0x20 de la boîte) n'est pas sautée, par 00569240 (`sphere`) et 00569460 (`boite`), qui reçoivent le
+	// (+0x10 de la sphère, +0x20 de la boîte) n'est pas sautée, par FUN_00569240 (`sphere`, LigneSphere) et 00569460 (`boite`), qui reçoivent le
 	// segment local, la forme, le contact et la fraction locale. Les triangles (mot +0x1c non nul) dans tous les cas : ceux que rend
 	// l'arbre +0x14 pour le segment (00561700 puis 00561750, jusqu'à 0xffff ; `candidats`), ou tous dans l'ordre, chacun dont la
 	// surface (+6) n'est pas sautée par 00567640 (`triangle`, avec les sommets +0xc). Les surfaces sautées : 0xf, 0x10, 0x19, 0x34,
