@@ -290,6 +290,57 @@ main(void)
 				sans.fraction = 3.4028234663852886e+38f;
 				Verifier(B::TestLancer(dessus, centre, 0.5f, mi, &mb, false, &sans, &dist, 0x8b, 0xe, true, pas, tous) == 0, "FUN_00569f10 : sans le bit 1, pas de sphères");
 			}
+			// Le test d'une ligne (FUN_0056aee0), le cadre : le modèle tourné d'un quart de tour (m4), une ligne qui descend en
+			// (10, 3), au-dessus de la sphère du modèle ; les primitives sont des crochets qui comptent leurs appels.
+			{
+				B::SphereCol sl[3] = {{{3, 0, 1}, 0.5f, 5, 0, {0, 0}}, {{0, 0, 0}, 0.5f, 0xf, 0, {0, 0}}, {{0, 0, 0}, 0.5f, 0x41, 0, {0, 0}}};
+				B::BoiteCol bl[1] = {{{-1, -1, -1}, 0, {1, 1, 1}, 0, 0x10, 0, {0, 0}}};
+				B::DonneesCol ml;
+				ml.spheres = sl; ml.nSpheres = 3; ml.boites = bl; ml.nBoites = 1; ml.sommets = som; ml.triangles = tris; ml.nTriangles = 2;
+				const float seg[8] = {10, 3, 4, 0, 10, 3, -2, 0};
+				int nE = 0, nS = 0, nB = 0, nT = 0, nK = 0;
+				bool dedans = true;
+				float vu[8] = {0, 0, 0, 0, 0, 0, 0, 0}, rendre = 0.25f;
+				auto englobe = [&](const float *l) { nE++; for(int i = 0; i < 8; i++) vu[i] = l[i]; return dedans; };
+				auto sphere = [&](const float *, const B::SphereCol &sp, Contact *c, float *f) {
+					nS++;
+					if(sp.surface == 5 && rendre < *f){ *f = rendre; c->point[0] = 3; c->point[1] = 0; c->point[2] = 2.5f; c->normale[0] = 1; c->normale[1] = 0; c->normale[2] = 0; }
+				};
+				auto boite = [&](const float *, const B::BoiteCol &, Contact *, float *) { nB++; };
+				auto triangle = [&](const float *, const int16 *, const B::TriangleCol &, Contact *, float *) { nT++; };
+				auto arbre = [&](const float *, const std::function<void(int)> &v) { nK++; v(1); };
+				auto raz = [&]() { nE = nS = nB = nT = nK = 0; };
+				Contact c;
+				float f = 0.5f;
+				Verifier(B::TestLigne(seg, m4.m, &ml, false, &c, &f, 0, false, englobe, sphere, boite, triangle, arbre) == 1 && pres(f, 0.125f)
+				         && pres(vu[0], 3.0f) && pres(vu[1], 0.0f) && pres(vu[2], 4.0f) && pres(vu[4], 3.0f) && pres(vu[5], 0.0f) && pres(vu[6], 1.0f)
+				         && pres(c.point[0], 10.0f) && pres(c.point[1], 3.0f) && pres(c.point[2], 2.5f) && pres(c.normale[0], 0.0f) && pres(c.normale[1], 1.0f)
+				         && nE == 1 && nS == 3 && nB == 1 && nT == 2 && nK == 0,
+				         "FUN_0056aee0 : le segment local coupé à la fraction donnée, le contact reposé par la matrice, la fraction multipliée");
+				raz(); f = 1.0f; rendre = 1.0f;
+				Verifier(B::TestLigne(seg, m4.m, &ml, false, &c, &f, 0, false, englobe, sphere, boite, triangle, arbre) == 0 && f == 1.0f && pres(vu[6], -2.0f)
+				         && nS == 3 && nT == 2, "FUN_0056aee0 : rien sous 1, rien de rendu ; la fraction 1 ne coupe pas le segment");
+				raz(); dedans = false;
+				Verifier(B::TestLigne(seg, m4.m, &ml, false, &c, &f, 0, false, englobe, sphere, boite, triangle, arbre) == 0 && nE == 1 && nS + nB + nT == 0,
+				         "FUN_0056aee0 : hors de la boîte du modèle, aucune forme testée");
+				dedans = true; raz();
+				B::TestLigne(seg, m4.m, &ml, false, &c, &f, 0x40, false, englobe, sphere, boite, triangle, arbre);
+				Verifier(nS == 1 && nB == 0 && nT == 2, "FUN_0056aee0 : le bit 6 saute les surfaces 0xf, 0x10 et 0x41");
+				raz();
+				B::TestLigne(seg, m4.m, &ml, false, &c, &f, 0x100, false, englobe, sphere, boite, triangle, arbre);
+				Verifier(nS == 2 && nB == 0 && nT == 2, "FUN_0056aee0 : le bit 8 garde la surface 0xf");
+				raz();
+				B::TestLigne(seg, m4.m, &ml, false, &c, &f, 0, true, englobe, sphere, boite, triangle, arbre);
+				Verifier(nS == 2 && nB == 1 && nT == 2, "FUN_0056aee0 : le septième argument saute la seule surface 0x41");
+				raz();
+				Verifier(B::TestLigne(seg, m4.m, &ml, false, &c, &f, 0x200, false, englobe, sphere, boite, triangle, arbre) == 0 && nE == 0
+				         && B::TestLigne(seg, m4.m, &ml, true, &c, &f, 0, false, englobe, sphere, boite, triangle, arbre) == 0 && nE == 0
+				         && B::TestLigne(seg, m4.m, (const B::DonneesCol *)nullptr, false, &c, &f, 0, false, englobe, sphere, boite, triangle, arbre) == 0,
+				         "FUN_0056aee0 : le bit 9 contre le mot +0x18, les données nulles");
+				ml.arbre = true;
+				B::TestLigne(seg, m4.m, &ml, true, &c, &f, 0x200, false, englobe, sphere, boite, triangle, arbre);
+				Verifier(nE == 1 && nS == 0 && nB == 0 && nK == 1 && nT == 1, "FUN_0056aee0 : avec le bit 9, les triangles seuls, ceux que rend l'arbre");
+			}
 			// Une boîte : la fonction des boîtes reçoit la sphère et le déplacement dans l'espace de b ; sa normale est tournée par m4.
 			B::BoiteCol bx[1] = {{{-1, -1, -1}, 0, {1, 1, 1}, 0, 4, 3, {0, 0}}};
 			mb.boites = bx; mb.nBoites = 1;

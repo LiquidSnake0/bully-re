@@ -718,6 +718,71 @@ struct CCollisionBalayee {
 		}
 		return touche;
 	}
+	// FUN_0056aee0(segment, m, modèle, contact, fraction, drapeaux, sans41) (cdecl à sept arguments, lue à l'assembleur de 0x56aee0 à
+	// 0x56b36b) : le test d'une ligne contre le modèle de collision d'une entité, celui que la vue sur une liste (FUN_0045f520,
+	// VueSurListe dans Projectiles.h) appelle par son crochet Tester. Le cadre seulement : ses quatre primitives ne sont pas lues
+	// et sont des arguments. Des données nulles (+0x38 du modèle) rendent 0 ; le bit 9 des drapeaux doit valoir « le mot +0x18
+	// des données n'est pas nul », sinon 0 (comme FUN_00569f10). L'inverse de la matrice (FUN_00413620), puis les deux points du
+	// segment (au pas de 0x10) posés dans l'espace du modèle (00414c60, qui pose n points par une matrice). Si la fraction donnée
+	// est strictement sous 1 (fld1, fcomp, test ah,0x41, jne), la fin locale est ramenée à début + (fin − début) × fraction. La
+	// boîte du modèle (+0x10 et +0x20 du modèle) contre le segment local (00564d40, `englobe`) : faux, 0. Une fraction locale part
+	// de 1. Sans le bit 9 : chaque sphère (octet +0x1e, pas de 0x14) puis chaque boîte (octet +0x1f, pas de 0x24) dont la surface
+	// (+0x10 de la sphère, +0x20 de la boîte) n'est pas sautée, par 00569240 (`sphere`) et 00569460 (`boite`), qui reçoivent le
+	// segment local, la forme, le contact et la fraction locale. Les triangles (mot +0x1c non nul) dans tous les cas : ceux que rend
+	// l'arbre +0x14 pour le segment (00561700 puis 00561750, jusqu'à 0xffff ; `candidats`), ou tous dans l'ordre, chacun dont la
+	// surface (+6) n'est pas sautée par 00567640 (`triangle`, avec les sommets +0xc). Les surfaces sautées : 0xf, 0x10, 0x19, 0x34,
+	// 0x14 et 0x41 avec le bit 6 des drapeaux ; 0x10, 0x19, 0x34, 0x14 et 0x41 avec le bit 8 ; 0x41 avec le septième argument (ce
+	// que disent ces surfaces n'est pas lu ici). À la fin, une fraction locale strictement sous 1 (fld1, fcomp, test ah,0x41, jne) :
+	// le point du contact (+0) posé par la matrice (FUN_0041a850), sa normale (+0x10) tournée par elle (FUN_00414560), la fraction
+	// donnée multipliée par la locale, et 1 ; sinon 0, rien d'écrit. `segment` : huit flottants, les points en [0] et [4].
+	template<class C, class MB, class E, class S, class X, class T, class K>
+	static uint8 TestLigne(const float *segment, const float *m, const MB *b, bool mot18, C *contact, float *fraction, uint32 drapeaux,
+	                       bool sans41, E &&englobe, S &&sphere, X &&boite, T &&triangle, K &&candidats) {
+		if(!b) return 0;
+		const bool b6 = ((drapeaux >> 6) & 1) != 0, b8 = ((drapeaux >> 8) & 1) != 0, b9 = ((drapeaux >> 9) & 1) != 0;
+		if(b9 != mot18) return 0;
+		Matrice inv;
+		Inverser(m, inv.m);
+		float l[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+		Point(l, inv.m, segment);
+		Point(l + 4, inv.m, segment + 4);
+		if(1.0f > *fraction) {
+			const float f = *fraction;
+			for(int i = 0; i < 3; i++) {
+				const float d = (float)(l[4 + i] - l[i]);
+				const float p = (float)(d * f);
+				l[4 + i] = (float)(l[i] + p);
+			}
+		}
+		if(!englobe(l)) return 0;
+		float locale = 1.0f;
+		auto sautee = [&](uint8 s) {
+			const bool cinq = s == 0x10 || s == 0x19 || s == 0x34 || s == 0x14 || s == 0x41;
+			if(b6 && (s == 0xf || cinq)) return true;
+			if(b8 && cinq) return true;
+			return sans41 && s == 0x41;
+		};
+		if(!b9) {
+			for(int j = 0; j < b->nSpheres; j++)
+				if(!sautee(b->spheres[j].surface)) sphere(l, b->spheres[j], contact, &locale);
+			for(int j = 0; j < b->nBoites; j++)
+				if(!sautee(b->boites[j].surface)) boite(l, b->boites[j], contact, &locale);
+		}
+		if(b->nTriangles != 0) {
+			auto visiter = [&](int k) {
+				if(!sautee(b->triangles[k].surface)) triangle(l, b->sommets, b->triangles[k], contact, &locale);
+			};
+			if(b->arbre) candidats(l, visiter);
+			else for(int k = 0; k < b->nTriangles; k++) visiter(k);
+		}
+		if(!(1.0f > locale)) return 0;
+		float pt[3], n[3];
+		Point(pt, m, contact->point);
+		Tourner(n, m, contact->normale);
+		for(int i = 0; i < 3; i++) { contact->point[i] = pt[i]; contact->normale[i] = n[i]; }
+		*fraction = (float)(*fraction * locale);
+		return 1;
+	}
 	// FUN_00469f70(m1, m2, a, m4, b, contact) (méthode de l'entité qui balaie, ret 0x18, lue à l'assembleur de 0x469f70 à 0x46a333,
 	// 966 octets) : le test fin d'un projectile contre un piéton, que la méthode +0xa4 d'un CProjectile (FUN_0046a340) choisit pour
 	// un piéton qui n'est ni le rat ni un chien ; a est le modèle du projectile qui va de m1 à m2, b le modèle du piéton (le mot

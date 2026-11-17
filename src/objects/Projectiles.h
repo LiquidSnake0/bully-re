@@ -848,7 +848,7 @@ struct CVolProjectile {
 	}
 	// FUN_0045f520(&liste, arg2, arg3, &distance, &entité, drapeaux, sixSphères) (cdecl à sept arguments, lue à l'assembleur de
 	// 0x45f520 à 0x45f7e6, 711 octets ; FUN_00460f60, plus bas, est sa seule appelante) : le troisième parcours d'une liste de secteur
-	// qui refait le modèle d'un piéton (FUN_00572680), celui d'une ligne (supposé : la ligne de vue ; son test, 0056aee0, n'est pas lu). Vide,
+	// qui refait le modèle d'un piéton (FUN_00572680), celui d'une ligne (supposé : la ligne de vue ; son test, FUN_0056aee0, est CCollisionBalayee::TestLigne). Vide,
 	// la liste rend faux. Deux octets du monde ouvrent le filtre d'entrée quand la première entité de la liste est un piéton
 	// (+0x108 & 7 == 3) : 0xc1ae75 (`morts` : un piéton sans collision passe si son octet +0x1c98, mort, n'est pas nul) et 0xc1ae74
 	// (`montes` : il passe si son +0x1554, son véhicule, n'est pas nul et que le +0x46c de celui-ci vaut 1). Pour chaque entité,
@@ -859,7 +859,7 @@ struct CVolProjectile {
 	// que le bit 19 de son mot +0x28 est mis. Un piéton qui n'entre pas doit être mort avec `morts`, ou monté avec `montes` ; une
 	// autre entité doit entrer. Le modèle : pour un piéton, avec le septième argument, au +0xa4 nul, qui n'est ni le rat
 	// (DAT_00bf42dc) ni un chien (FUN_00447290), ses six sphères (FUN_00572680, puis le mot 0xcf3138) ; sinon son modèle de
-	// collision (0051ae00) ; nul : passée. Le test 0056aee0 (1 165 octets, non lue, cdecl à sept arguments : arg2, la matrice de
+	// collision (0051ae00) ; nul : passée. Le test FUN_0056aee0 (CCollisionBalayee::TestLigne dans Balayes.h, cdecl à sept arguments : arg2, la matrice de
 	// l'entité (FUN_0046dbd0), le modèle, arg3, une distance locale, les drapeaux et l'octet 0xc1ae82) ; la distance locale part
 	// de la distance donnée et n'est pas remise entre deux entités. Vrai, et la distance donnée strictement plus grande que la
 	// locale (fld la locale, fld la donnée, fcomp st(1), test ah,0x41, jne) : la donnée la prend, l'entité est rendue par le
