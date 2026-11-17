@@ -759,10 +759,82 @@ struct CCollisionBalayee {
 		*fraction = t;
 		return 1;
 	}
+	// FUN_005648d0(v0, v1, v2, normale, &d, &axe) (cdecl, lue à l'assembleur de 0x5648d0 à 0x5649fb) : le plan d'un triangle. La
+	// normale (v2 − v0) × (v1 − v0) (FUN_00414a20 deux fois, FUN_004145e0), normalisée (FUN_00414cc0) ; d = v0 · normale. Si le
+	// sixième argument n'est pas nul, l'axe dominant de la normale : x quand |nx| dépasse strictement |ny| et |nz| (0, ou 1 quand
+	// nx ≤ 0) ; sinon y quand |ny| dépasse strictement |nz| (2, ou 3 quand ny ≤ 0) ; sinon z (4, ou 5 quand nz ≤ 0).
+	static void PlanDuTriangle(const float *v0, const float *v1, const float *v2, float *n, float *d, uint8 *axe) {
+		float e1[3], e2[3];
+		for(int q = 0; q < 3; q++) { e1[q] = (float)(v1[q] - v0[q]); e2[q] = (float)(v2[q] - v0[q]); }
+		n[0] = (float)((double)e2[1] * e1[2] - (double)e2[2] * e1[1]);
+		n[1] = (float)((double)e2[2] * e1[0] - (double)e1[2] * e2[0]);
+		n[2] = (float)((double)e1[1] * e2[0] - (double)e2[1] * e1[0]);
+		Normaliser(n);
+		*d = (float)(((double)v0[1] * n[1] + (double)v0[0] * n[0]) + (double)v0[2] * n[2]);
+		if(!axe) return;
+		const float ax = std::fabs(n[0]), ay = std::fabs(n[1]), az = std::fabs(n[2]);
+		if(ay < ax && az < ax) *axe = (0.0f < n[0]) ? 0 : 1;
+		else if(az < ay) *axe = (0.0f < n[1]) ? 2 : 3;
+		else *axe = (0.0f < n[2]) ? 4 : 5;
+	}
+	// FUN_00567640(segment, sommets, triangle, contact, fraction) (cdecl, lue à l'assembleur de 0x567640 à 0x567bbb, avec sa table
+	// de cinq sauts en 0x567bbc) : une ligne contre un triangle, la primitive des triangles du test d'une ligne (FUN_0056aee0).
+	// Les trois sommets (entiers de 16 bits fois le double 1/128, comme FUN_0056e530), le plan (FUN_005648d0). Les distances au
+	// plan du début et de la fin (le point · la normale − d) : un produit strictement positif (les deux bouts du même côté), 0. d
+	// = fin − début (FUN_00414a20) ; d · normale nul : 0 (une ligne dans le plan). t = (d − début · normale) / (d · normale), le
+	// point P = début + t d (FUN_00412850). Puis le triangle et P à plat sur les deux axes autres que l'axe dominant ((y, z) pour
+	// x, (z, x) pour y, (x, y) pour z), le deuxième et le troisième sommet échangés quand la normale est négative sur cet axe (les
+	// axes 1, 3 et 5), et trois produits en croix : (pb − p0) × (P − p0) négatif, 0 ; (pa − p0) × (P − p0) strictement positif,
+	// 0 ; (pa − pb) × (P − pb) négatif, 0 (pa le deuxième sommet à plat, pb le troisième ; un point sur une arête passe). La
+	// fraction en cours doit être strictement plus grande que t, sinon 0. Touché : le point début + d × t (FUN_00412200,
+	// FUN_00412850) en +0 du contact, la normale du triangle telle quelle en +0x10 (pas retournée vers le début : une ligne touche
+	// un triangle par ses deux faces), la surface (+6 du triangle) en +0x22, les octets +0x20, +0x21 et +0x23 à zéro, t dans la
+	// fraction, et 1.
+	template<class C>
+	static uint8 LigneTriangle(const float *segment, const int16 *sommets, const TriangleCol &tr, C *contact, float *fraction) {
+		const float *debut = segment, *fin = segment + 4;
+		float v0[3], v1[3], v2[3], n[3] = {0.0f, 0.0f, 0.0f}, dp = 0.0f;
+		uint8 axe = 0;
+		Sommet(v0, sommets, tr.a); Sommet(v1, sommets, tr.b); Sommet(v2, sommets, tr.c);
+		PlanDuTriangle(v0, v1, v2, n, &dp, &axe);
+		const float fn = (float)(((double)fin[0] * n[0] + (double)fin[1] * n[1]) + (double)fin[2] * n[2]);
+		const float distFin = (float)(fn - dp);
+		const float dn0 = (float)(((double)debut[0] * n[0] + (double)debut[1] * n[1]) + (double)debut[2] * n[2]);
+		const float distDeb = (float)(dn0 - dp);
+		if((double)distFin * distDeb > 0.0) return 0;
+		float d[3];
+		for(int i = 0; i < 3; i++) d[i] = (float)(fin[i] - debut[i]);
+		const float dn = (float)(((double)d[0] * n[0] + (double)d[1] * n[1]) + (double)d[2] * n[2]);
+		if(!(dn > 0.0f) && !(dn < 0.0f)) return 0;
+		const float t = (float)(((((double)dp - (double)debut[0] * n[0]) - (double)debut[1] * n[1]) - (double)debut[2] * n[2]) / dn);
+		float P[3];
+		for(int i = 0; i < 3; i++) { const float td = (float)((double)t * d[i]); P[i] = (float)(debut[i] + td); }
+		// À plat : u, w les deux axes gardés ; pa et pb le deuxième et le troisième sommet, échangés sur les axes impairs.
+		const int u = (axe <= 1 || axe > 5) ? 1 : (axe <= 3 ? 2 : 0), w = (axe <= 1 || axe > 5) ? 2 : (axe <= 3 ? 0 : 1);
+		const bool echange = axe == 1 || axe == 3 || axe == 5;
+		const float *sa = echange ? v2 : v1, *sb = echange ? v1 : v2;
+		const double A = v0[u], B = v0[w], E = sa[u], F = sa[w], Cc = sb[u], D = sb[w], G = P[u], H = P[w];
+		const double c1 = (Cc - A) * (H - B) - (D - B) * (G - A);
+		if(c1 < 0.0) return 0;
+		const double c2 = (H - B) * (E - A) - (G - A) * (F - B);
+		if(c2 > 0.0) return 0;
+		const double c3 = (H - D) * (E - Cc) - (G - Cc) * (F - D);
+		if(c3 < 0.0) return 0;
+		if(!(*fraction > t)) return 0;
+		for(int i = 0; i < 3; i++) {
+			const float td = (float)((double)d[i] * t);
+			contact->point[i] = (float)(debut[i] + td);
+			contact->normale[i] = n[i];
+		}
+		contact->o22 = tr.surface;
+		contact->o20 = 0;
+		*fraction = t;
+		return 1;
+	}
 	// FUN_0056aee0(segment, m, modèle, contact, fraction, drapeaux, sans41) (cdecl à sept arguments, lue à l'assembleur de 0x56aee0 à
 	// 0x56b36b) : le test d'une ligne contre le modèle de collision d'une entité, celui que la vue sur une liste (FUN_0045f520,
 	// VueSurListe dans Projectiles.h) appelle par son crochet Tester. Le cadre : ses primitives sont des arguments ; celle des sphères
-	// est LigneSphere, les trois autres ne sont pas lues. Des données nulles (+0x38 du modèle) rendent 0 ; le bit 9 des drapeaux doit valoir « le mot +0x18
+	// est LigneSphere, celle des triangles LigneTriangle, les deux autres (la boîte du modèle, une boîte) ne sont pas lues. Des données nulles (+0x38 du modèle) rendent 0 ; le bit 9 des drapeaux doit valoir « le mot +0x18
 	// des données n'est pas nul », sinon 0 (comme FUN_00569f10). L'inverse de la matrice (FUN_00413620), puis les deux points du
 	// segment (au pas de 0x10) posés dans l'espace du modèle (00414c60, qui pose n points par une matrice). Si la fraction donnée
 	// est strictement sous 1 (fld1, fcomp, test ah,0x41, jne), la fin locale est ramenée à début + (fin − début) × fraction. La
@@ -771,7 +843,7 @@ struct CCollisionBalayee {
 	// (+0x10 de la sphère, +0x20 de la boîte) n'est pas sautée, par FUN_00569240 (`sphere`, LigneSphere) et 00569460 (`boite`), qui reçoivent le
 	// segment local, la forme, le contact et la fraction locale. Les triangles (mot +0x1c non nul) dans tous les cas : ceux que rend
 	// l'arbre +0x14 pour le segment (00561700 puis 00561750, jusqu'à 0xffff ; `candidats`), ou tous dans l'ordre, chacun dont la
-	// surface (+6) n'est pas sautée par 00567640 (`triangle`, avec les sommets +0xc). Les surfaces sautées : 0xf, 0x10, 0x19, 0x34,
+	// surface (+6) n'est pas sautée par FUN_00567640 (`triangle`, LigneTriangle, avec les sommets +0xc). Les surfaces sautées : 0xf, 0x10, 0x19, 0x34,
 	// 0x14 et 0x41 avec le bit 6 des drapeaux ; 0x10, 0x19, 0x34, 0x14 et 0x41 avec le bit 8 ; 0x41 avec le septième argument (ce
 	// que disent ces surfaces n'est pas lu ici). À la fin, une fraction locale strictement sous 1 (fld1, fcomp, test ah,0x41, jne) :
 	// le point du contact (+0) posé par la matrice (FUN_0041a850), sa normale (+0x10) tournée par elle (FUN_00414560), la fraction

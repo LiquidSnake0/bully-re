@@ -378,6 +378,62 @@ main(void)
 				Verifier(B::TestLigne(seg, m4.m, &ml, false, &m, &f, 0, false, oui, sphere, boite, triangle, arbre) == 0 && f == 0.4f,
 				         "FUN_0056aee0 avec FUN_00569240 : la ligne coupée à 0,4 s'arrête à 10 cm de la sphère");
 			}
+			// Une ligne contre un triangle (FUN_00567640, le plan par FUN_005648d0) : le sol de deux triangles, de −5 à 5.
+			{
+				float v0[3], v1[3], v2[3], n[3], dp = 9;
+				uint8 axe = 9;
+				B::Sommet(v0, som, 0); B::Sommet(v1, som, 1); B::Sommet(v2, som, 2);
+				B::PlanDuTriangle(v0, v1, v2, n, &dp, &axe);
+				Verifier(pres(n[2], 1.0f) && pres(dp, 0.0f) && axe == 4, "FUN_005648d0 : le sol, la normale vers le haut, d nul, l'axe 4");
+				B::PlanDuTriangle(v0, v2, v1, n, &dp, &axe);
+				Verifier(pres(n[2], -1.0f) && axe == 5, "FUN_005648d0 : les sommets échangés, la normale vers le bas, l'axe 5");
+				const float mur0[3] = {2, 0, 0}, mur1[3] = {2, 0, 3}, mur2[3] = {2, 3, 0}, pen1[3] = {0, 3, 3};
+				B::PlanDuTriangle(mur0, mur1, mur2, n, &dp, &axe);
+				Verifier(pres(n[0], 1.0f) && pres(dp, 2.0f) && axe == 0, "FUN_005648d0 : un mur en x = 2, d = 2, l'axe 0");
+				B::PlanDuTriangle(mur0, mur2, mur1, n, &dp, &axe);
+				Verifier(axe == 1, "FUN_005648d0 : le mur retourné, l'axe 1");
+				const float o[3] = {0, 0, 0}, ex[3] = {1, 0, 0};
+				B::PlanDuTriangle(o, ex, pen1, n, &dp, &axe);
+				printf("  plan à 45 degrés entre y et z : normale (%.3f, %.3f, %.3f), axe %d\n", n[0], n[1], n[2], (int)axe);
+				Verifier(pres(fabsf(n[1]), fabsf(n[2])) && axe >= 4, "FUN_005648d0 : |ny| = |nz|, z l'emporte (y doit dépasser strictement)");
+				const float desc[8] = {-1, -1, 2, 0, -1, -1, -1, 0}, mont[8] = {-1, -1, -1, 0, -1, -1, 2, 0}, autre[8] = {1, 1, 2, 0, 1, 1, -1, 0};
+				const float haut[8] = {-1, -1, 2, 0, -1, -1, 1, 0}, plat[8] = {-1, -1, 0, 0, -2, -1, 0, 0}, arete[8] = {0, 0, 2, 0, 0, 0, -1, 0};
+				Contact c;
+				c.o20 = 7;
+				float f = 1.0f;
+				Verifier(B::LigneTriangle(desc, som, tris[0], &c, &f) == 1 && pres(f, 2.0f / 3.0f) && pres(c.point[0], -1.0f) && pres(c.point[1], -1.0f) && pres(c.point[2], 0.0f)
+				         && pres(c.normale[2], 1.0f) && c.o22 == 7 && c.o20 == 0, "FUN_00567640 : le premier triangle du sol aux deux tiers, sa normale, sa surface en +0x22");
+				Verifier(B::LigneTriangle(desc, som, tris[0], &c, &f) == 0, "FUN_00567640 : la fraction en cours, égale, n'est pas remplacée");
+				f = 1.0f;
+				Verifier(B::LigneTriangle(desc, som, tris[1], &c, &f) == 0 && B::LigneTriangle(autre, som, tris[0], &c, &f) == 0 && f == 1.0f,
+				         "FUN_00567640 : le point du plan hors du triangle, rien");
+				Verifier(B::LigneTriangle(autre, som, tris[1], &c, &f) == 1 && pres(f, 2.0f / 3.0f) && c.o22 == 8, "FUN_00567640 : le second triangle, de l'autre côté de la diagonale");
+				f = 1.0f;
+				Verifier(B::LigneTriangle(mont, som, tris[0], &c, &f) == 1 && pres(f, 1.0f / 3.0f) && pres(c.normale[2], 1.0f),
+				         "FUN_00567640 : par en dessous, le triangle est touché aussi, la normale pas retournée");
+				f = 1.0f;
+				Verifier(B::LigneTriangle(haut, som, tris[0], &c, &f) == 0 && B::LigneTriangle(plat, som, tris[0], &c, &f) == 0,
+				         "FUN_00567640 : les deux bouts du même côté, et une ligne dans le plan, rien");
+				int a0 = B::LigneTriangle(arete, som, tris[0], &c, &f);
+				f = 1.0f;
+				int a1 = B::LigneTriangle(arete, som, tris[1], &c, &f);
+				printf("  ligne sur la diagonale commune : triangle 0 %d, triangle 1 %d\n", a0, a1);
+				Verifier(a0 == 1 && a1 == 1, "FUN_00567640 : sur l'arête commune, les deux triangles sont touchés");
+				// Dans le cadre (FUN_0056aee0), le modèle tourné d'un quart de tour et posé en (10, 0, 0) : une ligne qui descend en
+				// (11, −1) du monde, soit (−1, −1) du modèle ; la sphère du modèle n'est pas sur le trajet.
+				const float seg[8] = {11, -1, 2, 0, 11, -1, -1, 0};
+				int nT = 0;
+				auto oui = [](const float *) { return true; };
+				auto sphere = [](const float *l, const B::SphereCol &sp, Contact *k, float *fr) { B::LigneSphere(l, sp, k, fr); };
+				auto boite = [](const float *, const B::BoiteCol &, Contact *, float *) {};
+				auto triangle = [&](const float *l, const int16 *sm, const B::TriangleCol &tr, Contact *k, float *fr) { nT++; B::LigneTriangle(l, sm, tr, k, fr); };
+				auto arbre = [](const float *, const std::function<void(int)> &) {};
+				Contact m;
+				f = 1.0f;
+				Verifier(B::TestLigne(seg, m4.m, &mb, false, &m, &f, 0, false, oui, sphere, boite, triangle, arbre) == 1 && pres(f, 2.0f / 3.0f) && nT == 2
+				         && pres(m.point[0], 11.0f) && pres(m.point[1], -1.0f) && pres(m.point[2], 0.0f) && pres(m.normale[2], 1.0f) && m.o22 == 7,
+				         "FUN_0056aee0 avec FUN_00567640 : le sol du modèle tourné, touché en (11, −1, 0) du monde, surface 7");
+			}
 			// Une boîte : la fonction des boîtes reçoit la sphère et le déplacement dans l'espace de b ; sa normale est tournée par m4.
 			B::BoiteCol bx[1] = {{{-1, -1, -1}, 0, {1, 1, 1}, 0, 4, 3, {0, 0}}};
 			mb.boites = bx; mb.nBoites = 1;
