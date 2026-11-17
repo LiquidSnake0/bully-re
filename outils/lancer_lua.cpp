@@ -7080,16 +7080,23 @@ LireDuMonde(const std::string &nom)
 // .agr de même nom dans Stream/World.img (à défaut dans le dossier Anim), découpé et décodé (AgrLireGroupe, src/anim/Agr.h), chaque animation étirée sur la durée
 // de son enregistrement (HxdEtirer, l'évaluation FUN_006be250 qui divise le temps par le +0xc de l'enregistrement). Chaque groupe
 // est lu une fois. nil : un haché inconnu de MAINPED, un groupe absent de World.img ou une animation qui ne se décode pas.
-struct CAnimOutil { const AgrAnim *anim = nil; const CHxdAnim *enr = nil; std::string groupe; int32 rang = -1; };
+// Entre plusieurs enregistrements du même haché, le jeu prend le premier dont le groupe est chargé (CHxdFile::ChercherCharge,
+// FUN_006b1c00) : l'outil prend le premier dont un script a chargé le groupe (groupesAnim, LoadAnimationGroup) ; à défaut le
+// premier du fichier, comme avant (`charge` faux ; supposé : son groupe est chargé par ce que l'outil ne suit pas, les groupes
+// permanents et ceux des modèles, sinon la piste ne lancerait rien).
+struct CAnimOutil { const AgrAnim *anim = nil; const CHxdAnim *enr = nil; std::string groupe; int32 rang = -1; bool charge = false; int32 memes = 0; };
 static CAnimOutil
 AnimationParHache(uint32 hache)
 {
 	static std::map<int32, std::vector<AgrAnim>> groupes;
 	CAnimOutil r;
-	for(const CHxdAnim &a : hxdPietons.anims) if((a.hachage & 0x7fffffff) == (hache & 0x7fffffff)){ r.enr = &a; break; }
+	r.enr = hxdPietons.ChercherCharge(hache, [](const CHxdAnim &a){
+		return a.groupe < hxdPietons.groupes.size() && groupesAnim.EstCharge(hxdPietons.groupes[a.groupe].nom.c_str()); });
+	r.charge = r.enr != nil;
+	for(const CHxdAnim &a : hxdPietons.anims) if((a.hachage & 0x7fffffff) == (hache & 0x7fffffff)){ if(r.enr == nil) r.enr = &a; r.memes++; }
 	if(r.enr == nil) return r;
-	int32 g = -1;
-	r.rang = hxdPietons.Indice(r.enr->hachage, &g);
+	int32 g = (int32)r.enr->groupe;
+	r.rang = hxdPietons.IndiceDe(r.enr);
 	if(g < 0 || g >= (int32)hxdPietons.groupes.size()) return r;
 	r.groupe = hxdPietons.groupes[g].nom;
 	auto it = groupes.find(g);
@@ -7115,6 +7122,14 @@ AnimationParHache(uint32 hache)
 // non suivie) ; en mode 2 il boucle sur la durée
 // de l'enregistrement HXD, sinon il s'arrête à la fin (la position 44 si elle est positive et plus courte, sinon la durée) : la
 // dernière pose reste.
+// Ce que l'outil dit du choix entre plusieurs enregistrements d'un haché (rien pour un haché à un seul enregistrement).
+static std::string
+DitGroupe(const CAnimOutil &a)
+{
+	if(a.memes <= 1) return std::string();
+	return (a.charge ? ", le groupe chargé par un script parmi " : ", le premier de ") + std::to_string(a.memes) + " enregistrements de ce haché"
+	       + (a.charge ? "" : ", aucun de leurs groupes chargé par un script");
+}
 // La stat 0x14 d'un piéton sur 100 ; 1 pour un piéton que l'outil n'a pas. Un piéton sans entrée de pedstats.dat (le joueur, que
 // l'outil ne crée pas par CreerPed) compte 100, comme CScriptPedPool::PasDuControleur le compte déjà (supposé : le jeu lui copie
 // l'entrée de son modèle, FUN_00478e30).
@@ -7287,7 +7302,7 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 			CPoseJouee x; InstantJoue(*m, tn, &x, StatVitesse(indice));
 			int32 r = hxdPietons.MasqueDeCouche(m->masque);
 			bool nomme = !m->masque.empty() && hxdPietons.Masque(m->masque.c_str()) >= 0;
-			ditCouches += (ditCouches.empty() ? "" : ", ") + (x.a.enr ? x.a.enr->nom : std::string("?")) + " (masque " + (nomme ? m->masque : r >= 0 ? hxdPietons.masques[r] + ", le premier du fichier" : std::string("absent")) + ", couche " + std::to_string(m->couche) + ")";
+			ditCouches += (ditCouches.empty() ? "" : ", ") + (x.a.enr ? x.a.enr->nom : std::string("?")) + " (n° " + std::to_string(x.a.rang) + " de " + x.a.groupe + ".agr" + DitGroupe(x.a) + ", masque " + (nomme ? m->masque : r >= 0 ? hxdPietons.masques[r] + ", le premier du fichier" : std::string("absent")) + ", couche " + std::to_string(m->couche) + ")";
 			if(r < 0 || !x.a.anim) continue;
 			couches.push_back({x.a.anim, x.t, &hxdPietons.poidsMasques[r]});
 		}
@@ -7340,9 +7355,9 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 			                 ped.spheres[3].centre[2], ped.spheres[4].centre[2], ped.spheres[5].centre[2]);
 			else if(!joue) printf("%6.2f s  le piéton %d ne joue aucune piste Animation (le nœud %s) : ses os restent dans la pose du fichier\n",
 			                 maintenant / 1000.0, indice, arbres.CheminDe(NoeudJoue(indice)).c_str());
-			else printf("%6.2f s  le piéton %d joue %s (%08x : n° %d de %s.agr, %s, %.2f s, mode %d, la stat 0x14 à %d), à %.2f s de l'animation (entrée à %.2f s du nœud %s) : "
+			else printf("%6.2f s  le piéton %d joue %s (%08x : n° %d de %s.agr%s, %s, %.2f s, mode %d, la stat 0x14 à %d), à %.2f s de l'animation (entrée à %.2f s du nœud %s) : "
 			            "%s%s%s, les six sphères à %.2f, %.2f, %.2f, %.2f, %.2f, %.2f m du sol\n",
-			            maintenant / 1000.0, indice, pj.a.enr ? pj.a.enr->nom.c_str() : "?", pj.hache, pj.a.rang, pj.a.groupe.empty() ? "?" : pj.a.groupe.c_str(),
+			            maintenant / 1000.0, indice, pj.a.enr ? pj.a.enr->nom.c_str() : "?", pj.hache, pj.a.rang, pj.a.groupe.empty() ? "?" : pj.a.groupe.c_str(), DitGroupe(pj.a).c_str(),
 			            pj.a.anim ? "décodée" : "pas décodée", pj.a.enr ? pj.a.enr->duree : -1.0f, pj.mode, (int)pietons.StatLue(indice, 0x14, 100), pj.t, pj.entree, arbres.CheminDe(NoeudJoue(indice)).c_str(),
 			            !pose ? "les os dans la pose du fichier" : !fondu ? "les os posés par l'animation" :
 			            ("les os posés par l'animation, au poids " + std::to_string(poids).substr(0, 4) + " dans son fondu de " + std::to_string(pj.fondu).substr(0, 4) + " s depuis "

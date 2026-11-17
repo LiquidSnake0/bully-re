@@ -113,4 +113,21 @@ public:
 		}
 		return -1;
 	}
+	// L'animation d'un haché comme le jeu la cherche (FUN_006b1c00, lue de 0x6b1c00 à 0x6b1c60, sur la table des
+	// enregistrements +0x10 du fichier, que FUN_00607610 appelle pour une piste Animation) : **le premier enregistrement de
+	// ce haché dont le premier mot (+0x0) n'est pas nul**, dans l'ordre du fichier ; ce mot est l'animation décodée que le
+	// rattachement de son groupe y écrit (FUN_006bf0e0, à 0x6bf2f9 : le retour de 6be480) : entre plusieurs
+	// enregistrements du même haché (172 hachés de MAINPED.HXD), c'est celui d'un groupe chargé qui est pris, et sans
+	// aucun chargé la recherche rend 0 (la piste ne lance rien). `charge` dit si le groupe d'un enregistrement est chargé.
+	// (Un haché nul avec un nom : le haché du nom, 576d80 ; non refait ici.)
+	template<class F> const CHxdAnim *ChercherCharge(uint32 hachage, F charge) const {
+		for(const CHxdAnim &a : anims) if(a.hachage == hachage && charge(a)) return &a;
+		return nil;
+	}
+	// Le rang d'un enregistrement dans le .agr de son groupe (le rattachement, comme Indice).
+	int32 IndiceDe(const CHxdAnim *e) const {
+		int32 k = 0;
+		for(const CHxdAnim &a : anims){ if(&a == e) return k; k += a.groupe == e->groupe; }
+		return -1;
+	}
 };

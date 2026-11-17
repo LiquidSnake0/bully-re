@@ -136,6 +136,17 @@ main(void)
 	VERIF(k && fabsf(k->duree - 4.433f) < 0.01f && k->taille == 5044 + 4);
 	int32 gk = -1;
 	VERIF(mainped.Indice(ActionHash("NPC_LOVE\\KISS_HARD_B"), &gk) == 8 && gk >= 0 && mainped.groupes[gk].nom == "NPC_Love");
+	// Un haché à plusieurs enregistrements : le jeu prend le premier dont le groupe est chargé (FUN_006b1c00) ; C_PLAYER\BALL_HOLD
+	// est le n° 3 de W_Thrown.agr ou le n° 6 de 2_G2CarnivalDate.agr selon le groupe chargé, et rien sans groupe chargé.
+	{
+		uint32 h = ActionHash("C_PLAYER\\BALL_HOLD");
+		auto par = [&](const char *g){ return mainped.ChercherCharge(h, [&](const CHxdAnim &a){ return a.groupe < mainped.groupes.size() && mainped.groupes[a.groupe].nom == g; }); };
+		const CHxdAnim *lance = par("W_Thrown"), *foire = par("2_G2CarnivalDate"), *rien = par("pas_un_groupe");
+		const CHxdAnim *tous = mainped.ChercherCharge(h, [](const CHxdAnim &){ return true; });
+		VERIF(lance && foire && lance != foire && rien == nil && mainped.IndiceDe(lance) == 3 && mainped.IndiceDe(foire) == 6);
+		VERIF(tous == mainped.Chercher(h) && mainped.IndiceDe(tous) == mainped.Indice(h));
+		printf("C_PLAYER\\BALL_HOLD : le n° %d de W_Thrown.agr ou le n° %d de 2_G2CarnivalDate.agr selon le groupe chargé\n", mainped.IndiceDe(lance), mainped.IndiceDe(foire));
+	}
 	// Les groupes : Grap y compte 182 104 octets, le fichier 181 868, soit 4 de plus par animation (59).
 	bool grap = false;
 	for(const CHxdGroupe &g : mainped.groupes) if(g.nom == "Grap") grap = g.taille == 181868 + 4 * 59;
