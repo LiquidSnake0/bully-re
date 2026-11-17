@@ -723,6 +723,14 @@ billes), et les sept missions gardent leurs temps à chacun des dix commits : 1_
 (aux billes 147,97 s), 1_04 à 82,53 s, 1_05 à 180,31 s, 1_06_01 à 61,81 s, 1_07 à 150,88 s. Les autres missions ne changent
 pas d'une ligne : aucun projectile n'y teste un piéton.
 
+Le 17.11, la suite de la pose des os (docs/suite.md, « Fait ») : dans `1_04`, un piéton dont le nœud n'a pas de piste Animation
+garde celle du nœud quitté, le joueur en bas de l'arbre joue TREE\TREE_IDLE_B à 73,59 s (le nœud lancé par une piste Spawn), la
+couche C_PLAYER\BALL_HOLD des piétons touchés sort sur 0,23 s (de 76,76 s à 77,91 s), et les animations à deux enregistrements
+disent le groupe choisi. Le joueur reçoit STAT_PLAYER (200 points de vie, réserve de sprint 60) : chaque exécution l'écrit en
+tête, le joueur immobile prend une autre feuille de IDLE (1 011 lignes changées dans `1_03`), et `PedSetHealth(0, 150)` n'est
+plus appelé à 22,31 s de `1_02`. Les sept missions gardent leurs temps : 1_01 à 10,46 s, 1_02 à 132,92 s, 1_03 à 148,90 s (aux
+billes 147,97 s), 1_04 à 82,53 s, 1_05 à 180,31 s, 1_06_01 à 61,81 s, 1_07 à 150,88 s.
+
 ## `1_05` (« Save Algie ») (06.11.2026)
 
 `1_05` s'enchaîne après `1_04`. Lancée seule (`build/outils/lancer_lua 90 --mission 1_05 --sans-cinematiques`), elle bouclait
