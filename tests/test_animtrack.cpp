@@ -249,6 +249,34 @@ Lecteur(void)
 	VERIF(g.gardees[1].size() == 9 && g.gardees[1][0].places[0].t == t && g.gardees[1][0].poids == w);
 }
 
+static void
+Poses(void)
+{
+	CHxdAnim a; a.duree = 2.0f; a.fondu = 0.3f;
+	CHxdAnim b; b.duree = 1.0f; b.fondu = 0.2f;
+	const float dt = 1.0f / 30.0f;
+	CLecteurAnim l;
+	// Une première animation sur le rang 0 : le compte monte, rien à garder.
+	l.Poser(0, &a, 2, 0.0f, 0, 1.0f, 0.0f);
+	VERIF(l.compte == 1 && l.posee[0] && l.gardees[0].empty() && l.couches[0].poids == 1.0f);
+	// Remplacée avant sa première image : aucune copie gardée.
+	l.Poser(0, &b, 2, 0.0f, 0, 1.0f, 0.0f);
+	VERIF(l.compte == 1 && l.gardees[0].empty() && l.couches[0].places[0].anim == &b);
+	// Après quelques images, l'animation remplacée est gardée, figée à son instant, et la nouvelle entre sur son fondu.
+	for(int32 i = 0; i < 4; i++) l.ParImage(dt);
+	float t = l.couches[0].places[0].t;
+	VERIF(Pres(t, 3 * dt));
+	l.Poser(0, &a, 2, 0.0f, 0, 1.0f, -1.0f);
+	VERIF(l.compte == 1 && l.gardees[0].size() == 1 && l.gardees[0][0].places[0].anim == &b && l.gardees[0][0].places[0].t == t);
+	VERIF(l.couches[0].places[0].anim == &a && l.couches[0].poids == 0.0f && l.couches[0].rang == 0);
+	l.ParImage(dt); l.ParImage(dt);
+	VERIF(Pres(l.couches[0].poids, 2.0f / 9.0f) && l.gardees[0][0].places[0].t == t && l.gardees[0][0].poids == 1.0f);
+	printf("pose sur le rang 0 : la nouvelle au poids %.3f après deux images, la remplacée gardée à %.4f s\n", l.couches[0].poids, l.gardees[0][0].places[0].t);
+	// Un rang libre : le compte monte, la couche porte son rang.
+	l.Poser(3, &b, 0, 0.0f, 0, 1.0f, 0.5f);
+	VERIF(l.compte == 2 && l.couches[3].rang == 3 && l.couches[3].places[0].drapeaux == 1u && l.couches[3].fondu == -0.5f);
+}
+
 int
 main(void)
 {
@@ -256,6 +284,7 @@ main(void)
 	Couches();
 	Lancements();
 	Lecteur();
+	Poses();
 	printf("test_animtrack : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;
 }

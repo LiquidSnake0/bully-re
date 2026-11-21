@@ -177,6 +177,25 @@ struct CLecteurAnim {
 		l.insert(l.begin(), couches[rang]);
 	}
 
+	// FUN_006bcad0(lecteur d'un piéton, ..., couche, ...) (méthode du lecteur global, ret 0x20, lue en entier de 0x6bcad0 à
+	// 0x6bcb6e, 159 octets) : une couche neuve prend son rang (+0x44) et une animation y est lancée. Si le rang porte déjà
+	// une autre couche : une copie en est gardée (FUN_006b9130, sans couche en argument) seulement si sa place 0 porte une
+	// animation et a passé sa première image (le bit 2 de ses drapeaux, +0x28 de la couche), puis elle est détruite ; sans
+	// couche sur ce rang le compte +0x88 monte. Puis FUN_006b6570 sur la couche neuve, avec la table des enregistrements du
+	// HXD du lecteur ([[lecteur + 0x94] + 0x10]) et les six autres arguments tels quels. Si la couche donnée est déjà celle
+	// du rang, seul le lancement est fait : ce cas n'est pas refait ici, la couche est toujours neuve (FUN_00612360 la
+	// prend par 006b9220).
+	void Poser(int32 rang, const CHxdAnim *enr, uint32 dr, float mel, int32 place, float vit, float f) {
+		if(posee[rang]){
+			if(couches[rang].places[0].anim != nil && (couches[rang].places[0].drapeaux & CPlaceAnim::PARTIE)) Garder(rang);
+		}else
+			compte++;
+		couches[rang] = CAnimTrack();
+		couches[rang].rang = rang;
+		posee[rang] = true;
+		couches[rang].Lancer(enr, dr, mel, place, vit, f);
+	}
+
 	// FUN_006bd320(lecteur, couche, fondu) (lue de 0x6bd320 à 0x6bd465, déjà dite dans CHxdFile::FonduDeSortie pour le
 	// choix du fondu), ici sur la couche elle-même : la couche d'un rang sort. Le rang 0 sort sans fondu ; un fondu de -1
 	// (0x9009ac) prend celui du masque de la couche si elle en porte un (+0x28 du masque, `fonduMasque`). Un fondu d'au
