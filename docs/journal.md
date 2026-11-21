@@ -1909,3 +1909,35 @@ ligne (point 1 bis). Dix commits de moteur, un commit de réparation de deux ess
   180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit vérifié, **inchangées de bout en bout** (le
   commit a1d0608, qui ne touche que deux essais et un commentaire, n'a pas rejoué les missions).
 - **Bilan** : 1 342 fonctions recréées (8,8 % du code), contre 1 332 ; 2 271 comprises, contre 2 261.
+
+## 21.11.2026, séance 1 (de 00 h 52 à 02 h 45)
+
+Le chantier : ce qui restait de la pose des os par l'animation (point 1 de `docs/suite.md`) : la mise à jour des places du
+lecteur (1 b), puis la locomotion (1 a et 1 c). Neuf commits de moteur et celui-ci ; le point 1 bis n'est pas touché.
+
+- **La place d'une couche** (e736a9f, `FUN_006b2560`) et **le poids d'une couche** (7e3a4bc, `FUN_006b26f0`) : la fonction
+  que le 17.11 cherchait ; le poids monte et descend de dt sur le fondu à chaque image.
+- **Le lancement sur une place** (8a9581c, `FUN_006b6570`), **le lecteur d'un piéton** (f846831, `FUN_006c05b0`,
+  `FUN_006b9130`, `FUN_006b5950`) : sept couches, sept listes de gardées, figées pour AM_AnimTrack.
+- **Le lecteur branché dans l'outil** (eda4026, `FUN_006bcad0`) : la pose des os lit le lecteur du piéton au lieu de
+  recalculer l'instant et le poids depuis l'horloge du nœud ; 141 lignes de `1_04` et 8 de `1_03` aux billes changent.
+- **La locomotion** : sa couche est AM_MotionTrack, sa mise à jour 00731b90 (lue, pas recréée). Recréés dans
+  `src/anim/MotionTrack.h` : la synchro de la marche (3ac7401, `FUN_0072eff0`, `FUN_0072edd0`), la mesure d'angle et le
+  remappage (8362bdc, `FUN_0072f2a0`, `FUN_0072f3b0`, `FUN_00413c10`), la vitesse naturelle et la cadence (0a1fd58,
+  `FUN_00730340`). Les champs 28 à 44 de `LocomotionAnimationNew` sont nommés. Rien n'en est branché : il manque le trajet
+  d'une animation (006b3cc0) et la vitesse du piéton.
+- **Une couche installée vide ses gardées** (8343759, le début de 006be730).
+- **Mes erreurs de la séance**, corrigées avant chaque commit : (1) au premier commit, une adresse de fonction non recréée
+  écrite dans un commentaire de `src` faussait le compte, vue par le contrôle et retirée avant de committer ; (2) une
+  vérification de syntaxe d'un fichier lancée une fois hors du verrou de la machine ; (3) le branchement ne compilait pas
+  au premier passage (une inclusion oubliée) ; (4) deux attentes fausses dans l'essai « Synchros » (je supposais que les
+  mêmes marques en secondes donnent la même phase sur une animation deux fois plus longue), vues par la ligne « KO » et
+  corrigées dans l'essai, pas dans la fonction ; (5) une trace temporaire ajoutée à l'outil pour comprendre un fondu absent
+  (le piéton 9 à 74,02 s), retirée avant le commit.
+- **Ce qui reste** : voir `docs/suite.md`, point 1 (a : recréer 00731b90, lire 006b3cc0 ; b : le mélange des gardées dans
+  006be730 ; c : l'octet 61 et l'échelle du bassin) et 1 bis, inchangé.
+- **Les comptes des README** : contrôlés contre `tools/avancement.py` avant chaque push, justes à chaque commit.
+- **REA amont** : pas demandé.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux billes 147,97 s), `1_04` à 82,53 s, `1_05` à
+  180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout**.
+- **Bilan** : 1 354 fonctions recréées (8,9 % du code), contre 1 342 ; 2 280 comprises, contre 2 271.

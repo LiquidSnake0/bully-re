@@ -57,6 +57,7 @@
 #include "../src/anim/Agr.h"
 #include "../src/anim/AgrHxd.h"
 #include "../src/anim/AnimGroups.h"
+#include "../src/anim/AnimTrack.h"
 #include "../src/core/ConditionListe.h"
 #include "../src/audio/SpeechEvents.h"
 #include "../src/audio/SpeechBank.h"
@@ -7135,68 +7136,95 @@ DitGroupe(const CAnimOutil &a)
 // l'entrée de son modèle, FUN_00478e30).
 static float StatVitesse(int ped){ return pietons.Acceder(ped) ? pietons.StatLue(ped, 0x14, 100) / 100.0f : 1.0f; }
 struct CPoseJouee { uint32 hache = 0; float t = 0, entree = 0, fondu = 0; int32 mode = 0; CAnimOutil a; };
+// Le lecteur d'animations de chaque piéton de l'outil (CLecteurAnim, src/anim/AnimTrack.h) : ses sept couches, mises à jour à
+// chaque image comme le jeu le fait (FUN_006c05b0), au lieu d'un instant et d'un poids recalculés depuis l'horloge du nœud.
+// Les pistes Animation et HitAnimation que le contrôleur d'actions a recueillies (celles du nœud joué, +0x10, et des nœuds que
+// ses Execute font jouer) y sont lancées quand leur entrée est atteinte, chacune une fois (`cles` : la piste lancée sur chaque
+// rang et le début de son nœud). Le lancement est lu en entier (FUN_00612360) : la couche neuve du rang (FUN_006b9220), le
+// masque pour un rang positif (FUN_00607340, sinon FUN_00607320 au rang 0), l'animation par son haché (FUN_00607610), le
+// lecteur (FUN_006c0be0, qui passe par FUN_006bcad0, CLecteurAnim::Poser : la couche remplacée est gardée dans la liste de son
+// rang, FUN_006b9130), le départ (FUN_006c0d30 : le champ 40 borné à la durée de l'enregistrement, lu de 0x6c0d30 à 0x6c0dc0).
+// Le fondu (52) : négatif, celui de l'enregistrement HXD (+0x10) ; 0 : sans fondu (FUN_006b6570, CAnimTrack::Lancer).
+// Chaque image, la vitesse de la place d'une piste vivante est réécrite (FUN_0060ae00 : le champ 48 fois la stat 0x14 sur 100).
+// L'arrêt d'une piste de rang positif sort sa couche (FUN_0060af80 puis FUN_006bd320, avec le champ 56) ; l'arrêt d'une piste
+// de rang 0 ne retire rien : la couche 0 garde son animation, qui continue d'avancer.
+// Supposé : l'ordre dans l'image (les lancements et les arrêts, puis la mise à jour du lecteur), le mode 2 d'une piste qui
+// donne le bit 1 des drapeaux du lancement (la boucle), et le pas d'image fixe de l'outil (0,033 s).
+struct CLecteurOutil {
+	struct Cle { bool ok = false; float debut = 0.0f; CActionController::PisteAnimation p; };
+	CLecteurAnim l;
+	Cle cles[CLecteurAnim::RANGS];
+};
+static std::map<int, CLecteurOutil> lecteurs;
+static std::map<const CHxdAnim *, CAnimOutil> animsDesPlaces;   // l'animation décodée de chaque enregistrement lancé
+
 static void
-InstantJoue(const CActionController::PisteAnimation &p, float tn, CPoseJouee *out, float stat = 1.0f)
+AvancerLecteurs(float dt)
 {
-	out->hache = p.hache;
-	out->mode = p.mode;
-	out->entree = p.entree;
-	out->a = AnimationParHache(p.hache);
-	float duree = out->a.enr ? out->a.enr->duree : -1.0f;
-	float vitesse = (p.vitesse > 0.0f ? p.vitesse : 1.0f) * stat;
-	// Le départ (40) borné à la durée de l'enregistrement, comme FUN_006c0d30 le pose sur la place (lu de 0x6c0d30 à 0x6c0dc0 :
-	// négatif, 0 ; au-delà du +0xc de l'enregistrement, cette durée).
-	float depart = p.depart < 0.0f ? 0.0f : duree > 0.0f && p.depart > duree ? duree : p.depart;
-	float t = depart + (tn - p.entree) * vitesse;
-	if(duree > 0.0f){
-		if(p.mode == 2) t = fmodf(t, duree);
-		else { float fin = p.fin; if(fin < 0.0f || fin > duree) fin = duree; if(t > fin) t = fin; }
+	for(auto it = lecteurs.begin(); it != lecteurs.end(); ){
+		if(controleurs.find(it->first) == controleurs.end()) it = lecteurs.erase(it);
+		else ++it;
 	}
-	out->t = t < 0.0f ? 0.0f : t;
-	// Le fondu (52) : négatif, celui de l'enregistrement HXD (+0x10), comme FUN_006b6570 le prend (lu à l'assembleur,
-	// 0x6b65eb à 0x6b6607) ; 0 : sans fondu.
-	out->fondu = p.fondu < 0.0f ? (out->a.enr ? out->a.enr->fondu : 0.0f) : p.fondu;
+	for(auto &kv : controleurs){
+		const CActionController &c = kv.second;
+		CLecteurOutil &o = lecteurs[kv.first];
+		if(c.joue != nil){
+			float stat = StatVitesse(kv.first);
+			float tn = c.Temps(maintenant / 1000.0f);
+			const CActionController::PisteAnimation *vivantes[CLecteurAnim::RANGS] = {};
+			vivantes[0] = c.Animation(tn);
+			for(const CActionController::PisteAnimation *m : c.Couches(tn)) vivantes[CActionController::Rang(*m)] = m;
+			for(int32 r = 0; r < CLecteurAnim::RANGS; r++){
+				const CActionController::PisteAnimation *m = vivantes[r];
+				CLecteurOutil::Cle &k = o.cles[r];
+				if(m != nil){
+					float vitesse = (m->vitesse > 0.0f ? m->vitesse : 1.0f) * stat;
+					if(!k.ok || k.debut != c.debut || k.p.hache != m->hache || k.p.entree != m->entree){
+						k.ok = true; k.debut = c.debut; k.p = *m;
+						CAnimOutil a = AnimationParHache(m->hache);
+						if(a.enr != nil){
+							animsDesPlaces[a.enr] = a;
+							o.l.Poser(r, a.enr, m->mode == 2 ? 2 : 0, 0.0f, 0, vitesse, m->fondu);
+							CAnimTrack &ct = o.l.couches[r];
+							ct.masque = r > 0 ? hxdPietons.MasqueDeCouche(m->masque) : -1;
+							float duree = a.enr->duree;
+							ct.places[0].t = m->depart < 0.0f ? 0.0f : duree > 0.0f && m->depart > duree ? duree : m->depart;
+						}
+					}
+					if(o.l.posee[r]) o.l.couches[r].places[0].vitesse = vitesse;
+				}else if(k.ok && r > 0){
+					k.ok = false;
+					int32 mr = o.l.posee[r] ? o.l.couches[r].masque : -1;
+					o.l.Sortir(r, k.p.sortie, mr >= 0 && mr < (int32)hxdPietons.fonduMasques.size() ? hxdPietons.fonduMasques[mr] : -1.0f);
+				}
+			}
+		}
+		o.l.ParImage(dt);
+		o.l.PurgerInstallees();   // le début de l'évaluation de la pose : une couche installée vide les gardées de son rang
+	}
 }
 
-// L'animation que joue un piéton de l'outil, et son instant : la piste de la couche 0 (CActionController::Animation, la dernière
-// lancée, FUN_00612360) des pistes Animation et HitAnimation que son contrôleur d'actions a recueillies (celles du nœud joué,
-// +0x10, et des nœuds que ses Execute font jouer). Le lancement est lu en entier : la place neuve du rang (FUN_006b9220), le
-// masque pour un rang positif (FUN_00607340, sinon FUN_00607320 au rang 0), l'animation par son haché (FUN_00607610), le lecteur
-// (FUN_006c0be0, qui passe par FUN_006bcad0 : la place remplace celle de son rang, que FUN_006b9130 garde dans la liste de sa
-// couche, au plus [0xbb6128] - 1 places, la moins lourde en +0xc rendue d'abord), le départ (FUN_006c0d30). `quittee`, s'il est donné : l'animation du nœud quitté et le poids de la nouvelle, quand la nouvelle est encore dans
-// son fondu (le temps depuis son lancement sous son fondu) ; le poids monte de 0 à 1 sur le fondu, linéairement (supposé : le lecteur
-// du jeu tient ses poids en +0xc, +0x10 et +0x14 de sa place, FUN_006b6570, non lus plus loin) ; l'animation quittée reste à
-// l'instant où elle a été quittée (supposé). Un nœud sans piste Animation vivante garde l'animation du nœud quitté, qui continue
-// (`garde`) : l'arrêt d'une AnimationTrack (FUN_0060af80, lue de 0x60af80 à 0x60afd9) ne retire rien de la couche 0 du lecteur, il
-// ne retire que l'animation d'une couche 1 à 6 (FUN_006bd320, sur la place que FUN_006b1df0 rend pour le champ 36 de la piste) ;
-// supposé : le lecteur continue d'avancer l'animation gardée (sa mise à jour n'est pas lue). Faux sans contrôleur, ou sans piste
-// vivante ni animation quittée.
-static bool
-AnimationDuPieton(int ped, CPoseJouee *out, CPoseJouee *quittee = nil, float *poids = nil, bool *garde = nil)
+// L'animation et l'instant que porte la place 0 d'une couche du lecteur, pour la pose des os. `k`, la piste qui l'a lancée : sans
+// boucle, l'instant est borné à son champ 44 (la fin), comme l'outil le faisait (supposé : FUN_0060ae00 dit la piste finie à
+// cet instant, ce que la place fait ensuite n'est pas lu).
+static void
+PoseDeLaPlace(const CAnimTrack &c, const CLecteurOutil::Cle *k, CPoseJouee *out)
 {
-	auto it = controleurs.find(ped);
-	if(it == controleurs.end() || it->second.joue == nil) return false;
-	const CActionController &c = it->second;
-	float tn = c.Temps(maintenant / 1000.0f);
-	const CActionController::PisteAnimation *m = c.Animation(tn);
-	float stat = StatVitesse(ped);
-	if(m == nil){
-		if(!c.quittee.ok) return false;
-		InstantJoue(c.quittee.p, c.quittee.tNoeud + (maintenant / 1000.0f - c.quittee.quitte), out, stat);
-		if(poids) *poids = 1.0f;
-		if(garde) *garde = true;
-		return true;
-	}
-	InstantJoue(*m, tn, out, stat);
-	if(quittee && poids){
-		*poids = 1.0f;
-		float depuis = tn - m->entree;
-		if(c.quittee.ok && out->fondu > 0.0f && depuis < out->fondu && c.quittee.p.hache != m->hache){
-			InstantJoue(c.quittee.p, c.quittee.tNoeud, quittee, stat);
-			if(quittee->a.anim) *poids = depuis / out->fondu;
+	const CPlaceAnim &pl = c.places[0];
+	auto ia = animsDesPlaces.find(pl.anim);
+	if(ia != animsDesPlaces.end()) out->a = ia->second;
+	float t = pl.t;
+	if(k != nil){
+		out->hache = k->p.hache; out->mode = k->p.mode; out->entree = k->p.entree;
+		float duree = pl.anim ? pl.anim->duree : -1.0f;
+		if(k->p.mode != 2 && duree > 0.0f){
+			float fin = k->p.fin;
+			if(fin < 0.0f || fin > duree) fin = duree;
+			if(t > fin) t = fin;
 		}
 	}
-	return true;
+	out->t = t;
+	out->fondu = c.reste < 0.0f ? -c.fondu : 0.0f;
 }
 
 // Les os d'un piéton dans la pose de son animation à l'instant t, dans le repère du modèle, comme outils/scene.h (Reposer) pose un
@@ -7285,43 +7313,41 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 	m4.m[12] = p.pos.x; m4.m[13] = p.pos.y; m4.m[14] = p.pos.z;
 	m1.m[12] = a.x; m1.m[13] = a.y; m1.m[14] = a.z; m2.m[12] = b.x; m2.m[13] = b.y; m2.m[14] = b.z;
 	// Les os dans la pose de l'animation que joue le piéton (PoserOs), à défaut dans celle du fichier.
+	// Les os dans la pose que porte le lecteur du piéton (AvancerLecteurs), à défaut dans celle du fichier : la couche 0 à son
+	// instant et à son poids (FUN_006b26f0) ; tant que ce poids n'est pas à 1, la couche gardée en tête de son rang, figée à
+	// l'instant où elle a été remplacée (FUN_006c05b0 ne met pas à jour une AM_AnimTrack gardée), au poids restant (supposé :
+	// l'évaluation 006be730 mélange toutes les gardées du rang, elle n'est lue que jusqu'à sa purge ; ici la tête seule).
 	CPoseJouee pj, pq;
 	float poids = 1.0f;
-	bool garde = false;
-	bool joue = AnimationDuPieton(indice, &pj, &pq, &poids, &garde);
-	bool fondu = joue && poids < 1.0f && pq.a.anim;
+	bool garde = false, joue = false;
 	CVector poses[CSqueletteOutil::OS];
-	// Les couches 1 à 6 (CActionController::Couches), leur masque cherché dans MAINPED.HXD par son nom, à défaut le premier du fichier.
+	// Les couches 1 à 6 du lecteur, chacune avec son masque (cherché dans MAINPED.HXD par son nom, à défaut le premier du fichier)
+	// et son poids, qui monte sur son fondu d'entrée et descend sur son fondu de sortie (FUN_006b26f0).
 	std::vector<CCoucheOs> couches;
-	std::vector<CPoseJouee> pc;
 	std::string ditCouches;
-	if(joue){
+	auto il = lecteurs.find(indice);
+	if(il != lecteurs.end() && il->second.l.posee[0] && il->second.l.couches[0].places[0].anim != nil){
+		CLecteurOutil &o = il->second;
+		joue = true;
+		PoseDeLaPlace(o.l.couches[0], &o.cles[0], &pj);
+		poids = o.l.couches[0].poids;
 		auto ic = controleurs.find(indice);
-		float tn = ic->second.Temps(maintenant / 1000.0f);
-		for(const CActionController::PisteAnimation *m : ic->second.Couches(tn)){
-			CPoseJouee x; InstantJoue(*m, tn, &x, StatVitesse(indice));
-			int32 r = hxdPietons.MasqueDeCouche(m->masque);
-			bool nomme = !m->masque.empty() && hxdPietons.Masque(m->masque.c_str()) >= 0;
-			ditCouches += (ditCouches.empty() ? "" : ", ") + (x.a.enr ? x.a.enr->nom : std::string("?")) + " (n° " + std::to_string(x.a.rang) + " de " + x.a.groupe + ".agr" + DitGroupe(x.a) + ", masque " + (nomme ? m->masque : r >= 0 ? hxdPietons.masques[r] + ", le premier du fichier" : std::string("absent")) + ", couche " + std::to_string(m->couche) + ")";
-			if(r < 0 || !x.a.anim) continue;
-			couches.push_back({x.a.anim, x.t, &hxdPietons.poidsMasques[r]});
-		}
-		// Les couches en sortie (CActionController::Sortantes) : leur fondu de sortie par CHxdFile::FonduDeSortie
-		// (FUN_006bd320) ; supposé : le poids de la couche descend de 1 à 0 sur ce fondu, linéairement, et son animation
-		// avance toujours (la mise à jour des places du lecteur n'est pas lue).
-		for(const CActionController::Sortante &q : ic->second.Sortantes(tn, maintenant / 1000.0f)){
-			float f = hxdPietons.FonduDeSortie(CActionController::Rang(q.p), q.p.masque, q.sortie);
-			int32 r = hxdPietons.MasqueDeCouche(q.p.masque);
-			if(f <= 0.0f || q.depuis < 0.0f || q.depuis >= f || r < 0) continue;
-			CPoseJouee x; InstantJoue(q.p, q.tNoeud + q.depuis, &x, StatVitesse(indice));
-			char dit[160];
-			snprintf(dit, sizeof dit, " (masque %s, couche %d, en sortie depuis %.2f s sur %.2f s, poids %.2f)", hxdPietons.masques[r].c_str(), q.p.couche, q.depuis, f, 1.0f - q.depuis / f);
-			ditCouches += (ditCouches.empty() ? "" : ", ") + (x.a.enr ? x.a.enr->nom : std::string("?")) + dit;
-			if(!x.a.anim) continue;
-			pc.push_back(x);
-			couches.push_back({x.a.anim, x.t, &hxdPietons.poidsMasques[r], 1.0f - q.depuis / f});
+		garde = ic == controleurs.end() || ic->second.joue == nil || ic->second.Animation(ic->second.Temps(maintenant / 1000.0f)) == nil;
+		if(poids < 1.0f && !o.l.gardees[0].empty()) PoseDeLaPlace(o.l.gardees[0].front(), nil, &pq);
+		for(int32 r = 1; r < CLecteurAnim::RANGS; r++){
+			const CAnimTrack &c = o.l.couches[r];
+			if(!o.l.posee[r] || c.places[0].anim == nil) continue;
+			CPoseJouee x; PoseDeLaPlace(c, &o.cles[r], &x);
+			int32 mr = c.masque;
+			char dit[96];
+			snprintf(dit, sizeof dit, ", couche %d, à %.2f s, poids %.2f%s)", r, x.t, c.poids, c.reste > 0.0f ? " en sortie" : c.reste < 0.0f ? " en entrée" : "");
+			ditCouches += (ditCouches.empty() ? "" : ", ") + (x.a.enr ? x.a.enr->nom : std::string("?")) + " (n° " + std::to_string(x.a.rang) + " de " + x.a.groupe + ".agr" + DitGroupe(x.a)
+			            + ", masque " + (mr >= 0 && mr < (int32)hxdPietons.masques.size() ? hxdPietons.masques[mr] : std::string("absent")) + dit;
+			if(mr < 0 || mr >= (int32)hxdPietons.poidsMasques.size() || !x.a.anim) continue;
+			couches.push_back({x.a.anim, x.t, &hxdPietons.poidsMasques[mr], c.poids});
 		}
 	}
+	bool fondu = joue && poids < 1.0f && pq.a.anim;
 	bool pose = joue && pj.a.anim && PoserOs(*s, *pj.a.anim, pj.t, poses, fondu ? pq.a.anim : nil, pq.t, 1.0f - poids, &couches);
 	const CVector *osPoses = pose ? poses : s->os;
 	CModelePieton ped;
@@ -9443,6 +9469,7 @@ static std::vector<std::pair<uint32, int32>> dons;   // --donner ARME@s
 		horloge.Avancer(0.033f);
 		imageCourante = (uint32)images;
 		groupesAnim.Avancer(imageCourante);
+		AvancerLecteurs(0.033f);
 		if(aLancer && maintenant >= 1000){
 			lua_pushcfunction(L, ForceStartMission);
 			lua_pushstring(L, aLancer);
