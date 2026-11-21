@@ -193,12 +193,69 @@ Lancements(void)
 	printf("place 1 : mélange %.1f, la couche repart du poids %.0f sur %.1f s\n", m.melange, m.poids, -m.fondu);
 }
 
+static void
+Lecteur(void)
+{
+	CHxdAnim a; a.duree = 2.0f; a.fondu = 0.3f;
+	const float dt = 1.0f / 30.0f;
+
+	// Deux couches : le rang 0 installé, le rang 2 qui entre sur 0,3 s.
+	CLecteurAnim l;
+	l.posee[0] = true; l.couches[0].Lancer(&a, 3, 0.0f, 0, 1.0f, 0.0f);
+	l.posee[2] = true; l.couches[2].Lancer(&a, 2, 0.0f, 0, 1.0f, -1.0f); l.couches[2].masque = 4;
+	l.compte = 2;
+	for(int32 i = 0; i < 12; i++) l.ParImage(dt);
+	VERIF(l.couches[2].poids == 1.0f && Pres(l.couches[0].places[0].t, 11 * dt) && Pres(l.couches[2].places[0].t, 11 * dt));
+
+	// La sortie du rang 2 au fondu de son masque (0,3 s) : la couche reste, son poids descend, puis elle est retirée ;
+	// une copie est gardée sur son rang à l'image du retrait, et vidée à l'image suivante (plus de couche sur ce rang).
+	l.Sortir(2, -1.0f, 0.3f);
+	VERIF(l.posee[2] && l.couches[2].reste == 0.3f && l.couches[2].fondu == 0.3f && l.couches[2].poids == 1.0f);
+	int32 images = 0;
+	while(l.posee[2] && images < 100){ l.ParImage(dt); images++; }
+	printf("sortie du rang 2 sur 0,3 s : retirée à la %de image, %d couche(s) posée(s), %d gardée(s)\n",
+		images, l.compte, (int32)l.gardees[2].size());
+	VERIF((images == 9 || images == 10) && l.compte == 1 && l.gardees[2].size() == 1);
+	VERIF(l.gardees[2][0].poids == 1.0f && l.gardees[2][0].places[0].anim == &a);
+	VERIF(l.couches[2].places[0].anim == nil && l.couches[2].places[0].vitesse == 1.0f && l.couches[2].masque == -1);
+	l.ParImage(dt);
+	VERIF(l.gardees[2].empty());
+
+	// Le rang 0 sort toujours sans fondu, et sans copie gardée.
+	l.Sortir(0, 0.5f);
+	VERIF(!l.posee[0] && l.compte == 0 && l.gardees[0].empty());
+	// Une couche sans masque garde le -1, écrit tel quel (négatif : FUN_006b26f0 le lit comme une entrée) ; un fondu sous
+	// 0,001 retire aussitôt.
+	l.posee[3] = true; l.couches[3].Lancer(&a, 3, 0.0f, 0, 1.0f, 0.0f); l.compte = 1;
+	l.Sortir(3, -1.0f, 0.3f);
+	VERIF(l.posee[3] && l.couches[3].reste == -1.0f);
+	l.Sortir(3, 0.0005f);
+	VERIF(!l.posee[3] && l.gardees[3].size() == 1 && l.compte == 0);
+
+	// Les gardées d'un rang : au plus neuf ; la dixième chasse la plus légère, la première des plus légères.
+	CLecteurAnim g;
+	g.posee[1] = true;
+	for(int32 i = 0; i < 9; i++){ g.couches[1].poids = i == 3 || i == 6 ? 0.25f : 0.5f + 0.01f * i; g.couches[1].rang = i; g.Garder(1); }
+	VERIF(g.gardees[1].size() == 9 && g.gardees[1][0].rang == 8 && g.gardees[1][8].rang == 0);
+	g.couches[1].poids = 0.9f; g.couches[1].rang = 9; g.Garder(1);
+	bool reste3 = false, reste6 = false;
+	for(const CAnimTrack &c : g.gardees[1]){ if(c.rang == 3) reste3 = true; if(c.rang == 6) reste6 = true; }
+	VERIF(g.gardees[1].size() == 9 && g.gardees[1][0].rang == 9 && reste3 && !reste6);
+	printf("gardées : %d sur le rang 1 après dix copies, la plus légère chassée\n", (int32)g.gardees[1].size());
+	// Une gardée reste figée pendant que sa couche avance.
+	float t = g.gardees[1][0].places[0].t, w = g.gardees[1][0].poids;
+	g.couches[1].Lancer(&a, 2, 0.0f, 0, 1.0f, 0.3f);
+	g.ParImage(dt); g.ParImage(dt);
+	VERIF(g.gardees[1].size() == 9 && g.gardees[1][0].places[0].t == t && g.gardees[1][0].poids == w);
+}
+
 int
 main(void)
 {
 	Places();
 	Couches();
 	Lancements();
+	Lecteur();
 	printf("test_animtrack : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;
 }

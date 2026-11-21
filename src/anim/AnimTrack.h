@@ -141,3 +141,82 @@ struct CAnimTrack {
 		if(place == 1) melange = mel;
 	}
 };
+
+// Le lecteur d'un piéton, pour ce qui touche ses couches : sept couches par rang (+0x18, un pointeur chacune, nul sans couche),
+// sept listes de couches gardées (+0x34, douze octets par rang : la tête, la queue, le compte ; le maillon d'une couche est
+// en +4) et le compte des couches posées (+0x88). Une couche gardée est la copie d'une couche remplacée ou retirée : la
+// couche qui entre sur ce rang part d'elle tant que son poids n'a pas atteint 1 (l'évaluation de la pose, 006be730, 1 795
+// octets, lue seulement jusqu'à sa purge : un poids de 1 vide la liste du rang).
+struct CLecteurAnim {
+	enum { RANGS = 7, GARDEES = 10 };  // 10 : l'entier 0xbb6128 dans l'exécutable (supposé jamais réécrit)
+	CAnimTrack couches[RANGS];         // +0x18 ; `posee` dit si le pointeur du jeu n'est pas nul
+	bool posee[RANGS] = {false, false, false, false, false, false, false};
+	std::vector<CAnimTrack> gardees[RANGS];   // +0x34, la tête en premier
+	int32 compte = 0;                  // +0x88
+
+	// FUN_006b5950(rang) (méthode du lecteur d'un piéton, ret 4, lue en entier de 0x6b5950 à 0x6b598d, 62 octets) : la
+	// liste des couches gardées d'un rang est vidée, chaque maillon retiré par la tête, le compte baissé, la couche
+	// détruite (le rang 1 de sa table virtuelle).
+	void Purger(int32 rang) { gardees[rang].clear(); }
+
+	// FUN_006b9130(rang, couche) (méthode du lecteur d'un piéton, ret 8, lue en entier de 0x6b9130 à 0x6b9210, 225 octets),
+	// pour une couche nulle en argument, le seul cas vu ici (FUN_006bd320) : rien sans couche sur ce rang ; si la liste du
+	// rang tient déjà 9 couches ou plus ([0xbb6128] - 1), la plus légère est retirée et détruite (le poids +0xc
+	// strictement sous le plus petit vu, parti du plus grand réel, 0x9009b8 : la première des plus légères) ; puis la
+	// couche du rang est copiée (le rang 2 de sa table virtuelle) et la copie mise en tête de la liste. Avec une couche en
+	// argument, c'est elle qui est mise en tête, sans copie.
+	void Garder(int32 rang) {
+		if(!posee[rang]) return;
+		std::vector<CAnimTrack> &l = gardees[rang];
+		if((int32)l.size() >= GARDEES - 1){
+			int32 min = 0;
+			for(int32 i = 1; i < (int32)l.size(); i++)
+				if(l[i].poids < l[min].poids) min = i;
+			l.erase(l.begin() + min);
+		}
+		l.insert(l.begin(), couches[rang]);
+	}
+
+	// FUN_006bd320(lecteur, couche, fondu) (lue de 0x6bd320 à 0x6bd465, déjà dite dans CHxdFile::FonduDeSortie pour le
+	// choix du fondu), ici sur la couche elle-même : la couche d'un rang sort. Le rang 0 sort sans fondu ; un fondu de -1
+	// (0x9009ac) prend celui du masque de la couche si elle en porte un (+0x28 du masque, `fonduMasque`). Un fondu d'au
+	// moins 0,001 en valeur absolue (0x900c04) est écrit en +0x10 et +0x14 et la couche reste : FUN_006b26f0 fait descendre
+	// son poids. Sinon elle est retirée aussitôt : son poids à 1, +0x10 et +0x14 à zéro, **une copie gardée dans la liste
+	// de son rang** (FUN_006b9130, sauf au rang 0), puis le masque à nul, les deux places vidées (l'enregistrement nul,
+	// les instants à 0, la vitesse à 1, les drapeaux à 0), le mélange à 0, la couche détruite, sa case à nul et le compte
+	// +0x88 baissé.
+	void Sortir(int32 rang, float f, float fonduMasque = -1.0f) {
+		if(!posee[rang]) return;
+		CAnimTrack &c = couches[rang];
+		if(rang == 0) f = 0.0f;
+		else if(f == -1.0f && c.masque >= 0) f = fonduMasque;
+		if(!((f < 0.0f ? -f : f) < 0.001f)){ c.reste = f; c.fondu = f; return; }
+		c.poids = 1.0f; c.reste = 0.0f; c.fondu = 0.0f;
+		if(rang > 0) Garder(rang);
+		c = CAnimTrack();
+		c.places[0].vitesse = 1.0f; c.places[1].vitesse = 1.0f;
+		posee[rang] = false;
+		compte--;
+	}
+
+	// FUN_006c05b0(lecteur d'un piéton, dt, pose, arg) (méthode du lecteur global 0x20c4910, ret 0x10, lue en entier de
+	// 0x6c05b0 à 0x6c0807, 600 octets) : **la mise à jour d'un lecteur à chaque image**, pour ce qui touche ses couches.
+	// Pour chaque rang de 0 à 6 : sans couche, la liste des gardées est vidée (FUN_006b5950) ; sinon les gardées dont le
+	// rang 6 de la table virtuelle rend vrai sont mises à jour (rang 3 de la table), et retirées si elles rendent faux,
+	// que l'entier 0x20c4b14 n'est pas nul et qu'elles ne sont pas en tête : ce rang 6 rend faux pour AM_AnimTrack (trois
+	// octets, xor al,al) et vrai pour AM_MotionTrack, **une couche gardée d'AM_AnimTrack reste donc figée**, à son instant
+	// et à son poids ; AM_MotionTrack n'est pas refaite, ici toutes les gardées sont figées. Puis la couche du rang avance
+	// (FUN_006b26f0) ; si elle rend faux et que le rang n'est pas 0, elle est retirée par FUN_006bd320 avec un fondu nul.
+	// Non refait : les gardes de l'entrée (rien si [+0x94] est nul ou si +0x98 porte le bit 0x400 ou le bit 1 ; sans
+	// squelette en [+0x94]+0x10 les bits 1 de +0x8c et 0x400 de +0x98 sont posés), une seconde liste avancée par 006b5990,
+	// l'évaluation de la pose (006be730 si `pose` est donné, que +0x98 porte le bit 0 et que l'entier 0x20c4b10 est nul,
+	// sinon 006bd150), 006be600 et le bit 0x400 posé en sortie.
+	template<class F> void ParImage(float dt, F suite) {
+		for(int32 r = 0; r < RANGS; r++){
+			if(!posee[r]){ Purger(r); continue; }
+			if(!couches[r].Avancer(dt, [&](int32 place, float x){ suite(r, place, x); }) && r > 0)
+				Sortir(r, 0.0f);
+		}
+	}
+	void ParImage(float dt) { ParImage(dt, [](int32, int32, float){}); }
+};
