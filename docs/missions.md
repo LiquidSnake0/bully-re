@@ -731,6 +731,16 @@ tête, le joueur immobile prend une autre feuille de IDLE (1 011 lignes changée
 plus appelé à 22,31 s de `1_02`. Les sept missions gardent leurs temps : 1_01 à 10,46 s, 1_02 à 132,92 s, 1_03 à 148,90 s (aux
 billes 147,97 s), 1_04 à 82,53 s, 1_05 à 180,31 s, 1_06_01 à 61,81 s, 1_07 à 150,88 s.
 
+Le 21.11, chaque piéton a son lecteur d'animations, mis à jour à chaque image (docs/suite.md, « Fait ») : dans `1_04`, 141
+lignes « le piéton N joue … » changent. Chaque animation est lue une image plus tôt (une place n'avance pas à sa première
+image : à 17,36 s le piéton 4 joue F_BULLY\IDLE à 1,23 s au lieu de 1,26 s), le poids monte par pas d'image (à 73,36 s le
+piéton 10 joue F_JOCKS\JOCK_JJ_IN au poids 0,33 depuis C_PLAYER\RUN gardée à 0,65 s), un coup au fondu de 0,03 s est installé
+en une image (C_PLAYER\HIT_HEAD_JAB au poids 0,99 à 74,15 s), la couche 3 C_PLAYER\BALL_HOLD dit son poids et son sens
+(« poids 0.33 en entrée » à 75,90 s, « poids 0.86 en sortie » à 76,79 s), et le piéton 9 entre dans F_JOCKS\JOCK_JJ_IN sans
+fondu à 74,02 s (sa course était à l'image d'attente de son tour). Dans `1_03` aux billes, 8 lignes changent de 0,03 s
+d'instant. Les sept missions gardent leurs temps : 1_01 à 10,46 s, 1_02 à 132,92 s, 1_03 à 148,90 s (aux billes 147,97 s),
+1_04 à 82,53 s, 1_05 à 180,31 s, 1_06_01 à 61,81 s, 1_07 à 150,88 s.
+
 ## `1_05` (« Save Algie ») (06.11.2026)
 
 `1_05` s'enchaîne après `1_04`. Lancée seule (`build/outils/lancer_lua 90 --mission 1_05 --sans-cinematiques`), elle bouclait
