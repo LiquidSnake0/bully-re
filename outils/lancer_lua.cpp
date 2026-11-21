@@ -7200,6 +7200,7 @@ AvancerLecteurs(float dt)
 			}
 		}
 		o.l.ParImage(dt);
+		o.l.PurgerInstallees();   // le début de l'évaluation de la pose : une couche installée vide les gardées de son rang
 	}
 }
 

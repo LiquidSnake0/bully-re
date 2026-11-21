@@ -346,6 +346,40 @@ Cadences(void)
 	printf("cadence : à 3 m/s sur une boucle de %.2f m/s, la vitesse de la place est %.3f\n", CMotionTrack::VitesseNaturelle(0.8f, 3.0f, 4.0f), CMotionTrack::Cadence(3.0f, 6.25f, 1.0f));
 }
 
+static void
+Purges(void)
+{
+	CHxdAnim a; a.duree = 2.0f; a.fondu = 0.3f;
+	CHxdAnim b; b.duree = 1.0f; b.fondu = 0.2f;
+	const float dt = 1.0f / 30.0f;
+	CLecteurAnim l;
+	l.Poser(0, &a, 2, 0.0f, 0, 1.0f, 0.0f);
+	for(int32 i = 0; i < 3; i++){ l.ParImage(dt); l.PurgerInstallees(); }
+	l.Poser(0, &b, 2, 0.0f, 0, 1.0f, -1.0f);                                   // fondu de 0,2 s : six images
+	l.ParImage(dt); l.PurgerInstallees();
+	l.ParImage(dt); l.PurgerInstallees();
+	// Remplacée pendant son fondu : deux gardées, que la purge laisse tant que la couche du rang est sous 1.
+	l.Poser(0, &a, 2, 0.0f, 0, 1.0f, -1.0f);                                   // fondu de 0,3 s : neuf images
+	int32 n = 0;
+	while(l.couches[0].poids < 1.0f && n < 50){
+		VERIF(l.gardees[0].size() == 2 && l.gardees[0][0].places[0].anim == &b);
+		l.ParImage(dt); l.PurgerInstallees(); n++;
+	}
+	VERIF((n == 9 || n == 10) && l.gardees[0].empty() && l.compte == 1);
+	printf("purge : deux gardées pendant le fondu, aucune à la %de image, la couche au poids %.3f\n", n, l.couches[0].poids);
+	// Une couche sans fondu est installée aussitôt : rien ne reste gardé.
+	l.Poser(0, &b, 2, 0.0f, 0, 1.0f, 0.0f);
+	VERIF(l.gardees[0].size() == 1);
+	l.PurgerInstallees();
+	VERIF(l.gardees[0].empty());
+	// Un rang sans couche n'est pas touché par cette purge (FUN_006c05b0 le vide de son côté).
+	l.gardees[4].push_back(CAnimTrack());
+	l.PurgerInstallees();
+	VERIF(l.gardees[4].size() == 1);
+	l.ParImage(dt);
+	VERIF(l.gardees[4].empty());
+}
+
 int
 main(void)
 {
@@ -357,6 +391,7 @@ main(void)
 	Synchros();
 	Angles();
 	Cadences();
+	Purges();
 	printf("test_animtrack : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;
 }

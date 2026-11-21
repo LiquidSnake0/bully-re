@@ -158,6 +158,16 @@ struct CLecteurAnim {
 	// liste des couches gardées d'un rang est vidée, chaque maillon retiré par la tête, le compte baissé, la couche
 	// détruite (le rang 1 de sa table virtuelle).
 	void Purger(int32 rang) { gardees[rang].clear(); }
+	// Le début de l'évaluation de la pose (006be730, lue de 0x6be7bb à 0x6be81b, puis 0x6bead9 à 0x6beae1) : pour chaque
+	// rang de 0 à 6 qui porte une couche, **si le poids de la couche (+0xc) n'est pas strictement sous 1, la liste des
+	// gardées du rang est vidée** (FUN_006b5950) : une couche installée ne part plus de celles qu'elle a remplacées. Sous
+	// 1, avec une liste non vide, le bit 0x1000 de +0x98 est posé et la liste est parcourue (la suite, le mélange, n'est
+	// pas refaite). Supposé : l'évaluation est faite à chaque image pour chaque piéton (FUN_006c05b0 ne l'appelle que si
+	// une pose lui est donnée, que +0x98 porte le bit 0 et que l'entier 0x20c4b10 est nul, sinon 006bd150, non lue).
+	void PurgerInstallees(void) {
+		for(int32 r = 0; r < RANGS; r++)
+			if(posee[r] && !(1.0f > couches[r].poids)) Purger(r);
+	}
 
 	// FUN_006b9130(rang, couche) (méthode du lecteur d'un piéton, ret 8, lue en entier de 0x6b9130 à 0x6b9210, 225 octets),
 	// pour une couche nulle en argument, le seul cas vu ici (FUN_006bd320) : rien sans couche sur ce rang ; si la liste du
