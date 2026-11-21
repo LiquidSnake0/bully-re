@@ -108,4 +108,33 @@ struct CMotionTrack {
 		if((double)ac > 0.0001f && cote < 0.0f) return (float)(6.283185307179586 - angle);
 		return angle;
 	}
+
+	// FUN_00730340(enregistrement, HXD) (méthode de la couche, ret 8, lue en entier de 0x730340 à 0x7303d0, 145 octets) : la
+	// vitesse naturelle d'une animation, en mètres par seconde. Une durée (+0xc de l'enregistrement) de moins de 1e-5 s en
+	// valeur absolue (0x8ff230), ou égale : 0. Sinon le trajet de l'animation, un vecteur que la fonction 006073a0 du HXD
+	// rend pour le mot +0x32 de l'enregistrement (126 octets, lue : elle évalue deux fois, par la fonction 006b3cc0 de 810
+	// octets, non lue, avec 0 puis −1 pour dernier argument, et rend la différence des deux vecteurs ; supposé : la position
+	// de la racine au début et à la fin de l'animation), puis √|x² + y²| / durée (la racine par 0085c4d0, supposé le sqrt de
+	// la bibliothèque C). Ici le trajet est donné.
+	static float VitesseNaturelle(float duree, float dx, float dy) {
+		if(!(std::fabs(duree) > 1e-5f)) return 0.0f;
+		float n2 = std::fabs((float)((double)dx * dx + (double)dy * dy));
+		float n = (float)std::sqrt((double)n2);
+		return n / duree;
+	}
+
+	// La cadence de la boucle de locomotion, dans la mise à jour 00731b90 (lue de 0x73218e à 0x732243) : la vitesse de la
+	// place 0 de la couche (+0x24), que la place 1 reprend (+0x38). stat : la stat 0x14 du piéton sur 100 (FUN_00476f10,
+	// le double 0x900130) ; v : la vitesse du piéton, le réel +0x1c de l'objet en +0x14 de ce que rend la méthode +0x40 de
+	// sa table virtuelle (non lue : supposé sa vitesse de déplacement, en mètres par seconde), gardée en +0x8c de la couche ;
+	// nat : la vitesse naturelle de l'animation (FUN_00730340). Une vitesse de piéton négative : stat. Sinon
+	// (v / nat) × stat, et stat seule si la vitesse naturelle n'est pas strictement positive : **l'animation est jouée à la
+	// vitesse qui fait avancer ses pieds comme le piéton avance**. La mise à jour ne l'écrit que pour la couche qui mène
+	// (sans piste meneuse, ou elle-même) et si l'entier 0xbc7338 n'est pas nul (il vaut 1 dans l'exécutable).
+	static float Cadence(float v, float nat, float stat) {
+		if(v < 0.0f) return stat;
+		float k = 1.0f;
+		if(nat > 0.0f) k = v / nat;
+		return k * stat;
+	}
 };

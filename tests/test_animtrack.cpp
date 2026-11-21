@@ -329,6 +329,23 @@ Angles(void)
 	printf("angle : de (0, 1) à (1, 0) %.4f rad, de (0, -1) à (1, 0) %.4f rad\n", CMotionTrack::Angle(y, x), CMotionTrack::Angle(my, x));
 }
 
+static void
+Cadences(void)
+{
+	// La vitesse naturelle : le trajet à plat sur la durée ; une durée nulle rend 0.
+	VERIF(Pres(CMotionTrack::VitesseNaturelle(0.8f, 3.0f, 4.0f), 6.25f));
+	VERIF(CMotionTrack::VitesseNaturelle(0.0f, 3.0f, 4.0f) == 0.0f);
+	VERIF(CMotionTrack::VitesseNaturelle(0.00001f, 3.0f, 4.0f) == 0.0f);
+	VERIF(CMotionTrack::VitesseNaturelle(-2.0f, 0.0f, 4.0f) == -2.0f);
+	// La cadence : un piéton à 3 m/s sur une course faite pour 6 m/s la joue à la moitié de sa vitesse, fois sa stat.
+	VERIF(Pres(CMotionTrack::Cadence(3.0f, 6.0f, 1.0f), 0.5f));
+	VERIF(Pres(CMotionTrack::Cadence(9.0f, 6.0f, 1.2f), 1.8f));
+	VERIF(CMotionTrack::Cadence(-1.0f, 6.0f, 1.2f) == 1.2f);                    // une vitesse négative : la stat seule
+	VERIF(CMotionTrack::Cadence(3.0f, 0.0f, 1.2f) == 1.2f);                     // sans vitesse naturelle : la stat seule
+	VERIF(CMotionTrack::Cadence(0.0f, 6.0f, 1.2f) == 0.0f);                     // à l'arrêt la boucle ne tourne pas
+	printf("cadence : à 3 m/s sur une boucle de %.2f m/s, la vitesse de la place est %.3f\n", CMotionTrack::VitesseNaturelle(0.8f, 3.0f, 4.0f), CMotionTrack::Cadence(3.0f, 6.25f, 1.0f));
+}
+
 int
 main(void)
 {
@@ -339,6 +356,7 @@ main(void)
 	Poses();
 	Synchros();
 	Angles();
+	Cadences();
 	printf("test_animtrack : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;
 }
