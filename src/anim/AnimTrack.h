@@ -109,4 +109,35 @@ struct CAnimTrack {
 		return true;
 	}
 	bool Avancer(float dt) { return Avancer(dt, [](int32, float){}); }
+
+	// FUN_006b6570(table, indice, drapeaux, mélange, place, vitesse, fondu) (méthode de la couche, ret 0x1c, relue en entier
+	// de 0x6b6570 à 0x6b6682, 275 octets) : une animation est lancée sur une des deux places. Dans le jeu l'enregistrement
+	// est table[indice] (0x40 octets chacun, nul hors du compte) ; ici il est donné. Le compte de références du groupe de
+	// l'animation (le mot +0x2c de son entrée de 60 octets) monte, celui de l'animation remplacée est rendu par 006b3c40 :
+	// ce n'est pas refait, tous les groupes sont chargés ici.
+	// - Le bit 0 des drapeaux annule le fondu. Un fondu strictement négatif prend celui de l'enregistrement (+0x10).
+	// - Un fondu nul : +0x10 = +0x14 = 0, le poids à 1 (la couche est installée tout de suite). Sinon +0x10 = +0x14 = -fondu
+	//   et le poids à 0 : c'est l'entrée que FUN_006b26f0 fait monter.
+	// - La place : l'enregistrement, l'instant à 0, ou à la durée si la vitesse est strictement négative, la vitesse, et les
+	//   drapeaux 1 (elle joue), 3 si le bit 1 est donné (elle boucle), plus 8 si le bit 3 est donné. Le bit 2 de la place
+	//   n'est pas posé : sa première image attend (FUN_006b2560). L'instant d'avant (+8) n'est pas écrit.
+	// - Pour la place 1 seulement, le mélange est écrit en +0x40.
+	// Le poids et le fondu sont réécrits quelle que soit la place : lancer la place 1 d'une couche installée la fait repartir
+	// de 0 si le fondu n'est pas nul.
+	void Lancer(const CHxdAnim *enr, uint32 dr, float mel, int32 place, float vit, float f) {
+		CPlaceAnim &p = places[place];
+		if(dr & 1) f = 0.0f;
+		p.anim = enr;
+		if(f < 0.0f) f = enr->fondu;
+		if(f == 0.0f){
+			reste = 0.0f; fondu = 0.0f; poids = 1.0f;
+		}else{
+			reste = -f; fondu = -f; poids = 0.0f;
+		}
+		p.t = vit < 0.0f ? enr->duree : 0.0f;
+		p.vitesse = vit;
+		p.drapeaux = (dr & 2) ? 3 : 1;
+		if(dr & 8) p.drapeaux |= 8;
+		if(place == 1) melange = mel;
+	}
 };

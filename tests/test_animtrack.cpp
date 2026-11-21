@@ -152,11 +152,53 @@ Couches(void)
 	printf("mélange : la place 0 active %d fois, la place 1 %d fois sur quatre images\n", vus[0], vus[1]);
 }
 
+static void
+Lancements(void)
+{
+	CHxdAnim a; a.duree = 2.0f; a.fondu = 0.3f;
+	const float dt = 1.0f / 30.0f;
+
+	// Un fondu négatif prend celui de l'enregistrement : l'entrée sur 0,3 s, le poids à 0, la place à 0 qui joue et boucle.
+	CAnimTrack c;
+	c.Lancer(&a, 2, 0.0f, 0, 1.0f, -1.0f);
+	VERIF(c.poids == 0.0f && c.reste == -0.3f && c.fondu == -0.3f);
+	VERIF(c.places[0].anim == &a && c.places[0].t == 0.0f && c.places[0].vitesse == 1.0f && c.places[0].drapeaux == 3u);
+	// La première image : le poids monte déjà, l'instant attend ; la deuxième : l'instant vaut un pas.
+	c.Avancer(dt);
+	VERIF(Pres(c.poids, 1.0f / 9.0f) && c.places[0].t == 0.0f);
+	c.Avancer(dt);
+	VERIF(Pres(c.poids, 2.0f / 9.0f) && Pres(c.places[0].t, dt));
+	printf("lancement, fondu de l'enregistrement : poids %.3f puis %.3f, instant 0 puis %.4f\n", 1.0f / 9.0f, c.poids, c.places[0].t);
+
+	// Le bit 0 annule le fondu : installée tout de suite. Sans le bit 1 la place ne boucle pas ; le bit 3 passe.
+	CAnimTrack d;
+	d.Lancer(&a, 1 | 8, 0.0f, 0, 1.0f, 0.5f);
+	VERIF(d.poids == 1.0f && d.reste == 0.0f && d.fondu == 0.0f && d.places[0].drapeaux == 9u);
+	// Un fondu donné : l'entrée sur ce fondu.
+	d.Lancer(&a, 0, 0.0f, 0, 1.0f, 0.5f);
+	VERIF(d.poids == 0.0f && d.reste == -0.5f && d.fondu == -0.5f && d.places[0].drapeaux == 1u);
+	// Une vitesse négative part de la fin.
+	d.Lancer(&a, 2, 0.0f, 0, -1.0f, 0.0f);
+	VERIF(d.places[0].t == 2.0f && d.places[0].vitesse == -1.0f && d.poids == 1.0f);
+	d.Avancer(dt); d.Avancer(dt);
+	VERIF(Pres(d.places[0].t, 2.0f - dt));
+
+	// La place 1 reçoit le mélange, la place 0 non ; la place 1 relance aussi le fondu de la couche.
+	CAnimTrack m;
+	m.Lancer(&a, 3, 0.7f, 0, 1.0f, 0.0f);
+	VERIF(m.melange == 0.0f && m.poids == 1.0f);
+	m.Lancer(&a, 2, 0.7f, 1, 1.5f, 0.2f);
+	VERIF(m.melange == 0.7f && m.places[1].anim == &a && m.places[1].vitesse == 1.5f && m.places[1].drapeaux == 3u);
+	VERIF(m.poids == 0.0f && m.reste == -0.2f);
+	printf("place 1 : mélange %.1f, la couche repart du poids %.0f sur %.1f s\n", m.melange, m.poids, -m.fondu);
+}
+
 int
 main(void)
 {
 	Places();
 	Couches();
+	Lancements();
 	printf("test_animtrack : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;
 }
