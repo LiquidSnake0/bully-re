@@ -1,5 +1,6 @@
 // Une couche du lecteur d'animations et ses places, sur des enregistrements construits à la main : aucun fichier du jeu.
 #include "../src/anim/AnimTrack.h"
+#include "../src/anim/MotionTrack.h"
 #include <cmath>
 #include <cstdio>
 
@@ -277,6 +278,32 @@ Poses(void)
 	VERIF(l.compte == 2 && l.couches[3].rang == 3 && l.couches[3].places[0].drapeaux == 1u && l.couches[3].fondu == -0.5f);
 }
 
+static void
+Synchros(void)
+{
+	// Deux animations aux marques à la même part de leur tour (en secondes : le double pour la cible deux fois plus longue) :
+	// la même phase, à l'échelle de la durée de la cible.
+	const float m[4] = { 0.0f, 0.25f, 0.5f, 0.75f }, m2[4] = { 0.0f, 0.5f, 1.0f, 1.5f };
+	VERIF(Pres(CMotionTrack::Synchro(0.3f, 1.0f, m, 2.0f, m2), 0.6f));
+	VERIF(Pres(CMotionTrack::Synchro(0.9f, 1.0f, m, 2.0f, m2), 1.8f));
+	// Les mêmes marques en secondes sur une cible deux fois plus longue : sa dernière marque est à 0,375 de son tour.
+	VERIF(Pres(CMotionTrack::Synchro(0.3f, 1.0f, m, 2.0f, m), 0.3f));
+	// La source part de sa première marque (0,2 s) et sa dernière (0,1 s) est à 0,9 de son tour ; la cible a sa dernière à 0,25.
+	const float s1[4] = { 0.2f, 0.4f, 0.6f, 0.1f }, c1[4] = { 0.0f, 0.1f, 0.2f, 0.5f };
+	VERIF(Pres(CMotionTrack::Synchro(0.5f, 1.0f, s1, 2.0f, c1), 0.3f / 0.9f * 0.25f * 2.0f));
+	VERIF(Pres(CMotionTrack::Synchro(0.15f, 1.0f, s1, 2.0f, c1), 1.25f));       // après la dernière marque : 0,25 + 0,5 × 0,75
+	// La première marque de la cible décale le tout, et le tour se referme passé 1.
+	const float c2[4] = { 1.0f, 0.1f, 0.2f, 0.5f };
+	VERIF(Pres(CMotionTrack::Synchro(0.5f, 1.0f, s1, 2.0f, c2), 1.5f));         // 0,3 / 0,9 × 0,75 + 0,5
+	VERIF(Pres(CMotionTrack::Synchro(0.15f, 1.0f, s1, 2.0f, c2), 0.75f));       // 0,75 + 0,5 × 0,25 + 0,5 − 1
+	// Un instant passé la durée de la source est rendu tel quel ; une marque passée la durée y est ramenée.
+	VERIF(CMotionTrack::Synchro(1.5f, 1.0f, m, 2.0f, m) == 1.5f);
+	const float gr[4] = { 0.0f, 0.25f, 0.5f, 9.0f };
+	VERIF(Pres(CMotionTrack::Synchro(0.5f, 1.0f, gr, 2.0f, gr), 1.0f));
+	VERIF(Pres(CMotionTrack::Phase(0.5f, 0.0f, 0.5f, 0.25f), 0.25f));           // sur la marque : la branche d'après
+	printf("synchro : 0,5 s d'une source d'1 s (marques 0,2 et 0,1) donne %.4f s d'une cible de 2 s (marques 0 et 0,5)\n", CMotionTrack::Synchro(0.5f, 1.0f, s1, 2.0f, c1));
+}
+
 int
 main(void)
 {
@@ -285,6 +312,7 @@ main(void)
 	Lancements();
 	Lecteur();
 	Poses();
+	Synchros();
 	printf("test_animtrack : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;
 }
