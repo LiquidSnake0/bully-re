@@ -304,6 +304,31 @@ Synchros(void)
 	printf("synchro : 0,5 s d'une source d'1 s (marques 0,2 et 0,1) donne %.4f s d'une cible de 2 s (marques 0 et 0,5)\n", CMotionTrack::Synchro(0.5f, 1.0f, s1, 2.0f, c1));
 }
 
+static void
+Angles(void)
+{
+	// Le remappage borné : c avant a, d à partir de b, la droite entre les deux.
+	VERIF(CMotionTrack::Remapper(0.5f, 1.0f, 3.0f, 0.0f, 1.0f) == 0.0f);
+	VERIF(CMotionTrack::Remapper(1.0f, 1.0f, 3.0f, 0.0f, 1.0f) == 0.0f);
+	VERIF(Pres(CMotionTrack::Remapper(1.5f, 1.0f, 3.0f, 0.0f, 1.0f), 0.25f));
+	VERIF(CMotionTrack::Remapper(3.0f, 1.0f, 3.0f, 0.0f, 1.0f) == 1.0f);
+	VERIF(Pres(CMotionTrack::Remapper(2.0f, 1.0f, 3.0f, 10.0f, 20.0f), 15.0f));
+	// L'arc cosinus borné.
+	VERIF(CMotionTrack::ArcCosinus(2.0f) == 0.0f && CMotionTrack::ArcCosinus(1.0f) == 0.0f);
+	VERIF(CMotionTrack::ArcCosinus(-1.0f) == 3.14159274f && CMotionTrack::ArcCosinus(-3.0f) == 3.14159274f);
+	VERIF(Pres(CMotionTrack::ArcCosinus(0.0f), 1.5707964f));
+	// L'angle de u à v sur un tour entier : le côté négatif passe au complément à 2π.
+	const float x[3] = { 1, 0, 0 }, y[3] = { 0, 1, 0 }, my[3] = { 0, -1, 0 }, mx[3] = { -1, 0, 0 }, x5[3] = { 5, 0, 0 };
+	VERIF(CMotionTrack::Angle(x, x) == 0.0f);
+	VERIF(Pres(CMotionTrack::Angle(my, x), 1.5707964f));
+	VERIF(Pres(CMotionTrack::Angle(y, x), 4.712389f));
+	VERIF(Pres(CMotionTrack::Angle(mx, x), 3.14159274f));
+	VERIF(Pres(CMotionTrack::Angle(my, x5), 1.5707964f));                       // v est normé par la fonction
+	const float h[3] = { 0, -1, 7 };
+	VERIF(Pres(CMotionTrack::Angle(h, x), 1.5707964f));                         // la hauteur de u n'est pas lue
+	printf("angle : de (0, 1) à (1, 0) %.4f rad, de (0, -1) à (1, 0) %.4f rad\n", CMotionTrack::Angle(y, x), CMotionTrack::Angle(my, x));
+}
+
 int
 main(void)
 {
@@ -313,6 +338,7 @@ main(void)
 	Lecteur();
 	Poses();
 	Synchros();
+	Angles();
 	printf("test_animtrack : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;
 }

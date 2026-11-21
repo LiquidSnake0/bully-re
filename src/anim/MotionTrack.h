@@ -13,6 +13,8 @@
 // Les calculs : le binaire calcule sur la pile x87 et arrondit à 32 bits à chaque fstp ; ici chaque réel rangé est un float.
 #pragma once
 #include "../common.h"
+#include "../collision/Balayes.h"
+#include <cmath>
 
 struct CMotionTrack {
 	// FUN_0072edd0 (cdecl, dix réels, lue en entier de 0x72edd0 à 0x72ee5b, 140 octets) : la phase de l'animation cible pour
@@ -64,5 +66,46 @@ struct CMotionTrack {
 		for(int i = 1; i < 4; i++) if(s[i] < 0.0f) s[i] = s[i] + 1.0f;
 		float r = Phase(p, B, q[3], s[3]);
 		return r * d2;
+	}
+
+	// FUN_0072f3b0(x, a, b, c, d) (cdecl, lue en entier de 0x72f3b0 à 0x72f438, 137 octets) : x passé de l'intervalle (a, b)
+	// à l'intervalle (c, d), borné : d dès que x atteint b (b ≤ x), c tant que x n'a pas passé a (x − a ≤ 0), sinon
+	// c + (x − a) × ((d − c) / (b − a)). La mise à jour de la locomotion en tire le mélange de ses deux places (+0x40), avec
+	// la mesure de l'angle, les seuils (+0x1c) des deux entrées qui l'encadrent, 0 et 1.
+	static float Remapper(float x, float a, float b, float c, float d) {
+		float xa = x - a;
+		if(b <= x) return d;
+		if(xa <= 0.0f) return c;
+		float dc = d - c;
+		float ba = b - a;
+		return (float)((double)c + (double)xa * ((double)dc / ba));
+	}
+
+	// FUN_00413c10(x) (cdecl, lue en entier de 0x413c10 à 0x413c62, 84 octets) : l'arc cosinus borné, 0 pour x ≥ 1, π
+	// (0x9009a8) pour x ≤ −1, sinon la fonction 0085cdd0 (supposé : l'acos de la bibliothèque C, elle n'est pas lue plus loin
+	// que son aiguillage), arrondie à float.
+	static float ArcCosinus(float x) {
+		if(x >= 1.0f) return 0.0f;
+		if(x <= -1.0f) return 3.14159274f;
+		return (float)std::acos((double)x);
+	}
+
+	// FUN_0072f2a0(u, v) (deux vecteurs par valeur, ret 0x18, lue en entier de 0x72f2a0 à 0x72f399, 250 octets) : l'angle de
+	// u à v, en radians, de 0 à 2π. v est normé (FUN_00414cc0), u est pris tel quel (l'appelante le norme, supposé) ; le
+	// cosinus est u · v à plat (x et y seulement), borné à −1..1, l'angle son arc cosinus (FUN_00413c10) ; le côté est u · w,
+	// w = (v.y, −v.x, 0) normé : s'il passe 0,0001 en valeur absolue (0x900af8) et qu'il est négatif, l'angle devient
+	// 2π − angle (0x9009b0). C'est la mesure que la mise à jour de la locomotion compare aux seuils de ses entrées.
+	static float Angle(const float *u, const float *v0) {
+		float v[3] = { v0[0], v0[1], v0[2] };
+		CCollisionBalayee::Normaliser(v);
+		float w[3] = { v[1], -v[0], 0.0f };
+		CCollisionBalayee::Normaliser(w);
+		float cs = (float)((double)u[1] * v[1] + (double)u[0] * v[0]);
+		float cote = (float)((double)u[1] * w[1] + (double)u[0] * w[0]);
+		if(cs < -1.0f) cs = -1.0f; else if(cs > 1.0f) cs = 1.0f;
+		float angle = ArcCosinus(cs);
+		float ac = std::fabs(cote);
+		if((double)ac > 0.0001f && cote < 0.0f) return (float)(6.283185307179586 - angle);
+		return angle;
 	}
 };
