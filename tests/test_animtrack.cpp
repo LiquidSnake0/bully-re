@@ -92,10 +92,71 @@ Places(void)
 	printf("crochet : %d appel sur trois images (la première attend, la deuxième n'est pas active)\n", appels);
 }
 
+static void
+Couches(void)
+{
+	CHxdAnim a; a.duree = 2.0f;
+	const float dt = 1.0f / 30.0f;
+
+	// L'entrée : +0x10 = +0x14 = -0,3, le poids à 0. Il monte de dt / 0,3 par image, puis se pose à 1, +0x10 et +0x14 à zéro.
+	CAnimTrack c; c.reste = c.fondu = -0.3f;
+	c.places[0].anim = &a; c.places[0].vitesse = 1.0f; c.places[0].drapeaux = 3;
+	VERIF(c.Avancer(dt));
+	VERIF(Pres(c.poids, 1.0f / 9.0f) && Pres(c.reste, -0.3f + dt) && c.fondu == -0.3f);
+	VERIF(c.places[0].t == 0.0f && c.places[0].drapeaux == 7u);       // la première image de la place
+	printf("entrée sur 0,3 s : %.3f", c.poids);
+	int32 images = 1;
+	while(c.reste != 0.0f && images < 100){ VERIF(c.Avancer(dt)); images++; if(images <= 4) printf(", %.3f", c.poids); }
+	printf(" ... installée à la %de image, poids %.3f\n", images, c.poids);
+	VERIF((images == 9 || images == 10) && c.poids == 1.0f && c.reste == 0.0f && c.fondu == 0.0f);
+	VERIF(Pres(c.places[0].t, (images - 1) * dt));
+	// Installée : le poids ne bouge plus, la place avance.
+	VERIF(c.Avancer(dt) && c.poids == 1.0f && Pres(c.places[0].t, images * dt));
+
+	// Un poids déjà à 1 pendant l'entrée : +0x10 et +0x14 à zéro, sans autre calcul.
+	CAnimTrack d; d.poids = 1.0f; d.reste = d.fondu = -0.3f;
+	VERIF(d.Avancer(dt) && d.poids == 1.0f && d.reste == 0.0f && d.fondu == 0.0f);
+
+	// La sortie : +0x10 = +0x14 = 0,23, le poids descend de dt / 0,23 par image ; à la fin tout à zéro et faux.
+	CAnimTrack s; s.poids = 1.0f; s.reste = s.fondu = 0.23f;
+	s.places[0].anim = &a; s.places[0].vitesse = 1.0f; s.places[0].drapeaux = 7;
+	VERIF(s.Avancer(dt));
+	VERIF(Pres(s.poids, 1.0f - dt / 0.23f) && Pres(s.reste, 0.23f - dt) && Pres(s.places[0].t, dt));
+	images = 1;
+	float t = 0;
+	for(;;){ t = s.places[0].t; images++; if(!s.Avancer(dt) || images >= 100) break; }
+	printf("sortie sur 0,23 s : finie à la %de image\n", images);
+	VERIF(images == 7 || images == 8);
+	VERIF(s.poids == 0.0f && s.reste == 0.0f && s.fondu == 0.0f);
+	VERIF(s.places[0].t == t);                                      // l'image qui rend faux n'avance pas les places
+
+	// Une sortie qui commence sous 0,001 de poids : faux tout de suite, le poids n'est pas remis à zéro.
+	CAnimTrack f; f.poids = 0.0005f; f.reste = f.fondu = 0.3f;
+	VERIF(!f.Avancer(dt) && f.poids == 0.0005f && f.reste == 0.0f && f.fondu == 0.0f);
+
+	// Les deux places : la place 1 n'est active que si le mélange est positif, la place 0 que s'il est sous 1 ; aucune
+	// si le poids de la couche est nul. Les deux avancent quand même.
+	int32 vus[2] = {0, 0};
+	auto suite = [&](int32 i, float){ vus[i]++; };
+	CAnimTrack m; m.poids = 1.0f;
+	for(int32 i = 0; i < 2; i++){ m.places[i].anim = &a; m.places[i].vitesse = 1.0f; m.places[i].drapeaux = 7; }
+	m.Avancer(dt, suite);
+	VERIF(vus[0] == 1 && vus[1] == 0);
+	m.melange = 0.25f; m.Avancer(dt, suite);
+	VERIF(vus[0] == 2 && vus[1] == 1);
+	m.melange = 1.0f; m.Avancer(dt, suite);
+	VERIF(vus[0] == 2 && vus[1] == 2);
+	m.poids = 0.0f; m.melange = 0.5f; m.Avancer(dt, suite);
+	VERIF(vus[0] == 2 && vus[1] == 2);
+	VERIF(Pres(m.places[0].t, 4 * dt) && Pres(m.places[1].t, 4 * dt));
+	printf("mélange : la place 0 active %d fois, la place 1 %d fois sur quatre images\n", vus[0], vus[1]);
+}
+
 int
 main(void)
 {
 	Places();
+	Couches();
 	printf("test_animtrack : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;
 }

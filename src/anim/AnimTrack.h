@@ -63,3 +63,50 @@ struct CPlaceAnim {
 	}
 	void Avancer(float dt, bool actif) { Avancer(dt, actif, [](float){}); }
 };
+
+struct CAnimTrack {
+	int32 masque = -1;                 // +8 : le masque d'os (un pointeur dans le jeu ; ici son rang dans le HXD, -1 sans masque)
+	float poids = 0;                   // +0xc
+	float reste = 0;                   // +0x10 : le reste du fondu, négatif à l'entrée, positif à la sortie, 0 installée
+	float fondu = 0;                   // +0x14 : sa longueur, du même signe
+	CPlaceAnim places[2];              // +0x18 et +0x2c
+	float melange = 0;                 // +0x40 : la part de la place 1 ; la place 0 pèse 1 - melange
+	int32 rang = 0;                    // +0x44
+
+	// FUN_006b26f0(dt) (le rang 3 de la table virtuelle 0x941f90, ret 4, lue en entier de 0x6b26f0 à 0x6b287f, 400 octets) :
+	// la mise à jour d'une couche, **la fonction qui fait monter et descendre son poids**. Elle rend faux quand la couche a
+	// fini de sortir, vrai sinon.
+	// - Un reste négatif (l'entrée, posée par FUN_006b6570 : +0x10 = +0x14 = -fondu, le poids à 0) : un poids déjà à 1 met
+	//   +0x10 et +0x14 à zéro ; sinon le poids monte de dt / |+0x14| (poids - dt / +0x14) et le reste de dt ; un poids
+	//   strictement au-dessus de 1 ou un reste strictement positif : le poids à 1, +0x10 et +0x14 à zéro. La montée est donc
+	//   linéaire sur le fondu, par pas d'image.
+	// - Un reste nul : rien.
+	// - Un reste positif (la sortie, posée par FUN_006bd320 : +0x10 = +0x14 = le fondu de sortie) : un poids sous 0,001
+	//   (0x900c04) met +0x10 et +0x14 à zéro et rend faux, sans toucher au poids ; sinon le poids descend de dt / +0x14 et le
+	//   reste de dt ; un poids ou un reste strictement négatif : le poids, +0x10 et +0x14 à zéro, et faux.
+	// - Puis, sauf quand elle a rendu faux, ses deux places avancent (FUN_006b2560, CPlaceAnim::Avancer), chacune dite active
+	//   si sa part (1 - +0x40 pour la place 0, +0x40 pour la place 1) et le poids de la couche sont strictement positifs.
+	template<class F> bool Avancer(float dt, F suite) {
+		if(reste < 0.0f){
+			if(poids == 1.0f){
+				reste = 0.0f; fondu = 0.0f;
+			}else{
+				poids = poids - dt / fondu;
+				reste = reste + dt;
+				if(poids > 1.0f || reste > 0.0f){ poids = 1.0f; reste = 0.0f; fondu = 0.0f; }
+			}
+		}else if(reste > 0.0f){
+			if(0.001f > poids){ reste = 0.0f; fondu = 0.0f; return false; }
+			poids = poids - dt / fondu;
+			reste = reste - dt;
+			if(poids < 0.0f || reste < 0.0f){ reste = 0.0f; poids = 0.0f; fondu = 0.0f; return false; }
+		}
+		for(int32 i = 0; i < 2; i++){
+			float part = i == 0 ? 1.0f - melange : melange;
+			bool actif = 0.0f < part && 0.0f < poids;
+			places[i].Avancer(dt, actif, [&](float x){ suite(i, x); });
+		}
+		return true;
+	}
+	bool Avancer(float dt) { return Avancer(dt, [](int32, float){}); }
+};
