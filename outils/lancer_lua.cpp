@@ -7150,10 +7150,26 @@ struct CPoseJouee { uint32 hache = 0; float t = 0, entree = 0, fondu = 0; int32 
 // de rang 0 ne retire rien : la couche 0 garde son animation, qui continue d'avancer.
 // Supposé : l'ordre dans l'image (les lancements et les arrêts, puis la mise à jour du lecteur), le mode 2 d'une piste qui
 // donne le bit 1 des drapeaux du lancement (la boucle), et le pas d'image fixe de l'outil (0,033 s).
+// **La couche de locomotion** (AM_MotionTrack) : un nœud qui porte une piste Locomotion (lancement 0060c5b0) crée une couche
+// de locomotion ; chacune de ses pistes LocomotionAnimationNew (FUN_0060e240) y ajoute une entrée et l'installe au lecteur
+// (FUN_006bcb70) au rang du champ 64 de la piste Locomotion. Sa mise à jour (FUN_00731b90, CLecteurAnim::AvancerMotion)
+// choisit l'entrée par l'angle entre la direction du mouvement et l'avant du piéton, cale l'instant sur la couche qui mène
+// (la marche qui devient course garde son pas), cadence la boucle par la vitesse du piéton et relève les appuis des pieds.
+// `pieton` : ce que la mise à jour lit du piéton, rempli chaque image (la stat 0x14, l'intention de mouvement, l'avant tiré
+// du cap, la vitesse que la piste Locomotion pose). `motion` : la clé du rang est une couche de locomotion ; `entrees` :
+// les pistes du nœud déjà devenues des entrées.
+// Supposé : la couche est installée à l'image où la première piste LocomotionAnimationNew est lancée (le jeu l'installe à
+// chaque lancement d'une de ces pistes) ; le temps depuis chaque appui avance du pas de l'image (ce qui l'avance n'est pas
+// lu) ; l'outil efface l'appui relevé à l'image même, ce que fait la piste LocomotionEvent (0060ec30) en jouant le bruit du
+// pas ; un nœud dont la piste Locomotion donne un rang autre que 0 garde l'ancienne lecture (une boucle ordinaire).
 struct CLecteurOutil {
-	struct Cle { bool ok = false; float debut = 0.0f; CActionController::PisteAnimation p; };
+	struct Cle { bool ok = false; float debut = 0.0f; CActionController::PisteAnimation p; bool motion = false; };
 	CLecteurAnim l;
 	Cle cles[CLecteurAnim::RANGS];
+	CMotionPieton pieton;
+	std::vector<const CActionController::PisteAnimation *> entrees;
+	int32 ditChoix = 0, ditPas = 0, pasComptes[2] = {0, 0};
+	int32 choixDit = -2, hautDit = -2;
 };
 static std::map<int, CLecteurOutil> lecteurs;
 static std::map<const CHxdAnim *, CAnimOutil> animsDesPlaces;   // l'animation décodée de chaque enregistrement lancé
@@ -7174,13 +7190,51 @@ AvancerLecteurs(float dt)
 			const CActionController::PisteAnimation *vivantes[CLecteurAnim::RANGS] = {};
 			vivantes[0] = c.Animation(tn);
 			for(const CActionController::PisteAnimation *m : c.Couches(tn)) vivantes[CActionController::Rang(*m)] = m;
+			const CActionController::PisteLocomotion &loc = c.locomotion;
+			bool locVit = loc.ok && loc.entree <= tn && (loc.vie < 0.0f || tn < loc.entree + loc.vie);
+			if(locVit) o.pieton.vitesse = loc.Vitesse(o.pieton.intentionVitesse);
 			for(int32 r = 0; r < CLecteurAnim::RANGS; r++){
 				const CActionController::PisteAnimation *m = vivantes[r];
 				CLecteurOutil::Cle &k = o.cles[r];
-				if(m != nil){
+				if(m != nil && r == 0 && m->loco && loc.ok && loc.rang == 0 && loc.entree <= tn){
+					if(!k.ok || !k.motion || k.debut != c.debut){
+						k.ok = true; k.motion = true; k.debut = c.debut; k.p = *m;
+						CAnimTrack mt = CAnimTrack::Motion();
+						float f = loc.Fondu();
+						if(f == 0.0f){ mt.reste = 0.0f; mt.fondu = 0.0f; mt.poids = 1.0f; }
+						else{ mt.reste = -f; mt.fondu = -f; mt.poids = 0.0f; }
+						o.l.Installer(0, mt);
+						o.entrees.clear();
+						o.ditChoix = 0; o.ditPas = 0; o.pasComptes[0] = o.pasComptes[1] = 0; o.choixDit = o.hautDit = -2;
+						printf("%6.2f s  le piéton %d prend une couche de locomotion (le nœud %s : piste Locomotion, vitesses %.2f et %.2f m/s entre les "
+						       "intentions %.2f et %.2f, %s, rang %d, fondu %.2f s) ; %d couche(s) gardée(s) au rang 0\n",
+						       maintenant / 1000.0, kv.first, arbres.CheminDe(c.joue).c_str(), loc.basse, loc.haute, loc.seuilBas, loc.seuilHaut,
+						       loc.Cadencee() ? "cadencée" : "sans cadence", loc.rang, f, (int)o.l.gardees[0].size());
+					}
+					CAnimTrack &ct = o.l.couches[0];
+					for(const CActionController::PisteAnimation &pa : c.animations){
+						if(!pa.loco || pa.entree > tn || ct.nEntrees >= CAnimTrack::ENTREES) continue;
+						if(std::find(o.entrees.begin(), o.entrees.end(), &pa) != o.entrees.end()) continue;
+						o.entrees.push_back(&pa);
+						CAnimOutil a = AnimationParHache(pa.hache);
+						CMotionEntree &e = ct.entrees[ct.nEntrees++];
+						e.hache = pa.hache; e.seuil = pa.seuil; e.enr = a.enr;
+						for(int i = 0; i < 4; i++) e.marques[i] = pa.marques[i];
+						CVector trajet(0.0f, 0.0f, 0.0f);
+						if(a.enr != nil){
+							animsDesPlaces[a.enr] = a;
+							if(a.anim != nil) trajet = AgrTrajetRacine(*a.anim, a.enr->drapeaux);
+							e.naturelle = CMotionTrack::VitesseNaturelle(a.enr->duree, trajet.x, trajet.y);
+						}
+						printf("%6.2f s  la couche de locomotion du piéton %d reçoit son entrée n° %d : %s (%08x, %.3f s, seuil %.2f rad, marques %.3f, %.3f, %.3f et %.3f s, "
+						       "trajet de l'os 1 %.2f m à plat, vitesse naturelle %.2f m/s)\n",
+						       maintenant / 1000.0, kv.first, ct.nEntrees - 1, a.enr ? a.enr->nom.c_str() : "animation absente", pa.hache, a.enr ? a.enr->duree : -1.0f,
+						       pa.seuil, pa.marques[0], pa.marques[1], pa.marques[2], pa.marques[3], sqrtf(trajet.x * trajet.x + trajet.y * trajet.y), e.naturelle);
+					}
+				}else if(m != nil){
 					float vitesse = (m->vitesse > 0.0f ? m->vitesse : 1.0f) * stat;
-					if(!k.ok || k.debut != c.debut || k.p.hache != m->hache || k.p.entree != m->entree){
-						k.ok = true; k.debut = c.debut; k.p = *m;
+					if(!k.ok || k.motion || k.debut != c.debut || k.p.hache != m->hache || k.p.entree != m->entree){
+						k.ok = true; k.motion = false; k.debut = c.debut; k.p = *m;
 						CAnimOutil a = AnimationParHache(m->hache);
 						if(a.enr != nil){
 							animsDesPlaces[a.enr] = a;
@@ -7191,7 +7245,7 @@ AvancerLecteurs(float dt)
 							ct.places[0].t = m->depart < 0.0f ? 0.0f : duree > 0.0f && m->depart > duree ? duree : m->depart;
 						}
 					}
-					if(o.l.posee[r]) o.l.couches[r].places[0].vitesse = vitesse;
+					if(o.l.posee[r] && !o.l.couches[r].motion) o.l.couches[r].places[0].vitesse = vitesse;
 				}else if(k.ok && r > 0){
 					k.ok = false;
 					int32 mr = o.l.posee[r] ? o.l.couches[r].masque : -1;
@@ -7199,7 +7253,46 @@ AvancerLecteurs(float dt)
 				}
 			}
 		}
-		o.l.ParImage(dt);
+		// Ce que la couche de locomotion lit du piéton, puis la mise à jour du lecteur (FUN_006c05b0, FUN_00731b90 pour une
+		// couche de locomotion) ; les appuis relevés et le choix des entrées sont dits (les premiers de chaque couche).
+		CMotionPieton &mp = o.pieton;
+		mp.stat = StatVitesse(kv.first);
+		if(const CScriptPed *q = pietons.Acceder(kv.first)){
+			mp.intention[0] = q->intention.x; mp.intention[1] = q->intention.y; mp.intention[2] = q->intention.z;
+			mp.intentionVitesse = q->intentionVitesse;
+			float cap = q->cap * 3.14159265f / 180.0f;
+			mp.avant[0] = cosf(cap); mp.avant[1] = sinf(cap); mp.avant[2] = 0.0f;
+		}
+		mp.depuisPas[0] += dt; mp.depuisPas[1] += dt;
+		o.l.ParImage(dt, mp);
+		if(o.l.posee[0] && o.l.couches[0].motion){
+			const CAnimTrack &ct = o.l.couches[0];
+			const CAnimTrack *men = o.l.Meneuse(0);
+			int32 haut = -1;
+			for(int32 i = 0; i < ct.nEntrees; i++) if(ct.places[1].anim != nil && ct.melange > 0.0f && ct.entrees[i].enr == ct.places[1].anim && i != ct.courante) haut = i;
+			if(ct.courante >= 0 && (ct.courante != o.choixDit || haut != o.hautDit) && o.ditChoix < 3){
+				o.ditChoix++; o.choixDit = ct.courante; o.hautDit = haut;
+				const CMotionEntree &e = ct.entrees[ct.courante];
+				char mel[160] = "";
+				if(haut >= 0) snprintf(mel, sizeof mel, ", mêlée à %s au poids %.2f", ct.entrees[haut].enr->nom.c_str(), ct.melange);
+				printf("%6.2f s  la locomotion du piéton %d : %s à %.3f s%s, cadence %.2f (vitesse du piéton %.2f m/s, vitesse naturelle %.2f m/s, stat %.2f), "
+				       "direction à %.2f rad de l'avant, poids %.2f, %s\n",
+				       maintenant / 1000.0, kv.first, e.enr ? e.enr->nom.c_str() : "?", ct.places[0].t, mel, ct.places[0].vitesse, mp.vitesse, e.naturelle, mp.stat,
+				       CMotionTrack::Angle(ct.dir, ct.avant), ct.poids,
+				       men == &ct || men == nil ? "elle mène" : "calée sur la couche gardée, qui mène tant que ce poids est sous 0,5");
+			}
+			for(int32 pied = 0; pied < 2; pied++){
+				if(!mp.pas[pied] || mp.depuisPas[pied] != 0.0f) continue;   // posé à cette image : son temps vient d'être remis à 0
+				o.pasComptes[pied]++;
+				if(o.ditPas < 4){
+					o.ditPas++;
+					printf("%6.2f s  le piéton %d pose le pied %d (appui n° %d de cette couche : la marque %.3f s de %s passée, l'animation à %.3f s)\n",
+					       maintenant / 1000.0, kv.first, pied, o.pasComptes[pied], ct.courante >= 0 ? ct.entrees[ct.courante].marques[pied * 2] : -1.0f,
+					       ct.places[0].anim ? ct.places[0].anim->nom.c_str() : "?", ct.places[0].t);
+				}
+			}
+		}
+		mp.Appui(0, false); mp.Appui(1, false);
 		o.l.PurgerInstallees();   // le début de l'évaluation de la pose : une couche installée vide les gardées de son rang
 	}
 }
@@ -7216,6 +7309,7 @@ PoseDeLaPlace(const CAnimTrack &c, const CLecteurOutil::Cle *k, CPoseJouee *out)
 	float t = pl.t;
 	if(k != nil){
 		out->hache = k->p.hache; out->mode = k->p.mode; out->entree = k->p.entree;
+		if(c.motion && pl.anim != nil) out->hache = pl.anim->hachage;   // l'entrée que la couche de locomotion a choisie
 		float duree = pl.anim ? pl.anim->duree : -1.0f;
 		if(k->p.mode != 2 && duree > 0.0f){
 			float fin = k->p.fin;

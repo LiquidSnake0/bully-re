@@ -105,7 +105,8 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 	                    kActionObjet = ActionHash("PropSetPedAction"), kSynchro = ActionHash("Sync"),
                     kBoutonHistorique = ActionHash("ActionRegisterButtonHistory"),
 	                    kInteraction = ActionHash("PropInteract"), kAnimation = ActionHash("Animation"),
-	                    kAnimationCoup = ActionHash("HitAnimation"), kAnimationLoco = ActionHash("LocomotionAnimationNew");
+	                    kAnimationCoup = ActionHash("HitAnimation"), kAnimationLoco = ActionHash("LocomotionAnimationNew"),
+	                    kLocomotion = ActionHash("Locomotion");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -270,11 +271,25 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 		}else if(p.type == kAnimationLoco){
 			// LocomotionAnimationNew (table 0x930edc ; lancement FUN_0060e240, lu à l'assembleur de 0x60e240 à 0x60e33d) : la
 			// piste est copiée (0x34 octets, par les deux constructeurs 61a720 et 66bd40) dans la première des dix places libres du
-			// +0x54 du composant [piéton + 0x18], puis l'animation est donnée au lecteur de locomotion (6bcb70 sur 0x20c4910, avec le squelette
-			// +0x114 du piéton) : la boucle de marche ou de course, que la vitesse du piéton cadence (non lu). Supposé : une
-			// boucle (mode 2) à la vitesse 1, sans masque, en couche 0, au fondu de l'enregistrement HXD ; ses positions 28 à
-			// 44 (0, 0,633, 0,633, 0,3, 0,3 pour C_PLAYER\RUN dans Walk_Jocks.cat) ne sont pas lues.
-			animations.push_back({a, Reel(p, 16, -1.0f), p.Mot(24), std::string(), 2, 0, 0.0f, -1.0f, 1.0f, -1.0f, -1.0f});
+			// +0x54 de la couche de locomotion du contexte (+0x18, celle que la piste Locomotion du nœud a créée), puis cette
+			// couche est installée au lecteur (FUN_006bcb70 sur 0x20c4910, avec le squelette +0x114 du piéton) au rang du champ
+			// 64 de la piste Locomotion. Ses champs : le haché de l'animation (24), le seuil d'angle (28) et les quatre marques
+			// (32 à 44 ; 0, puis 0,633, 0,633, 0,3, 0,3 pour C_PLAYER\RUN dans Walk_Jocks.cat). Un nœud sans piste Locomotion :
+			// l'outil la joue comme avant, en boucle (mode 2) à la vitesse 1, sans masque, en couche 0 (supposé).
+			PisteAnimation pa = {a, Reel(p, 16, -1.0f), p.Mot(24), std::string(), 2, 0, 0.0f, -1.0f, 1.0f, -1.0f, -1.0f};
+			pa.loco = true;
+			pa.seuil = Reel(p, 28, 0.0f);
+			for(int i = 0; i < 4; i++) pa.marques[i] = Reel(p, (uint16)(32 + 4 * i), 0.0f);
+			animations.push_back(pa);
+		}else if(p.type == kLocomotion){
+			if(!locomotion.ok){
+				locomotion.ok = true;
+				locomotion.entree = a; locomotion.vie = Reel(p, 16, -1.0f);
+				locomotion.haute = Reel(p, 24, 0.0f); locomotion.basse = Reel(p, 28, 0.0f);
+				locomotion.seuilBas = Reel(p, 32, 0.0f); locomotion.seuilHaut = Reel(p, 36, 0.0f);
+				locomotion.rang = p.Champ(64) ? (int32)p.Mot(64) : 0;
+				locomotion.fondu = Reel(p, 68, 0.0f);
+			}
 		}else if(p.type == kExecute){
 			const CActionAttribut *at = p.Champ(32);
 			if(at == nil) continue;
@@ -367,6 +382,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 		if(joue) couchesQuittees = s;
 	}
 	animations.clear();
+	locomotion = PisteLocomotion();
 	ArreterCollisions();
 	joue = n;
 	debut = t;
