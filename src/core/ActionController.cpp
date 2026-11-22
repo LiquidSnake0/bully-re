@@ -106,7 +106,7 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
                     kBoutonHistorique = ActionHash("ActionRegisterButtonHistory"),
 	                    kInteraction = ActionHash("PropInteract"), kAnimation = ActionHash("Animation"),
 	                    kAnimationCoup = ActionHash("HitAnimation"), kAnimationLoco = ActionHash("LocomotionAnimationNew"),
-	                    kLocomotion = ActionHash("Locomotion");
+	                    kLocomotion = ActionHash("Locomotion"), kPas = ActionHash("LocomotionEvent");
 	const CActionTreeFile *f = b.Fichier(n);
 	if(f == nil || prof > 4) return;
 	static const uint32 kSequence = ActionHash("Sequence");
@@ -281,6 +281,9 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 			pa.seuil = Reel(p, 28, 0.0f);
 			for(int i = 0; i < 4; i++) pa.marques[i] = Reel(p, (uint16)(32 + 4 * i), 0.0f);
 			animations.push_back(pa);
+		}else if(p.type == kPas){
+			const CActionAttribut *s0 = p.Champ(24), *s1 = p.Champ(36);
+			pas.push_back({a, Reel(p, 16, -1.0f), {s0 ? f->ChaineCitee(s0->decalage) : std::string(), s1 ? f->ChaineCitee(s1->decalage) : std::string()}});
 		}else if(p.type == kLocomotion){
 			if(!locomotion.ok){
 				locomotion.ok = true;
@@ -383,6 +386,7 @@ CActionController::Jouer(const CActionBank &b, const CActionNode *n, float t, co
 	}
 	animations.clear();
 	locomotion = PisteLocomotion();
+	pas.clear();
 	ArreterCollisions();
 	joue = n;
 	debut = t;

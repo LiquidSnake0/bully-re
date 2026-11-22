@@ -7160,15 +7160,14 @@ struct CPoseJouee { uint32 hache = 0; float t = 0, entree = 0, fondu = 0; int32 
 // les pistes du nœud déjà devenues des entrées.
 // Supposé : la couche est installée à l'image où la première piste LocomotionAnimationNew est lancée (le jeu l'installe à
 // chaque lancement d'une de ces pistes) ; le temps depuis chaque appui avance du pas de l'image (ce qui l'avance n'est pas
-// lu) ; l'outil efface l'appui relevé à l'image même, ce que fait la piste LocomotionEvent (0060ec30) en jouant le bruit du
-// pas ; un nœud dont la piste Locomotion donne un rang autre que 0 garde l'ancienne lecture (une boucle ordinaire).
+// lu) ; un nœud dont la piste Locomotion donne un rang autre que 0 garde l'ancienne lecture (une boucle ordinaire).
 struct CLecteurOutil {
 	struct Cle { bool ok = false; float debut = 0.0f; CActionController::PisteAnimation p; bool motion = false; };
 	CLecteurAnim l;
 	Cle cles[CLecteurAnim::RANGS];
 	CMotionPieton pieton;
 	std::vector<const CActionController::PisteAnimation *> entrees;
-	int32 ditChoix = 0, ditPas = 0, pasComptes[2] = {0, 0};
+	int32 ditChoix = 0, ditPas = 0, ditSons = 0, pasComptes[2] = {0, 0};
 	int32 choixDit = -2, hautDit = -2;
 };
 static std::map<int, CLecteurOutil> lecteurs;
@@ -7205,7 +7204,7 @@ AvancerLecteurs(float dt)
 						else{ mt.reste = -f; mt.fondu = -f; mt.poids = 0.0f; }
 						o.l.Installer(0, mt);
 						o.entrees.clear();
-						o.ditChoix = 0; o.ditPas = 0; o.pasComptes[0] = o.pasComptes[1] = 0; o.choixDit = o.hautDit = -2;
+						o.ditChoix = 0; o.ditPas = 0; o.ditSons = 0; o.pasComptes[0] = o.pasComptes[1] = 0; o.choixDit = o.hautDit = -2;
 						printf("%6.2f s  le piéton %d prend une couche de locomotion (le nœud %s : piste Locomotion, vitesses %.2f et %.2f m/s entre les "
 						       "intentions %.2f et %.2f, %s, rang %d, fondu %.2f s) ; %d couche(s) gardée(s) au rang 0\n",
 						       maintenant / 1000.0, kv.first, arbres.CheminDe(c.joue).c_str(), loc.basse, loc.haute, loc.seuilBas, loc.seuilHaut,
@@ -7292,7 +7291,17 @@ AvancerLecteurs(float dt)
 				}
 			}
 		}
-		mp.Appui(0, false); mp.Appui(1, false);
+		// La piste LocomotionEvent du nœud (FUN_0060ec30) : elle efface chaque appui levé et joue le son du pas.
+		if(const CActionController::PistePas *pp = c.joue != nil ? c.Pas(c.Temps(maintenant / 1000.0f)) : nil)
+			for(int32 pied = 0; pied < 2; pied++){
+				if(!mp.pas[pied]) continue;
+				mp.Appui(pied, false);
+				if(o.ditSons < 4){
+					o.ditSons++;
+					printf("%6.2f s  le pas du piéton %d (pied %d) : la piste LocomotionEvent du nœud %s efface l'appui et joue le son %s\n",
+					       maintenant / 1000.0, kv.first, pied, arbres.CheminDe(c.joue).c_str(), pp->son[pied].empty() ? "par défaut" : pp->son[pied].c_str());
+				}
+			}
 		o.l.PurgerInstallees();   // le début de l'évaluation de la pose : une couche installée vide les gardées de son rang
 	}
 }

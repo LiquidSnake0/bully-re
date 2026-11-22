@@ -170,6 +170,20 @@ public:
 		float Fondu(void) const { return fondu < 0.0f ? 0.5f : fondu; }
 	};
 	PisteLocomotion locomotion;
+	// Les pistes LocomotionEvent du nœud joué : le bruit des pas. Leur mise à jour, FUN_0060ec30 (méthode de la piste, ret 4,
+	// lue en entier de 0x60ec30 à 0x60ede8, 441 octets, rend toujours vrai) : la position du piéton (sa matrice +0x14, à
+	// défaut +0x4) montée de 0,5 (le double 0x8ff1f8) ; si l'octet d'appui du pied 0 (+0x30 de M) est levé, il est effacé
+	// (FUN_005f3610(0)), 0060e5d0 (non suivie : ce qu'il y a sous le pied, deux sorties) est appelée, **le son nommé par
+	// le champ 24 de la piste (+0x18 ; nul : le nom par défaut 0xb0b0f0) est cherché (00595a30 sur le gestionnaire
+	// 0xcf3da0) et joué** (0059cab0 sur le piéton si 00595550 rend vrai, sinon 0059b750 à la position, avec le champ 32,
+	// +0x20), et le réel +0x38 de la piste prend le 0x9009ac ; de même pour le pied 1 (+0x31, FUN_005f3640(0)) avec le
+	// nom du champ 36 (+0x24) et le champ 44 (+0x2c), +0x38 prenant 1.
+	struct PistePas { float entree, vie; std::string son[2]; };
+	std::vector<PistePas> pas;
+	const PistePas *Pas(float tn) const {
+		for(const PistePas &p : pas) if(p.entree <= tn && (p.vie < 0.0f || tn < p.entree + p.vie)) return &p;
+		return nil;
+	}
 	std::vector<PisteAnimation> animations;
 	// L'animation que le nœud quitté jouait (celle que Animation() rend à l'instant où Jouer change de nœud) : le lecteur du
 	// jeu la garde le temps du fondu de la suivante (FUN_006b6570, la place de l'animation remplacée). `tNoeud` : le temps
