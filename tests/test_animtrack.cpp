@@ -515,6 +515,100 @@ Meneuses(void)
 	printf("meneuse : couche gardée sous un poids de 0,5, puis la couche du rang\n");
 }
 
+static void
+MisesAJour(void)
+{
+	static CHxdAnim marche, course, recul;
+	marche.duree = 1.0f; course.duree = 0.8f; recul.duree = 1.0f;
+	auto pres = [](float a, float b){ return std::fabs(a - b) < 1e-4f; };
+	// Le même instant à un tour de boucle près (la synchro rend la fin de la boucle pour son début, à un arrondi près).
+	auto tour = [](float a, float b, float d){ return std::fabs(std::remainder(a - b, d)) < 1e-4f; };
+	const float dt = 0.1f;
+	// Une couche d'une seule entrée, sans vitesse de piéton (−1) : la boucle tourne à la stat, en mode 7, sans mélange.
+	CMotionPieton p;
+	p.stat = 1.0f; p.intention[1] = 1.0f; p.intentionVitesse = 1.0f; p.depuisPas[0] = p.depuisPas[1] = 1.0f;
+	CAnimTrack m = CAnimTrack::Motion();
+	m.poids = 1.0f;
+	m.entrees[0].hache = 1; m.entrees[0].enr = &marche; m.entrees[0].naturelle = 2.0f;
+	m.entrees[0].marques[0] = m.entrees[0].marques[1] = 0.35f; m.entrees[0].marques[2] = m.entrees[0].marques[3] = 0.85f;
+	m.nEntrees = 1;
+	CLecteurAnim l;
+	l.Installer(0, m);
+	CAnimTrack &c = l.couches[0];
+	l.ParImage(dt, p);
+	VERIF(c.synchro && c.courante == 0 && c.places[0].anim == &marche && c.places[0].drapeaux == 7 && c.melange == 0.0f);
+	VERIF(c.places[1].anim == nil && c.places[0].vitesse == 1.0f && tour(c.places[0].t, 0.1f, 1.0f) && tour(c.precedent, 0.0f, 1.0f) && tour(c.garde, 0.1f, 1.0f));
+	VERIF(pres(c.dir[1], 1.0f) && c.vitesse == -1.0f);
+	// Les appuis : la marque 0 (0,35 s) passée pose le pied 0, la marque 2 (0,85 s) le pied 1, une fois par tour.
+	int32 pieds[2] = {0, 0}; float quand[2] = {-1, -1};
+	for(int32 i = 1; i < 10; i++){
+		l.ParImage(dt, p);
+		for(int32 k = 0; k < 2; k++){
+			p.depuisPas[k] += dt;
+			if(p.pas[k]){ pieds[k]++; quand[k] = c.precedent; p.Appui(k, false); }
+		}
+	}
+	VERIF(pieds[0] == 1 && pieds[1] == 1 && tour(quand[0], 0.4f, 1.0f) && tour(quand[1], 0.9f, 1.0f));
+	VERIF(tour(c.places[0].t, 0.0f, 1.0f));                                      // un tour en dix images
+	printf("mise à jour : boucle de 1 s à la stat, appui du pied 0 relevé à %.2f s (marque 0,35), du pied 1 à %.2f s (marque 0,85)\n", quand[0], quand[1]);
+	// Un appui de moins de 0,1 s n'est pas reposé (FUN_005f3610).
+	p.depuisPas[0] = 0.05f; p.Appui(0, true); VERIF(!p.pas[0]);
+	p.depuisPas[0] = 0.1f;  p.Appui(0, true); VERIF(p.pas[0] && p.depuisPas[0] == 0.0f);
+	p.Appui(0, false); VERIF(!p.pas[0]);
+	// La cadence : le piéton à 3 m/s sur une marche faite pour 2 m/s, stat 1,2 : la place tourne à 1,8.
+	p.vitesse = 3.0f; p.stat = 1.2f;
+	l.ParImage(dt, p);
+	VERIF(pres(c.places[0].vitesse, 1.8f) && c.vitesse == 3.0f);
+	// Une phase demandée : la couche saute à la marque 2 pour la phase 0,5, et la demande retombe à −1.
+	c.demande = 0.5f; p.vitesse = -1.0f; p.stat = 1.0f;
+	l.ParImage(dt, p);
+	VERIF(c.demande == -1.0f && tour(c.places[0].t, 0.95f, 1.0f) && tour(c.precedent, 0.85f, 1.0f));
+	// Deux entrées, seuils 0 et π : une direction à un quart de tour de l'avant mélange les deux à parts égales ; à
+	// trois quarts de tour, le tour revient à la première entrée (son seuil plus 2π).
+	CAnimTrack d = CAnimTrack::Motion();
+	d.poids = 1.0f; d.nEntrees = 2;
+	d.entrees[0] = m.entrees[0];
+	d.entrees[1] = m.entrees[0]; d.entrees[1].hache = 3; d.entrees[1].enr = &recul; d.entrees[1].seuil = 3.14159274f;
+	CLecteurAnim l2;
+	l2.Installer(0, d);
+	CMotionPieton q;
+	q.intention[0] = 1.0f; q.avant[0] = 0.0f; q.avant[1] = 1.0f;                 // direction (1, 0), avant (0, 1) : π/2
+	l2.ParImage(dt, q);
+	CAnimTrack &e = l2.couches[0];
+	VERIF(e.courante == 0 && e.places[0].anim == &marche && e.places[1].anim == &recul && e.places[1].drapeaux == 7);
+	VERIF(pres(e.melange, 0.5f) && tour(e.places[1].t, e.places[0].t, 1.0f) && e.places[1].vitesse == e.places[0].vitesse);
+	q.intention[0] = -1.0f;                                                      // direction (−1, 0) : 3π/2
+	l2.ParImage(dt, q);
+	VERIF(e.courante == 1 && e.places[0].anim == &recul && e.places[1].anim == &marche && pres(e.melange, 0.5f));
+	q.intention[0] = 0.0f; q.intention[1] = 1.0f;                                // droit devant : l'entrée 0 seule
+	l2.ParImage(dt, q);
+	VERIF(e.courante == 0 && e.melange == 0.0f);
+	printf("mise à jour : deux entrées aux seuils 0 et π, direction à un quart de tour : mélange %.2f\n", 0.5f);
+	// Une course installée sur la marche (fondu de 0,5 s) : la marche gardée mène tant que le poids de la course est sous
+	// 0,5, la course se cale sur elle (ses marques aux mêmes parts du tour : la même part de sa durée) ; puis la course mène.
+	CAnimTrack r = CAnimTrack::Motion();
+	r.reste = -0.5f; r.fondu = -0.5f; r.nEntrees = 1;
+	r.entrees[0].hache = 2; r.entrees[0].enr = &course; r.entrees[0].naturelle = 5.0f;
+	r.entrees[0].marques[0] = r.entrees[0].marques[1] = 0.28f; r.entrees[0].marques[2] = r.entrees[0].marques[3] = 0.68f;
+	float tm = c.places[0].t;
+	l.Installer(0, r);
+	VERIF(l.gardees[0].size() == 1 && l.Meneuse(0) == &l.gardees[0][0]);
+	l.ParImage(dt, p);
+	VERIF(tour(l.gardees[0][0].places[0].t, tm + 0.1f, 1.0f));                   // la marche gardée continue
+	VERIF(l.couches[0].synchro && l.couches[0].places[0].anim == &course && pres(l.couches[0].poids, 0.2f));
+	VERIF(tour(l.couches[0].precedent, tm * 0.8f, 0.8f));                              // calée sur l'instant relevé de la marche
+	for(int32 i = 0; i < 2; i++) l.ParImage(dt, p);
+	VERIF(pres(l.couches[0].poids, 0.6f) && l.Meneuse(0) == &l.couches[0]);
+	float tc = l.couches[0].places[0].t;
+	l.ParImage(dt, p);
+	VERIF(tour(l.gardees[0][0].precedent, tc / 0.8f, 1.0f));                           // la marche gardée suit maintenant la course
+	printf("mise à jour : la course se cale sur la marche gardée (%.3f s pour %.3f s), puis mène à partir du poids 0,5\n", tm * 0.8f, tm);
+	// Sans entrée : rien n'avance.
+	CAnimTrack v = CAnimTrack::Motion();
+	CLecteurAnim l3; l3.Installer(0, v);
+	VERIF(l3.AvancerMotion(l3.couches[0], dt, p) && !l3.couches[0].synchro);
+}
+
 int
 main(void)
 {
@@ -530,6 +624,7 @@ main(void)
 	Trajets();
 	Directions();
 	Meneuses();
+	MisesAJour();
 	Purges();
 	printf("test_animtrack : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;

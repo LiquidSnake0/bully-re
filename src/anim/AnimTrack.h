@@ -88,6 +88,16 @@ struct CMotionPieton {
 	// Les appuis des pieds, sur M : les octets +0x30 et +0x31, et le temps écoulé depuis chacun (+0x34 et +0x38).
 	bool pas[2] = {false, false};
 	float depuisPas[2] = {0, 0};
+	// FUN_005f3610(vrai ou faux) pour le pied 0 et FUN_005f3640 pour le pied 1 (méthodes de M, ret 4, lues en entier de
+	// 0x5f3610 à 0x5f363e et de 0x5f3640 à 0x5f366e) : faux efface l'octet de l'appui ; vrai le pose et remet son temps à
+	// 0, **sauf si le dernier appui de ce pied a moins de 0,1 s** (0xb0a4ec). La piste LocomotionEvent (0060ec30) lit ces
+	// octets, joue le bruit du pas et les efface. Ce qui fait avancer les deux temps n'est pas lu.
+	void Appui(int32 pied, bool pose) {
+		if(!pose){ pas[pied] = false; return; }
+		if(0.1f > depuisPas[pied]) return;
+		pas[pied] = true;
+		depuisPas[pied] = 0.0f;
+	}
 };
 
 struct CAnimTrack {
@@ -375,6 +385,126 @@ struct CLecteurAnim {
 	// squelette en [+0x94]+0x10 les bits 1 de +0x8c et 0x400 de +0x98 sont posés), une seconde liste avancée par 006b5990,
 	// l'évaluation de la pose (006be730 si `pose` est donné, que +0x98 porte le bit 0 et que l'entier 0x20c4b10 est nul,
 	// sinon 006bd150), 006be600 et le bit 0x400 posé en sortie.
+	// FUN_00731b90(dt) (le rang 3 de la table virtuelle 0x94d2f8, méthode de la couche, ret 4, lue en entier de 0x731b90
+	// à 0x7323d7, 2 122 octets) : **la mise à jour d'une couche de locomotion**, à la place de FUN_006b26f0 qu'elle
+	// appelle en sortant. Dans l'ordre :
+	// 1. la meneuse : FUN_00731ae0 pour le rang 1 puis le rang 0, la première dont l'octet +0x7c n'est pas nul ;
+	// 2. si la couche du rang 0, à défaut celle du rang 1, est une couche de locomotion : la direction lissée de cette
+	//    couche-ci (FUN_00730110) ; avec une meneuse, sa direction +0x90 est copiée ; la direction est mise à plat et
+	//    normée (FUN_00414cc0) et **l'angle** est FUN_0072f2a0(direction, avant du piéton +0x9c) ;
+	// 3. sans première entrée (+0x54), elle rend vrai sans rien avancer ;
+	// 4. le choix des deux entrées (0x731cd0 à 0x731d30) : `bas` part de la première ; les suivantes sont lues dans
+	//    l'ordre jusqu'à la première dont le seuil (+0x1c) dépasse l'angle, qui devient `haut` ; chaque autre devient
+	//    `bas` ; si aucune ne dépasse l'angle et qu'il y a plus d'une entrée, `haut` est la première (le tour revient) ;
+	// 5. la source de la synchro : la meneuse si elle a un enregistrement en place 0 (son instant relevé +0x84, la durée
+	//    de son enregistrement, les marques de son entrée courante) ; sinon cette couche (son instant +0x1c, la durée de
+	//    son enregistrement, les marques de son entrée courante) ; sinon l'entrée `bas` elle-même ;
+	// 6. l'instant de `bas` est FUN_0072eff0(instant source, durée source, marques source, durée de bas, marques de
+	//    bas) ; une couche qui mène (sans meneuse, ou elle-même) et dont l'instant précédent +0x80 n'est pas négatif le
+	//    fait passer par la même synchro ; l'octet +0x7c est posé (les comparaisons à 0,06 s de 0x731f48 à 0x73201b,
+	//    par FUN_00432910, ne changent ni l'instant ni l'octet : il vaut toujours 1 à 0x732021) ;
+	// 7. une couche qui mène et dont la phase demandée +0x88 n'est pas négative prend l'instant de FUN_0072e690(phase,
+	//    durée, marque 0, marque 2), et +0x88 revient à −1 ;
+	// 8. **les appuis** (0x732074 à 0x732160), pour une couche qui mène et dont l'instant précédent n'est pas négatif :
+	//    la marque 0 passée entre l'instant précédent et le nouveau pose l'appui du pied 0 (FUN_005f3610(1)), la marque
+	//    2 celui du pied 1 (FUN_005f3640(1)) ; « passée » : précédent ≤ marque ≤ nouveau, ou, quand la boucle a tourné
+	//    (précédent > nouveau), précédent ≤ marque ou marque ≤ nouveau ;
+	// 9. la place 0 prend l'enregistrement de `bas` (006b1b00 et 006b3c40 comptent ses références), l'instant, et les
+	//    drapeaux 7 (joue, boucle, partie) ; `bas` devient l'entrée courante (+0x50) ;
+	// 10. **la cadence** (0x73218e à 0x732243) : +0x8c prend la vitesse du piéton (+0x1c de M) ; pour une couche qui
+	//    mène (et l'entier 0xbc7338, 1 dans l'exécutable), la vitesse de la place 0 est CMotionTrack::Cadence(vitesse,
+	//    vitesse naturelle de bas (FUN_00730340), stat) ;
+	// 11. avec `haut` : la place 1 prend son enregistrement (006b54a0), l'instant de la même synchro vers `haut`, les
+	//    drapeaux 7 et la vitesse de la place 0 ; **le mélange +0x40** est FUN_0072f3b0(angle, seuil de bas, seuil de
+	//    haut, 0, 1) borné à 0 et 1, le seuil de haut augmenté de 2π (0xbc7258) s'il ne dépasse pas celui de bas. Sans
+	//    `haut` le mélange est 0 ;
+	// 12. +0x80 prend l'instant de la place 0 ; une couche qui suit aurait ses deux vitesses à 0 si l'entier 0x20c905c
+	//    n'était pas nul (zone non initialisée, supposé nul) ; puis FUN_006b26f0(dt) avance le poids et les deux places.
+	// Ici l'enregistrement et la vitesse naturelle de chaque entrée sont portés par l'entrée (le jeu les cherche par
+	// 00607610 et FUN_00730340 à chaque image) ; supposé : une entrée sans enregistrement rend vrai sans rien avancer.
+	template<class F> bool AvancerMotion(CAnimTrack &c, float dt, CMotionPieton &p, F suite) {
+		CAnimTrack *meneuse = nil;
+		for(int32 r = 1; r >= 0 && meneuse == nil; r--){
+			CAnimTrack *m = Meneuse(r);
+			if(m != nil && m->synchro) meneuse = m;
+		}
+		if((posee[0] && couches[0].motion) || (posee[1] && couches[1].motion)) c.Direction(dt, p);
+		if(meneuse != nil){ c.dir[0] = meneuse->dir[0]; c.dir[1] = meneuse->dir[1]; c.dir[2] = meneuse->dir[2]; }
+		c.dir[2] = 0.0f;
+		CCollisionBalayee::Normaliser(c.dir);
+		float angle = CMotionTrack::Angle(c.dir, c.avant);
+		if(c.nEntrees <= 0) return true;
+		int32 bas = 0, haut = -1;
+		bool autres = false;
+		for(int32 i = 1; i < c.nEntrees && haut < 0; i++){
+			autres = true;
+			if(c.entrees[i].seuil > angle) haut = i; else bas = i;
+		}
+		if(autres && haut < 0) haut = 0;
+		const CMotionEntree &eb = c.entrees[bas];
+		if(eb.enr == nil) return true;
+		float dBas = eb.enr->duree;
+		float tSrc = c.places[0].t, d1 = dBas;
+		const float *mSrc = eb.marques;
+		if(meneuse != nil && meneuse->places[0].anim != nil && meneuse->courante >= 0){
+			tSrc = meneuse->garde; d1 = meneuse->places[0].anim->duree; mSrc = meneuse->entrees[meneuse->courante].marques;
+		}else if(c.courante >= 0 && c.places[0].anim != nil){
+			d1 = c.places[0].anim->duree; mSrc = c.entrees[c.courante].marques;
+		}
+		float mSource[4] = { mSrc[0], mSrc[1], mSrc[2], mSrc[3] };   // l'entrée courante peut être celle qu'on réécrit
+		bool mene = !(meneuse != nil && meneuse != &c);
+		float ts = CMotionTrack::Synchro(tSrc, d1, mSource, dBas, eb.marques);
+		if(c.precedent >= 0.0f && mene) c.precedent = CMotionTrack::Synchro(c.precedent, d1, mSource, dBas, eb.marques);
+		c.synchro = true;
+		if(mene && c.demande >= 0.0f){
+			ts = CMotionTrack::InstantDeLaPhase(c.demande, dBas, eb.marques[0], eb.marques[2]);
+			c.demande = -1.0f;
+		}
+		if(mene && c.precedent >= 0.0f)
+			for(int32 pied = 0; pied < 2; pied++){
+				float m = eb.marques[pied * 2];
+				bool passe = c.precedent <= ts ? (c.precedent <= m && m <= ts) : (c.precedent <= m || m <= ts);
+				if(passe) p.Appui(pied, true);
+			}
+		c.courante = bas;
+		c.places[0].anim = eb.enr;
+		c.places[0].t = ts;
+		c.places[0].drapeaux = 7;
+		c.vitesse = p.vitesse;
+		if(mene) c.places[0].vitesse = CMotionTrack::Cadence(c.vitesse, eb.naturelle, p.stat);
+		const CMotionEntree *eh = haut >= 0 ? &c.entrees[haut] : nil;
+		if(eh != nil && eh->enr != nil){
+			c.places[1].anim = eh->enr;
+			c.places[1].t = CMotionTrack::Synchro(tSrc, d1, mSource, eh->enr->duree, eh->marques);
+			c.places[1].drapeaux = 7;
+			float sb = eb.seuil, sh = eh->seuil;
+			if(!(sh > sb)) sh = sh + 6.2831855f;
+			float mel = CMotionTrack::Remapper(angle, sb, sh, 0.0f, 1.0f);
+			c.melange = mel < 0.0f ? 0.0f : mel > 1.0f ? 1.0f : mel;
+			c.places[1].vitesse = c.places[0].vitesse;
+		}else
+			c.melange = 0.0f;
+		c.precedent = c.places[0].t;
+		return c.Avancer(dt, suite);
+	}
+	bool AvancerMotion(CAnimTrack &c, float dt, CMotionPieton &p) { return AvancerMotion(c, dt, p, [](int32, float){}); }
+
+	// FUN_006c05b0 avec les couches de locomotion : les couches gardées dont le rang 6 de la table virtuelle rend vrai
+	// (FUN_007ffc70 pour AM_MotionTrack) sont mises à jour par leur rang 3 (FUN_00731b90) avant la couche du rang ; elles
+	// ne sont retirées que si l'entier 0x20c4b14 n'est pas nul (zone non initialisée, supposé nul) : ici jamais. La
+	// couche du rang avance par sa table virtuelle : FUN_00731b90 pour une couche de locomotion, FUN_006b26f0 sinon.
+	// Puis la meneuse de chaque rang relève son instant (FUN_004741b0 ; supposé à ce moment de l'image).
+	void ParImage(float dt, CMotionPieton &p) {
+		for(int32 r = 0; r < RANGS; r++){
+			if(!posee[r]){ Purger(r); continue; }
+			for(size_t i = 0; i < gardees[r].size(); i++)
+				if(gardees[r][i].motion) AvancerMotion(gardees[r][i], dt, p);
+			bool vit = couches[r].motion ? AvancerMotion(couches[r], dt, p) : couches[r].Avancer(dt);
+			if(!vit && r > 0) Sortir(r, 0.0f);
+		}
+		ReleverMeneuses();
+	}
+
 	template<class F> void ParImage(float dt, F suite) {
 		for(int32 r = 0; r < RANGS; r++){
 			if(!posee[r]){ Purger(r); continue; }

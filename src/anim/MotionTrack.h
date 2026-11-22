@@ -1,6 +1,6 @@
 // La couche de la locomotion du lecteur d'animations (AM_MotionTrack, table virtuelle 0x94d2f8 : le nom vient du RTTI), ce
-// que sa mise à jour (00731b90, 2 122 octets, lue à l'assembleur, pas encore recréée) calcule chaque image : ici ses fonctions
-// de calcul, qui ne lisent aucune mémoire du jeu.
+// que sa mise à jour (FUN_00731b90, 2 122 octets, recréée dans CLecteurAnim::AvancerMotion de src/anim/AnimTrack.h) calcule chaque
+// image : ici ses fonctions de calcul, qui ne lisent aucune mémoire du jeu.
 //
 // La couche de la locomotion est une AM_AnimTrack (src/anim/AnimTrack.h) plus longue : le piéton en +0x48, l'entrée courante
 // en +0x50, les entrées de la locomotion à partir de +0x54. Une entrée est la copie d'une piste LocomotionAnimationNew (0x34
