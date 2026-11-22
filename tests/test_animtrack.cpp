@@ -1,6 +1,7 @@
 // Une couche du lecteur d'animations et ses places, sur des enregistrements construits à la main : aucun fichier du jeu.
 #include "../src/anim/AnimTrack.h"
 #include "../src/anim/MotionTrack.h"
+#include "../src/anim/Agr.h"
 #include <cmath>
 #include <cstdio>
 
@@ -409,6 +410,32 @@ Phases(void)
 	       CMotionTrack::InstantDeLaPhase(0.25f, 0.8f, 0.633f, 0.3f), CMotionTrack::InstantDeLaPhase(0.75f, 0.8f, 0.633f, 0.3f));
 }
 
+static void
+Trajets(void)
+{
+	// Le trajet d'une animation (FUN_006073a0) : la dernière position de l'os 1 moins la première ; l'os 35 n'est pas lu.
+	AgrAnim a; a.decodee = true; a.duree = 0.8f;
+	AgrPosition p0{0.0f, CVector(0.1f, 0.2f, 0.9f)}, p1{0.4f, CVector(0.1f, 1.5f, 0.95f)}, p2{0.8f, CVector(0.1f, 3.4f, 0.9f)};
+	a.positions[1] = { p0, p1, p2 };
+	a.positions[35] = { p0, AgrPosition{0.8f, CVector(9.0f, 9.0f, 9.0f)} };
+	CVector t = AgrTrajetRacine(a, 0);
+	VERIF(Pres(t.x, 0.0f) && Pres(t.y, 3.2f) && Pres(t.z, 0.0f));
+	// La vitesse naturelle qui en sort (FUN_00730340) : 3,2 m en 0,8 s.
+	VERIF(Pres(CMotionTrack::VitesseNaturelle(a.duree, t.x, t.y), 4.0f));
+	// Avec le drapeau 0x200 l'os 1 n'est pas la racine : trajet nul, vitesse naturelle nulle, la cadence est la stat.
+	CVector n = AgrTrajetRacine(a, 0x200);
+	VERIF(n.x == 0.0f && n.y == 0.0f && n.z == 0.0f);
+	VERIF(CMotionTrack::Cadence(3.0f, CMotionTrack::VitesseNaturelle(a.duree, n.x, n.y), 1.1f) == 1.1f);
+	// Une seule position, aucune, ou une animation non décodée : trajet nul.
+	a.positions[1] = { p0 };
+	VERIF(AgrTrajetRacine(a, 0).y == 0.0f);
+	a.positions[1].clear();
+	VERIF(AgrTrajetRacine(a, 0).y == 0.0f);
+	a.positions[1] = { p0, p2 }; a.decodee = false;
+	VERIF(AgrTrajetRacine(a, 0).y == 0.0f);
+	printf("trajet : l'os 1 avance de %.2f m en %.1f s, vitesse naturelle %.2f m/s\n", t.y, 0.8f, CMotionTrack::VitesseNaturelle(0.8f, t.x, t.y));
+}
+
 int
 main(void)
 {
@@ -421,6 +448,7 @@ main(void)
 	Angles();
 	Cadences();
 	Phases();
+	Trajets();
 	Purges();
 	printf("test_animtrack : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;

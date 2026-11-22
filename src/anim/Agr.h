@@ -55,6 +55,30 @@ bool AgrPositionOs(const AgrAnim &a, int32 os, float t, CVector *p);
 // personnage avance à chaque cycle. (0, 0, 0) pour une animation sur place.
 CVector AgrDeplacement(const AgrAnim &a);
 
+// FUN_006073a0(indice, sortie) (méthode du HXD, ret 8, lue en entier de 0x6073a0 à 0x60741d, 126 octets) : **le trajet
+// d'une animation**, celui dont la couche de locomotion tire la vitesse naturelle (FUN_00730340) : la position de l'os 1
+// à la dernière image moins celle de la première (FUN_006b3cc0 avec l'os 1, appelée avec l'image 0 puis −1, et la
+// différence par 00414a20). FUN_006b3cc0(indice, os, sortie, image) (méthode du HXD, ret 0x10, lue en entier de 0x6b3cc0
+// à 0x6b3fe9, 810 octets) rend la position d'un os à une image d'un enregistrement (0x40 octets, ses drapeaux en +0x18) :
+// la racine est l'os 1, ou l'os 2 si l'enregistrement porte le drapeau 0x200. Positions à part (drapeau 8) : pour la
+// racine, le premier enregistrement de position, ou le dernier du premier lot (leur nombre est le mot +0x2a ; 8 octets,
+// un mot et trois entiers de 16 bits en millimètres, le double 0x900fa0 = 0,001, avec les drapeaux 1 ou 2 ; 16 octets et
+// trois réels sinon) ; un second lot (le mot +0x2c) est celui du dernier os, avec le drapeau 0x40 ; tout autre os rend sa
+// position de repos (la table +0x70 du HXD, 12 octets par os). Positions dans les clés (sans le drapeau 8) : la clé
+// image + os, ou pour la dernière image la clé du mot +0x2e (la racine) ou +0x30. Le drapeau 0x100 ajoute à la racine le
+// vecteur +0x34 de l'enregistrement : il s'annule dans la différence.
+// Ici : la dernière position de l'os 1 moins sa première, dans l'animation décodée ; **avec le drapeau 0x200 l'os 1
+// n'est plus la racine, les deux lectures rendent sa position de repos et le trajet est nul**. Supposé : la dernière
+// position décodée de l'os 1 est le dernier enregistrement du premier lot. Non refait : les enregistrements de 16 octets
+// (AgrLireGroupe lit des enregistrements de 8 octets pour tous les types sans translation dans la clé).
+inline CVector
+AgrTrajetRacine(const AgrAnim &a, uint32 drapeaux)
+{
+	const std::vector<AgrPosition> &v = a.positions[1];
+	if(!a.decodee || (drapeaux & 0x200) || v.empty()) return CVector(0, 0, 0);
+	return CVector(v.back().p.x - v.front().p.x, v.back().p.y - v.front().p.y, v.back().p.z - v.front().p.z);
+}
+
 // Interpolation sphérique entre deux quaternions (w, x, y, z), par le plus
 // court chemin ; u = 0 donne a, u = 1 donne b.
 void AgrSlerp(const float a[4], const float b[4], float u, float out[4]);
