@@ -380,6 +380,35 @@ Purges(void)
 	VERIF(l.gardees[4].empty());
 }
 
+static void
+Phases(void)
+{
+	// L'instant d'une phase demandée (FUN_0072e690) : une boucle de 1 s, appuis à 0,2 s et 0,6 s. La phase 0 est le premier
+	// appui, 0,5 le second, 0,25 le milieu des deux ; passé 0,5 le retour au premier appui en passant par la fin de la boucle.
+	VERIF(Pres(CMotionTrack::InstantDeLaPhase(0.0f, 1.0f, 0.2f, 0.6f), 0.2f));
+	VERIF(Pres(CMotionTrack::InstantDeLaPhase(0.5f, 1.0f, 0.2f, 0.6f), 0.6f));
+	VERIF(Pres(CMotionTrack::InstantDeLaPhase(0.25f, 1.0f, 0.2f, 0.6f), 0.4f));
+	VERIF(Pres(CMotionTrack::InstantDeLaPhase(0.75f, 1.0f, 0.2f, 0.6f), 0.9f));
+	VERIF(Pres(CMotionTrack::InstantDeLaPhase(1.0f, 1.0f, 0.2f, 0.6f), 0.2f));   // le tour entier revient au premier appui
+	// Le second appui avant le premier dans le fichier (les marques de C_PLAYER\RUN : 0,633 et 0,3) : la part du tour est
+	// comptée en passant par la fin de la boucle.
+	VERIF(Pres(CMotionTrack::InstantDeLaPhase(0.0f, 0.8f, 0.633f, 0.3f), 0.633f));
+	VERIF(Pres(CMotionTrack::InstantDeLaPhase(0.5f, 0.8f, 0.633f, 0.3f), 0.3f));
+	VERIF(Pres(CMotionTrack::InstantDeLaPhase(0.25f, 0.8f, 0.633f, 0.3f), 0.0665f));
+	// La comparaison à une tolérance près (FUN_00432910) : l'écart égal à la tolérance passe.
+	VERIF(CMotionTrack::Proche(1.0f, 1.05f, 0.06f) && CMotionTrack::Proche(1.05f, 1.0f, 0.06f));
+	VERIF(!CMotionTrack::Proche(1.0f, 1.07f, 0.06f));
+	VERIF(CMotionTrack::Proche(2.0f, 2.5f, 0.5f));
+	// Le vecteur tourné autour de la verticale (FUN_005fbe50) : un quart de tour porte x sur y, la hauteur reste.
+	float v[3] = { 1.0f, 0.0f, 7.0f };
+	CMotionTrack::Tourner(1.5707964f, v);
+	VERIF(Pres(v[0], 0.0f) && Pres(v[1], 1.0f) && v[2] == 7.0f);
+	CMotionTrack::Tourner(-1.5707964f, v);
+	VERIF(Pres(v[0], 1.0f) && Pres(v[1], 0.0f));
+	printf("phase : sur C_PLAYER\\RUN (0,8 s supposé, appuis 0,633 et 0,3) la phase 0,25 est à %.4f s, la phase 0,75 à %.4f s\n",
+	       CMotionTrack::InstantDeLaPhase(0.25f, 0.8f, 0.633f, 0.3f), CMotionTrack::InstantDeLaPhase(0.75f, 0.8f, 0.633f, 0.3f));
+}
+
 int
 main(void)
 {
@@ -391,6 +420,7 @@ main(void)
 	Synchros();
 	Angles();
 	Cadences();
+	Phases();
 	Purges();
 	printf("test_animtrack : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;

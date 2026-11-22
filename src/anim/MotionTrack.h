@@ -137,4 +137,41 @@ struct CMotionTrack {
 		if(nat > 0.0f) k = v / nat;
 		return k * stat;
 	}
+
+	// FUN_0072e690(x, durée, m0, m2) (cdecl, lue en entier de 0x72e690 à 0x72e74e, 191 octets) : l'instant d'une animation
+	// pour une phase demandée x entre 0 et 1, où 0 est la marque m0 et 0,5 la marque m2 (les marques 0 et 2 de l'entrée : les
+	// deux appuis, supposé). A = m0 / durée ; B = m2 / durée − A, plus 1 s'il n'est pas strictement positif (la part du
+	// tour qui va de m0 à m2) ; passé 0,5 (le double 0x8ff1f8) R = B + ((x − 0,5) × 2) × (1 − B), sinon R = B × 2x ;
+	// P = A + R, moins 1 s'il passe 1 ; elle rend P × durée. La mise à jour 00731b90 s'en sert quand une phase est demandée
+	// à la couche (+0x88, −1 sans demande ; lue de 0x732021 à 0x732060).
+	static float InstantDeLaPhase(float x, float duree, float m0, float m2) {
+		float a = m0 / duree;
+		float b = (float)((double)m2 / duree - a);
+		if(!(b > 0.0f)) b = (float)(b + 1.0);
+		float r;
+		if(x > 0.5f) r = (float)(b + ((double)x - 0.5) * 2.0 * (1.0 - b));
+		else r = (float)((double)b * (x + (double)x));
+		float p = (float)((double)a + r);
+		if(p > 1.0f) return (float)(((double)p - 1.0) * duree);
+		return (float)((double)p * duree);
+	}
+
+	// FUN_00432910(a, b, tolérance) (cdecl, lue en entier de 0x432910 à 0x43293f, 48 octets) : vrai si |a − b| ne passe pas
+	// la tolérance. La mise à jour 00731b90 compare ainsi l'instant d'une couche qui suit à celui que la meneuse lui donne,
+	// à 0,06 s près (0xbc733c).
+	static bool Proche(float a, float b, float tol) {
+		float d = std::fabs((float)(a - b));
+		return !(tol < d);
+	}
+
+	// FUN_005fbe50(angle, vecteur) (cdecl, lue en entier de 0x5fbe50 à 0x5fbeb7, 104 octets) : le vecteur tourné de
+	// l'angle autour de la verticale, sa hauteur gardée : c = cos(angle) (FUN_0085ad50), s = sin(angle) (FUN_0085aec0),
+	// x' = c x − s y, y' = c y + s x. La direction lissée de la couche de locomotion (00730110) tourne ainsi vers
+	// l'intention du piéton.
+	static void Tourner(float angle, float *v) {
+		float c = (float)std::cos((double)angle), s = (float)std::sin((double)angle);
+		float x = v[0], y = v[1];
+		v[0] = (float)((double)c * x - (double)s * y);
+		v[1] = (float)((double)c * y + (double)s * x);
+	}
 };
