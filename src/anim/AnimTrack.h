@@ -114,6 +114,23 @@ struct CAnimTrack {
 	// les dix entrées (+0x54 … +0x78) à nil, l'octet +0x7c et le réel +0x8c à 0, **les réels +0x80 et +0x88 à −1**, les
 	// vecteurs +0x90 et +0x9c égaux au vecteur global 0xbcc564 (255 références dans l'exécutable ; supposé le vecteur
 	// nul : il est dans la zone non initialisée). Le réel +0x84 n'y est pas écrit (supposé 0, la mémoire d'une réserve).
+	// **L'évaluation d'une couche** (le rang 4 de sa table virtuelle, appelé par 006be730 avec le lecteur, la pose de
+	// travail, les trois réels du déplacement et un quaternion ; ret 0x10).
+	// - AM_AnimTrack, FUN_006b9870 (lue en entier de 0x6b9870 à 0x6b988d, 30 octets) : **la place 0 seule**, 006b6e50
+	//   (non lue) appelée avec les mêmes arguments et le rang de place 0.
+	// - AM_MotionTrack, FUN_0072f440 (5 octets : un saut vers FUN_006b9890, lue en entier de 0x6b9890 à 0x6b9917, 136
+	//   octets) : faux si le lecteur n'a rien en [+0x94]+0x10 ; sinon **les deux places sont évaluées dans l'ordre**
+	//   (006b6e50 avec le rang 0 puis 1), la place 0 au poids 1 − (+0x40), la place 1 au poids (+0x40). La première
+	//   évaluation réussie reste dans la pose donnée (la pose de travail devient alors celle de 0x20c48a0) ; **une
+	//   seconde réussie y est mêlée par FUN_006bcc60, sans masque, à son poids**. Rend vrai.
+	// Supposé : 006b6e50 rend faux pour une place sans animation.
+	struct Evaluation { int32 place; float poids; };
+	int32 Evaluations(Evaluation out[2]) const {
+		out[0].place = 0; out[0].poids = motion ? 1.0f - melange : 1.0f;
+		if(!motion) return 1;
+		out[1].place = 1; out[1].poids = melange;
+		return 2;
+	}
 	enum { ENTREES = 10 };
 	bool motion = false;               // la table virtuelle : faux AM_AnimTrack, vrai AM_MotionTrack
 	int32 courante = -1;               // +0x50 : l'entrée jouée par la place 0 (un pointeur dans le jeu)

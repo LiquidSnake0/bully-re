@@ -381,6 +381,12 @@ Melanges(void)
 	VERIF(ordre.size() == 3 && !ordre[2].gardee && ordre[2].couche == &l.couches[0] && ordre[2].poids == l.couches[0].poids);
 	printf("mélange : trois évaluations au rang 0, la gardée la plus ancienne (poids %.3f), la plus récente (poids %.3f), puis la couche (poids %.3f)\n",
 	       ordre.size() == 3 ? ordre[0].poids : -1.0f, ordre.size() == 3 ? ordre[1].poids : -1.0f, ordre.size() == 3 ? ordre[2].poids : -1.0f);
+	// L'évaluation d'une couche : une AM_AnimTrack par sa place 0, une AM_MotionTrack par ses deux places, la seconde au poids +0x40.
+	CAnimTrack::Evaluation ev[2];
+	VERIF(l.couches[0].Evaluations(ev) == 1 && ev[0].place == 0 && ev[0].poids == 1.0f);
+	CAnimTrack mt = CAnimTrack::Motion();
+	mt.melange = 0.25f;
+	VERIF(mt.Evaluations(ev) == 2 && ev[0].place == 0 && ev[0].poids == 0.75f && ev[1].place == 1 && ev[1].poids == 0.25f);
 	// Installée (poids 1), la couche est évaluée seule.
 	for(int32 i = 0; i < 12; i++) l.ParImage(dt);
 	VERIF(l.OrdreDuRang(0, ordre) == 1 && !ordre[0].gardee);

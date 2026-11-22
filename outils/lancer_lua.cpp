@@ -7309,6 +7309,8 @@ AvancerLecteurs(float dt)
 // L'animation et l'instant que porte la place 0 d'une couche du lecteur, pour la pose des os. `k`, la piste qui l'a lancée : sans
 // boucle, l'instant est borné à son champ 44 (la fin), comme l'outil le faisait (supposé : FUN_0060ae00 dit la piste finie à
 // cet instant, ce que la place fait ensuite n'est pas lu).
+struct CPoseFond;
+static void SecondePlace(const CAnimTrack &c, CPoseFond *f);
 static void
 PoseDeLaPlace(const CAnimTrack &c, const CLecteurOutil::Cle *k, CPoseJouee *out)
 {
@@ -7345,7 +7347,20 @@ PoseDeLaPlace(const CAnimTrack &c, const CLecteurOutil::Cle *k, CPoseJouee *out)
 // `facteur` : le poids de la couche entière (1 : installée ; de 1 à 0 pendant sa sortie).
 struct CCoucheOs { const AgrAnim *a; float t; const std::vector<float> *poids; float facteur = 1.0f; };
 // Une évaluation du rang 0 : une animation à son instant et le poids avec lequel elle est mêlée à ce qui précède.
-struct CPoseFond { const AgrAnim *a; float t; float poids; };
+// `a2` : la place 1 d'une couche de locomotion, mêlée à la place 0 avec le poids `melange` avant tout (FUN_006b9890).
+struct CPoseFond { const AgrAnim *a; float t; float poids; const AgrAnim *a2 = nil; float t2 = 0.0f; float melange = 0.0f; };
+// La seconde évaluation d'une couche (CAnimTrack::Evaluations) : la place 1 d'une couche de locomotion, à son instant et à
+// son poids (+0x40), quand elle porte une animation décodée.
+static void
+SecondePlace(const CAnimTrack &c, CPoseFond *f)
+{
+	CAnimTrack::Evaluation ev[2];
+	if(c.Evaluations(ev) < 2 || c.places[ev[1].place].anim == nil) return;
+	auto ia = animsDesPlaces.find(c.places[ev[1].place].anim);
+	if(ia == animsDesPlaces.end() || !ia->second.anim) return;
+	f->a2 = ia->second.anim; f->t2 = c.places[ev[1].place].t; f->melange = ev[1].poids;
+}
+
 static bool
 PoserOs(const CSqueletteOutil &s, const std::vector<CPoseFond> &fond, CVector out[CSqueletteOutil::OS], const std::vector<CCoucheOs> *couches = nil)
 {
@@ -7361,7 +7376,15 @@ PoserOs(const CSqueletteOutil &s, const std::vector<CPoseFond> &fond, CVector ou
 		if(b < 0 || b >= f.numBlocks) continue;
 		bool a1 = false;
 		for(const CPoseFond &x : fond){
-			if(!AgrRotation(*x.a, k, x.t, q2)) continue;
+			bool r1 = AgrRotation(*x.a, k, x.t, q2);
+			float q3[4];
+			if(x.a2 != nil && AgrRotation(*x.a2, k, x.t2, q3)){
+				CPoseMelange::Geste g2 = r1 ? CPoseMelange::SansMasque(x.melange) : CPoseMelange::COPIER;
+				if(g2 == CPoseMelange::COPIER) memcpy(q2, q3, sizeof q2);
+				else if(g2 == CPoseMelange::MELER){ float r[4]; AgrSlerp(q2, q3, x.melange, r); memcpy(q2, r, sizeof q2); }
+				r1 = true;
+			}
+			if(!r1) continue;
 			CPoseMelange::Geste g = a1 ? CPoseMelange::SansMasque(x.poids) : CPoseMelange::COPIER;
 			if(g == CPoseMelange::COPIER) memcpy(q, q2, sizeof q);
 			else if(g == CPoseMelange::MELER){ float r[4]; AgrSlerp(q, q2, x.poids, r); memcpy(q, r, sizeof q); }
@@ -7397,7 +7420,15 @@ PoserOs(const CSqueletteOutil &s, const std::vector<CPoseFond> &fond, CVector ou
 		CVector d1(0, 0, 0), d2(0, 0, 0);
 		bool b1 = false;
 		for(const CPoseFond &x : fond){
-			if(!Bassin(*x.a, x.t, &d2)) continue;
+			bool r1 = Bassin(*x.a, x.t, &d2);
+			CVector d3(0, 0, 0);
+			if(x.a2 != nil && Bassin(*x.a2, x.t2, &d3)){
+				CPoseMelange::Geste g2 = r1 ? CPoseMelange::SansMasque(x.melange) : CPoseMelange::COPIER;
+				if(g2 == CPoseMelange::COPIER) d2 = d3;
+				else if(g2 == CPoseMelange::MELER) d2 = CVector(d2.x + x.melange * (d3.x - d2.x), d2.y + x.melange * (d3.y - d2.y), d2.z + x.melange * (d3.z - d2.z));
+				r1 = true;
+			}
+			if(!r1) continue;
 			CPoseMelange::Geste g = b1 ? CPoseMelange::SansMasque(x.poids) : CPoseMelange::COPIER;
 			if(g == CPoseMelange::COPIER) d1 = d2;
 			else if(g == CPoseMelange::MELER) d1 = CVector(d1.x + x.poids * (d2.x - d1.x), d1.y + x.poids * (d2.y - d1.y), d1.z + x.poids * (d2.z - d1.z));
@@ -7455,7 +7486,7 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 		for(const CLecteurAnim::Evaluee &e : ordre){
 			if(!e.gardee) continue;
 			CPoseJouee x; PoseDeLaPlace(*e.couche, nil, &x);
-			if(x.a.anim) fond.push_back({x.a.anim, x.t, e.poids});
+			if(x.a.anim){ fond.push_back({x.a.anim, x.t, e.poids}); SecondePlace(*e.couche, &fond.back()); }
 		}
 		for(int32 r = 1; r < CLecteurAnim::RANGS; r++){
 			const CAnimTrack &c = o.l.couches[r];
@@ -7471,7 +7502,17 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 		}
 	}
 	bool fondu = joue && poids < 1.0f && pq.a.anim;
-	if(joue && pj.a.anim) fond.push_back({pj.a.anim, pj.t, poids});
+	if(joue && pj.a.anim){
+		fond.push_back({pj.a.anim, pj.t, poids});
+		SecondePlace(lecteurs.find(indice)->second.l.couches[0], &fond.back());
+		// Dit une fois par piéton : la couche de locomotion posée par ses deux places.
+		static std::set<int> ditsDeux;
+		const CAnimTrack &c0 = lecteurs.find(indice)->second.l.couches[0];
+		if(fond.back().a2 != nil && fond.back().melange >= CPoseMelange::Nul() && ditsDeux.insert(indice).second)
+			printf("%6.2f s  les os du piéton %d sont posés par les deux places de sa couche de locomotion : %s à %.3f s au poids %.2f, %s à %.3f s au poids %.2f\n",
+			       maintenant / 1000.0, indice, c0.places[0].anim ? c0.places[0].anim->nom.c_str() : "?", c0.places[0].t, 1.0f - c0.melange,
+			       c0.places[1].anim ? c0.places[1].anim->nom.c_str() : "?", c0.places[1].t, c0.melange);
+	}
 	bool pose = joue && pj.a.anim && PoserOs(*s, fond, poses, &couches);
 	const CVector *osPoses = pose ? poses : s->os;
 	CModelePieton ped;
