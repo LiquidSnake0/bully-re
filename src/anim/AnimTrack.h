@@ -185,6 +185,11 @@ struct CAnimTrack {
 		if(place == 1) melange = mel;
 	}
 
+	// FUN_0072f3a0 (méthode de la couche de locomotion, lue en entier de 0x72f3a0 à 0x72f3a9, 10 octets) : +0x84 prend
+	// l'instant de la place 0 (+0x1c). Son seul appelant est FUN_004741b0 (CLecteurAnim::ReleverMeneuses). Une couche qui
+	// suit se cale sur cet instant de la meneuse.
+	void Relever(void) { garde = places[0].t; }
+
 	// La couche de locomotion neuve (FUN_00731470).
 	static CAnimTrack Motion(void) {
 		CAnimTrack c;
@@ -271,6 +276,50 @@ struct CLecteurAnim {
 			l.erase(l.begin() + min);
 		}
 		l.insert(l.begin(), couches[rang]);
+		// La copie d'une couche de locomotion (le rang 2 de sa table virtuelle, FUN_007315a0, 90 octets : une couche neuve
+		// de la réserve 0x20c9028 puis FUN_0072ff40, lue en entier de 0x72ff40 à 0x7300ff, 448 octets) : la base
+		// (006b4510), le piéton, une copie de la piste Locomotion et de chaque entrée, l'entrée courante, +0x7c, +0x80,
+		// +0x84, +0x8c et les deux vecteurs ; **la phase demandée +0x88 n'est pas copiée**, elle reste à −1.
+		if(l[0].motion) l[0].demande = -1.0f;
+	}
+
+	// FUN_006b1e40(rang) (méthode du lecteur, ret 4, lue en entier de 0x6b1e40 à 0x6b1e54, 21 octets) : la couche d'un
+	// rang, nil pour un rang de 7 ou plus ou une place vide.
+	CAnimTrack *Couche(int32 rang) { return (uint32)rang < (uint32)RANGS && posee[rang] ? &couches[rang] : nil; }
+
+	// FUN_00731ae0(lecteur, rang) (cdecl, lue en entier de 0x731ae0 à 0x731b8c) : **la couche de locomotion qui peut mener
+	// un rang**. g : la première des couches gardées du rang si c'est une AM_MotionTrack (le rang 0 de la table virtuelle
+	// compare un numéro de type, le mot 0x1b65250, rendu par 00607490) ; c : la couche du rang (FUN_006b1e40). Si c n'est
+	// pas une couche de locomotion : g. Sinon g tant que le poids de c (+0xc) est sous 0,5 (0x9055a0), puis c : **pendant
+	// la première moitié d'un fondu de la marche à la course, c'est la boucle quittée qui mène**.
+	CAnimTrack *Meneuse(int32 rang) {
+		CAnimTrack *g = !gardees[rang].empty() && gardees[rang][0].motion ? &gardees[rang][0] : nil;
+		CAnimTrack *c = Couche(rang);
+		if(c == nil || !c->motion) return g;
+		if(g != nil && 0.5f > c->poids) return g;
+		return c;
+	}
+
+	// FUN_004741b0 (méthode du piéton, lue en entier de 0x4741b0 à 0x4741e1, 50 octets) : pour chacun des sept rangs,
+	// la meneuse du rang (FUN_00731ae0 sur le lecteur +0x114 du piéton), s'il y en a une, relève son instant
+	// (FUN_0072f3a0) ; puis elle saute à 00467d60 (non lue). Aucun appel direct ne la vise (une table virtuelle du
+	// piéton) : supposé une fois par image, après la mise à jour des couches.
+	void ReleverMeneuses(void) {
+		for(int32 r = 0; r < RANGS; r++)
+			if(CAnimTrack *m = Meneuse(r)) m->Relever();
+	}
+
+	// FUN_006bcb70(lecteur, couche, rang) (méthode du lecteur global 0x20c4910, ret 0xc, lue en entier de 0x6bcb70 à
+	// 0x6bcbd3) : **une couche déjà construite prend un rang**. La couche du rang est d'abord gardée (FUN_006b9130 avec
+	// 0), puis détruite (le rang 1 de sa table virtuelle) ; sans couche le compte +0x88 monte ; la couche reçoit son rang
+	// (+0x44) et prend la place. C'est ainsi que FUN_0060e240 (LocomotionAnimationNew) installe la couche de locomotion
+	// que la piste Locomotion a construite (FUN_0060c5b0).
+	void Installer(int32 rang, const CAnimTrack &c) {
+		Garder(rang);
+		if(!posee[rang]) compte++;
+		couches[rang] = c;
+		couches[rang].rang = rang;
+		posee[rang] = true;
 	}
 
 	// FUN_006bcad0(lecteur d'un piéton, ..., couche, ...) (méthode du lecteur global, ret 0x20, lue en entier de 0x6bcad0 à

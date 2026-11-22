@@ -476,6 +476,45 @@ Directions(void)
 	VERIF(Pres(CMotionTrack::Angle(c.dir, c.avant), 1.5707964f));
 }
 
+static void
+Meneuses(void)
+{
+	static CHxdAnim marche, course;
+	marche.duree = 1.0f; course.duree = 0.8f;
+	CLecteurAnim l;
+	VERIF(l.Couche(0) == nil && l.Couche(7) == nil && l.Couche(-1) == nil && l.Meneuse(0) == nil);
+	// Une couche de locomotion installée (FUN_006bcb70) sur un rang vide : le compte monte, rien n'est gardé.
+	CAnimTrack m = CAnimTrack::Motion();
+	m.entrees[0].hache = 1; m.entrees[0].enr = &marche; m.nEntrees = 1;
+	l.Installer(0, m);
+	VERIF(l.compte == 1 && l.posee[0] && l.Couche(0) == &l.couches[0] && l.couches[0].motion && l.couches[0].rang == 0);
+	VERIF(l.gardees[0].empty());
+	VERIF(l.Meneuse(0) == &l.couches[0] && l.Meneuse(1) == nil);
+	// Une seconde couche de locomotion sur le même rang : la première est gardée, sa phase demandée n'est pas copiée.
+	l.couches[0].poids = 1.0f; l.couches[0].demande = 0.25f; l.couches[0].precedent = 0.4f; l.couches[0].synchro = true;
+	l.couches[0].places[0].t = 0.6f; l.ReleverMeneuses();
+	CAnimTrack c = CAnimTrack::Motion();
+	c.entrees[0].hache = 2; c.entrees[0].enr = &course; c.nEntrees = 1;
+	c.reste = -0.5f; c.fondu = -0.5f;
+	l.Installer(0, c);
+	VERIF(l.compte == 1 && l.gardees[0].size() == 1 && l.gardees[0][0].motion && l.gardees[0][0].entrees[0].hache == 1);
+	VERIF(l.gardees[0][0].demande == -1.0f && l.gardees[0][0].precedent == 0.4f && l.gardees[0][0].synchro && l.gardees[0][0].garde == 0.6f);
+	VERIF(l.couches[0].entrees[0].hache == 2 && l.couches[0].poids == 0.0f);
+	// La meneuse du rang (FUN_00731ae0) : la couche gardée tant que le poids de la nouvelle est sous 0,5, puis la nouvelle.
+	VERIF(l.Meneuse(0) == &l.gardees[0][0]);
+	l.couches[0].poids = 0.49f; VERIF(l.Meneuse(0) == &l.gardees[0][0]);
+	l.couches[0].poids = 0.5f;  VERIF(l.Meneuse(0) == &l.couches[0]);
+	// Une couche ordinaire sur le rang : la meneuse est la couche de locomotion gardée, s'il y en a une en tête.
+	static CHxdAnim geste; geste.duree = 2.0f;
+	l.couches[0].places[0].anim = &course; l.couches[0].places[0].drapeaux = 7;
+	l.Poser(0, &geste, 0, 0.0f, 0, 1.0f, 0.2f);
+	VERIF(!l.couches[0].motion && l.gardees[0].size() == 2 && l.gardees[0][0].entrees[0].hache == 2);
+	VERIF(l.Meneuse(0) == &l.gardees[0][0]);
+	l.gardees[0].insert(l.gardees[0].begin(), CAnimTrack());
+	VERIF(l.Meneuse(0) == nil);
+	printf("meneuse : couche gardée sous un poids de 0,5, puis la couche du rang\n");
+}
+
 int
 main(void)
 {
@@ -490,6 +529,7 @@ main(void)
 	Phases();
 	Trajets();
 	Directions();
+	Meneuses();
 	Purges();
 	printf("test_animtrack : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;
