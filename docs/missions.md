@@ -741,6 +741,16 @@ fondu à 74,02 s (sa course était à l'image d'attente de son tour). Dans `1_03
 d'instant. Les sept missions gardent leurs temps : 1_01 à 10,46 s, 1_02 à 132,92 s, 1_03 à 148,90 s (aux billes 147,97 s),
 1_04 à 82,53 s, 1_05 à 180,31 s, 1_06_01 à 61,81 s, 1_07 à 150,88 s.
 
+Le 22.11, tout piéton dont le nœud porte une piste Locomotion a sa couche de locomotion (AM_MotionTrack, docs/suite.md,
+« Fait ») : les huit journaux gagnent les lignes « le piéton N prend une couche de locomotion », « reçoit son entrée n° … »
+(l'animation, son seuil d'angle, ses quatre marques, sa vitesse naturelle), « la locomotion du piéton N : … cadence … »
+(l'entrée choisie, son instant, la cadence, la direction, le poids, qui mène), « pose le pied » et « le pas du piéton N …
+efface l'appui et joue le son … ». Dans `1_02` : à 2,18 s le piéton 2 marche sur C_PLAYER\FAT_WALK à la cadence 1,49
+(1,40 m/s pour une vitesse naturelle de 0,94 m/s), pose le pied 0 à 2,54 s et le pied 1 à 2,87 s (son P_Walk). Dans `1_04`,
+trois lignes « le piéton N joue C_PLAYER\HIT_HEAD_JAB » (75,08 s, 75,87 s, 76,72 s) disent « 2 couches gardées mêlées de la
+plus ancienne à la plus récente ». Les sept missions gardent leurs temps (1_01 à 10,46 s, 1_02 à 132,92 s, 1_03 à 148,90 s,
+aux billes 147,97 s, 1_04 à 82,53 s, 1_05 à 180,31 s, 1_06_01 à 61,81 s, 1_07 à 150,88 s) : la couche ne déplace personne.
+
 ## `1_05` (« Save Algie ») (06.11.2026)
 
 `1_05` s'enchaîne après `1_04`. Lancée seule (`build/outils/lancer_lua 90 --mission 1_05 --sans-cinematiques`), elle bouclait

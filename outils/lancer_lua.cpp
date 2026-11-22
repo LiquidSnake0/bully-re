@@ -7150,10 +7150,25 @@ struct CPoseJouee { uint32 hache = 0; float t = 0, entree = 0, fondu = 0; int32 
 // de rang 0 ne retire rien : la couche 0 garde son animation, qui continue d'avancer.
 // Supposé : l'ordre dans l'image (les lancements et les arrêts, puis la mise à jour du lecteur), le mode 2 d'une piste qui
 // donne le bit 1 des drapeaux du lancement (la boucle), et le pas d'image fixe de l'outil (0,033 s).
+// **La couche de locomotion** (AM_MotionTrack) : un nœud qui porte une piste Locomotion (lancement 0060c5b0) crée une couche
+// de locomotion ; chacune de ses pistes LocomotionAnimationNew (FUN_0060e240) y ajoute une entrée et l'installe au lecteur
+// (FUN_006bcb70) au rang du champ 64 de la piste Locomotion. Sa mise à jour (FUN_00731b90, CLecteurAnim::AvancerMotion)
+// choisit l'entrée par l'angle entre la direction du mouvement et l'avant du piéton, cale l'instant sur la couche qui mène
+// (la marche qui devient course garde son pas), cadence la boucle par la vitesse du piéton et relève les appuis des pieds.
+// `pieton` : ce que la mise à jour lit du piéton, rempli chaque image (la stat 0x14, l'intention de mouvement, l'avant tiré
+// du cap, la vitesse que la piste Locomotion pose). `motion` : la clé du rang est une couche de locomotion ; `entrees` :
+// les pistes du nœud déjà devenues des entrées.
+// Supposé : la couche est installée à l'image où la première piste LocomotionAnimationNew est lancée (le jeu l'installe à
+// chaque lancement d'une de ces pistes) ; le temps depuis chaque appui avance du pas de l'image (ce qui l'avance n'est pas
+// lu) ; un nœud dont la piste Locomotion donne un rang autre que 0 garde l'ancienne lecture (une boucle ordinaire).
 struct CLecteurOutil {
-	struct Cle { bool ok = false; float debut = 0.0f; CActionController::PisteAnimation p; };
+	struct Cle { bool ok = false; float debut = 0.0f; CActionController::PisteAnimation p; bool motion = false; };
 	CLecteurAnim l;
 	Cle cles[CLecteurAnim::RANGS];
+	CMotionPieton pieton;
+	std::vector<const CActionController::PisteAnimation *> entrees;
+	int32 ditChoix = 0, ditPas = 0, ditSons = 0, pasComptes[2] = {0, 0};
+	int32 choixDit = -2, hautDit = -2;
 };
 static std::map<int, CLecteurOutil> lecteurs;
 static std::map<const CHxdAnim *, CAnimOutil> animsDesPlaces;   // l'animation décodée de chaque enregistrement lancé
@@ -7174,13 +7189,51 @@ AvancerLecteurs(float dt)
 			const CActionController::PisteAnimation *vivantes[CLecteurAnim::RANGS] = {};
 			vivantes[0] = c.Animation(tn);
 			for(const CActionController::PisteAnimation *m : c.Couches(tn)) vivantes[CActionController::Rang(*m)] = m;
+			const CActionController::PisteLocomotion &loc = c.locomotion;
+			bool locVit = loc.ok && loc.entree <= tn && (loc.vie < 0.0f || tn < loc.entree + loc.vie);
+			if(locVit) o.pieton.vitesse = loc.Vitesse(o.pieton.intentionVitesse);
 			for(int32 r = 0; r < CLecteurAnim::RANGS; r++){
 				const CActionController::PisteAnimation *m = vivantes[r];
 				CLecteurOutil::Cle &k = o.cles[r];
-				if(m != nil){
+				if(m != nil && r == 0 && m->loco && loc.ok && loc.rang == 0 && loc.entree <= tn){
+					if(!k.ok || !k.motion || k.debut != c.debut){
+						k.ok = true; k.motion = true; k.debut = c.debut; k.p = *m;
+						CAnimTrack mt = CAnimTrack::Motion();
+						float f = loc.Fondu();
+						if(f == 0.0f){ mt.reste = 0.0f; mt.fondu = 0.0f; mt.poids = 1.0f; }
+						else{ mt.reste = -f; mt.fondu = -f; mt.poids = 0.0f; }
+						o.l.Installer(0, mt);
+						o.entrees.clear();
+						o.ditChoix = 0; o.ditPas = 0; o.ditSons = 0; o.pasComptes[0] = o.pasComptes[1] = 0; o.choixDit = o.hautDit = -2;
+						printf("%6.2f s  le piéton %d prend une couche de locomotion (le nœud %s : piste Locomotion, vitesses %.2f et %.2f m/s entre les "
+						       "intentions %.2f et %.2f, %s, rang %d, fondu %.2f s) ; %d couche(s) gardée(s) au rang 0\n",
+						       maintenant / 1000.0, kv.first, arbres.CheminDe(c.joue).c_str(), loc.basse, loc.haute, loc.seuilBas, loc.seuilHaut,
+						       loc.Cadencee() ? "cadencée" : "sans cadence", loc.rang, f, (int)o.l.gardees[0].size());
+					}
+					CAnimTrack &ct = o.l.couches[0];
+					for(const CActionController::PisteAnimation &pa : c.animations){
+						if(!pa.loco || pa.entree > tn || ct.nEntrees >= CAnimTrack::ENTREES) continue;
+						if(std::find(o.entrees.begin(), o.entrees.end(), &pa) != o.entrees.end()) continue;
+						o.entrees.push_back(&pa);
+						CAnimOutil a = AnimationParHache(pa.hache);
+						CMotionEntree &e = ct.entrees[ct.nEntrees++];
+						e.hache = pa.hache; e.seuil = pa.seuil; e.enr = a.enr;
+						for(int i = 0; i < 4; i++) e.marques[i] = pa.marques[i];
+						CVector trajet(0.0f, 0.0f, 0.0f);
+						if(a.enr != nil){
+							animsDesPlaces[a.enr] = a;
+							if(a.anim != nil) trajet = AgrTrajetRacine(*a.anim, a.enr->drapeaux);
+							e.naturelle = CMotionTrack::VitesseNaturelle(a.enr->duree, trajet.x, trajet.y);
+						}
+						printf("%6.2f s  la couche de locomotion du piéton %d reçoit son entrée n° %d : %s (%08x, %.3f s, seuil %.2f rad, marques %.3f, %.3f, %.3f et %.3f s, "
+						       "trajet de l'os 1 %.2f m à plat, vitesse naturelle %.2f m/s)\n",
+						       maintenant / 1000.0, kv.first, ct.nEntrees - 1, a.enr ? a.enr->nom.c_str() : "animation absente", pa.hache, a.enr ? a.enr->duree : -1.0f,
+						       pa.seuil, pa.marques[0], pa.marques[1], pa.marques[2], pa.marques[3], sqrtf(trajet.x * trajet.x + trajet.y * trajet.y), e.naturelle);
+					}
+				}else if(m != nil){
 					float vitesse = (m->vitesse > 0.0f ? m->vitesse : 1.0f) * stat;
-					if(!k.ok || k.debut != c.debut || k.p.hache != m->hache || k.p.entree != m->entree){
-						k.ok = true; k.debut = c.debut; k.p = *m;
+					if(!k.ok || k.motion || k.debut != c.debut || k.p.hache != m->hache || k.p.entree != m->entree){
+						k.ok = true; k.motion = false; k.debut = c.debut; k.p = *m;
 						CAnimOutil a = AnimationParHache(m->hache);
 						if(a.enr != nil){
 							animsDesPlaces[a.enr] = a;
@@ -7191,7 +7244,7 @@ AvancerLecteurs(float dt)
 							ct.places[0].t = m->depart < 0.0f ? 0.0f : duree > 0.0f && m->depart > duree ? duree : m->depart;
 						}
 					}
-					if(o.l.posee[r]) o.l.couches[r].places[0].vitesse = vitesse;
+					if(o.l.posee[r] && !o.l.couches[r].motion) o.l.couches[r].places[0].vitesse = vitesse;
 				}else if(k.ok && r > 0){
 					k.ok = false;
 					int32 mr = o.l.posee[r] ? o.l.couches[r].masque : -1;
@@ -7199,14 +7252,67 @@ AvancerLecteurs(float dt)
 				}
 			}
 		}
-		o.l.ParImage(dt);
-		o.l.PurgerInstallees();   // le début de l'évaluation de la pose : une couche installée vide les gardées de son rang
+		// Ce que la couche de locomotion lit du piéton, puis la mise à jour du lecteur (FUN_006c05b0, FUN_00731b90 pour une
+		// couche de locomotion) ; les appuis relevés et le choix des entrées sont dits (les premiers de chaque couche).
+		CMotionPieton &mp = o.pieton;
+		mp.stat = StatVitesse(kv.first);
+		if(const CScriptPed *q = pietons.Acceder(kv.first)){
+			mp.intention[0] = q->intention.x; mp.intention[1] = q->intention.y; mp.intention[2] = q->intention.z;
+			mp.intentionVitesse = q->intentionVitesse;
+			float cap = q->cap * 3.14159265f / 180.0f;
+			mp.avant[0] = cosf(cap); mp.avant[1] = sinf(cap); mp.avant[2] = 0.0f;
+		}
+		mp.depuisPas[0] += dt; mp.depuisPas[1] += dt;
+		o.l.ParImage(dt, mp);
+		if(o.l.posee[0] && o.l.couches[0].motion){
+			const CAnimTrack &ct = o.l.couches[0];
+			const CAnimTrack *men = o.l.Meneuse(0);
+			int32 haut = -1;
+			for(int32 i = 0; i < ct.nEntrees; i++) if(ct.places[1].anim != nil && ct.melange > 0.0f && ct.entrees[i].enr == ct.places[1].anim && i != ct.courante) haut = i;
+			if(ct.courante >= 0 && (ct.courante != o.choixDit || haut != o.hautDit) && o.ditChoix < 3){
+				o.ditChoix++; o.choixDit = ct.courante; o.hautDit = haut;
+				const CMotionEntree &e = ct.entrees[ct.courante];
+				char mel[160] = "";
+				if(haut >= 0) snprintf(mel, sizeof mel, ", mêlée à %s au poids %.2f", ct.entrees[haut].enr->nom.c_str(), ct.melange);
+				printf("%6.2f s  la locomotion du piéton %d : %s à %.3f s%s, cadence %.2f (vitesse du piéton %.2f m/s, vitesse naturelle %.2f m/s, stat %.2f), "
+				       "direction à %.2f rad de l'avant, poids %.2f, %s\n",
+				       maintenant / 1000.0, kv.first, e.enr ? e.enr->nom.c_str() : "?", ct.places[0].t, mel, ct.places[0].vitesse, mp.vitesse, e.naturelle, mp.stat,
+				       CMotionTrack::Angle(ct.dir, ct.avant), ct.poids,
+				       men == &ct || men == nil ? "elle mène" : "calée sur la couche gardée, qui mène tant que ce poids est sous 0,5");
+			}
+			for(int32 pied = 0; pied < 2; pied++){
+				if(!mp.pas[pied] || mp.depuisPas[pied] != 0.0f) continue;   // posé à cette image : son temps vient d'être remis à 0
+				o.pasComptes[pied]++;
+				if(o.ditPas < 4){
+					o.ditPas++;
+					printf("%6.2f s  le piéton %d pose le pied %d (appui n° %d de cette couche : la marque %.3f s de %s passée, l'animation à %.3f s)\n",
+					       maintenant / 1000.0, kv.first, pied, o.pasComptes[pied], ct.courante >= 0 ? ct.entrees[ct.courante].marques[pied * 2] : -1.0f,
+					       ct.places[0].anim ? ct.places[0].anim->nom.c_str() : "?", ct.places[0].t);
+				}
+			}
+		}
+		// La piste LocomotionEvent du nœud (FUN_0060ec30) : elle efface chaque appui levé et joue le son du pas.
+		if(const CActionController::PistePas *pp = c.joue != nil ? c.Pas(c.Temps(maintenant / 1000.0f)) : nil)
+			for(int32 pied = 0; pied < 2; pied++){
+				if(!mp.pas[pied]) continue;
+				mp.Appui(pied, false);
+				if(o.ditSons < 4){
+					o.ditSons++;
+					printf("%6.2f s  le pas du piéton %d (pied %d) : la piste LocomotionEvent du nœud %s efface l'appui et joue le son %s\n",
+					       maintenant / 1000.0, kv.first, pied, arbres.CheminDe(c.joue).c_str(), pp->son[pied].empty() ? "par défaut" : pp->son[pied].c_str());
+				}
+			}
+		// L'évaluation de la pose pour ce qui touche les couches : une couche installée vide les gardées de son rang, et
+		// chaque place évaluée retrouve son bit 2 (FUN_006b6e50).
+		o.l.Evaluer();
 	}
 }
 
 // L'animation et l'instant que porte la place 0 d'une couche du lecteur, pour la pose des os. `k`, la piste qui l'a lancée : sans
 // boucle, l'instant est borné à son champ 44 (la fin), comme l'outil le faisait (supposé : FUN_0060ae00 dit la piste finie à
 // cet instant, ce que la place fait ensuite n'est pas lu).
+struct CPoseFond;
+static void SecondePlace(const CAnimTrack &c, CPoseFond *f);
 static void
 PoseDeLaPlace(const CAnimTrack &c, const CLecteurOutil::Cle *k, CPoseJouee *out)
 {
@@ -7216,6 +7322,7 @@ PoseDeLaPlace(const CAnimTrack &c, const CLecteurOutil::Cle *k, CPoseJouee *out)
 	float t = pl.t;
 	if(k != nil){
 		out->hache = k->p.hache; out->mode = k->p.mode; out->entree = k->p.entree;
+		if(c.motion && pl.anim != nil) out->hache = pl.anim->hachage;   // l'entrée que la couche de locomotion a choisie
 		float duree = pl.anim ? pl.anim->duree : -1.0f;
 		if(k->p.mode != 2 && duree > 0.0f){
 			float fin = k->p.fin;
@@ -7241,23 +7348,51 @@ PoseDeLaPlace(const CAnimTrack &c, const CLecteurOutil::Cle *k, CPoseJouee *out)
 // Une animation à masque posée par-dessus le fond : son instant et les poids de son masque (CHxdFile::poidsMasques).
 // `facteur` : le poids de la couche entière (1 : installée ; de 1 à 0 pendant sa sortie).
 struct CCoucheOs { const AgrAnim *a; float t; const std::vector<float> *poids; float facteur = 1.0f; };
-static bool
-PoserOs(const CSqueletteOutil &s, const AgrAnim &a, float t, CVector out[CSqueletteOutil::OS], const AgrAnim *autre = nil, float tAutre = 0, float poids = 0,
-        const std::vector<CCoucheOs> *couches = nil)
+// Une évaluation du rang 0 : une animation à son instant et le poids avec lequel elle est mêlée à ce qui précède.
+// `a2` : la place 1 d'une couche de locomotion, mêlée à la place 0 avec le poids `melange` avant tout (FUN_006b9890).
+struct CPoseFond { const AgrAnim *a; float t; float poids; const AgrAnim *a2 = nil; float t2 = 0.0f; float melange = 0.0f; };
+// La seconde évaluation d'une couche (CAnimTrack::Evaluations) : la place 1 d'une couche de locomotion, à son instant et à
+// son poids (+0x40), quand elle porte une animation décodée.
+static void
+SecondePlace(const CAnimTrack &c, CPoseFond *f)
 {
-	if(!s.nifLu) return false;
+	CAnimTrack::Evaluation ev[2];
+	if(c.Evaluations(ev) < 2 || c.places[ev[1].place].anim == nil) return;
+	auto ia = animsDesPlaces.find(c.places[ev[1].place].anim);
+	if(ia == animsDesPlaces.end() || !ia->second.anim) return;
+	f->a2 = ia->second.anim; f->t2 = c.places[ev[1].place].t; f->melange = ev[1].poids;
+}
+
+static bool
+PoserOs(const CSqueletteOutil &s, const std::vector<CPoseFond> &fond, CVector out[CSqueletteOutil::OS], const std::vector<CCoucheOs> *couches = nil)
+{
+	if(!s.nifLu || fond.empty()) return false;
 	const CNifFile &f = s.nif;
-	// Le fondu : `autre` mêlée à `a` avec le poids `poids` (0 : `a` seule), os par os en interpolation sphérique, le bassin en
-	// linéaire, comme outils/scene.h (Reposer) mêle la marche et l'attente.
-	bool melange = autre && poids > 0.0f;
+	// Le fond, dans l'ordre de l'évaluation du jeu (006be730, CLecteurAnim::OrdreDuRang) : la première évaluation est prise
+	// telle quelle, chaque suivante est mêlée à la pose accumulée avec son poids (FUN_006bcc60 sans masque : 1 la copie,
+	// moins d'un millième la laisse de côté), os par os en interpolation sphérique (supposé : la fonction de l'os, +0x40
+	// de la pose, n'est pas lue), le bassin en linéaire, comme outils/scene.h (Reposer) mêle la marche et l'attente.
 	std::vector<NifMatrix33> pose(f.numBlocks, NifAxisRotation(0, 0));
 	for(int32 k = 1; k < s.n && k < AGR_OS; k++){
 		int32 b = s.bloc[k]; float q[4], q2[4], m[3][3];
 		if(b < 0 || b >= f.numBlocks) continue;
-		bool a1 = AgrRotation(a, k, t, q), a2 = melange && AgrRotation(*autre, k, tAutre, q2);
-		if(!a1 && !a2) continue;
-		if(a1 && a2){ float r[4]; AgrSlerp(q, q2, poids, r); memcpy(q, r, sizeof q); }
-		else if(a2) memcpy(q, q2, sizeof q);
+		bool a1 = false;
+		for(const CPoseFond &x : fond){
+			bool r1 = AgrRotation(*x.a, k, x.t, q2);
+			float q3[4];
+			if(x.a2 != nil && AgrRotation(*x.a2, k, x.t2, q3)){
+				CPoseMelange::Geste g2 = r1 ? CPoseMelange::SansMasque(x.melange) : CPoseMelange::COPIER;
+				if(g2 == CPoseMelange::COPIER) memcpy(q2, q3, sizeof q2);
+				else if(g2 == CPoseMelange::MELER){ float r[4]; AgrSlerp(q2, q3, x.melange, r); memcpy(q2, r, sizeof q2); }
+				r1 = true;
+			}
+			if(!r1) continue;
+			CPoseMelange::Geste g = a1 ? CPoseMelange::SansMasque(x.poids) : CPoseMelange::COPIER;
+			if(g == CPoseMelange::COPIER) memcpy(q, q2, sizeof q);
+			else if(g == CPoseMelange::MELER){ float r[4]; AgrSlerp(q, q2, x.poids, r); memcpy(q, r, sizeof q); }
+			a1 = true;
+		}
+		if(!a1) continue;
 		// Les couches à masque, dans l'ordre : l'os va vers leur rotation du poids de son masque (supposé : une interpolation
 		// sphérique ; un os que le fond n'anime pas prend la couche entière si son poids est plein).
 		for(size_t c = 0; couches && c < couches->size(); c++){
@@ -7285,11 +7420,23 @@ PoserOs(const CSqueletteOutil &s, const AgrAnim &a, float t, CVector out[CSquele
 	};
 	if(bb >= 0 && bb < f.numBlocks){
 		CVector d1(0, 0, 0), d2(0, 0, 0);
-		bool b1 = Bassin(a, t, &d1), b2 = melange && Bassin(*autre, tAutre, &d2);
-		float w = melange ? poids : 0.0f;
-		if(!b2) d2 = d1;
-		if(!b1) d1 = d2;
-		if(b1 || b2) decalage[bb] = CVector(d1.x + w * (d2.x - d1.x), d1.y + w * (d2.y - d1.y), d1.z + w * (d2.z - d1.z));
+		bool b1 = false;
+		for(const CPoseFond &x : fond){
+			bool r1 = Bassin(*x.a, x.t, &d2);
+			CVector d3(0, 0, 0);
+			if(x.a2 != nil && Bassin(*x.a2, x.t2, &d3)){
+				CPoseMelange::Geste g2 = r1 ? CPoseMelange::SansMasque(x.melange) : CPoseMelange::COPIER;
+				if(g2 == CPoseMelange::COPIER) d2 = d3;
+				else if(g2 == CPoseMelange::MELER) d2 = CVector(d2.x + x.melange * (d3.x - d2.x), d2.y + x.melange * (d3.y - d2.y), d2.z + x.melange * (d3.z - d2.z));
+				r1 = true;
+			}
+			if(!r1) continue;
+			CPoseMelange::Geste g = b1 ? CPoseMelange::SansMasque(x.poids) : CPoseMelange::COPIER;
+			if(g == CPoseMelange::COPIER) d1 = d2;
+			else if(g == CPoseMelange::MELER) d1 = CVector(d1.x + x.poids * (d2.x - d1.x), d1.y + x.poids * (d2.y - d1.y), d1.z + x.poids * (d2.z - d1.z));
+			b1 = true;
+		}
+		if(b1) decalage[bb] = d1;
 	}
 	std::vector<NifTransform> mondes(f.numBlocks);
 	NifWorldTransforms(f, mondes.data(), pose.data(), true, decalage.data());
@@ -7315,10 +7462,11 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 	// Les os dans la pose de l'animation que joue le piéton (PoserOs), à défaut dans celle du fichier.
 	// Les os dans la pose que porte le lecteur du piéton (AvancerLecteurs), à défaut dans celle du fichier : la couche 0 à son
 	// instant et à son poids (FUN_006b26f0) ; tant que ce poids n'est pas à 1, la couche gardée en tête de son rang, figée à
-	// l'instant où elle a été remplacée (FUN_006c05b0 ne met pas à jour une AM_AnimTrack gardée), au poids restant (supposé :
-	// l'évaluation 006be730 mélange toutes les gardées du rang, elle n'est lue que jusqu'à sa purge ; ici la tête seule).
+	// l'instant où elle a été remplacée (FUN_006c05b0 ne met pas à jour une AM_AnimTrack gardée), au poids restant ; l'évaluation
+	// 006be730 mêle toutes les gardées du rang, de la plus ancienne à la plus récente, puis la couche : `fond`).
 	CPoseJouee pj, pq;
 	float poids = 1.0f;
+	std::vector<CPoseFond> fond;
 	bool garde = false, joue = false;
 	CVector poses[CSqueletteOutil::OS];
 	// Les couches 1 à 6 du lecteur, chacune avec son masque (cherché dans MAINPED.HXD par son nom, à défaut le premier du fichier)
@@ -7334,6 +7482,14 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 		auto ic = controleurs.find(indice);
 		garde = ic == controleurs.end() || ic->second.joue == nil || ic->second.Animation(ic->second.Temps(maintenant / 1000.0f)) == nil;
 		if(poids < 1.0f && !o.l.gardees[0].empty()) PoseDeLaPlace(o.l.gardees[0].front(), nil, &pq);
+		// Toutes les gardées du rang 0, de la plus ancienne à la plus récente, chacune à son poids (006be730).
+		std::vector<CLecteurAnim::Evaluee> ordre;
+		o.l.OrdreDuRang(0, ordre);
+		for(const CLecteurAnim::Evaluee &e : ordre){
+			if(!e.gardee) continue;
+			CPoseJouee x; PoseDeLaPlace(*e.couche, nil, &x);
+			if(x.a.anim){ fond.push_back({x.a.anim, x.t, e.poids}); SecondePlace(*e.couche, &fond.back()); }
+		}
 		for(int32 r = 1; r < CLecteurAnim::RANGS; r++){
 			const CAnimTrack &c = o.l.couches[r];
 			if(!o.l.posee[r] || c.places[0].anim == nil) continue;
@@ -7348,7 +7504,18 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 		}
 	}
 	bool fondu = joue && poids < 1.0f && pq.a.anim;
-	bool pose = joue && pj.a.anim && PoserOs(*s, *pj.a.anim, pj.t, poses, fondu ? pq.a.anim : nil, pq.t, 1.0f - poids, &couches);
+	if(joue && pj.a.anim){
+		fond.push_back({pj.a.anim, pj.t, poids});
+		SecondePlace(lecteurs.find(indice)->second.l.couches[0], &fond.back());
+		// Dit une fois par piéton : la couche de locomotion posée par ses deux places.
+		static std::set<int> ditsDeux;
+		const CAnimTrack &c0 = lecteurs.find(indice)->second.l.couches[0];
+		if(fond.back().a2 != nil && fond.back().melange >= CPoseMelange::Nul() && ditsDeux.insert(indice).second)
+			printf("%6.2f s  les os du piéton %d sont posés par les deux places de sa couche de locomotion : %s à %.3f s au poids %.2f, %s à %.3f s au poids %.2f\n",
+			       maintenant / 1000.0, indice, c0.places[0].anim ? c0.places[0].anim->nom.c_str() : "?", c0.places[0].t, 1.0f - c0.melange,
+			       c0.places[1].anim ? c0.places[1].anim->nom.c_str() : "?", c0.places[1].t, c0.melange);
+	}
+	bool pose = joue && pj.a.anim && PoserOs(*s, fond, poses, &couches);
 	const CVector *osPoses = pose ? poses : s->os;
 	CModelePieton ped;
 	ped.Construire(&m4.m[12], CModelePieton::Cap(m4.m), s->fiche, [&](int32 rang, float *o){
@@ -7387,7 +7554,8 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 			            pj.a.anim ? "décodée" : "pas décodée", pj.a.enr ? pj.a.enr->duree : -1.0f, pj.mode, (int)pietons.StatLue(indice, 0x14, 100), pj.t, pj.entree, arbres.CheminDe(NoeudJoue(indice)).c_str(),
 			            !pose ? "les os dans la pose du fichier" : !fondu ? "les os posés par l'animation" :
 			            ("les os posés par l'animation, au poids " + std::to_string(poids).substr(0, 4) + " dans son fondu de " + std::to_string(pj.fondu).substr(0, 4) + " s depuis "
-			             + (pq.a.enr ? pq.a.enr->nom : std::string("?")) + " à " + std::to_string(pq.t).substr(0, 4) + " s").c_str(),
+			             + (pq.a.enr ? pq.a.enr->nom : std::string("?")) + " à " + std::to_string(pq.t).substr(0, 4) + " s"
+			             + (fond.size() > 2 ? ", " + std::to_string(fond.size() - 1) + " couches gardées mêlées de la plus ancienne à la plus récente" : std::string())).c_str(),
 			            ditCouches.empty() ? "" : ", par-dessus ", ditCouches.c_str(),
 			            ped.spheres[0].centre[2], ped.spheres[1].centre[2], ped.spheres[2].centre[2],
 			            ped.spheres[3].centre[2], ped.spheres[4].centre[2], ped.spheres[5].centre[2]);

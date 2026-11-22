@@ -138,7 +138,52 @@ public:
 	// (16), le haché de l'animation (24), le masque d'os (28), le mode (32), la couche (36), le départ (40), la fin (44), la
 	// vitesse (48) et le fondu (52), docs/cat.md. Le contrôleur ne les joue pas : l'outil y lit ce que le piéton anime.
 	struct PisteAnimation { float entree, vie; uint32 hache; std::string masque; int32 mode, couche; float depart, fin, vitesse, fondu;
-	                        float sortie = -1.0f; };   // le champ 56 (+0x38) : le fondu de sortie de sa couche, à son arrêt
+	                        float sortie = -1.0f;      // le champ 56 (+0x38) : le fondu de sortie de sa couche, à son arrêt
+	                        // Une piste LocomotionAnimationNew (FUN_0060e240) : une entrée de la couche de locomotion, avec le
+	                        // seuil d'angle (28, +0x1c) et les quatre marques de ses appuis (32 à 44, +0x20 à +0x2c), en secondes.
+	                        bool loco = false; float seuil = 0.0f; float marques[4] = {0.0f, 0.0f, 0.0f, 0.0f}; };
+	// La piste Locomotion du nœud joué (table 0x930ec4 ; lancement 0060c5b0, lu à l'assembleur de 0x60c5b0 à 0x60c890 pour
+	// ce qui suit ; mise à jour 00613480, 8 071 octets, pas lue à l'assembleur). Le lancement crée la couche de locomotion
+	// (FUN_00731470), lui donne le piéton (+0x48) et une copie de la piste (+0x4c, 0xa4 octets), et pose son poids selon le
+	// fondu (68, +0x44) : négatif, 0,5 s (0xb0b13c) ; nul, le poids 1 d'emblée ; sinon le poids part de 0 et monte en ce
+	// temps. Le rang où les pistes LocomotionAnimationNew installent la couche est le champ 64 (+0x40). L'octet +0x7c de
+	// la piste est levé si ses quatre réels 24 à 36 le permettent : (36) > 0, (32) ≥ 0, (24) ≥ 0 et (28) ≥ 0.
+	// **Supposé** (lu dans le décompilé de 00613480 seulement) : la vitesse que la piste donne au piéton (+0x1c de M, celle
+	// que la cadence de la couche divise par la vitesse naturelle de l'animation) est −1 sans l'octet +0x7c ; sinon, x
+	// étant la vitesse de l'intention de mouvement : (24) si x atteint (36) ; sinon (28), plus (24) − (28) fois
+	// (x − (32)) / ((36) − (32)) quand x dépasse (32). Supposé aussi : un champ absent de la piste vaut 0.
+	struct PisteLocomotion {
+		bool ok = false;
+		float entree = 0.0f, vie = -1.0f;
+		float haute = 0.0f, basse = 0.0f, seuilBas = 0.0f, seuilHaut = 0.0f;   // 24, 28, 32, 36
+		int32 rang = 0;                                                        // 64
+		float fondu = 0.0f;                                                    // 68
+		bool Cadencee(void) const { return seuilHaut > 0.0f && seuilBas >= 0.0f && haute >= 0.0f && basse >= 0.0f; }
+		float Vitesse(float x) const {
+			if(!Cadencee()) return -1.0f;
+			if(x >= seuilHaut) return haute;
+			float v = basse;
+			if(x - seuilBas > 0.0f) v = basse + (haute - basse) * ((x - seuilBas) / (seuilHaut - seuilBas));
+			return v;
+		}
+		// Le fondu d'entrée de la couche, en secondes (0 : sans fondu).
+		float Fondu(void) const { return fondu < 0.0f ? 0.5f : fondu; }
+	};
+	PisteLocomotion locomotion;
+	// Les pistes LocomotionEvent du nœud joué : le bruit des pas. Leur mise à jour, FUN_0060ec30 (méthode de la piste, ret 4,
+	// lue en entier de 0x60ec30 à 0x60ede8, 441 octets, rend toujours vrai) : la position du piéton (sa matrice +0x14, à
+	// défaut +0x4) montée de 0,5 (le double 0x8ff1f8) ; si l'octet d'appui du pied 0 (+0x30 de M) est levé, il est effacé
+	// (FUN_005f3610(0)), 0060e5d0 (non suivie : ce qu'il y a sous le pied, deux sorties) est appelée, **le son nommé par
+	// le champ 24 de la piste (+0x18 ; nul : le nom par défaut 0xb0b0f0) est cherché (00595a30 sur le gestionnaire
+	// 0xcf3da0) et joué** (0059cab0 sur le piéton si 00595550 rend vrai, sinon 0059b750 à la position, avec le champ 32,
+	// +0x20), et le réel +0x38 de la piste prend le 0x9009ac ; de même pour le pied 1 (+0x31, FUN_005f3640(0)) avec le
+	// nom du champ 36 (+0x24) et le champ 44 (+0x2c), +0x38 prenant 1.
+	struct PistePas { float entree, vie; std::string son[2]; };
+	std::vector<PistePas> pas;
+	const PistePas *Pas(float tn) const {
+		for(const PistePas &p : pas) if(p.entree <= tn && (p.vie < 0.0f || tn < p.entree + p.vie)) return &p;
+		return nil;
+	}
 	std::vector<PisteAnimation> animations;
 	// L'animation que le nœud quitté jouait (celle que Animation() rend à l'instant où Jouer change de nœud) : le lecteur du
 	// jeu la garde le temps du fondu de la suivante (FUN_006b6570, la place de l'animation remplacée). `tNoeud` : le temps
