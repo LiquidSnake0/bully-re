@@ -393,6 +393,45 @@ Melanges(void)
 }
 
 static void
+EvaluationsDesPlaces(void)
+{
+	// FUN_006b6e50 : une place vide n'est pas évaluée ; une place qui pèse moins d'un millième perd son bit 2.
+	CHxdAnim a; a.duree = 0.09f; a.fondu = 0.0f; a.drapeaux = 4;
+	CAnimTrack mt = CAnimTrack::Motion();
+	VERIF(!mt.PlaceEvaluee(0) && !mt.PlaceEvaluee(1));
+	mt.places[0].anim = &a; mt.places[0].drapeaux = 3;
+	mt.places[1].anim = &a; mt.places[1].drapeaux = 7;
+	mt.melange = 0.0f;
+	VERIF(mt.Evaluer() == 1 && (mt.places[0].drapeaux & CPlaceAnim::PARTIE) && !(mt.places[1].drapeaux & CPlaceAnim::PARTIE));
+	mt.melange = 0.5f;
+	VERIF(mt.Evaluer() == 2 && (mt.places[1].drapeaux & CPlaceAnim::PARTIE));
+	mt.melange = 1.0f;
+	VERIF(mt.Evaluer() == 1 && !(mt.places[0].drapeaux & CPlaceAnim::PARTIE));
+	// L'échelle du bassin : la norme du vecteur de l'os dans le squelette sur le réel du groupe ; l'os 2 sous le drapeau 0x200.
+	VERIF(CAnimTrack::OsDuBassin(0) == 1 && CAnimTrack::OsDuBassin(0x200) == 2);
+	VERIF(Pres(CAnimTrack::EchelleDuBassin(1.2f, 1.0f), 1.2f) && CAnimTrack::EchelleDuBassin(1.2f, 0.0005f) == 1.0f);
+	// Une boucle dont l'enregistrement porte le drapeau 4 perd son bit 2 à chaque tour : sans évaluation, l'image d'après
+	// n'avance pas ; l'évaluation le lui rend et l'image d'après avance.
+	const float dt = 1.0f / 30.0f;
+	CLecteurAnim l;
+	l.Poser(0, &a, 2, 0.0f, 0, 1.0f, 0.0f);
+	int32 n = 0;
+	l.ParImage(dt); l.Evaluer();
+	while((l.couches[0].places[0].drapeaux & CPlaceAnim::PARTIE) && n < 20){ l.ParImage(dt); n++; }
+	VERIF(n == 3 && !(l.couches[0].places[0].drapeaux & CPlaceAnim::PARTIE));
+	float t0 = l.couches[0].places[0].t;
+	CLecteurAnim sans = l;
+	sans.ParImage(dt);
+	VERIF(sans.couches[0].places[0].t == t0);
+	l.Evaluer();
+	VERIF((l.couches[0].places[0].drapeaux & CPlaceAnim::PARTIE) != 0);
+	l.ParImage(dt);
+	VERIF(l.couches[0].places[0].t > t0);
+	printf("évaluation : la boucle de 0.09 s fait son tour à la %de image (instant %.4f s) ; sans évaluation l'image suivante reste à %.4f s, avec elle avance à %.4f s\n",
+	       n, t0, sans.couches[0].places[0].t, l.couches[0].places[0].t);
+}
+
+static void
 Purges(void)
 {
 	CHxdAnim a; a.duree = 2.0f; a.fondu = 0.3f;
@@ -672,6 +711,7 @@ main(void)
 	MisesAJour();
 	Purges();
 	Melanges();
+	EvaluationsDesPlaces();
 	printf("test_animtrack : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;
 }

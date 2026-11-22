@@ -131,6 +131,43 @@ struct CAnimTrack {
 		out[1].place = 1; out[1].poids = melange;
 		return 2;
 	}
+	// FUN_006b6e50(lecteur, pose, déplacement, quaternion, place) (méthode de la couche, ret 0x14, lue en entier de
+	// 0x6b6e50 à 0x6b70dd, 654 octets) : **l'évaluation d'une place**.
+	// - Faux si le squelette du lecteur n'a pas de dictionnaire ([+0x94]+0x10) ou si la place n'a pas d'animation.
+	// - Le poids de la place : 1 − (+0x40) pour la place 0, (+0x40) pour la place 1. **Sous 0,001 (0x900c04), le bit 2
+	//   des drapeaux de la place (+0x10) est éteint et elle rend faux** : la place n'est pas évaluée.
+	// - Sinon 006bd810 (2 615 octets, non lue) décode l'animation à l'instant de la place (+4) dans la pose. Selon les
+	//   bits 6, 7 et 2 des drapeaux de l'enregistrement (+0x18) : le bit 6 appelle 006b67b0 ; les bits 7 et 6 ensemble
+	//   006b6900 (1 359 octets), qui rend le déplacement ; sinon le bit 2 appelle 006b47b0, qui rend le déplacement, et
+	//   sans le bit 6, 006b6690 (toutes non lues). Si le bit 2 de +0x98 du lecteur est levé, à la place, les deux
+	//   vecteurs +0x6c et +0x38 de [+0xc] sont mis au vecteur 0xbcc564. Le déplacement est multiplié par le poids quand
+	//   il est sous 1 (0088a490) et ajouté à celui de l'appelante (004150b0).
+	// - **L'échelle du bassin** (de 0x6b703d à 0x6b70cb), si l'entier 0x20c48c0 est nul et que le dictionnaire a quelque
+	//   chose en +0x70 : R est le réel +0x28 du descripteur du groupe de l'animation (FUN_00450a30 : le descripteur de
+	//   60 octets du rang +0x20 de l'enregistrement, dans la table +0x6c du dictionnaire, nul passé le compte +0x68) ;
+	//   si |R| atteint 0,001, **le réel +0x20 de l'os 1 de la pose (l'os 2 si l'enregistrement porte le drapeau 0x200)
+	//   est multiplié par la norme (FUN_0040df90) du vecteur de cet os dans la table +0xa8 du squelette (12 octets par
+	//   os), divisée par R**. D'où vient le +0x28 du descripteur n'est pas lu.
+	// - **Le bit 2 des drapeaux de la place est allumé** et elle rend vrai.
+	// Recréé ici : ce qui décide et ce qui touche la place. L'outil n'applique pas encore l'échelle (R inconnu).
+	bool PlaceEvaluee(int32 place) {
+		CPlaceAnim &p = places[place];
+		if(p.anim == nil) return false;
+		float w = place == 0 ? 1.0f - melange : melange;
+		if(w < 0.001f){ p.drapeaux &= ~(uint32)CPlaceAnim::PARTIE; return false; }
+		if(!(0.0f < w)) return true;
+		p.drapeaux |= CPlaceAnim::PARTIE;
+		return true;
+	}
+	static int32 OsDuBassin(uint32 drapeauxEnregistrement) { return (drapeauxEnregistrement & 0x200) ? 2 : 1; }
+	static float EchelleDuBassin(float normeDuSquelette, float r) { return (r < 0.0f ? -r : r) < 0.001f ? 1.0f : normeDuSquelette / r; }
+	// Les évaluations de la couche, chacune passée par FUN_006b6e50 : le nombre de celles qui rendent vrai.
+	int32 Evaluer(void) {
+		Evaluation ev[2];
+		int32 n = Evaluations(ev), vraies = 0;
+		for(int32 i = 0; i < n; i++) if(PlaceEvaluee(ev[i].place)) vraies++;
+		return vraies;
+	}
 	enum { ENTREES = 10 };
 	bool motion = false;               // la table virtuelle : faux AM_AnimTrack, vrai AM_MotionTrack
 	int32 courante = -1;               // +0x50 : l'entrée jouée par la place 0 (un pointeur dans le jeu)
@@ -318,6 +355,18 @@ struct CLecteurAnim {
 	// travail est alors la pose accumulée elle-même (les deux pointeurs égaux en 0x6be91a et 0x6beb05), et la pose de
 	// travail devient ensuite celle de +0x148. Non refait : les trois réels du déplacement que chaque évaluation rend,
 	// mêlés à côté (00412850), et la fin (de 0x6beb2e à 0x6bee33, vue au décompilé seulement).
+	// L'évaluation entière pour ce qui touche les couches : la purge des rangs installés, puis chaque gardée et la
+	// couche de chaque rang évaluées (FUN_006b9870 ou FUN_006b9890, donc FUN_006b6e50 par place) : **chaque place
+	// évaluée retrouve son bit 2**, celui qu'un tour de boucle lui retire (FUN_006b2560) et que le remplacement d'une
+	// couche demande pour la garder (FUN_006bcad0). Supposé, comme pour la purge : faite à chaque image.
+	void Evaluer(void) {
+		PurgerInstallees();
+		for(int32 r = 0; r < RANGS; r++){
+			if(!posee[r]) continue;
+			for(size_t i = gardees[r].size(); i-- > 0;) gardees[r][i].Evaluer();
+			couches[r].Evaluer();
+		}
+	}
 	struct Evaluee { const CAnimTrack *couche; float poids; bool gardee; };
 	int32 OrdreDuRang(int32 r, std::vector<Evaluee> &ordre) const {
 		ordre.clear();

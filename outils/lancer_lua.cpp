@@ -7302,7 +7302,9 @@ AvancerLecteurs(float dt)
 					       maintenant / 1000.0, kv.first, pied, arbres.CheminDe(c.joue).c_str(), pp->son[pied].empty() ? "par défaut" : pp->son[pied].c_str());
 				}
 			}
-		o.l.PurgerInstallees();   // le début de l'évaluation de la pose : une couche installée vide les gardées de son rang
+		// L'évaluation de la pose pour ce qui touche les couches : une couche installée vide les gardées de son rang, et
+		// chaque place évaluée retrouve son bit 2 (FUN_006b6e50).
+		o.l.Evaluer();
 	}
 }
 
