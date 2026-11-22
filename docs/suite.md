@@ -133,49 +133,43 @@ chantier. Un point fini passe en bas, avec son commit.
      image du vol (`q.sorti`) est retirée : le monde compte dès le premier pas. Restent supposés : la rotation du projectile (non
      suivie), la pose des os d'un piéton (par l'animation depuis le 16.11 : point 1), l'échelle d'un objet (non suivie : aucune dans les missions), le
      tri des entités proches (l'outil prend la sphère englobante du modèle de l'objet). Dans l'ordre :
-     1. **la pose des os d'un piéton par l'animation : ce qui reste** (16.11, 17.11 et 21.11, voir « Fait »). L'outil pose les
+     1. **la pose des os d'un piéton par l'animation : ce qui reste** (16.11, 17.11, 21.11 et 22.11, voir « Fait »). L'outil pose les
         six sphères de `FUN_00572680` sur les os de l'animation que porte **le lecteur du piéton** (`CLecteurAnim`,
         `src/anim/AnimTrack.h` ; dans `outils/lancer_lua.cpp` : `CLecteurOutil`, `AvancerLecteurs` une fois par image,
         `PoseDeLaPlace`, `PoserOs`, `AnimationParHache`). Depuis le 21.11 le lecteur est recréé et branché : la place
         (`FUN_006b2560`), le poids de la couche (`FUN_006b26f0`, **la fonction cherchée le 17.11**), le lancement
         (`FUN_006b6570`), la pose sur un rang (`FUN_006bcad0`), les gardées (`FUN_006b9130`, `FUN_006b5950`) et la mise à
         jour par image (`FUN_006c05b0`). Ce qui reste, dans l'ordre :
-        a. **la couche de la locomotion, AM_MotionTrack** (table virtuelle 0x94d2f8, construite en 0x72fe65 et 0x73149d ;
-           AM_AnimTrack est la table 0x941f90). **Sa mise à jour est 00731b90** (2 122 octets, le rang 3 de sa table), lue
-           le 21.11 et pas recréée ; ses calculs le sont (`src/anim/MotionTrack.h`, `CMotionTrack`) : la synchro
-           (`FUN_0072eff0`, `FUN_0072edd0`), l'angle (`FUN_0072f2a0`, `FUN_00413c10`), le remappage (`FUN_0072f3b0`), la
-           vitesse naturelle (`FUN_00730340`) et la cadence. Ce qui est lu de 00731b90 : ses entrées (+0x54 de la couche,
-           l'entrée courante en +0x50) sont les copies des pistes `LocomotionAnimationNew` (0x34 octets, rangées par
-           `FUN_0060e240`) : +0x18 le haché (le champ 24), **+0x1c un seuil d'angle en radians (le champ 28), +0x20 à +0x2c
-           quatre marques en secondes (les champs 32 à 44)** ; pour RUN : 0, puis 0,633, 0,633, 0,3, 0,3. Elle mesure un
-           angle (0072f2a0, de 0 à 2π), choisit les deux entrées dont les seuils l'encadrent (2π, 0xbc7258, ajouté au repli),
-           en tire le mélange +0x40 des deux places par le remappage (0 sans entrée haute), écrit dans les deux places
-           l'instant synchronisé par les marques, et pour la couche qui mène (sans piste meneuse, ou elle-même ; l'entier
-           0xbc7338 vaut 1) **la vitesse de la place +0x24 = (v / nat) × stat** : stat la stat 0x14 sur 100, v le réel +0x1c
-           de l'objet en +0x14 de ce que rend la méthode +0x40 de la table du piéton (gardé en +0x8c ; supposé sa vitesse
-           de déplacement), nat la vitesse naturelle de l'animation. **Restent à lire ou à recréer**, sans quoi rien ne se
-           branche : 006b3cc0 (810 octets, non lue : le trajet de l'animation, appelée deux fois par 006073a0, 126 octets,
-           lue, avec 0 puis −1) ; la méthode +0x40 du piéton (non lue) ; les deux vecteurs dont 00731b90 mesure l'angle
-           (non suivis : supposé la direction du piéton et celle de son déplacement) ; 00730110, 00731ae0 et 0072e690 que
-           la mise à jour appelle (non lues) ; 0072eec0 (297 octets, la phase à quatre tronçons, prise à la place de
-           `FUN_0072edd0` si le mot 0x20c9024 n'est pas nul ; lue en diagonale, elle appelle 0072ee60) ; 6bcb70 (86 octets,
-           la pose de la couche de locomotion sur son rang, lue le 17.11). Écarté le 17.11 : 00608760 n'est pas la cadence.
-           Dans l'outil la boucle de locomotion reste une piste de rang 0, mode 2, à la vitesse 1 ;
-        b. **l'évaluation de la pose** (006be730, 1 795 octets, et 006bd150) : seul son début est lu et refait (une couche
-           au poids 1 vide les gardées de son rang, `CLecteurAnim::PurgerInstallees`). Sous 1, elle pose le bit 0x1000 de
-           +0x98 et parcourt la liste des gardées (de 0x6be835 à 0x6beacd : elle additionne les poids de celles dont le
-           rang 6 de la table rend vrai, AM_MotionTrack seulement) : **le mélange de la couche avec ses gardées n'est pas
-           lu**. L'outil mélange la couche 0 avec la seule tête des gardées, au poids de la couche (supposé). Non refait
-           non plus dans `FUN_006c05b0` : la seconde liste avancée par 006b5990 et 006be600. Supposé dans l'outil : l'ordre
-           dans l'image (lancements et arrêts, puis mise à jour), le mode 2 qui donne le bit 1 du lancement, l'instant
-           d'une animation sans boucle borné à son champ 44. **Un fait lu qui surprend** : une place qui boucle perd son
-           bit 2 à chaque tour si son enregistrement porte le drapeau 4 (`FUN_006b2560`), et une couche remplacée à cette
-           image n'est pas gardée (`FUN_006bcad0`) : le piéton 9 de `1_04` entre dans F_JOCKS\JOCK_JJ_IN sans fondu à
-           74,02 s. À vérifier en relisant 0x6bcad0 à 0x6bcb00 et la fin de boucle de `FUN_006b2560` ;
-        c. **l'octet 61 de l'AnimationTrack** (+0x3d : la vitesse +0x54 au lieu de 48, lue dans `FUN_0060ae00`, non
-           suivie ; à rapprocher de la cadence du point a) et **l'échelle du bassin** (la position de la piste Root prise à
-           l'échelle du modèle ; `outils/scene.h` l'étire par un bassin de référence ; le joueur sur l'arbre de 1_04 est
-           posé au sol sous l'arbre, son bassin à 1,20 m : supposé) ;
+        a. **l'échelle du bassin** (le prochain chantier). Elle est lue dans l'évaluation d'une place (`FUN_006b6e50`, de
+           0x6b703d à 0x6b70cb, 22.11) : le réel +0x20 de l'os 1 de la pose (l'os 2 si l'enregistrement porte le drapeau
+           0x200) est multiplié par la norme du vecteur de cet os dans la table +0xa8 du squelette (12 octets par os),
+           divisée par R, le réel +0x28 du descripteur du groupe de l'animation (60 octets, `FUN_00450a30`, table +0x6c du
+           dictionnaire ; rien si |R| < 0,001, si l'entier 0x20c48c0 n'est pas nul ou si le +0x70 du dictionnaire est
+           nul). **À lire** : qui écrit ce +0x28 (non lu) et qui remplit la table +0xa8 du squelette ; puis l'appliquer dans `PoserOs`
+           à la place du bassin de référence de `outils/scene.h` (`CAnimTrack::OsDuBassin` et `EchelleDuBassin` sont
+           prêtes). Le joueur sur l'arbre de 1_04 reste posé au sol sous l'arbre, son bassin à 1,20 m (supposé).
+           Non lues dans 006b6e50 : le décodage 006bd810 (2 615 octets ; l'outil a son propre décodeur), 006b67b0,
+           006b6900 (1 359 octets), 006b47b0 et 006b6690 (le déplacement que l'animation donne au piéton) ;
+        b. **la piste Locomotion et ce qui reste de sa couche** (branchée le 22.11, voir « Fait »). Supposé, à lire : sa
+           mise à jour 00613480 (8 071 octets, vue au décompilé seulement : la vitesse qu'elle donne au piéton, que
+           l'outil reprend pour la cadence **sans déplacer le piéton avec** : les temps des missions n'en dépendent
+           pas) ; un nœud dont la piste Locomotion donne un rang autre que 0 garde l'ancienne lecture ; la méthode
+           +0x40 de la table du piéton (non lue : d'où sort la vitesse lue par 00731b90) ; les deux vecteurs dont
+           00731b90 mesure l'angle (supposé : l'avant du piéton et son intention de mouvement) ; 0072eec0 (297 octets,
+           la phase à quatre tronçons, prise si le mot 0x20c9024 n'est pas nul ; non lue) ; le son du pas (0060e5d0,
+           00595a30, 0059cab0, 0059b750, non suivies : l'outil nomme le son). La ligne « les os du piéton N sont posés
+           par les deux places de sa couche de locomotion » n'est écrite dans aucune mission : la pose des os n'est
+           calculée qu'aux lignes « le piéton N joue … » (supposé la cause) ; la poser à chaque image d'un tir la
+           ferait voir. **Lu et écarté le 22.11, à ne pas relire** : 006b5990 (71 octets) et 006be600 (213 octets) sont
+           des listes de rappels sans rapport avec la pose ; 00608760 n'est pas la cadence (17.11) ;
+        c. **la fin de l'évaluation de la pose** (006be730) : la boucle des rangs est lue et refaite (22.11) ; restent
+           les vecteurs de déplacement (00412850) et la fin, de 0x6beb2e à 0x6bee33 (vue au décompilé seulement),
+           006bd150 (430 octets), la copie d'une pose 006bcbd0 (142 octets) et **la fonction qui mêle un os** (+0x40 de
+           la pose, non lue : l'outil suppose une interpolation sphérique des rotations, le bassin en linéaire). Le
+           crochet 006b20c0 (1 183 octets) de l'avance d'une place n'est pas lu. **L'octet 61 de l'AnimationTrack**
+           (+0x3d : la vitesse +0x54 au lieu de 48, lue dans `FUN_0060ae00`, non suivie). Supposé dans l'outil :
+           l'ordre dans l'image (lancements et arrêts, mise à jour, puis évaluation), le mode 2 qui donne le bit 1 du
+           lancement, l'instant d'une animation sans boucle borné à son champ 44 ;
         d. la fin des nœuds (`FinAnimation`) ne suit toujours pas la stat 0x14 ; le joueur a maintenant STAT_PLAYER
            (`FUN_0049b1b0` → `FUN_00478e30`), dont la stat 0x14 vaut 100 : rien ne change tant qu'elle reste à 100.
         Faits le 17.11 (voir « Fait ») : le nœud sans piste garde l'animation du nœud quitté, le nœud d'un Spawn anime le
@@ -396,6 +390,25 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- La couche de locomotion AM_MotionTrack, recréée et branchée, et l'évaluation de la pose (22.11 ; 4ec23cd, fc43b17, 3bea914,
+  edee9f8, 82b128d, 15487f4, 0d3b7be, 3dd6f59, 7a44b13, 578e314) : l'instant d'une phase (`FUN_0072e690`), la tolérance
+  (`FUN_00432910`), la direction tournée (`FUN_005fbe50`) ; **le trajet d'une animation** (`FUN_006b3cc0`, `FUN_006073a0`),
+  d'où sort la vitesse naturelle ; la couche (table 0x94d2f8 : constructeur `FUN_00731470`, direction lissée `FUN_00730110`,
+  `FUN_007315a0`, `FUN_00731ae0`), la couche qui mène un rang (`FUN_004741b0`), l'installation d'une couche construite
+  (`FUN_006bcb70`) ; **sa mise à jour `FUN_00731b90`** (les deux entrées dont les seuils encadrent l'angle, le mélange +0x40,
+  l'instant synchronisé par les marques, la cadence (v / nat) × stat pour la couche qui mène, les appuis des pieds) ; la
+  piste Locomotion (lancement 0060c5b0 : rang au champ 64, fondu au champ 68, 0,5 s s'il est négatif) et la piste
+  LocomotionEvent (`FUN_0060ec30` : efface l'appui, joue le son des champs 24 et 36) ; **dans l'outil, tout piéton dont le
+  nœud porte une piste Locomotion a sa couche de locomotion** (`CLecteurAnim::AvancerMotion`) : lignes « prend une couche de
+  locomotion », « reçoit son entrée n° … », « la locomotion du piéton N : … cadence … », « pose le pied », « le pas du
+  piéton » dans les sept missions (`1_02` dès 2,18 s). L'évaluation de la pose : le mélange de deux poses (`FUN_006bcc60`,
+  `CPoseMelange`), la boucle des rangs de 006be730 (`CLecteurAnim::OrdreDuRang` : les gardées de la plus ancienne à la plus
+  récente, puis la couche, chacune à son poids et son masque), l'évaluation d'une couche (`FUN_006b9870`, `FUN_0072f440`,
+  `FUN_006b9890`), l'évaluation d'une place (`FUN_006b6e50` : le bit 2 rendu à la place, `CLecteurAnim::Evaluer`). Le fait
+  qui surprenait le 21.11 (une couche remplacée à l'image de son tour de boucle n'est pas gardée) tenait à l'évaluation qui
+  manquait : elle rend le bit à chaque image. Le piéton 9 de `1_04` entre dans F_JOCKS\JOCK_JJ_IN à 74,02 s avec son fondu
+  (« au poids 0.11 dans son fondu de 0.30 s depuis C_PLAYER\RUN à 0.49 s ») depuis le branchement (15487f4) : sa course
+  est maintenant une couche de locomotion. Temps des sept missions inchangés.
 - Le lecteur d'animations d'un piéton et les calculs de la locomotion (21.11 ; e736a9f, 7e3a4bc, 8a9581c, f846831, eda4026,
   3ac7401, 8362bdc, 0a1fd58, 8343759) : la place d'une couche avance d'une image (`FUN_006b2560` : la première image d'une place
   qui attend ne l'avance pas, la boucle, la fin) ; **le poids d'une couche monte et descend par pas d'image** (`FUN_006b26f0`,

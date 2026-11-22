@@ -1941,3 +1941,48 @@ lecteur (1 b), puis la locomotion (1 a et 1 c). Neuf commits de moteur et celui-
 - **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux billes 147,97 s), `1_04` à 82,53 s, `1_05` à
   180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout**.
 - **Bilan** : 1 354 fonctions recréées (8,9 % du code), contre 1 342 ; 2 280 comprises, contre 2 271.
+
+## 22.11.2026, séance 1 (de 13 h 23 à 14 h 50)
+
+Le chantier : le premier point de « Suite, dans l'ordre » de `docs/suite.md`, recréer et brancher la couche de locomotion
+AM_MotionTrack, pour que les calculs de la locomotion du 21.11 se voient dans une mission ; puis le point suivant,
+l'évaluation de la pose. Dix commits de moteur et celui-ci.
+
+- **Ce qui manquait aux calculs** : l'instant d'une phase demandée, la comparaison à une tolérance et la direction tournée
+  (4ec23cd, `FUN_0072e690`, `FUN_00432910`, `FUN_005fbe50`) ; **le trajet d'une animation**, d'où sort sa vitesse naturelle
+  (fc43b17, `FUN_006b3cc0`, `FUN_006073a0`).
+- **La couche AM_MotionTrack** : son constructeur et sa direction lissée (3bea914, `FUN_00731470`, `FUN_00730110`) ; la couche
+  qui mène un rang, l'installation d'une couche construite et sa copie gardée (edee9f8, `FUN_004741b0`, `FUN_006bcb70`,
+  `FUN_007315a0`, `FUN_00731ae0`) ; **sa mise à jour** et les appuis des pieds (82b128d, `FUN_00731b90`).
+- **Le branchement** (15487f4) : la piste Locomotion est lue (son lancement 0060c5b0), et dans l'outil un piéton dont le nœud
+  porte cette piste reçoit une vraie couche de locomotion, mise à jour à chaque image. **Les calculs se voient dans les sept
+  missions** : dans `1_02`, à 2,18 s, « le piéton 2 prend une couche de locomotion », « reçoit son entrée n° 0 :
+  C_PLAYER\FAT_WALK (… vitesse naturelle 0.94 m/s) », « la locomotion du piéton 2 : C_PLAYER\FAT_WALK à 0.049 s, cadence
+  1.49 (vitesse du piéton 1.40 m/s …), direction à 0.00 rad de l'avant, poids 0.07, elle mène » ; à 2,54 s « le piéton 2
+  pose le pied 0 ».
+- **Le pas** (0d3b7be, `FUN_0060ec30`) : la piste LocomotionEvent efface l'appui d'un pied et nomme le son du pas (« joue le
+  son P_Walk » à 2,54 s de `1_02`).
+- **L'évaluation de la pose** : le mélange de deux poses et l'ordre d'un rang (3dd6f59, `FUN_006bcc60`, la boucle des rangs
+  de 006be730 : les gardées de la plus ancienne à la plus récente, chacune à son poids ; trois lignes de `1_04` à partir de
+  75,08 s) ; l'évaluation d'une couche (7a44b13, `FUN_006b9870`, `FUN_0072f440`, `FUN_006b9890` : une place pour
+  AM_AnimTrack, deux places mêlées pour AM_MotionTrack ; vue par l'essai seulement, la ligne de l'outil n'est écrite dans
+  aucune mission) ; **l'évaluation d'une place** (578e314, `FUN_006b6e50`, `FUN_00450a30`) : elle rend à la place le bit 2
+  que la boucle lui retire ; 44 lignes de 1_02 changent (« 4 couche(s) gardée(s) au rang 0 » au lieu de 3 à 47,16 s), 15 de 1_03, 9 de 1_05, 6 de 1_06_01.
+- **Mes erreurs** : (1) un fichier vide créé hors de mon dossier temporaire par un `flock` sur un mauvais chemin
+  (`v3attente.lock`, à côté de `machine.lock`), laissé en place faute du droit de le supprimer ; (2) une attente sous verrou
+  lancée au premier plan qui a dépassé son délai ; (3) une copie vers l'arbre d'essai arrêtée par l'alias `cp -i`, refaite
+  avant la compilation ; (4) deux comptes de vérifications faux dans des messages de commit (20 pour 13, 11 pour 14),
+  corrigés avant de committer ; (5) l'adresse 0072f440 retirée du message du commit 82b128d comme « inventée » : je l'avais
+  écrite sans l'avoir lue, pour la cadence ; elle existe, c'est le saut de cinq octets vers 006b9890 (commit 7a44b13) ;
+  (6) la première version du message de 7a44b13 expliquait l'absence de la ligne des deux places par « aucun mélange non nul
+  dans les missions » : faux (176 lignes « mêlée à » dans les huit journaux), corrigé avant de committer ; (7) une ancre
+  fausse dans un script de correctif, vue à l'application ; (8) des égalités de flottants fragiles dans un essai,
+  remplacées par des écarts.
+- **Ce qui reste** : voir `docs/suite.md`, point 1 (a : l'échelle du bassin lue dans 006b6e50, à brancher ; b : la piste
+  Locomotion, sa mise à jour 00613480 ; c : la fin de 006be730).
+- **Les comptes des README** : contrôlés contre `tools/avancement.py` avant chaque push, justes à chaque commit.
+- **REA amont** : pas demandé.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux billes 147,97 s), `1_04` à 82,53 s, `1_05` à
+  180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout** : la couche
+  de locomotion choisit, cale et cadence l'animation, elle ne déplace personne.
+- **Bilan** : 1 379 fonctions recréées (9,0 % du code), contre 1 354 ; 2 302 comprises, contre 2 280.
