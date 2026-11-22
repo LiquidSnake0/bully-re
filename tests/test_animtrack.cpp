@@ -436,6 +436,46 @@ Trajets(void)
 	printf("trajet : l'os 1 avance de %.2f m en %.1f s, vitesse naturelle %.2f m/s\n", t.y, 0.8f, CMotionTrack::VitesseNaturelle(0.8f, t.x, t.y));
 }
 
+static void
+Directions(void)
+{
+	// La couche de locomotion neuve (FUN_00731470) : pas d'entrée, aucun instant précédent, aucune phase demandée.
+	CAnimTrack c = CAnimTrack::Motion();
+	VERIF(c.motion && c.nEntrees == 0 && c.courante == -1 && !c.synchro && c.precedent == -1.0f && c.demande == -1.0f);
+	VERIF(c.places[0].vitesse == 1.0f && c.places[1].vitesse == 1.0f && c.places[0].anim == nil && c.poids == 0.0f);
+	VERIF(!CAnimTrack().motion);
+	// La direction lissée (FUN_00730110) : la première fois elle prend l'intention, mise à plat et normée.
+	CMotionPieton p;
+	p.intention[0] = 3.0f; p.intention[1] = 0.0f; p.intention[2] = 5.0f; p.intentionVitesse = 0.5f;
+	p.avant[0] = 0.0f; p.avant[1] = 1.0f; p.avant[2] = 0.0f;
+	c.Direction(0.033f, p);
+	VERIF(Pres(c.dir[0], 1.0f) && Pres(c.dir[1], 0.0f) && c.dir[2] == 0.0f);
+	VERIF(c.avant[1] == 1.0f);
+	VERIF(Pres(c.vitesse, 1.5f));                                               // sans allure : la vitesse de l'intention × 3
+	p.allure = 2.0f;
+	c.Direction(0.033f, p);
+	VERIF(c.vitesse == 2.0f);
+	// Un pas de 300 × dt plus grand que l'écart : la direction prend l'intention d'un coup.
+	p.intention[0] = 0.0f; p.intention[1] = 1.0f;
+	c.Direction(0.033f, p);
+	VERIF(Pres(c.dir[0], 0.0f) && Pres(c.dir[1], 1.0f));
+	// Un pas plus petit que l'écart (dt de 0,001 s : 0,3 radian pour un quart de tour) : elle tourne vers l'intention, du
+	// bon côté, dans les deux sens.
+	p.intention[0] = 1.0f; p.intention[1] = 0.0f;
+	c.Direction(0.001f, p);
+	VERIF(Pres(c.dir[0], std::sin(0.3f)) && Pres(c.dir[1], std::cos(0.3f)));
+	p.intention[0] = -1.0f;
+	c.Direction(0.001f, p);
+	VERIF(Pres(c.dir[0], 0.0f) && Pres(c.dir[1], 1.0f));
+	c.Direction(0.001f, p);
+	VERIF(Pres(c.dir[0], -std::sin(0.3f)) && Pres(c.dir[1], std::cos(0.3f)));
+	// La mesure que la mise à jour compare aux seuils : l'angle de la direction à l'avant du piéton.
+	p.intention[0] = 1.0f; p.intention[1] = 0.0f;
+	c.Direction(0.033f, p);
+	printf("direction : intention (1, 0), avant (0, 1) : direction (%.2f, %.2f), angle %.4f rad\n", c.dir[0], c.dir[1], CMotionTrack::Angle(c.dir, c.avant));
+	VERIF(Pres(CMotionTrack::Angle(c.dir, c.avant), 1.5707964f));
+}
+
 int
 main(void)
 {
@@ -449,6 +489,7 @@ main(void)
 	Cadences();
 	Phases();
 	Trajets();
+	Directions();
 	Purges();
 	printf("test_animtrack : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;

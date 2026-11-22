@@ -9,6 +9,7 @@
 // place joue, le bit 1 qu'elle boucle, le bit 2 qu'elle a passé sa première image (le bit 3 n'est pas lu ici).
 #pragma once
 #include "Hxd.h"
+#include "MotionTrack.h"
 
 struct CPlaceAnim {
 	enum { JOUE = 1, BOUCLE = 2, PARTIE = 4 };
@@ -64,6 +65,31 @@ struct CPlaceAnim {
 	void Avancer(float dt, bool actif) { Avancer(dt, actif, [](float){}); }
 };
 
+// Une entrée de la couche de locomotion (AM_MotionTrack, src/anim/MotionTrack.h) : la copie d'une piste
+// LocomotionAnimationNew (0x34 octets). Le jeu cherche son enregistrement dans le HXD à chaque image par son haché
+// (00607610) et en calcule la vitesse naturelle (FUN_00730340) ; ici les deux sont portés par l'entrée, posés une fois.
+struct CMotionEntree {
+	uint32 hache = 0;                  // +0x18
+	float seuil = 0;                   // +0x1c : un angle en radians
+	float marques[4] = {0, 0, 0, 0};   // +0x20 … +0x2c : des instants de l'animation, en secondes
+	const CHxdAnim *enr = nil;
+	float naturelle = 0;               // m/s
+};
+
+// Ce que la couche de locomotion lit du piéton à chaque image. L'objet M est le +0x14 de ce que rend la méthode +0x40 de
+// la table virtuelle du piéton (0x90d0d4 ; FUN_00474a80, 12 octets, lue : le composant d'actions +0x2e0 plus 0x300).
+struct CMotionPieton {
+	float stat = 1.0f;                 // FUN_00476f10(piéton, 0x14) / 100 (le double 0x900130)
+	float vitesse = -1.0f;             // +0x1c de M : la vitesse que la piste Locomotion pose (00613480), −1 sans elle
+	float allure = -1.0f;              // +0x20 de M (non suivi)
+	float intention[3] = {0, 0, 0};    // +0 … +8 du composant d'actions : la direction de l'intention de mouvement
+	float intentionVitesse = 0;        // +0x1c du composant d'actions
+	float avant[3] = {0, 1, 0};        // FUN_00415350 : l'avant du piéton
+	// Les appuis des pieds, sur M : les octets +0x30 et +0x31, et le temps écoulé depuis chacun (+0x34 et +0x38).
+	bool pas[2] = {false, false};
+	float depuisPas[2] = {0, 0};
+};
+
 struct CAnimTrack {
 	int32 masque = -1;                 // +8 : le masque d'os (un pointeur dans le jeu ; ici son rang dans le HXD, -1 sans masque)
 	float poids = 0;                   // +0xc
@@ -72,6 +98,24 @@ struct CAnimTrack {
 	CPlaceAnim places[2];              // +0x18 et +0x2c
 	float melange = 0;                 // +0x40 : la part de la place 1 ; la place 0 pèse 1 - melange
 	int32 rang = 0;                    // +0x44
+	// La suite de l'objet quand la couche est une AM_MotionTrack (table virtuelle 0x94d2f8, 0xa8 octets), dans l'état où
+	// son constructeur la laisse. FUN_00731470 (lue en entier de 0x731470 à 0x731551, 226 octets) : les deux places à
+	// zéro avec la vitesse 1, le piéton (+0x48), la copie de la piste Locomotion (+0x4c), l'entrée courante (+0x50) et
+	// les dix entrées (+0x54 … +0x78) à nil, l'octet +0x7c et le réel +0x8c à 0, **les réels +0x80 et +0x88 à −1**, les
+	// vecteurs +0x90 et +0x9c égaux au vecteur global 0xbcc564 (255 références dans l'exécutable ; supposé le vecteur
+	// nul : il est dans la zone non initialisée). Le réel +0x84 n'y est pas écrit (supposé 0, la mémoire d'une réserve).
+	enum { ENTREES = 10 };
+	bool motion = false;               // la table virtuelle : faux AM_AnimTrack, vrai AM_MotionTrack
+	int32 courante = -1;               // +0x50 : l'entrée jouée par la place 0 (un pointeur dans le jeu)
+	CMotionEntree entrees[ENTREES];    // +0x54 : dix pointeurs, remplis dans l'ordre par FUN_0060e240
+	int32 nEntrees = 0;
+	bool synchro = false;              // +0x7c : la mise à jour 00731b90 est passée au moins une fois
+	float precedent = -1.0f;           // +0x80 : l'instant de la place 0 à la fin de la mise à jour précédente
+	float garde = 0.0f;                // +0x84 : l'instant de la place 0 relevé par FUN_0072f3a0
+	float demande = -1.0f;             // +0x88 : une phase demandée, −1 sans demande
+	float vitesse = 0.0f;              // +0x8c
+	float dir[3] = {0, 0, 0};          // +0x90 : la direction lissée du mouvement
+	float avant[3] = {0, 0, 0};        // +0x9c : l'avant du piéton
 
 	// FUN_006b26f0(dt) (le rang 3 de la table virtuelle 0x941f90, ret 4, lue en entier de 0x6b26f0 à 0x6b287f, 400 octets) :
 	// la mise à jour d'une couche, **la fonction qui fait monter et descendre son poids**. Elle rend faux quand la couche a
@@ -139,6 +183,48 @@ struct CAnimTrack {
 		p.drapeaux = (dr & 2) ? 3 : 1;
 		if(dr & 8) p.drapeaux |= 8;
 		if(place == 1) melange = mel;
+	}
+
+	// La couche de locomotion neuve (FUN_00731470).
+	static CAnimTrack Motion(void) {
+		CAnimTrack c;
+		c.motion = true;
+		c.places[0].vitesse = 1.0f; c.places[1].vitesse = 1.0f;
+		return c;
+	}
+
+	// FUN_00730110(dt) (méthode de la couche de locomotion, ret 4, lue en entier de 0x730110 à 0x730334, 549 octets) :
+	// **la direction lissée du mouvement**. +0x8c prend le +0x20 de M ; d est l'intention de mouvement du piéton mise à
+	// plat et normée (FUN_00414cc0) ; si +0x8c est négatif il devient la vitesse de l'intention × 3 (0xbc724c). Une
+	// direction +0x90 encore égale au vecteur 0xbcc564 prend d. Sinon le cosinus de l'écart (x x + y y, borné à −1 et 1
+	// par 0x9009ac) passe par FUN_00413c10 : si 300 × dt (0xbc7254) dépasse l'écart, la direction prend d ; sinon elle
+	// tourne de 300 × dt (FUN_005fbe50), le signe changé (0xbc72d4 = −1) quand d est du côté de (y, −x, 0) normé (un
+	// produit scalaire qui passe 0,0001 en valeur absolue, 0x900af8, et n'est pas négatif). Puis +0x9c prend l'avant du
+	// piéton (FUN_00415350, recréée dans src/objects/Projectiles.h). À 30 images par seconde 300 × dt vaut 10 radians :
+	// plus que tout écart, la direction suit l'intention sans retard.
+	void Direction(float dt, const CMotionPieton &p) {
+		vitesse = p.allure;
+		float d[3] = { p.intention[0], p.intention[1], 0.0f };
+		CCollisionBalayee::Normaliser(d);
+		if(vitesse < 0.0f) vitesse = p.intentionVitesse * 3.0f;
+		if(dir[0] == 0.0f && dir[1] == 0.0f && dir[2] == 0.0f){
+			dir[0] = d[0]; dir[1] = d[1]; dir[2] = d[2];
+		}else{
+			float cs = (float)((double)dir[1] * d[1] + (double)dir[0] * d[0]);
+			if(cs < -1.0f) cs = -1.0f; else if(cs > 1.0f) cs = 1.0f;
+			float pas = 300.0f * dt;
+			float ecart = CMotionTrack::ArcCosinus(cs);
+			if(pas > ecart){
+				dir[0] = d[0]; dir[1] = d[1]; dir[2] = d[2];
+			}else{
+				float w[3] = { dir[1], -dir[0], 0.0f };
+				CCollisionBalayee::Normaliser(w);
+				float cote = (float)((double)w[1] * d[1] + (double)w[0] * d[0]);
+				if((double)std::fabs(cote) > 0.0001f && !(0.0f > cote)) pas = pas * -1.0f;
+				CMotionTrack::Tourner(pas, dir);
+			}
+		}
+		avant[0] = p.avant[0]; avant[1] = p.avant[1]; avant[2] = p.avant[2];
 	}
 };
 
