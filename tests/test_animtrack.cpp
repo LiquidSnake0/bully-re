@@ -348,6 +348,45 @@ Cadences(void)
 }
 
 static void
+Melanges(void)
+{
+	// FUN_006bcc60 sans masque : 1 copie la seconde pose, moins d'un millième garde la première, le reste mêle.
+	VERIF(CPoseMelange::SansMasque(1.0f) == CPoseMelange::COPIER);
+	VERIF(CPoseMelange::SansMasque(0.0005f) == CPoseMelange::GARDER && CPoseMelange::SansMasque(-0.0005f) == CPoseMelange::GARDER);
+	VERIF(CPoseMelange::SansMasque(0.001f) == CPoseMelange::MELER && CPoseMelange::SansMasque(0.5f) == CPoseMelange::MELER);
+	// Avec un masque : le poids de l'os, -1 au-delà du masque, fois le poids donné s'il n'est pas 1.
+	const float masque[2] = {1.0f, 0.25f};
+	VERIF(CPoseMelange::PoidsOs(1.0f, masque, 2, 0) == 1.0f && CPoseMelange::PoidsOs(1.0f, masque, 2, 1) == 0.25f);
+	VERIF(CPoseMelange::PoidsOs(0.5f, masque, 2, 0) == 0.5f && CPoseMelange::PoidsOs(0.5f, masque, 2, 1) == 0.125f);
+	VERIF(CPoseMelange::PoidsOs(1.0f, masque, 2, 5) == -1.0f && CPoseMelange::PoidsOs(0.5f, masque, 2, 5) == -0.5f);
+	VERIF(CPoseMelange::AvecMasque(1.0f) == CPoseMelange::COPIER && CPoseMelange::AvecMasque(0.0f) == CPoseMelange::GARDER && CPoseMelange::AvecMasque(-1.0f) == CPoseMelange::MELER);
+	// L'ordre d'évaluation d'un rang : les gardées de la plus ancienne (la queue) à la plus récente (la tête), puis la couche.
+	CHxdAnim a; a.duree = 2.0f; a.fondu = 0.3f;
+	CHxdAnim b; b.duree = 1.0f; b.fondu = 0.2f;
+	const float dt = 1.0f / 30.0f;
+	CLecteurAnim l;
+	std::vector<CLecteurAnim::Evaluee> ordre;
+	VERIF(l.OrdreDuRang(0, ordre) == 0);
+	l.Poser(0, &a, 2, 0.0f, 0, 1.0f, 0.0f);
+	for(int32 i = 0; i < 3; i++){ l.ParImage(dt); l.PurgerInstallees(); }
+	VERIF(l.OrdreDuRang(0, ordre) == 1 && !ordre[0].gardee && ordre[0].couche == &l.couches[0]);
+	l.Poser(0, &b, 2, 0.0f, 0, 1.0f, -1.0f);
+	l.ParImage(dt); l.PurgerInstallees();
+	l.ParImage(dt); l.PurgerInstallees();
+	l.Poser(0, &a, 2, 0.0f, 0, 1.0f, -1.0f);
+	l.ParImage(dt); l.PurgerInstallees();
+	VERIF(l.OrdreDuRang(0, ordre) == 3);
+	VERIF(ordre.size() == 3 && ordre[0].gardee && ordre[0].couche == &l.gardees[0][1] && ordre[0].couche->places[0].anim == &a);
+	VERIF(ordre.size() == 3 && ordre[1].gardee && ordre[1].couche == &l.gardees[0][0] && ordre[1].couche->places[0].anim == &b);
+	VERIF(ordre.size() == 3 && !ordre[2].gardee && ordre[2].couche == &l.couches[0] && ordre[2].poids == l.couches[0].poids);
+	printf("mélange : trois évaluations au rang 0, la gardée la plus ancienne (poids %.3f), la plus récente (poids %.3f), puis la couche (poids %.3f)\n",
+	       ordre.size() == 3 ? ordre[0].poids : -1.0f, ordre.size() == 3 ? ordre[1].poids : -1.0f, ordre.size() == 3 ? ordre[2].poids : -1.0f);
+	// Installée (poids 1), la couche est évaluée seule.
+	for(int32 i = 0; i < 12; i++) l.ParImage(dt);
+	VERIF(l.OrdreDuRang(0, ordre) == 1 && !ordre[0].gardee);
+}
+
+static void
 Purges(void)
 {
 	CHxdAnim a; a.duree = 2.0f; a.fondu = 0.3f;
@@ -626,6 +665,7 @@ main(void)
 	Meneuses();
 	MisesAJour();
 	Purges();
+	Melanges();
 	printf("test_animtrack : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;
 }

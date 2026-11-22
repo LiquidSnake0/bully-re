@@ -243,6 +243,27 @@ struct CAnimTrack {
 	}
 };
 
+// FUN_006bcc60(pose, a, b, poids, masque) (cdecl, cinq arguments, lue en entier de 0x6bcc60 à 0x6bcea6, 583 octets) : le
+// mélange de deux poses dans une troisième. Une pose : le nombre d'os en +0x2c, la taille d'un os en +0x24, les os à
+// partir de +0x4c (36 octets copiés par os), **la fonction qui mêle un os en +0x40** (appelée (os, os de a, os de b,
+// poids) ; non lue : l'outil mêle les rotations en interpolation sphérique, supposé).
+// - Sans masque : un poids égal à 1 copie b (006bcbd0) ; un poids de valeur absolue sous 0,001 (0x900c04) copie a ;
+//   sinon chaque os est mêlé au poids donné.
+// - Avec un masque (ses poids en +0x20, leur nombre en +0x24) : le poids d'un os est celui du masque, **-1 (0x9009ac)
+//   pour un os au-delà du masque**, multiplié par le poids donné quand celui-ci n'est pas 1 ; un poids d'os égal à 1 copie
+//   l'os de b, une valeur absolue sous 0,001 copie l'os de a et rien d'autre ; dans les autres cas, et après la copie de
+//   b, la fonction de l'os est appelée avec ce poids (le -1 lui est passé tel quel).
+struct CPoseMelange {
+	enum Geste { GARDER, COPIER, MELER };
+	static float Nul(void) { return 0.001f; }                                   // 0x900c04
+	static Geste SansMasque(float poids) { return poids == 1.0f ? COPIER : (poids < 0.0f ? -poids : poids) < Nul() ? GARDER : MELER; }
+	static float PoidsOs(float poids, const float *masque, uint32 n, uint32 os) {
+		float m = os < n ? masque[os] : -1.0f;
+		return poids == 1.0f ? m : m * poids;
+	}
+	static Geste AvecMasque(float poidsOs) { return poidsOs == 1.0f ? COPIER : (poidsOs < 0.0f ? -poidsOs : poidsOs) < Nul() ? GARDER : MELER; }
+};
+
 // Le lecteur d'un piéton, pour ce qui touche ses couches : sept couches par rang (+0x18, un pointeur chacune, nul sans couche),
 // sept listes de couches gardées (+0x34, douze octets par rang : la tête, la queue, le compte ; le maillon d'une couche est
 // en +4) et le compte des couches posées (+0x88). Une couche gardée est la copie d'une couche remplacée ou retirée : la
@@ -268,6 +289,26 @@ struct CLecteurAnim {
 	void PurgerInstallees(void) {
 		for(int32 r = 0; r < RANGS; r++)
 			if(posee[r] && !(1.0f > couches[r].poids)) Purger(r);
+	}
+	// La suite de l'évaluation, pour un rang dont la couche est sous le poids 1 (006be730, lue de 0x6be821 à 0x6beb2e) :
+	// le bit 0x1000 de +0x98 posé, **la liste des gardées est retournée** (chaque maillon retiré par la tête et chaîné
+	// devant le précédent, de 0x6be847 à 0x6be89c ; la méthode +0x18 de chacune est appelée : vraie, son poids s'ajoute à
+	// une somme et un drapeau est levé), puis **chaque gardée est évaluée en partant de la queue de la liste, la plus
+	// ancienne, jusqu'à la tête** (sa méthode +0x10, dans la pose de travail) et mêlée à la pose accumulée par
+	// FUN_006bcc60 avec **son propre poids (+0xc) et son propre masque (+8)**, chacune remise en tête de la liste, qui
+	// retrouve son ordre ; le bit 0x1000 retiré. **La couche du rang est évaluée ensuite** et mêlée de même avec son
+	// poids et son masque (de 0x6beae1 à 0x6beb1e). La toute première évaluation de l'image n'est pas mêlée : la pose de
+	// travail est alors la pose accumulée elle-même (les deux pointeurs égaux en 0x6be91a et 0x6beb05), et la pose de
+	// travail devient ensuite celle de +0x148. Non refait : les trois réels du déplacement que chaque évaluation rend,
+	// mêlés à côté (00412850), et la fin (de 0x6beb2e à 0x6bee33, vue au décompilé seulement).
+	struct Evaluee { const CAnimTrack *couche; float poids; bool gardee; };
+	int32 OrdreDuRang(int32 r, std::vector<Evaluee> &ordre) const {
+		ordre.clear();
+		if(!posee[r]) return 0;
+		if(1.0f > couches[r].poids)
+			for(size_t i = gardees[r].size(); i-- > 0;) ordre.push_back({&gardees[r][i], gardees[r][i].poids, true});
+		ordre.push_back({&couches[r], couches[r].poids, false});
+		return (int32)ordre.size();
 	}
 
 	// FUN_006b9130(rang, couche) (méthode du lecteur d'un piéton, ret 8, lue en entier de 0x6b9130 à 0x6b9210, 225 octets),

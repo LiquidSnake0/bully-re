@@ -7344,23 +7344,30 @@ PoseDeLaPlace(const CAnimTrack &c, const CLecteurOutil::Cle *k, CPoseJouee *out)
 // Une animation à masque posée par-dessus le fond : son instant et les poids de son masque (CHxdFile::poidsMasques).
 // `facteur` : le poids de la couche entière (1 : installée ; de 1 à 0 pendant sa sortie).
 struct CCoucheOs { const AgrAnim *a; float t; const std::vector<float> *poids; float facteur = 1.0f; };
+// Une évaluation du rang 0 : une animation à son instant et le poids avec lequel elle est mêlée à ce qui précède.
+struct CPoseFond { const AgrAnim *a; float t; float poids; };
 static bool
-PoserOs(const CSqueletteOutil &s, const AgrAnim &a, float t, CVector out[CSqueletteOutil::OS], const AgrAnim *autre = nil, float tAutre = 0, float poids = 0,
-        const std::vector<CCoucheOs> *couches = nil)
+PoserOs(const CSqueletteOutil &s, const std::vector<CPoseFond> &fond, CVector out[CSqueletteOutil::OS], const std::vector<CCoucheOs> *couches = nil)
 {
-	if(!s.nifLu) return false;
+	if(!s.nifLu || fond.empty()) return false;
 	const CNifFile &f = s.nif;
-	// Le fondu : `autre` mêlée à `a` avec le poids `poids` (0 : `a` seule), os par os en interpolation sphérique, le bassin en
-	// linéaire, comme outils/scene.h (Reposer) mêle la marche et l'attente.
-	bool melange = autre && poids > 0.0f;
+	// Le fond, dans l'ordre de l'évaluation du jeu (006be730, CLecteurAnim::OrdreDuRang) : la première évaluation est prise
+	// telle quelle, chaque suivante est mêlée à la pose accumulée avec son poids (FUN_006bcc60 sans masque : 1 la copie,
+	// moins d'un millième la laisse de côté), os par os en interpolation sphérique (supposé : la fonction de l'os, +0x40
+	// de la pose, n'est pas lue), le bassin en linéaire, comme outils/scene.h (Reposer) mêle la marche et l'attente.
 	std::vector<NifMatrix33> pose(f.numBlocks, NifAxisRotation(0, 0));
 	for(int32 k = 1; k < s.n && k < AGR_OS; k++){
 		int32 b = s.bloc[k]; float q[4], q2[4], m[3][3];
 		if(b < 0 || b >= f.numBlocks) continue;
-		bool a1 = AgrRotation(a, k, t, q), a2 = melange && AgrRotation(*autre, k, tAutre, q2);
-		if(!a1 && !a2) continue;
-		if(a1 && a2){ float r[4]; AgrSlerp(q, q2, poids, r); memcpy(q, r, sizeof q); }
-		else if(a2) memcpy(q, q2, sizeof q);
+		bool a1 = false;
+		for(const CPoseFond &x : fond){
+			if(!AgrRotation(*x.a, k, x.t, q2)) continue;
+			CPoseMelange::Geste g = a1 ? CPoseMelange::SansMasque(x.poids) : CPoseMelange::COPIER;
+			if(g == CPoseMelange::COPIER) memcpy(q, q2, sizeof q);
+			else if(g == CPoseMelange::MELER){ float r[4]; AgrSlerp(q, q2, x.poids, r); memcpy(q, r, sizeof q); }
+			a1 = true;
+		}
+		if(!a1) continue;
 		// Les couches à masque, dans l'ordre : l'os va vers leur rotation du poids de son masque (supposé : une interpolation
 		// sphérique ; un os que le fond n'anime pas prend la couche entière si son poids est plein).
 		for(size_t c = 0; couches && c < couches->size(); c++){
@@ -7388,11 +7395,15 @@ PoserOs(const CSqueletteOutil &s, const AgrAnim &a, float t, CVector out[CSquele
 	};
 	if(bb >= 0 && bb < f.numBlocks){
 		CVector d1(0, 0, 0), d2(0, 0, 0);
-		bool b1 = Bassin(a, t, &d1), b2 = melange && Bassin(*autre, tAutre, &d2);
-		float w = melange ? poids : 0.0f;
-		if(!b2) d2 = d1;
-		if(!b1) d1 = d2;
-		if(b1 || b2) decalage[bb] = CVector(d1.x + w * (d2.x - d1.x), d1.y + w * (d2.y - d1.y), d1.z + w * (d2.z - d1.z));
+		bool b1 = false;
+		for(const CPoseFond &x : fond){
+			if(!Bassin(*x.a, x.t, &d2)) continue;
+			CPoseMelange::Geste g = b1 ? CPoseMelange::SansMasque(x.poids) : CPoseMelange::COPIER;
+			if(g == CPoseMelange::COPIER) d1 = d2;
+			else if(g == CPoseMelange::MELER) d1 = CVector(d1.x + x.poids * (d2.x - d1.x), d1.y + x.poids * (d2.y - d1.y), d1.z + x.poids * (d2.z - d1.z));
+			b1 = true;
+		}
+		if(b1) decalage[bb] = d1;
 	}
 	std::vector<NifTransform> mondes(f.numBlocks);
 	NifWorldTransforms(f, mondes.data(), pose.data(), true, decalage.data());
@@ -7418,10 +7429,11 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 	// Les os dans la pose de l'animation que joue le piéton (PoserOs), à défaut dans celle du fichier.
 	// Les os dans la pose que porte le lecteur du piéton (AvancerLecteurs), à défaut dans celle du fichier : la couche 0 à son
 	// instant et à son poids (FUN_006b26f0) ; tant que ce poids n'est pas à 1, la couche gardée en tête de son rang, figée à
-	// l'instant où elle a été remplacée (FUN_006c05b0 ne met pas à jour une AM_AnimTrack gardée), au poids restant (supposé :
-	// l'évaluation 006be730 mélange toutes les gardées du rang, elle n'est lue que jusqu'à sa purge ; ici la tête seule).
+	// l'instant où elle a été remplacée (FUN_006c05b0 ne met pas à jour une AM_AnimTrack gardée), au poids restant ; l'évaluation
+	// 006be730 mêle toutes les gardées du rang, de la plus ancienne à la plus récente, puis la couche : `fond`).
 	CPoseJouee pj, pq;
 	float poids = 1.0f;
+	std::vector<CPoseFond> fond;
 	bool garde = false, joue = false;
 	CVector poses[CSqueletteOutil::OS];
 	// Les couches 1 à 6 du lecteur, chacune avec son masque (cherché dans MAINPED.HXD par son nom, à défaut le premier du fichier)
@@ -7437,6 +7449,14 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 		auto ic = controleurs.find(indice);
 		garde = ic == controleurs.end() || ic->second.joue == nil || ic->second.Animation(ic->second.Temps(maintenant / 1000.0f)) == nil;
 		if(poids < 1.0f && !o.l.gardees[0].empty()) PoseDeLaPlace(o.l.gardees[0].front(), nil, &pq);
+		// Toutes les gardées du rang 0, de la plus ancienne à la plus récente, chacune à son poids (006be730).
+		std::vector<CLecteurAnim::Evaluee> ordre;
+		o.l.OrdreDuRang(0, ordre);
+		for(const CLecteurAnim::Evaluee &e : ordre){
+			if(!e.gardee) continue;
+			CPoseJouee x; PoseDeLaPlace(*e.couche, nil, &x);
+			if(x.a.anim) fond.push_back({x.a.anim, x.t, e.poids});
+		}
 		for(int32 r = 1; r < CLecteurAnim::RANGS; r++){
 			const CAnimTrack &c = o.l.couches[r];
 			if(!o.l.posee[r] || c.places[0].anim == nil) continue;
@@ -7451,7 +7471,8 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 		}
 	}
 	bool fondu = joue && poids < 1.0f && pq.a.anim;
-	bool pose = joue && pj.a.anim && PoserOs(*s, *pj.a.anim, pj.t, poses, fondu ? pq.a.anim : nil, pq.t, 1.0f - poids, &couches);
+	if(joue && pj.a.anim) fond.push_back({pj.a.anim, pj.t, poids});
+	bool pose = joue && pj.a.anim && PoserOs(*s, fond, poses, &couches);
 	const CVector *osPoses = pose ? poses : s->os;
 	CModelePieton ped;
 	ped.Construire(&m4.m[12], CModelePieton::Cap(m4.m), s->fiche, [&](int32 rang, float *o){
@@ -7490,7 +7511,8 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 			            pj.a.anim ? "décodée" : "pas décodée", pj.a.enr ? pj.a.enr->duree : -1.0f, pj.mode, (int)pietons.StatLue(indice, 0x14, 100), pj.t, pj.entree, arbres.CheminDe(NoeudJoue(indice)).c_str(),
 			            !pose ? "les os dans la pose du fichier" : !fondu ? "les os posés par l'animation" :
 			            ("les os posés par l'animation, au poids " + std::to_string(poids).substr(0, 4) + " dans son fondu de " + std::to_string(pj.fondu).substr(0, 4) + " s depuis "
-			             + (pq.a.enr ? pq.a.enr->nom : std::string("?")) + " à " + std::to_string(pq.t).substr(0, 4) + " s").c_str(),
+			             + (pq.a.enr ? pq.a.enr->nom : std::string("?")) + " à " + std::to_string(pq.t).substr(0, 4) + " s"
+			             + (fond.size() > 2 ? ", " + std::to_string(fond.size() - 1) + " couches gardées mêlées de la plus ancienne à la plus récente" : std::string())).c_str(),
 			            ditCouches.empty() ? "" : ", par-dessus ", ditCouches.c_str(),
 			            ped.spheres[0].centre[2], ped.spheres[1].centre[2], ped.spheres[2].centre[2],
 			            ped.spheres[3].centre[2], ped.spheres[4].centre[2], ped.spheres[5].centre[2]);
