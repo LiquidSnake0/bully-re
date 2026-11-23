@@ -133,43 +133,61 @@ chantier. Un point fini passe en bas, avec son commit.
      image du vol (`q.sorti`) est retirée : le monde compte dès le premier pas. Restent supposés : la rotation du projectile (non
      suivie), la pose des os d'un piéton (par l'animation depuis le 16.11 : point 1), l'échelle d'un objet (non suivie : aucune dans les missions), le
      tri des entités proches (l'outil prend la sphère englobante du modèle de l'objet). Dans l'ordre :
-     1. **la pose des os d'un piéton par l'animation : ce qui reste** (16.11, 17.11, 21.11 et 22.11, voir « Fait »). L'outil pose les
+     1. **la pose des os d'un piéton par l'animation : ce qui reste** (16.11, 17.11, 21.11, 22.11 et 23.11, voir « Fait »). L'outil pose les
         six sphères de `FUN_00572680` sur les os de l'animation que porte **le lecteur du piéton** (`CLecteurAnim`,
         `src/anim/AnimTrack.h` ; dans `outils/lancer_lua.cpp` : `CLecteurOutil`, `AvancerLecteurs` une fois par image,
         `PoseDeLaPlace`, `PoserOs`, `AnimationParHache`). Depuis le 21.11 le lecteur est recréé et branché : la place
         (`FUN_006b2560`), le poids de la couche (`FUN_006b26f0`, **la fonction cherchée le 17.11**), le lancement
         (`FUN_006b6570`), la pose sur un rang (`FUN_006bcad0`), les gardées (`FUN_006b9130`, `FUN_006b5950`) et la mise à
         jour par image (`FUN_006c05b0`). Ce qui reste, dans l'ordre :
-        a. **l'échelle du bassin** (le prochain chantier). Elle est lue dans l'évaluation d'une place (`FUN_006b6e50`, de
-           0x6b703d à 0x6b70cb, 22.11) : le réel +0x20 de l'os 1 de la pose (l'os 2 si l'enregistrement porte le drapeau
-           0x200) est multiplié par la norme du vecteur de cet os dans la table +0xa8 du squelette (12 octets par os),
-           divisée par R, le réel +0x28 du descripteur du groupe de l'animation (60 octets, `FUN_00450a30`, table +0x6c du
-           dictionnaire ; rien si |R| < 0,001, si l'entier 0x20c48c0 n'est pas nul ou si le +0x70 du dictionnaire est
-           nul). **À lire** : qui écrit ce +0x28 (non lu) et qui remplit la table +0xa8 du squelette ; puis l'appliquer dans `PoserOs`
-           à la place du bassin de référence de `outils/scene.h` (`CAnimTrack::OsDuBassin` et `EchelleDuBassin` sont
-           prêtes). Le joueur sur l'arbre de 1_04 reste posé au sol sous l'arbre, son bassin à 1,20 m (supposé).
-           Non lues dans 006b6e50 : le décodage 006bd810 (2 615 octets ; l'outil a son propre décodeur), 006b67b0,
-           006b6900 (1 359 octets), 006b47b0 et 006b6690 (le déplacement que l'animation donne au piéton) ;
-        b. **la piste Locomotion et ce qui reste de sa couche** (branchée le 22.11, voir « Fait »). Supposé, à lire : sa
-           mise à jour 00613480 (8 071 octets, vue au décompilé seulement : la vitesse qu'elle donne au piéton, que
-           l'outil reprend pour la cadence **sans déplacer le piéton avec** : les temps des missions n'en dépendent
-           pas) ; un nœud dont la piste Locomotion donne un rang autre que 0 garde l'ancienne lecture ; la méthode
-           +0x40 de la table du piéton (non lue : d'où sort la vitesse lue par 00731b90) ; les deux vecteurs dont
-           00731b90 mesure l'angle (supposé : l'avant du piéton et son intention de mouvement) ; 0072eec0 (297 octets,
-           la phase à quatre tronçons, prise si le mot 0x20c9024 n'est pas nul ; non lue) ; le son du pas (0060e5d0,
-           00595a30, 0059cab0, 0059b750, non suivies : l'outil nomme le son). La ligne « les os du piéton N sont posés
-           par les deux places de sa couche de locomotion » n'est écrite dans aucune mission : la pose des os n'est
-           calculée qu'aux lignes « le piéton N joue … » (supposé la cause) ; la poser à chaque image d'un tir la
-           ferait voir. **Lu et écarté le 22.11, à ne pas relire** : 006b5990 (71 octets) et 006be600 (213 octets) sont
-           des listes de rappels sans rapport avec la pose ; 00608760 n'est pas la cadence (17.11) ;
-        c. **la fin de l'évaluation de la pose** (006be730) : la boucle des rangs est lue et refaite (22.11) ; restent
-           les vecteurs de déplacement (00412850) et la fin, de 0x6beb2e à 0x6bee33 (vue au décompilé seulement),
-           006bd150 (430 octets), la copie d'une pose 006bcbd0 (142 octets) et **la fonction qui mêle un os** (+0x40 de
-           la pose, non lue : l'outil suppose une interpolation sphérique des rotations, le bassin en linéaire). Le
-           crochet 006b20c0 (1 183 octets) de l'avance d'une place n'est pas lu. **L'octet 61 de l'AnimationTrack**
-           (+0x3d : la vitesse +0x54 au lieu de 48, lue dans `FUN_0060ae00`, non suivie). Supposé dans l'outil :
-           l'ordre dans l'image (lancements et arrêts, mise à jour, puis évaluation), le mode 2 qui donne le bit 1 du
-           lancement, l'instant d'une animation sans boucle borné à son champ 44 ;
+        a. **l'échelle du bassin : faite le 23.11** (voir « Fait »). Reste : aucune animation de MAINPED.HXD ne porte le
+           drapeau 0x200 (l'os 2 au lieu de l'os 1), la branche n'est donc vue par aucun essai ; 3 groupes sur 271 ont
+           un réel de référence qui n'est pas la norme de l'os 1 de leur squelette (IDLE_GSF_A, B et C : 0,8436 contre
+           1,0944 sur gn_asiangirl.mxd), non expliqué ;
+        b. **la piste Locomotion : sa branche commune est faite le 23.11** (voir « Fait »). Ce qui reste, dans l'ordre :
+           - **les pistes Locomotion sans vitesse (le prochain chantier)** : 22 couches prises dans les missions (21 dans
+             `1_05`, nœud /Global/Locomotion.act/#3fa672a9/#0976d4d8/#0015a4af ; 1 dans `1_07`, …/#0bb98c25) ont leurs
+             deux vitesses à −1 : la formule de la branche commune de 00613480 rend −1 m/s, alors que leurs animations
+             rendent 3,29 m/s (1_05 à 88,80 s et 94,31 s) ou 0,99 m/s (1_07 à 142,49 s). **À lire** dans 00613480 ce que
+             le jeu fait d'une vitesse de piste négative (supposé : le piéton avance alors du déplacement de ses
+             animations, celui que 006be730 range à [lecteur+0xa4]) et **qui lit [lecteur+0xa4]** (non cherché) ;
+           - **déplacer les piétons de l'outil par ce déplacement** : depuis le 23.11 l'outil le calcule à chaque image
+             (`DeplacementDuLecteur` dans `outils/lancer_lua.cpp`) et le compare à la vitesse de la piste, sans déplacer
+             personne : les temps des missions n'en dépendent pas. Passé la première seconde d'une couche les deux
+             s'accordent (84 lignes sur 89 à 5 % près) ; sur la première seconde les animations rendent moins (médiane
+             du rapport 0,836 ; supposé le fondu d'entrée, non isolé). Deux lignes restent en dessous sans explication
+             (1_02 à 98,83 s : 0,24 contre 0,75 m/s ; 1_07 à 145,03 s : 0,74 contre 1,28 m/s, cette dernière avec une
+             animation aux bits 7 et 6) ;
+           - **l'autre branche de 00613480** (l'octet 76 de la piste, de 0x613623 à 0x614f71 : 35 pistes sur 343 dans les
+             arbres globaux, aucune couche prise dans les missions) et le virage : 00608220 (680 octets, lue le 23.11
+             sans être refaite : le cap par 00432bc0 ; si la cible n'est pas le vecteur nul, le côté (y, −x, 0) normé,
+             les deux produits scalaires, le premier borné entre −1 et 1 puis passé à 00413c10 sauf s'il est à moins de
+             0,00001 de 1 ; 00432bc0 et 00413c10 ne sont pas lues ; son seul appel vu est en 0x61527b, hors de
+             00613480). Les octets 56, 57 et 58 de la piste sont lus, leur effet non refait ;
+           - un nœud dont la piste Locomotion donne un rang autre que 0 garde l'ancienne lecture ; la méthode +0x40 de
+             la table du piéton (non lue : d'où sort la vitesse lue par 00731b90) ; les deux vecteurs dont 00731b90
+             mesure l'angle (supposé : l'avant du piéton et son intention de mouvement) ; 0072eec0 (297 octets, la
+             phase à quatre tronçons, prise si le mot 0x20c9024 n'est pas nul ; non lue) ; le son du pas (0060e5d0,
+             00595a30, 0059cab0, 0059b750, non suivies : l'outil nomme le son). La ligne « les os du piéton N sont posés
+             par les deux places de sa couche de locomotion » n'est écrite dans aucune mission.
+           **Lu et écarté, à ne pas relire** : 006b5990 (71 octets) et 006be600 (213 octets), des listes de rappels sans
+           rapport avec la pose ; 00608760 n'est pas la cadence (17.11) ;
+        c. **la fin de l'évaluation de la pose (006be730) : lue en entier le 23.11**, le mélange du déplacement refait
+           (voir « Fait »). Restent, non lus ou non refaits : **006b6900** (le déplacement d'une place dont
+           l'enregistrement porte les bits 7 et 6 ; lue de 0x6b6900 à 0x6b6a7f le 23.11 sans être refaite : ret 0x14,
+           elle appelle 006be250 sur l'objet 0x20c4910, puis deux fois 006b3cc0 et mêle par 00414a20 et 00412850 ;
+           006be250 n'est pas lue ; deux lignes des missions en dépendent, 1_02 à 69,70 s et 1_07 à 145,03 s) ; la
+           méthode +0x18 d'une couche (celle qui dit si une gardée compte) ; **006b4350** (lue le 23.11, non refaite :
+           elle remplit les éléments de 0x34 octets de [lecteur+0x14] depuis la pose de référence de son descripteur,
+           par la fonction +0x3c et le pas +0x24 de celui-ci) ; la fin de 006be730 n'est écrite qu'en commentaire
+           (`CLecteurAnim::DeplacementDesRangs`, `src/anim/AnimTrack.h`) ; l'évaluation sans pose 006bd150 est refaite
+           mais l'outil ne l'appelle pas (supposé : les piétons hors champ) ; son crochet de mise au point (0xbb6458,
+           0x20c48fc, 0x20c48f8) n'est pas refait. Toujours non lus : le décodage 006bd810 (2 615 octets), 006b67b0,
+           006b6690, la copie d'une pose 006bcbd0 (142 octets), **la fonction qui mêle un os** (+0x40 de la pose :
+           l'outil suppose une interpolation sphérique des rotations, le bassin en linéaire), le crochet 006b20c0
+           (1 183 octets), **l'octet 61 de l'AnimationTrack** (+0x3d, lu dans `FUN_0060ae00`, non suivi). Supposé dans
+           l'outil : l'ordre dans l'image (lancements et arrêts, mise à jour, puis évaluation), le mode 2 qui donne le
+           bit 1 du lancement, l'instant d'une animation sans boucle borné à son champ 44 ;
         d. la fin des nœuds (`FinAnimation`) ne suit toujours pas la stat 0x14 ; le joueur a maintenant STAT_PLAYER
            (`FUN_0049b1b0` → `FUN_00478e30`), dont la stat 0x14 vaut 100 : rien ne change tant qu'elle reste à 100.
         Faits le 17.11 (voir « Fait ») : le nœud sans piste garde l'animation du nœud quitté, le nœud d'un Spawn anime le
@@ -390,6 +408,20 @@ chantier. Un point fini passe en bas, avec son commit.
 
 ## Fait
 
+- L'échelle du bassin, la mise à jour de la piste Locomotion et le déplacement que les animations rendent (23.11 ; 409343f,
+  7c5e0a7, 91bf10f, 4cd1a6e, a8a8dc7, c6316b1, 4cf25b4, 8896234) : **l'échelle du bassin** est lue à ses deux sources (le
+  réel +0x28 du descripteur de groupe vient du HXD, `FUN_006b2d90` ; la table +0xa8 du squelette vient de MXDs.MGR,
+  `FUN_006b5710` ; la norme `FUN_0040df90`) et appliquée dans `PoserOs` (`EchelleDuBassinOutil`) : dans `1_04` à 73,36 s le
+  bassin de JK2nd_Juri_GS passe de 0,810 à 0,915 m (× 1,129), dans `1_03` aux billes Peter est à × 0,894 à 122,63 s ;
+  **la branche commune de `FUN_00613480`** est lue à l'assembleur (de son début à 0x613a01) : sa vitesse est exactement
+  `PisteLocomotion::Vitesse`, et les 682 couches de locomotion prises dans les huit journaux passent par elle ; les octets 40,
+  56, 57, 58 et 76 de la piste sont lus (recensement des arbres globaux dans `tests/test_actionbank.cpp` : 343 pistes) ;
+  **le déplacement d'une place** (`FUN_006b45d0`, `FUN_006b4820`, `FUN_006b47b0`, l'os de `FUN_006b1910` ; `src/anim/Agr.h`),
+  **l'évaluation sans pose** (`FUN_006bd150`, `FUN_006b48c0`, `CHxdFile::PremierPoids`) et **le mélange du déplacement dans
+  006be730** (`CLecteurAnim::DeplacementDesRangs`) ; C_PLAYER\RUN rend 3,023 m par boucle (os 35, drapeaux 0x4e). L'outil
+  dit ce déplacement pour chaque couche de locomotion, sur sa première seconde puis la suivante, contre la vitesse de la
+  piste : 122 et 89 lignes dans les huit journaux, 84 des 89 à 5 % près (`1_01` : le piéton 1 à 1,37 m/s à 6,63 s contre
+  1,38 m/s). Les sept missions gardent leurs temps.
 - La couche de locomotion AM_MotionTrack, recréée et branchée, et l'évaluation de la pose (22.11 ; 4ec23cd, fc43b17, 3bea914,
   edee9f8, 82b128d, 15487f4, 0d3b7be, 3dd6f59, 7a44b13, 578e314) : l'instant d'une phase (`FUN_0072e690`), la tolérance
   (`FUN_00432910`), la direction tournée (`FUN_005fbe50`) ; **le trajet d'une animation** (`FUN_006b3cc0`, `FUN_006073a0`),

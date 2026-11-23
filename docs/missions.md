@@ -751,6 +751,19 @@ trois lignes « le piéton N joue C_PLAYER\HIT_HEAD_JAB » (75,08 s, 75,87 s, 76
 plus ancienne à la plus récente ». Les sept missions gardent leurs temps (1_01 à 10,46 s, 1_02 à 132,92 s, 1_03 à 148,90 s,
 aux billes 147,97 s, 1_04 à 82,53 s, 1_05 à 180,31 s, 1_06_01 à 61,81 s, 1_07 à 150,88 s) : la couche ne déplace personne.
 
+Le 23.11, trois choses se voient de plus (docs/suite.md, « Fait »). **L'échelle du bassin** : les lignes « le piéton N
+joue … » disent « est mis à l'échelle » quand le squelette du piéton n'a pas la taille de référence du groupe de l'animation
+(`1_04` à 73,36 s : JK2nd_Juri_GS × 1,129, son bassin de 0,810 à 0,915 m ; `1_03` aux billes à 122,63 s : Peter × 0,894).
+**La branche de 00613480** : chaque ligne « prend une couche de locomotion » finit par « sa mise à jour 00613480 prend la
+branche commune : vitesse lue à l'assembleur ». **Le déplacement des animations** : deux lignes par couche de locomotion,
+« le déplacement du piéton N sur les premières 1.02 s de sa couche de locomotion : ses animations rendent (x ; y ; z) m, soit
+V m/s à plat ; la vitesse de la piste Locomotion donne D m, soit W m/s », puis « sur les suivantes, 1.02 s » : 122 et 89
+lignes dans les huit journaux. Dans `1_01`, le piéton 1 rend 1,16 m/s à 5,61 s puis 1,37 m/s à 6,63 s, pour 1,38 m/s à la
+piste ; le piéton 4, 5,21 puis 6,75 m/s, pour 6,75 m/s. Dans `1_05`, les piétons 7 et 6 (88,80 s et 94,31 s) ont une piste
+sans vitesse (−1) et des animations à 3,29 m/s. Les sept missions gardent leurs temps (1_01 à 10,46 s, 1_02 à 132,92 s,
+1_03 à 148,90 s, aux billes 147,97 s, 1_04 à 82,53 s, 1_05 à 180,31 s, 1_06_01 à 61,81 s, 1_07 à 150,88 s) : l'outil dit le
+déplacement, il ne déplace toujours personne avec.
+
 ## `1_05` (« Save Algie ») (06.11.2026)
 
 `1_05` s'enchaîne après `1_04`. Lancée seule (`build/outils/lancer_lua 90 --mission 1_05 --sans-cinematiques`), elle bouclait
