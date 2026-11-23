@@ -7172,9 +7172,58 @@ struct CLecteurOutil {
 	std::vector<const CActionController::PisteAnimation *> entrees;
 	int32 ditChoix = 0, ditPas = 0, ditSons = 0, pasComptes[2] = {0, 0};
 	int32 choixDit = -2, hautDit = -2;
+	// Le déplacement que les animations rendent (DeplacementDuLecteur), sommé depuis la prise de la couche de locomotion.
+	float depTemps = 0.0f, depPiste = 0.0f; CVector depAnim; bool depDit = false, depNonRefait = false;
 };
 static std::map<int, CLecteurOutil> lecteurs;
 static std::map<const CHxdAnim *, CAnimOutil> animsDesPlaces;   // l'animation décodée de chaque enregistrement lancé
+
+// **Le déplacement que le jeu tire des animations d'un lecteur à une image** (006be730 : CLecteurAnim::
+// DeplacementDesRangs). Chaque couche rend celui de ses places évaluées (FUN_006b6e50 : une place sous le poids 0,001
+// n'est pas évaluée ; l'enregistrement qui porte le bit 2 de ses drapeaux rend le déplacement de FUN_006b47b0, ici
+// AgrDeplacementImage sur l'animation décodée ; il est multiplié par le poids de la place quand il est sous 1).
+// Non refait : les enregistrements aux bits 7 et 6 ensemble, dont le déplacement sort de 006b6900 (`nonRefait`).
+// Supposé : chaque couche gardée compte (sa méthode +0x18, non lue, rend vrai).
+static CVector
+DeplacementDuLecteur(const CLecteurAnim &l, bool *nonRefait)
+{
+	auto couche = [nonRefait](const CAnimTrack &c){
+		CVector v;
+		CAnimTrack::Evaluation ev[2];
+		int32 n = c.Evaluations(ev);
+		for(int32 i = 0; i < n; i++){
+			const CPlaceAnim &p = c.places[ev[i].place];
+			if(p.anim == nil || ev[i].poids < 0.001f || !(p.anim->drapeaux & 4)) continue;
+			if((p.anim->drapeaux & 0xc0) == 0xc0){ *nonRefait = true; continue; }
+			auto ia = animsDesPlaces.find(p.anim);
+			CVector d;
+			if(ia == animsDesPlaces.end() || !ia->second.anim) continue;
+			if(!AgrDeplacementImage(*ia->second.anim, p.anim->drapeaux, p.t, p.avant, (p.drapeaux & CPlaceAnim::BOUCLE) != 0, &d)) continue;
+			float w = ev[i].poids < 1.0f ? ev[i].poids : 1.0f;
+			v.x += d.x * w; v.y += d.y * w; v.z += d.z * w;
+		}
+		return v;
+	};
+	auto os = [](const CAnimTrack &c, bool *masque){
+		*masque = c.masque >= 0 && (size_t)c.masque < hxdPietons.poidsMasques.size();
+		if(!*masque) return 0.0f;
+		const std::vector<float> &w = hxdPietons.poidsMasques[c.masque];
+		int32 b = c.places[0].anim ? CAnimTrack::OsDuBassin(c.places[0].anim->drapeaux) : 1;
+		return (size_t)b < w.size() ? w[b] : -1.0f;
+	};
+	CLecteurAnim::DeplacementRang rangs[CLecteurAnim::RANGS];
+	for(int32 r = 0; r < CLecteurAnim::RANGS; r++){
+		if(!l.posee[r]) continue;
+		CLecteurAnim::DeplacementRang &x = rangs[r];
+		x.posee = true; x.d = couche(l.couches[r]); x.poids = l.couches[r].poids; x.poidsOs = os(l.couches[r], &x.masque);
+		for(size_t i = l.gardees[r].size(); i-- > 0;){
+			CLecteurAnim::DeplacementGardee g;
+			g.d = couche(l.gardees[r][i]); g.poids = l.gardees[r][i].poids; g.poidsOs = os(l.gardees[r][i], &g.masque); g.compte = true;
+			x.gardees.push_back(g);
+		}
+	}
+	return CLecteurAnim::DeplacementDesRangs(rangs);
+}
 
 static void
 AvancerLecteurs(float dt)
@@ -7209,6 +7258,7 @@ AvancerLecteurs(float dt)
 						else{ mt.reste = -f; mt.fondu = -f; mt.poids = 0.0f; }
 						o.l.Installer(0, mt);
 						o.entrees.clear();
+						o.depTemps = 0.0f; o.depPiste = 0.0f; o.depAnim = CVector(); o.depDit = false; o.depNonRefait = false;
 						o.ditChoix = 0; o.ditPas = 0; o.ditSons = 0; o.pasComptes[0] = o.pasComptes[1] = 0; o.choixDit = o.hautDit = -2;
 						printf("%6.2f s  le piéton %d prend une couche de locomotion (le nœud %s : piste Locomotion, vitesses %.2f et %.2f m/s entre les "
 						       "intentions %.2f et %.2f, %s, rang %d, fondu %.2f s ; %s) ; %d couche(s) gardée(s) au rang 0\n",
@@ -7272,6 +7322,21 @@ AvancerLecteurs(float dt)
 		}
 		mp.depuisPas[0] += dt; mp.depuisPas[1] += dt;
 		o.l.ParImage(dt, mp);
+		// Le déplacement que les animations rendent à cette image, contre la vitesse que la piste Locomotion donne : dit
+		// une fois par couche de locomotion, après une seconde.
+		if(o.l.posee[0] && o.l.couches[0].motion && !o.depDit){
+			CVector d = DeplacementDuLecteur(o.l, &o.depNonRefait);
+			o.depAnim.x += d.x; o.depAnim.y += d.y; o.depAnim.z += d.z;
+			o.depTemps += dt; o.depPiste += mp.vitesse * dt;
+			if(o.depTemps >= 1.0f){
+				o.depDit = true;
+				float plat = sqrtf(o.depAnim.x * o.depAnim.x + o.depAnim.y * o.depAnim.y);
+				printf("%6.2f s  le déplacement du piéton %d sur %.2f s de sa couche de locomotion : ses animations rendent (%.3f ; %.3f ; %.3f) m, soit %.2f m/s à plat ; "
+				       "la vitesse de la piste Locomotion donne %.2f m, soit %.2f m/s%s\n",
+				       maintenant / 1000.0, kv.first, o.depTemps, o.depAnim.x, o.depAnim.y, o.depAnim.z, plat / o.depTemps, o.depPiste, o.depPiste / o.depTemps,
+				       o.depNonRefait ? " (une animation aux bits 7 et 6 : son déplacement, de 006b6900, n'est pas refait)" : "");
+			}
+		}
 		if(o.l.posee[0] && o.l.couches[0].motion){
 			const CAnimTrack &ct = o.l.couches[0];
 			const CAnimTrack *men = o.l.Meneuse(0);
