@@ -30,7 +30,7 @@ main(void)
 	static const char *const fichiers[] = { "ANIBBALL", "ANIFOOTY", "BANANA", "BATON", "BBGUN", "BIKE", "BOLTCUTT", "BROCKETL", "COPBIKE",
 	                                        "MAINPED", "MOT_CTRL", "RAT_PED", "SCOOTER", "SIAMESE", "SK8BOARD", "SLINGSH", "SPRAYCAN", "SPUDG", "UMBRELLA", "WBALLOON" };
 	int lus = 0, exacts = 0, anims = 0, hachagesJustes = 0;
-	int groupes = 0, groupesSuivis = 0, rattachees = 0; bool etirementVu = false;
+	int groupes = 0, groupesSuivis = 0, rattachees = 0; bool etirementVu = false, deplacementVu = false;
 	CHxdFile mainped;
 	int32 monde = CdStream::AddImage("Stream\\World.img");
 	for(const char *f : fichiers){
@@ -84,6 +84,34 @@ main(void)
 						etirementVu = true;
 					}
 				}
+				// Le déplacement d'une place (FUN_006b45d0) sur C_PLAYER\RUN : trois tours de boucle à 30 images par
+				// seconde, contre trois fois le trajet (FUN_006073a0).
+				if(strcmp(f, "MAINPED") == 0 && h.groupes[g].nom == "C_Player"){
+					std::vector<AgrAnim> v;
+					const CHxdAnim *run = h.Chercher(ActionHash("C_PLAYER\\RUN"));
+					int32 rang = -1, i = 0;
+					for(const CHxdAnim &a : h.anims) if(a.groupe == g){ if(&a == run) rang = i; i++; }
+					if(run && rang >= 0 && AgrLireGroupe(agr, na, v) && (int32)v.size() > rang){
+						HxdEtirer(v, h, "C_Player");
+						const AgrAnim &a = v[rang];
+						CVector tr = AgrTrajetRacine(a, run->drapeaux), somme, d;
+						float t = 0.0f, pas = 1.0f / 30.0f; int32 tours = 0, images = 0; bool tous = true;
+						while(tours < 3){
+							float av = t; t += pas;
+							if(t > a.duree){ t -= a.duree; tours++; }
+							tous = AgrDeplacementImage(a, run->drapeaux, t, av, true, &d) && tous;
+							somme.x += d.x; somme.y += d.y; somme.z += d.z; images++;
+						}
+						CVector p0; AgrPositionOs(a, AgrOsDuDeplacement(run->drapeaux, a.numOs), 0.0f, &p0);
+						printf("C_PLAYER\\RUN (drapeaux %x, %.3f s, os %d) : trajet (%.3f ; %.3f) m ; %d images de déplacement sur trois tours : (%.3f ; %.3f ; %.3f) m, soit %.3f m par tour à plat ; première position de l'os (%.3f ; %.3f ; %.3f)\n",
+						       run->drapeaux, a.duree, AgrOsDuDeplacement(run->drapeaux, a.numOs), tr.x, tr.y, images, somme.x, somme.y, somme.z,
+						       sqrtf(somme.x * somme.x + somme.y * somme.y) / 3.0f, p0.x, p0.y, p0.z);
+						VERIF(tous && images == 60 && AgrOsDuDeplacement(run->drapeaux, a.numOs) == 35);
+						VERIF(fabsf(somme.y - 3.0f * tr.y) < 0.001f && fabsf(tr.y - 3.023f) < 0.001f);
+
+						deplacementVu = true;
+					}
+				}
 				free(agr);
 			}
 		}else printf("  illisible : %s\n", chemin);
@@ -91,6 +119,27 @@ main(void)
 	}
 	printf("%d .HXD lus, %d exactement jusqu'au dernier octet ; %d animations, %d hachages justes\n", lus, exacts, anims, hachagesJustes);
 	VERIF(lus == 20 && exacts == 20 && anims == 3913 && hachagesJustes == anims);
+	VERIF(deplacementVu);
+	{
+		// Le poids que l'évaluation sans pose (FUN_006bd150) prend à chaque masque : le premier, celui de l'os 0.
+		int32 un = 0, zero = 0, autre = 0, sans = 0; float w = 0.0f, w0 = -2.0f;
+		for(size_t m = 0; m < mainped.masques.size(); m++){
+			if(!mainped.PremierPoids((int32)m, &w)){ sans++; continue; }
+			if(w == 1.0f) un++; else if(w == 0.0f) zero++; else autre++;
+		}
+		mainped.PremierPoids(-1, &w0);
+		printf("premier poids des %zu masques de MAINPED.HXD : 1 pour %d, 0 pour %d, autre pour %d ; sans masque, celui du premier masque (%s) : %.2f\n",
+		       mainped.masques.size(), un, zero, autre, mainped.masques.empty() ? "" : mainped.masques[0].c_str(), w0);
+		VERIF(sans == 0 && un == 2 && zero == 42 && autre == 2 && w0 == 1.0f);
+	}
+	{
+		// Les drapeaux du déplacement dans MAINPED.HXD : l'os pris (0x40, 0x200) et le vecteur ajouté (0x100).
+		int32 n40 = 0, n200 = 0, n100 = 0, nb = 0;
+		for(const CHxdAnim &a : mainped.anims){ n40 += (a.drapeaux & 0x40) != 0; n200 += (a.drapeaux & 0x200) != 0; n100 += (a.drapeaux & 0x100) != 0; nb += (a.drapeaux & 4) != 0; }
+		printf("déplacement, drapeaux des %zu animations de MAINPED.HXD : 0x40 (le dernier os) %d, 0x200 (l'os 2) %d, 0x100 %d, bit 2 %d\n", mainped.anims.size(), n40, n200, n100, nb);
+		VERIF(n40 == 1072 && n200 == 0 && n100 == 0 && nb == 1260);
+
+	}
 	printf("%d groupes présents, %d parcourus exactement, %d animations rattachées\n", groupes, groupesSuivis, rattachees);
 	VERIF(groupes == 423 && groupesSuivis == 423 && rattachees == 3913);
 	// MAINPED : 46 masques, 36 os, 3 365 animations, 425 groupes.

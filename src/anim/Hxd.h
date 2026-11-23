@@ -36,7 +36,13 @@ struct CHxdAnim {
 	uint16 w[4] = {0, 0, 0, 0};
 	float v[3] = {0, 0, 0};
 };
-struct CHxdGroupe { std::string nom; uint32 taille = 0; };   // taille : celle du .agr, plus 4 par animation
+// Un groupe : en mémoire un descripteur de 0x3c octets (table +0x6c du dictionnaire, comptée en +0x68), le nom en +4, la
+// taille en +0x30. Depuis la version 1,11 du fichier (0x941f70 : lu si la version l'atteint, de 0x6b390a à 0x6b3977 de
+// FUN_006b2d90), le groupe porte 32 octets que le binaire saute (0x6b391b : le nom d'un squelette, « player.mxd » pour 165
+// des 425 groupes de MAINPED.HXD, vide pour 154) puis un réel qu'il range en +0x28 du descripteur : `reference`, la longueur
+// du vecteur de l'os Root de ce squelette (0,8462 pour « player.mxd », la norme du vecteur de l'os 1 de MODELS\PEDS\PLAYER
+// dans MXDs.MGR ; 0 sans nom). C'est le R par lequel l'évaluation d'une place (FUN_006b6e50) divise l'échelle du bassin.
+struct CHxdGroupe { std::string nom; uint32 taille = 0; std::string squelette; float reference = 0; };   // taille : celle du .agr, plus 4 par animation
 
 class CHxdFile
 {
@@ -48,6 +54,15 @@ public:
 	// moitié (0,5 : « UBO_Hd_Sp » sur la colonne). Le masque d'une piste Animation est son champ 28, un nom (« RightArm »,
 	// « UpperBody_ALL ») que FUN_00607340 cherche (docs/cat.md).
 	std::vector<std::vector<float>> poidsMasques;
+	// Le poids que l'évaluation sans pose (FUN_006bd150, de 0x6bd1f7 à 0x6bd21a) prend pour mêler le déplacement d'un
+	// rang : le masque donné, ou sans masque (−1) le premier du dictionnaire ; faux sans aucun masque. Le premier poids
+	// du masque (l'os 0), −1 (0x9009ac) si le masque n'en a pas.
+	bool PremierPoids(int32 masque, float *w) const {
+		if(masque < 0) masque = 0;
+		if((size_t)masque >= poidsMasques.size()) return false;
+		*w = poidsMasques[masque].empty() ? -1.0f : poidsMasques[masque][0];
+		return true;
+	}
 	// Le flottant qui suit le compte des poids dans le fichier : le +0x28 du masque en mémoire, le fondu de sortie d'une couche
 	// qui porte ce masque quand sa piste n'en donne pas (FUN_006bd320). 0,3 s pour 43 des 46 masques de MAINPED.HXD, 0 pour « FlashLightAimVert », 1 s pour
 	// « Conv » et « FlashLightAimHoriz ».
@@ -81,6 +96,14 @@ public:
 	}
 	std::vector<CHxdAnim> anims;
 	std::vector<CHxdGroupe> groupes;
+	// FUN_00450a30(rang) (méthode du dictionnaire, lue en entier, 30 octets) : le descripteur du groupe de ce rang, nil
+	// passé le compte.
+	const CHxdGroupe *Groupe(uint32 rang) const { return rang < groupes.size() ? &groupes[rang] : nil; }
+	// Un vecteur de 12 octets par os, lu d'un trait après les groupes (FUN_006b2d90, de 0x6b3986 à 0x6b3a12 : la table
+	// +0x70 du dictionnaire, allouée pour le compte d'os +0x5c et mise à zéro avant la lecture). Dans MAINPED.HXD : la
+	// translation de repos de chaque os, (0 ; 0,0064 ; 0,8462) pour Root. FUN_006b6e50 n'applique l'échelle du bassin que
+	// si cette table existe.
+	std::vector<float> vecteursOs;     // trois réels par os
 	uint32 lus = 0;                    // octets consommés
 
 	bool Load(const uint8 *buf, uint32 n);

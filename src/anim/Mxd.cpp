@@ -55,8 +55,8 @@ CMxdFile::Load(const uint8 *buf, uint32 n)
 		// fichiers du jeu sont en 1,06, au-delà des deux seuils.
 		m.nOs = (int32)r.U32();
 		if(m.nOs < 0 || m.nOs > 256){ r.ok = false; break; }
-		r.Sauter(12 * (uint32)m.nOs);
-		r.U32();
+		for(int32 j = 0; j < 3 * m.nOs && r.ok; j++) m.vecteurs.push_back(r.F32());
+		m.motFinal = r.U32();
 		if(r.ok) modeles.push_back(m);
 	}
 	lus = r.p;

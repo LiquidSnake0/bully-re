@@ -517,6 +517,37 @@ Trajets(void)
 	VERIF(AgrTrajetRacine(a, 0).y == 0.0f);
 	a.positions[1] = { p0, p2 }; a.decodee = false;
 	VERIF(AgrTrajetRacine(a, 0).y == 0.0f);
+	{
+		// Le déplacement d'une place (FUN_006b45d0). L'os : 1, 2 avec le drapeau 0x200, le dernier avec le drapeau 0x40.
+		VERIF(AgrOsDuDeplacement(0, 36) == 1 && AgrOsDuDeplacement(0x200, 36) == 2 && AgrOsDuDeplacement(0x40, 36) == 35 && AgrOsDuDeplacement(0x240, 36) == 35);
+		CVector ici(1.0f, 2.0f, 0.9f), av(0.5f, 1.0f, 0.8f), der(4.0f, 8.0f, 1.0f), pre(0.25f, 0.5f, 0.7f);
+		// Sans tour de boucle : la différence ; la racine ne rend pas de hauteur.
+		CVector d = AgrDeplacementPlace(ici, av, false, der, pre, true);
+		VERIF(Pres(d.x, 0.5f) && Pres(d.y, 1.0f) && d.z == 0.0f);
+		d = AgrDeplacementPlace(ici, av, false, der, pre, false);
+		VERIF(Pres(d.x, 0.5f) && Pres(d.y, 1.0f) && Pres(d.z, 0.1f));
+		// Au tour de boucle, la racine : (dernière − avant) + ici, la première image n'est pas retirée.
+		d = AgrDeplacementPlace(ici, av, true, der, pre, true);
+		VERIF(Pres(d.x, 4.5f) && Pres(d.y, 9.0f) && d.z == 0.0f);
+		// Un autre os (le drapeau 0x40) : la première image est retirée de la dernière.
+		d = AgrDeplacementPlace(ici, av, true, der, pre, false);
+		VERIF(Pres(d.x, 4.25f) && Pres(d.y, 8.5f) && Pres(d.z, 0.4f));
+		// Sur une animation : l'os 1 va de y = 0,2 à 3,4 en 0,8 s (p0, p1, p2 plus haut).
+		AgrAnim b; b.decodee = true; b.duree = 0.8f; b.numOs = 36;
+		b.positions[1] = { p0, p1, p2 };
+		b.positions[35] = { AgrPosition{0.0f, CVector(0.0f, 1.0f, 0.0f)}, AgrPosition{0.8f, CVector(0.0f, 5.0f, 0.5f)} };
+		CVector e;
+		VERIF(AgrDeplacementImage(b, 0, 0.4f, 0.0f, true, &e) && Pres(e.x, 0.0f) && Pres(e.y, 1.3f) && e.z == 0.0f);
+		// Le tour de boucle, de 0,7 s à 0,1 s : (3,4 − 2,925) + 0,525 ; sans boucle, la différence 0,525 − 2,925.
+		VERIF(AgrDeplacementImage(b, 0, 0.1f, 0.7f, true, &e) && Pres(e.y, 1.0f));
+		VERIF(AgrDeplacementImage(b, 0, 0.1f, 0.7f, false, &e) && Pres(e.y, -2.4f));
+		// Le drapeau 0x40 : l'os 35, de y = 1 à 5 ; à mi-course 2 m et 0,25 m de haut ; au tour (5 − 1 − 4,5) + 1,5 = 1.
+		VERIF(AgrDeplacementImage(b, 0x40, 0.4f, 0.0f, true, &e) && Pres(e.y, 2.0f) && Pres(e.z, 0.25f));
+		VERIF(AgrDeplacementImage(b, 0x40, 0.1f, 0.7f, true, &e) && Pres(e.y, 1.0f) && Pres(e.z, 0.125f));
+		// Le drapeau 0x200 : l'os 2, sans position ici.
+		VERIF(!AgrDeplacementImage(b, 0x200, 0.4f, 0.0f, true, &e) && e.y == 0.0f);
+		printf("déplacement d'une place : 1,30 m de 0 à 0,4 s ; au tour de boucle, de 0,7 à 0,1 s, %.2f m pour la racine comme pour l'os du drapeau 0x40\n", e.y);
+	}
 	printf("trajet : l'os 1 avance de %.2f m en %.1f s, vitesse naturelle %.2f m/s\n", t.y, 0.8f, CMotionTrack::VitesseNaturelle(0.8f, t.x, t.y));
 }
 
@@ -693,6 +724,98 @@ MisesAJour(void)
 	VERIF(l3.AvancerMotion(l3.couches[0], dt, p) && !l3.couches[0].synchro);
 }
 
+static void
+SansPose(void)
+{
+	// FUN_006b48c0 : le déplacement d'une couche sans pose.
+	CHxdAnim avec, sans; avec.drapeaux = 4; sans.drapeaux = 0x40;
+	CAnimTrack c;
+	CVector d(9.0f, 9.0f, 9.0f);
+	auto image = [](const CPlaceAnim &p){ return CVector(p.t, 2.0f * p.t, 0.0f); };
+	VERIF(!c.Deplacement(false, image, &d) && d.x == 9.0f);              // pas d'animation : faux
+	c.places[0].anim = &sans; c.places[0].t = 0.5f;
+	VERIF(c.Deplacement(false, image, &d) && d.x == 9.0f);               // sans le bit 2 de l'enregistrement : vrai, rien d'écrit
+	c.places[0].anim = &avec;
+	VERIF(c.Deplacement(true, image, &d) && d.x == 9.0f);                // le lecteur gelé (bit 2 de +0x98) : vrai, rien d'écrit
+	VERIF(c.Deplacement(false, image, &d) && Pres(d.x, 0.5f) && Pres(d.y, 1.0f) && d.z == 0.0f);
+	// FUN_006bd150 : le rang 0 remplace, un rang plus haut mêle par le premier poids de son masque.
+	CHxdFile h;
+	h.poidsMasques = { {0.25f, 1.0f}, {1.0f, 0.0f}, {} };
+	float w = 7.0f;
+	VERIF(h.PremierPoids(-1, &w) && w == 0.25f);     // sans masque : le premier du dictionnaire
+	VERIF(h.PremierPoids(1, &w) && w == 1.0f);
+	VERIF(h.PremierPoids(2, &w) && w == -1.0f);      // un masque sans poids : −1
+	VERIF(!h.PremierPoids(3, &w));
+	CHxdFile vide;
+	VERIF(!vide.PremierPoids(-1, &w));
+	CLecteurAnim l;
+	auto dep = [](const CAnimTrack &t, CVector *v){ *v = CVector(t.poids, 0.0f, 0.0f); };   // le « déplacement » d'essai : le champ poids
+	auto pp = [&h](int32 m, float *x){ return h.PremierPoids(m, x); };
+	CVector r = l.EvaluerSansPose(dep, pp);
+	VERIF(r.x == 0.0f);                                                   // aucun rang
+	l.posee[0] = true; l.couches[0].poids = 2.0f; l.gardees[0].push_back(CAnimTrack());
+	r = l.EvaluerSansPose(dep, pp);
+	VERIF(r.x == 2.0f && l.gardees[0].empty());                           // le rang 0 seul ; ses gardées sont vidées
+	l.posee[3] = true; l.couches[3].poids = 6.0f; l.couches[3].masque = -1; l.gardees[3].push_back(CAnimTrack());
+	r = l.EvaluerSansPose(dep, pp);
+	VERIF(Pres(r.x, 2.0f * 0.75f + 6.0f * 0.25f) && l.gardees[3].empty()); // sans masque : le premier du dictionnaire, 0,25
+	l.couches[3].masque = 1;
+	VERIF(Pres(l.EvaluerSansPose(dep, pp).x, 6.0f));                      // poids 1 : le rang remplace
+	l.couches[3].masque = 2;
+	VERIF(Pres(l.EvaluerSansPose(dep, pp).x, 2.0f * 2.0f - 6.0f));        // masque sans poids : −1
+	auto aucun = [&vide](int32 m, float *x){ return vide.PremierPoids(m, x); };
+	VERIF(Pres(l.EvaluerSansPose(dep, aucun).x, 2.0f));                   // aucun masque : le rang est sauté
+	l.posee[0] = false;
+	VERIF(Pres(l.EvaluerSansPose(dep, pp).x, -6.0f));                     // sans rang 0 : mêlé à zéro
+	printf("évaluation sans pose : le rang 0 à 2 et le rang 3 à 6 donnent %.2f par le premier masque (0,25), 6 au poids 1, -2 au masque sans poids\n", 2.0f * 0.75f + 6.0f * 0.25f);
+}
+
+static void
+DeplacementDeLaPose(void)
+{
+	// Le déplacement dans 006be730 (CLecteurAnim::DeplacementDesRangs).
+	typedef CLecteurAnim::DeplacementRang Rang;
+	typedef CLecteurAnim::DeplacementGardee Gardee;
+	Rang r[CLecteurAnim::RANGS];
+	VERIF(CLecteurAnim::DeplacementDesRangs(r).x == 0.0f);
+	// Une couche installée au rang 0, sans masque : son déplacement, fois son poids 1.
+	r[0].posee = true; r[0].d = CVector(0.0f, 4.0f, 0.0f); r[0].poids = 1.0f;
+	VERIF(Pres(CLecteurAnim::DeplacementDesRangs(r).y, 4.0f));
+	// En fondu d'entrée sans gardée : le déplacement est multiplié par le poids.
+	r[0].poids = 0.25f;
+	VERIF(Pres(CLecteurAnim::DeplacementDesRangs(r).y, 1.0f));
+	// Une gardée qui compte, sans masque, de poids 1 : G = D, puis V = G × 0,75 + V × 0,25.
+	Gardee g; g.d = CVector(0.0f, 2.0f, 0.0f); g.poids = 1.0f; g.compte = true;
+	r[0].gardees.push_back(g);
+	VERIF(Pres(CLecteurAnim::DeplacementDesRangs(r).y, 2.0f * 0.75f + 4.0f * 0.25f));
+	// La même gardée qui ne compte pas : S nul, drapeau baissé, elle est perdue et V = V × p.
+	r[0].gardees[0].compte = false;
+	VERIF(Pres(CLecteurAnim::DeplacementDesRangs(r).y, 1.0f));
+	// Deux gardées, la plus ancienne d'abord : G = (D0 × 1) × (1 − 0,5) + D1 × 0,5.
+	r[0].gardees[0].compte = true;
+	Gardee h; h.d = CVector(0.0f, 6.0f, 0.0f); h.poids = 0.5f; h.compte = true;
+	r[0].gardees.push_back(h);
+	VERIF(Pres(CLecteurAnim::DeplacementDesRangs(r).y, (2.0f * 0.5f + 6.0f * 0.5f) * 0.75f + 4.0f * 0.25f));
+	// Une gardée à masque : G = G × (1 − p) + D × (m × g), avec le poids p de la couche du rang.
+	r[0].gardees.pop_back();
+	r[0].gardees[0].masque = true; r[0].gardees[0].poidsOs = 0.5f;
+	VERIF(Pres(CLecteurAnim::DeplacementDesRangs(r).y, (0.0f * 0.75f + 2.0f * 0.5f) * 0.75f + 4.0f * 0.25f));
+	// Une couche installée (poids 1) ne lit pas ses gardées.
+	r[0].poids = 1.0f;
+	VERIF(Pres(CLecteurAnim::DeplacementDesRangs(r).y, 4.0f));
+	// Un rang plus haut sans masque remplace tout ; avec un masque, il pèse le poids de l'os du bassin fois son poids.
+	r[2].posee = true; r[2].d = CVector(1.0f, 0.0f, 0.0f); r[2].poids = 1.0f;
+	CVector a = CLecteurAnim::DeplacementDesRangs(r);
+	VERIF(Pres(a.x, 1.0f) && Pres(a.y, 0.0f));
+	r[2].masque = true; r[2].poidsOs = 0.0f;
+	a = CLecteurAnim::DeplacementDesRangs(r);
+	VERIF(Pres(a.x, 0.0f) && Pres(a.y, 4.0f));                 // un masque du haut du corps (bassin à 0) : la marche reste
+	r[2].poidsOs = 1.0f; r[2].poids = 0.5f;
+	a = CLecteurAnim::DeplacementDesRangs(r);
+	VERIF(Pres(a.x, 0.5f * 0.5f) && Pres(a.y, 4.0f * 0.5f));   // V = (1 ; 0) × 0,5 puis k = 0,5
+	printf("déplacement de la pose : une couche à 4 m et sa gardée à 2 m au poids 0,25 donnent %.2f m ; un rang masqué sans le bassin laisse 4,00 m\n", 2.0f * 0.75f + 4.0f * 0.25f);
+}
+
 int
 main(void)
 {
@@ -706,6 +829,8 @@ main(void)
 	Cadences();
 	Phases();
 	Trajets();
+	SansPose();
+	DeplacementDeLaPose();
 	Directions();
 	Meneuses();
 	MisesAJour();

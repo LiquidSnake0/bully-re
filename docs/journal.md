@@ -1986,3 +1986,43 @@ l'évaluation de la pose. Dix commits de moteur et celui-ci.
   180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout** : la couche
   de locomotion choisit, cale et cadence l'animation, elle ne déplace personne.
 - **Bilan** : 1 379 fonctions recréées (9,0 % du code), contre 1 354 ; 2 302 comprises, contre 2 280.
+
+## 23.11.2026, séance 1 (de 18 h 18 à 19 h 22)
+
+Le chantier : le premier point de « Suite, dans l'ordre » de `docs/suite.md`, dans l'ordre a, b, c : l'échelle du bassin, la
+piste Locomotion et sa mise à jour 00613480, la fin de 006be730. Huit commits de moteur et celui-ci.
+
+- **L'échelle du bassin** : ses deux sources sont lues (409343f : le réel de référence d'un groupe dans le HXD,
+  `FUN_006b2d90` ; les vecteurs des os d'un modèle dans MXDs.MGR, `FUN_006b5710` ; la norme `FUN_0040df90`) : 268 des 271
+  références valent la norme de l'os 1 du squelette de leur groupe. Elle est appliquée à la pose (7c5e0a7) : dans `1_04`,
+  23 lignes « est mis à l'échelle » (à 73,36 s JK2nd_Juri_GS × 1,129, le bassin de 0,810 à 0,915 m ; TE_GymTeacher × 1,203) ;
+  dans `1_03` aux billes, Peter × 0,894 à 122,63 s.
+- **La piste Locomotion** (91bf10f) : la branche commune de `FUN_00613480` est lue à l'assembleur ; sa vitesse est celle de
+  `PisteLocomotion::Vitesse`, sans rien à changer ; les octets 40, 56, 57, 58 et 76 sont lus et recensés (343 pistes dans
+  les arbres globaux, 35 avec l'octet 76) ; les 682 couches de locomotion des huit journaux prennent la branche commune, et
+  chaque ligne « prend une couche de locomotion » le dit.
+- **Le déplacement que les animations rendent** : celui d'une place (4cd1a6e, `FUN_006b45d0`, `FUN_006b4820`,
+  `FUN_006b47b0` : C_PLAYER\RUN rend 3,023 m par boucle, par l'os 35) ; l'évaluation sans pose (a8a8dc7, `FUN_006bd150`,
+  `FUN_006b48c0`) ; le mélange des rangs et la fin de 006be730 (c6316b1). L'outil le dit contre la vitesse de la piste
+  (4cf25b4) : sur la première seconde d'une couche, 74 lignes sur 122 sont en dessous ; **passé cette seconde (8896234),
+  84 lignes sur 89 sont à 5 % près**, la plupart à l'égalité : deux chemins du binaire, qui ne partagent que le trajet de
+  l'animation, donnent la même vitesse.
+- **Mes erreurs** : (1) **le compte des README était faux au commit 91bf10f** (1 385 fonctions et 9,2 % au lieu de 1 380 et
+  9,0 %) : un commentaire de `src/core/ActionController.h` écrivait `FUN_` devant quatre fonctions non recréées et l'adresse
+  d'entrée de 00613480 avec `0x` ; vu et corrigé au commit suivant (4cd1a6e), dit dans son message ; la leçon du brief
+  n'a donc pas été tenue à ce commit-là ; (2) l'essai `test_mxd` en échec à la première vérification (j'attendais que toutes
+  les références valent la norme de l'os 1 : 268 sur 271), corrigé avant de committer ; (3) un script de correctif arrêté
+  par une ancre présente deux fois, refait ; (4) un compteur muet remplacé par une ligne dite ; (5) `lire.sh` appelé avec
+  `0x` ; (6) une erreur d'édition de liens de `test_animtrack` (Agr.cpp manquait dans `construire_tests.sh`) et trois cas
+  d'essai faux (l'instant égal à la durée revient à 0), corrigés avant de committer ; (7) le message de 4cf25b4 laissait
+  la cause de l'écart en « supposé » : la mesure qui la cerne n'est venue qu'au commit suivant, et le fondu d'entrée reste
+  supposé ; (8) 00608220 et 006b6900 lues pour rien de committé (trop d'appelées non lues), notées dans `docs/suite.md`.
+- **Ce qui reste** : voir `docs/suite.md`, point 1.b : les pistes Locomotion sans vitesse (−1), qui lit [lecteur+0xa4], puis
+  déplacer les piétons de l'outil par ce déplacement.
+- **Les comptes des README** : contrôlés contre `tools/avancement.py` avant chaque push ; **faux à 91bf10f** (voir l'erreur
+  1), justes aux autres commits.
+- **REA amont** : pas demandé.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,90 s (aux billes 147,97 s), `1_04` à 82,53 s, `1_05` à
+  180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout** : l'échelle
+  change la hauteur des os, pas un contact des missions ; le déplacement est dit, il ne déplace personne.
+- **Bilan** : 1 386 fonctions recréées (9,1 % du code), contre 1 379 ; 2 310 comprises (13,6 %), contre 2 302.
