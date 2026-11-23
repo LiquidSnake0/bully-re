@@ -7173,7 +7173,7 @@ struct CLecteurOutil {
 	int32 ditChoix = 0, ditPas = 0, ditSons = 0, pasComptes[2] = {0, 0};
 	int32 choixDit = -2, hautDit = -2;
 	// Le déplacement que les animations rendent (DeplacementDuLecteur), sommé depuis la prise de la couche de locomotion.
-	float depTemps = 0.0f, depPiste = 0.0f; CVector depAnim; bool depDit = false, depNonRefait = false;
+	float depTemps = 0.0f, depPiste = 0.0f; CVector depAnim; bool depDit = false, depNonRefait = false; int32 depFenetre = 0;
 };
 static std::map<int, CLecteurOutil> lecteurs;
 static std::map<const CHxdAnim *, CAnimOutil> animsDesPlaces;   // l'animation décodée de chaque enregistrement lancé
@@ -7258,7 +7258,7 @@ AvancerLecteurs(float dt)
 						else{ mt.reste = -f; mt.fondu = -f; mt.poids = 0.0f; }
 						o.l.Installer(0, mt);
 						o.entrees.clear();
-						o.depTemps = 0.0f; o.depPiste = 0.0f; o.depAnim = CVector(); o.depDit = false; o.depNonRefait = false;
+						o.depTemps = 0.0f; o.depPiste = 0.0f; o.depAnim = CVector(); o.depDit = false; o.depNonRefait = false; o.depFenetre = 0;
 						o.ditChoix = 0; o.ditPas = 0; o.ditSons = 0; o.pasComptes[0] = o.pasComptes[1] = 0; o.choixDit = o.hautDit = -2;
 						printf("%6.2f s  le piéton %d prend une couche de locomotion (le nœud %s : piste Locomotion, vitesses %.2f et %.2f m/s entre les "
 						       "intentions %.2f et %.2f, %s, rang %d, fondu %.2f s ; %s) ; %d couche(s) gardée(s) au rang 0\n",
@@ -7323,18 +7323,19 @@ AvancerLecteurs(float dt)
 		mp.depuisPas[0] += dt; mp.depuisPas[1] += dt;
 		o.l.ParImage(dt, mp);
 		// Le déplacement que les animations rendent à cette image, contre la vitesse que la piste Locomotion donne : dit
-		// une fois par couche de locomotion, après une seconde.
+		// deux fois par couche de locomotion, sur sa première seconde puis sur la suivante (le fondu d'entrée passé).
 		if(o.l.posee[0] && o.l.couches[0].motion && !o.depDit){
 			CVector d = DeplacementDuLecteur(o.l, &o.depNonRefait);
 			o.depAnim.x += d.x; o.depAnim.y += d.y; o.depAnim.z += d.z;
 			o.depTemps += dt; o.depPiste += mp.vitesse * dt;
 			if(o.depTemps >= 1.0f){
-				o.depDit = true;
 				float plat = sqrtf(o.depAnim.x * o.depAnim.x + o.depAnim.y * o.depAnim.y);
-				printf("%6.2f s  le déplacement du piéton %d sur %.2f s de sa couche de locomotion : ses animations rendent (%.3f ; %.3f ; %.3f) m, soit %.2f m/s à plat ; "
+				printf("%6.2f s  le déplacement du piéton %d sur %s %.2f s de sa couche de locomotion : ses animations rendent (%.3f ; %.3f ; %.3f) m, soit %.2f m/s à plat ; "
 				       "la vitesse de la piste Locomotion donne %.2f m, soit %.2f m/s%s\n",
-				       maintenant / 1000.0, kv.first, o.depTemps, o.depAnim.x, o.depAnim.y, o.depAnim.z, plat / o.depTemps, o.depPiste, o.depPiste / o.depTemps,
+				       maintenant / 1000.0, kv.first, o.depFenetre == 0 ? "les premières" : "les suivantes,", o.depTemps, o.depAnim.x, o.depAnim.y, o.depAnim.z, plat / o.depTemps, o.depPiste, o.depPiste / o.depTemps,
 				       o.depNonRefait ? " (une animation aux bits 7 et 6 : son déplacement, de 006b6900, n'est pas refait)" : "");
+				if(o.depFenetre == 0){ o.depFenetre = 1; o.depTemps = 0.0f; o.depPiste = 0.0f; o.depAnim = CVector(); o.depNonRefait = false; }
+				else o.depDit = true;
 			}
 		}
 		if(o.l.posee[0] && o.l.couches[0].motion){
