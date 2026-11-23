@@ -36,7 +36,13 @@ struct CHxdAnim {
 	uint16 w[4] = {0, 0, 0, 0};
 	float v[3] = {0, 0, 0};
 };
-struct CHxdGroupe { std::string nom; uint32 taille = 0; };   // taille : celle du .agr, plus 4 par animation
+// Un groupe : en mémoire un descripteur de 0x3c octets (table +0x6c du dictionnaire, comptée en +0x68), le nom en +4, la
+// taille en +0x30. Depuis la version 1,11 du fichier (0x941f70 : lu si la version l'atteint, de 0x6b390a à 0x6b3977 de
+// FUN_006b2d90), le groupe porte 32 octets que le binaire saute (0x6b391b : le nom d'un squelette, « player.mxd » pour 165
+// des 425 groupes de MAINPED.HXD, vide pour 154) puis un réel qu'il range en +0x28 du descripteur : `reference`, la longueur
+// du vecteur de l'os Root de ce squelette (0,8462 pour « player.mxd », la norme du vecteur de l'os 1 de MODELS\PEDS\PLAYER
+// dans MXDs.MGR ; 0 sans nom). C'est le R par lequel l'évaluation d'une place (FUN_006b6e50) divise l'échelle du bassin.
+struct CHxdGroupe { std::string nom; uint32 taille = 0; std::string squelette; float reference = 0; };   // taille : celle du .agr, plus 4 par animation
 
 class CHxdFile
 {
@@ -81,6 +87,14 @@ public:
 	}
 	std::vector<CHxdAnim> anims;
 	std::vector<CHxdGroupe> groupes;
+	// FUN_00450a30(rang) (méthode du dictionnaire, lue en entier, 30 octets) : le descripteur du groupe de ce rang, nil
+	// passé le compte.
+	const CHxdGroupe *Groupe(uint32 rang) const { return rang < groupes.size() ? &groupes[rang] : nil; }
+	// Un vecteur de 12 octets par os, lu d'un trait après les groupes (FUN_006b2d90, de 0x6b3986 à 0x6b3a12 : la table
+	// +0x70 du dictionnaire, allouée pour le compte d'os +0x5c et mise à zéro avant la lecture). Dans MAINPED.HXD : la
+	// translation de repos de chaque os, (0 ; 0,0064 ; 0,8462) pour Root. FUN_006b6e50 n'applique l'échelle du bassin que
+	// si cette table existe.
+	std::vector<float> vecteursOs;     // trois réels par os
 	uint32 lus = 0;                    // octets consommés
 
 	bool Load(const uint8 *buf, uint32 n);

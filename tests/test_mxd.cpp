@@ -56,6 +56,41 @@ main(void)
 	VERIF(CMxdFile::Hachage("LeftCig") == 0x47c19c6a && CMxdFile::Hachage("RightCig") == 0x2654fed);
 	const CMxdModele *joueur = f.Chercher("player");
 	VERIF(joueur && joueur->points.size() == 10 && joueur->nOs == 36);
+	// Les vecteurs de fin (+0xa8 du squelette) et le réel de référence des groupes du HXD (+0x28 du descripteur) : l'échelle
+	// du bassin de FUN_006b6e50 est la norme du vecteur de l'os 1 du modèle, divisée par le réel du groupe de l'animation.
+	{
+		int tous = 0, memes = 0; float mini = 1e9f, maxi = 0; std::string nMini, nMaxi;
+		for(const CMxdModele &m : f.modeles){
+			if(m.anims != "ANIM\\MAINPED") continue;
+			tous += (int32)m.vecteurs.size() == 3 * m.nOs && m.nOs == (int32)mainped.os.size();
+			float n1 = m.NormeOs(1);
+			if(n1 > 0.0f && n1 < mini){ mini = n1; nMini = m.nom; }
+			if(n1 > maxi){ maxi = n1; nMaxi = m.nom; }
+		}
+		int refs = 0, sansRef = 0, joueurs = 0;
+		for(const CHxdGroupe &g : mainped.groupes){
+			if(g.reference == 0.0f){ sansRef++; continue; }
+			refs++;
+			const CMxdModele *sq = g.squelette.size() > 4 ? f.Chercher(g.squelette.substr(0, g.squelette.size() - 4).c_str()) : nil;
+			bool meme = sq && fabsf(sq->NormeOs(1) - g.reference) < 1e-4f;
+			memes += meme;
+			if(!meme) printf("  le groupe %s : %.4f, écrit sur %s (%s%.4f)\n", g.nom.c_str(), g.reference, g.squelette.c_str(), sq ? "os 1 à " : "absent de MXDs.MGR, ", sq ? sq->NormeOs(1) : 0.0f);
+			joueurs += strcasecmp(g.squelette.c_str(), "player.mxd") == 0;
+		}
+		const CHxdGroupe *gj = nil;
+		for(const CHxdGroupe &g : mainped.groupes) if(g.nom == "C_Player") gj = &g;
+		printf("vecteurs des os : %d modèles MAINPED en ont 36 ; l'os 1 du joueur (%.4f ; %.4f ; %.4f), norme %.4f ; de %.4f (%s) à %.4f (%s)\n", tous,
+		       joueur ? joueur->vecteurs[3] : 0, joueur ? joueur->vecteurs[4] : 0, joueur ? joueur->vecteurs[5] : 0, joueur ? joueur->NormeOs(1) : 0, mini, nMini.c_str(), maxi, nMaxi.c_str());
+		printf("réels de référence des groupes de MAINPED.HXD : %d groupes en ont un, %d n'en ont pas, %d égaux à la norme de l'os 1 de leur squelette, %d sur player.mxd ; C_Player %.4f (%s)\n",
+		       refs, sansRef, memes, joueurs, gj ? gj->reference : 0, gj ? gj->squelette.c_str() : "?");
+		VERIF(tous == 357 && joueur && fabsf(joueur->NormeOs(1) - 0.8462f) < 1e-4f && joueur->NormeOs(99) == 0.0f);
+		VERIF(refs + sansRef == 425 && sansRef == 154 && memes == 268 && joueurs == 165);
+		VERIF(gj && fabsf(gj->reference - joueur->NormeOs(1)) < 1e-5f && mainped.Groupe(425) == nil && mainped.Groupe(0) == &mainped.groupes[0]);
+		VERIF(mainped.vecteursOs.size() == 108 && fabsf(mainped.vecteursOs[5] - 0.8462f) < 1e-4f);
+		// L'échelle : un modèle sur une animation de C_Player.
+		const CMxdModele *grand = f.Chercher("TO_RichW2_W");
+		if(grand && gj) printf("l'échelle du bassin de %s sur C_Player : %.4f\n", grand->nom.c_str(), grand->NormeOs(1) / gj->reference);
+	}
 	if(joueur){ const CMxdPoint *p = joueur->Point(CMxdFile::Hachage("MouthCig")); VERIF(p && p->numeroOs == 15 && fabsf(p->pos[0] - 0.14f) < 1e-3f); }
 
 	b = Lire("Models\\WProps\\MXDs.MGR", &n);

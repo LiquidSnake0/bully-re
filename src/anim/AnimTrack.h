@@ -147,7 +147,8 @@ struct CAnimTrack {
 	//   60 octets du rang +0x20 de l'enregistrement, dans la table +0x6c du dictionnaire, nul passé le compte +0x68) ;
 	//   si |R| atteint 0,001, **le réel +0x20 de l'os 1 de la pose (l'os 2 si l'enregistrement porte le drapeau 0x200)
 	//   est multiplié par la norme (FUN_0040df90) du vecteur de cet os dans la table +0xa8 du squelette (12 octets par
-	//   os), divisée par R**. D'où vient le +0x28 du descripteur n'est pas lu.
+	//   os), divisée par R**. Ce +0x28 est lu dans le fichier HXD (CHxdGroupe::reference) et la table +0xa8 dans MXDs.MGR
+	//   (CMxdModele::vecteurs).
 	// - **Le bit 2 des drapeaux de la place est allumé** et elle rend vrai.
 	// Recréé ici : ce qui décide et ce qui touche la place. L'outil n'applique pas encore l'échelle (R inconnu).
 	bool PlaceEvaluee(int32 place) {

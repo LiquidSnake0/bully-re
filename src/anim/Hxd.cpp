@@ -53,10 +53,10 @@ CHxdFile::Load(const uint8 *buf, uint32 n)
 	k = r.U32();
 	for(uint32 i = 0; i < k && r.ok; i++){
 		CHxdGroupe g; g.nom = r.Nom(0x20); g.taille = r.U32();
-		if(version >= 1.11f - 1e-6f){ r.Sauter(0x20); r.U32(); }
+		if(version >= 1.11f - 1e-6f){ g.squelette = r.Nom(0x20); g.reference = r.F32(); }
 		groupes.push_back(std::move(g));
 	}
-	r.Sauter(12 * nos);
+	for(uint32 i = 0; i < 3 * nos && r.ok; i++) vecteursOs.push_back(r.F32());
 	k = r.U32(); r.Sauter(0x30 * k);
 	motFinal = r.U32();
 	lus = r.p;

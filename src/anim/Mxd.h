@@ -17,6 +17,7 @@
 // (docs/cat.md).
 #pragma once
 #include "../common.h"
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -34,7 +35,21 @@ struct CMxdModele {
 	std::string anims;                 // « ANIM\MAINPED »
 	float version = 0;
 	std::vector<CMxdPoint> points;
-	int32 nOs = 0;                     // les n × 12 octets de fin, non interprétés
+	int32 nOs = 0;                     // le compte des vecteurs de fin (+0xa4 du squelette en mémoire)
+	// Les vecteurs de fin, 12 octets par os : la table +0xa8 du squelette (FUN_006b5710, de 0x6b584f à 0x6b58e9 : lue si
+	// la version du fichier atteint 1,04, constante 0x941fbc, et si le compte n'est pas nul). La translation de repos
+	// de chaque os du modèle : (0 ; 0,0064 ; 0,8462) pour l'os 1 (Root) de MODELS\PEDS\PLAYER.
+	std::vector<float> vecteurs;       // trois réels par os
+	// Le dernier mot (+0xac, lu par FUN_006b2a90 si la version atteint 1,05, constante 0x941fb8) : sens non lu.
+	uint32 motFinal = 0;
+	// La norme du vecteur d'un os (FUN_0040df90, lue en entier, 52 octets : la racine de la somme des carrés, le vecteur
+	// dans ecx), ce que FUN_006b6e50 divise par le réel de référence du groupe d'une animation pour l'échelle du bassin.
+	// 0 hors de la table.
+	float NormeOs(int32 os) const {
+		if(os < 0 || 3 * os + 2 >= (int32)vecteurs.size()) return 0.0f;
+		const float *v = &vecteurs[3 * os];
+		return sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+	}
 	const CMxdPoint *Point(uint32 hachage) const {
 		for(const CMxdPoint &p : points) if(p.hachage == hachage) return &p;
 		return nil;
