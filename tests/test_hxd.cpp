@@ -121,6 +121,18 @@ main(void)
 	VERIF(lus == 20 && exacts == 20 && anims == 3913 && hachagesJustes == anims);
 	VERIF(deplacementVu);
 	{
+		// Le poids que l'évaluation sans pose (FUN_006bd150) prend à chaque masque : le premier, celui de l'os 0.
+		int32 un = 0, zero = 0, autre = 0, sans = 0; float w = 0.0f, w0 = -2.0f;
+		for(size_t m = 0; m < mainped.masques.size(); m++){
+			if(!mainped.PremierPoids((int32)m, &w)){ sans++; continue; }
+			if(w == 1.0f) un++; else if(w == 0.0f) zero++; else autre++;
+		}
+		mainped.PremierPoids(-1, &w0);
+		printf("premier poids des %zu masques de MAINPED.HXD : 1 pour %d, 0 pour %d, autre pour %d ; sans masque, celui du premier masque (%s) : %.2f\n",
+		       mainped.masques.size(), un, zero, autre, mainped.masques.empty() ? "" : mainped.masques[0].c_str(), w0);
+		VERIF(sans == 0 && un == 2 && zero == 42 && autre == 2 && w0 == 1.0f);
+	}
+	{
 		// Les drapeaux du déplacement dans MAINPED.HXD : l'os pris (0x40, 0x200) et le vecteur ajouté (0x100).
 		int32 n40 = 0, n200 = 0, n100 = 0, nb = 0;
 		for(const CHxdAnim &a : mainped.anims){ n40 += (a.drapeaux & 0x40) != 0; n200 += (a.drapeaux & 0x200) != 0; n100 += (a.drapeaux & 0x100) != 0; nb += (a.drapeaux & 4) != 0; }

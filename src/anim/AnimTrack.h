@@ -160,6 +160,18 @@ struct CAnimTrack {
 		p.drapeaux |= CPlaceAnim::PARTIE;
 		return true;
 	}
+	// FUN_006b48c0(lecteur, sortie, ?) (le rang 5, +0x14, des deux tables virtuelles 0x941f90 et 0x94d2f8 ; ret 0xc, lue
+	// en entier de 0x6b48c0 à 0x6b496d, 176 octets) : **le déplacement que la couche rend sans pose**. Sans animation
+	// à la place 0, faux. Si le lecteur porte le bit 2 de +0x98, les vecteurs +0x6c et +0x38 de [lecteur+0xc] sont mis
+	// au vecteur 0xbcc564 et rien n'est rendu (`gele`) ; sinon, si l'enregistrement de la place 0 porte le bit 2 de ses
+	// drapeaux (+0x18), la sortie reçoit le déplacement de la place 0 (FUN_006b4820, ici `image` : AgrDeplacementImage) ;
+	// sans ce bit la sortie n'est pas touchée. Vrai dans les trois cas. La place 1 n'est pas lue ici.
+	template<class F> bool Deplacement(bool gele, F image, CVector *d) const {
+		if(places[0].anim == nil) return false;
+		if(gele) return true;
+		if(places[0].anim->drapeaux & 4) *d = image(places[0]);
+		return true;
+	}
 	static int32 OsDuBassin(uint32 drapeauxEnregistrement) { return (drapeauxEnregistrement & 0x200) ? 2 : 1; }
 	static float EchelleDuBassin(float normeDuSquelette, float r) { return (r < 0.0f ? -r : r) < 0.001f ? 1.0f : normeDuSquelette / r; }
 	// Les évaluations de la couche, chacune passée par FUN_006b6e50 : le nombre de celles qui rendent vrai.
@@ -340,7 +352,7 @@ struct CLecteurAnim {
 	// gardées du rang est vidée** (FUN_006b5950) : une couche installée ne part plus de celles qu'elle a remplacées. Sous
 	// 1, avec une liste non vide, le bit 0x1000 de +0x98 est posé et la liste est parcourue (la suite, le mélange, n'est
 	// pas refaite). Supposé : l'évaluation est faite à chaque image pour chaque piéton (FUN_006c05b0 ne l'appelle que si
-	// une pose lui est donnée, que +0x98 porte le bit 0 et que l'entier 0x20c4b10 est nul, sinon 006bd150, non lue).
+	// une pose lui est donnée, que +0x98 porte le bit 0 et que l'entier 0x20c4b10 est nul, sinon FUN_006bd150, plus bas).
 	void PurgerInstallees(void) {
 		for(int32 r = 0; r < RANGS; r++)
 			if(posee[r] && !(1.0f > couches[r].poids)) Purger(r);
@@ -367,6 +379,33 @@ struct CLecteurAnim {
 			for(size_t i = gardees[r].size(); i-- > 0;) gardees[r][i].Evaluer();
 			couches[r].Evaluer();
 		}
+	}
+	// FUN_006bd150(lecteur, réel) (ret 8, lue en entier de 0x6bd150 à 0x6bd2fb, 430 octets) : **l'évaluation sans pose**,
+	// celle que FUN_006c05b0 appelle quand aucune pose n'est donnée : seul le déplacement du piéton est calculé. Pour
+	// chaque rang de 0 à 6 qui porte une couche : un vecteur nul reçoit le déplacement de la couche (le rang 5 de sa
+	// table, FUN_006b48c0 ; ici `deplacement`), puis **la liste des gardées du rang est vidée** (FUN_006b5950), quel
+	// que soit le poids de la couche. Le rang 0 remplace le déplacement accumulé. Un rang plus haut le mêle : son masque
+	// (+8), ou sans masque le premier du dictionnaire s'il en a (+0xc non nul, +8) ; sans aucun masque le rang est
+	// sauté ; w est **le premier poids du masque** (*[masque+0x20], l'os 0), ou −1 (0x9009ac) si le masque n'a pas de
+	// poids, et le déplacement devient accumulé × (1 − w) + celui du rang × w (FUN_00412850). **Le poids de la couche
+	// (+0xc) n'y entre pas.** À la fin, si le réel donné est strictement positif et que [lecteur+0xa4] n'est pas nul, le
+	// déplacement y est écrit ; le bit 0x2000 de +0x98 est posé ; rend 1. Non refait : le crochet de mise au point du
+	// début (les entiers 0xbb6458, 0x20c48fc et 0x20c48f8, l'appel de [0x8fc05c]).
+	// `premierPoids(masque, &w)` : faux si le masque (un rang du HXD, −1 sans) ne mène à aucun masque.
+	template<class F, class M> CVector EvaluerSansPose(F deplacement, M premierPoids) {
+		CVector acc;
+		for(int32 r = 0; r < RANGS; r++){
+			if(!posee[r]) continue;
+			CVector v;
+			deplacement(couches[r], &v);
+			Purger(r);
+			if(r == 0){ acc = v; continue; }
+			float w;
+			if(!premierPoids(couches[r].masque, &w)) continue;
+			float u = 1.0f - w;
+			acc = CVector(acc.x * u + v.x * w, acc.y * u + v.y * w, acc.z * u + v.z * w);
+		}
+		return acc;
 	}
 	struct Evaluee { const CAnimTrack *couche; float poids; bool gardee; };
 	int32 OrdreDuRang(int32 r, std::vector<Evaluee> &ordre) const {

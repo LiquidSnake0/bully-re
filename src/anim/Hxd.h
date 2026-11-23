@@ -54,6 +54,15 @@ public:
 	// moitié (0,5 : « UBO_Hd_Sp » sur la colonne). Le masque d'une piste Animation est son champ 28, un nom (« RightArm »,
 	// « UpperBody_ALL ») que FUN_00607340 cherche (docs/cat.md).
 	std::vector<std::vector<float>> poidsMasques;
+	// Le poids que l'évaluation sans pose (FUN_006bd150, de 0x6bd1f7 à 0x6bd21a) prend pour mêler le déplacement d'un
+	// rang : le masque donné, ou sans masque (−1) le premier du dictionnaire ; faux sans aucun masque. Le premier poids
+	// du masque (l'os 0), −1 (0x9009ac) si le masque n'en a pas.
+	bool PremierPoids(int32 masque, float *w) const {
+		if(masque < 0) masque = 0;
+		if((size_t)masque >= poidsMasques.size()) return false;
+		*w = poidsMasques[masque].empty() ? -1.0f : poidsMasques[masque][0];
+		return true;
+	}
 	// Le flottant qui suit le compte des poids dans le fichier : le +0x28 du masque en mémoire, le fondu de sortie d'une couche
 	// qui porte ce masque quand sa piste n'en donne pas (FUN_006bd320). 0,3 s pour 43 des 46 masques de MAINPED.HXD, 0 pour « FlashLightAimVert », 1 s pour
 	// « Conv » et « FlashLightAimHoriz ».

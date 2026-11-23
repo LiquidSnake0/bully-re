@@ -724,6 +724,52 @@ MisesAJour(void)
 	VERIF(l3.AvancerMotion(l3.couches[0], dt, p) && !l3.couches[0].synchro);
 }
 
+static void
+SansPose(void)
+{
+	// FUN_006b48c0 : le déplacement d'une couche sans pose.
+	CHxdAnim avec, sans; avec.drapeaux = 4; sans.drapeaux = 0x40;
+	CAnimTrack c;
+	CVector d(9.0f, 9.0f, 9.0f);
+	auto image = [](const CPlaceAnim &p){ return CVector(p.t, 2.0f * p.t, 0.0f); };
+	VERIF(!c.Deplacement(false, image, &d) && d.x == 9.0f);              // pas d'animation : faux
+	c.places[0].anim = &sans; c.places[0].t = 0.5f;
+	VERIF(c.Deplacement(false, image, &d) && d.x == 9.0f);               // sans le bit 2 de l'enregistrement : vrai, rien d'écrit
+	c.places[0].anim = &avec;
+	VERIF(c.Deplacement(true, image, &d) && d.x == 9.0f);                // le lecteur gelé (bit 2 de +0x98) : vrai, rien d'écrit
+	VERIF(c.Deplacement(false, image, &d) && Pres(d.x, 0.5f) && Pres(d.y, 1.0f) && d.z == 0.0f);
+	// FUN_006bd150 : le rang 0 remplace, un rang plus haut mêle par le premier poids de son masque.
+	CHxdFile h;
+	h.poidsMasques = { {0.25f, 1.0f}, {1.0f, 0.0f}, {} };
+	float w = 7.0f;
+	VERIF(h.PremierPoids(-1, &w) && w == 0.25f);     // sans masque : le premier du dictionnaire
+	VERIF(h.PremierPoids(1, &w) && w == 1.0f);
+	VERIF(h.PremierPoids(2, &w) && w == -1.0f);      // un masque sans poids : −1
+	VERIF(!h.PremierPoids(3, &w));
+	CHxdFile vide;
+	VERIF(!vide.PremierPoids(-1, &w));
+	CLecteurAnim l;
+	auto dep = [](const CAnimTrack &t, CVector *v){ *v = CVector(t.poids, 0.0f, 0.0f); };   // le « déplacement » d'essai : le champ poids
+	auto pp = [&h](int32 m, float *x){ return h.PremierPoids(m, x); };
+	CVector r = l.EvaluerSansPose(dep, pp);
+	VERIF(r.x == 0.0f);                                                   // aucun rang
+	l.posee[0] = true; l.couches[0].poids = 2.0f; l.gardees[0].push_back(CAnimTrack());
+	r = l.EvaluerSansPose(dep, pp);
+	VERIF(r.x == 2.0f && l.gardees[0].empty());                           // le rang 0 seul ; ses gardées sont vidées
+	l.posee[3] = true; l.couches[3].poids = 6.0f; l.couches[3].masque = -1; l.gardees[3].push_back(CAnimTrack());
+	r = l.EvaluerSansPose(dep, pp);
+	VERIF(Pres(r.x, 2.0f * 0.75f + 6.0f * 0.25f) && l.gardees[3].empty()); // sans masque : le premier du dictionnaire, 0,25
+	l.couches[3].masque = 1;
+	VERIF(Pres(l.EvaluerSansPose(dep, pp).x, 6.0f));                      // poids 1 : le rang remplace
+	l.couches[3].masque = 2;
+	VERIF(Pres(l.EvaluerSansPose(dep, pp).x, 2.0f * 2.0f - 6.0f));        // masque sans poids : −1
+	auto aucun = [&vide](int32 m, float *x){ return vide.PremierPoids(m, x); };
+	VERIF(Pres(l.EvaluerSansPose(dep, aucun).x, 2.0f));                   // aucun masque : le rang est sauté
+	l.posee[0] = false;
+	VERIF(Pres(l.EvaluerSansPose(dep, pp).x, -6.0f));                     // sans rang 0 : mêlé à zéro
+	printf("évaluation sans pose : le rang 0 à 2 et le rang 3 à 6 donnent %.2f par le premier masque (0,25), 6 au poids 1, -2 au masque sans poids\n", 2.0f * 0.75f + 6.0f * 0.25f);
+}
+
 int
 main(void)
 {
@@ -737,6 +783,7 @@ main(void)
 	Cadences();
 	Phases();
 	Trajets();
+	SansPose();
 	Directions();
 	Meneuses();
 	MisesAJour();
