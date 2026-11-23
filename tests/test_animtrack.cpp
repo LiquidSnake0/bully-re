@@ -517,6 +517,37 @@ Trajets(void)
 	VERIF(AgrTrajetRacine(a, 0).y == 0.0f);
 	a.positions[1] = { p0, p2 }; a.decodee = false;
 	VERIF(AgrTrajetRacine(a, 0).y == 0.0f);
+	{
+		// Le déplacement d'une place (FUN_006b45d0). L'os : 1, 2 avec le drapeau 0x200, le dernier avec le drapeau 0x40.
+		VERIF(AgrOsDuDeplacement(0, 36) == 1 && AgrOsDuDeplacement(0x200, 36) == 2 && AgrOsDuDeplacement(0x40, 36) == 35 && AgrOsDuDeplacement(0x240, 36) == 35);
+		CVector ici(1.0f, 2.0f, 0.9f), av(0.5f, 1.0f, 0.8f), der(4.0f, 8.0f, 1.0f), pre(0.25f, 0.5f, 0.7f);
+		// Sans tour de boucle : la différence ; la racine ne rend pas de hauteur.
+		CVector d = AgrDeplacementPlace(ici, av, false, der, pre, true);
+		VERIF(Pres(d.x, 0.5f) && Pres(d.y, 1.0f) && d.z == 0.0f);
+		d = AgrDeplacementPlace(ici, av, false, der, pre, false);
+		VERIF(Pres(d.x, 0.5f) && Pres(d.y, 1.0f) && Pres(d.z, 0.1f));
+		// Au tour de boucle, la racine : (dernière − avant) + ici, la première image n'est pas retirée.
+		d = AgrDeplacementPlace(ici, av, true, der, pre, true);
+		VERIF(Pres(d.x, 4.5f) && Pres(d.y, 9.0f) && d.z == 0.0f);
+		// Un autre os (le drapeau 0x40) : la première image est retirée de la dernière.
+		d = AgrDeplacementPlace(ici, av, true, der, pre, false);
+		VERIF(Pres(d.x, 4.25f) && Pres(d.y, 8.5f) && Pres(d.z, 0.4f));
+		// Sur une animation : l'os 1 va de y = 0,2 à 3,4 en 0,8 s (p0, p1, p2 plus haut).
+		AgrAnim b; b.decodee = true; b.duree = 0.8f; b.numOs = 36;
+		b.positions[1] = { p0, p1, p2 };
+		b.positions[35] = { AgrPosition{0.0f, CVector(0.0f, 1.0f, 0.0f)}, AgrPosition{0.8f, CVector(0.0f, 5.0f, 0.5f)} };
+		CVector e;
+		VERIF(AgrDeplacementImage(b, 0, 0.4f, 0.0f, true, &e) && Pres(e.x, 0.0f) && Pres(e.y, 1.3f) && e.z == 0.0f);
+		// Le tour de boucle, de 0,7 s à 0,1 s : (3,4 − 2,925) + 0,525 ; sans boucle, la différence 0,525 − 2,925.
+		VERIF(AgrDeplacementImage(b, 0, 0.1f, 0.7f, true, &e) && Pres(e.y, 1.0f));
+		VERIF(AgrDeplacementImage(b, 0, 0.1f, 0.7f, false, &e) && Pres(e.y, -2.4f));
+		// Le drapeau 0x40 : l'os 35, de y = 1 à 5 ; à mi-course 2 m et 0,25 m de haut ; au tour (5 − 1 − 4,5) + 1,5 = 1.
+		VERIF(AgrDeplacementImage(b, 0x40, 0.4f, 0.0f, true, &e) && Pres(e.y, 2.0f) && Pres(e.z, 0.25f));
+		VERIF(AgrDeplacementImage(b, 0x40, 0.1f, 0.7f, true, &e) && Pres(e.y, 1.0f) && Pres(e.z, 0.125f));
+		// Le drapeau 0x200 : l'os 2, sans position ici.
+		VERIF(!AgrDeplacementImage(b, 0x200, 0.4f, 0.0f, true, &e) && e.y == 0.0f);
+		printf("déplacement d'une place : 1,30 m de 0 à 0,4 s ; au tour de boucle, de 0,7 à 0,1 s, %.2f m pour la racine comme pour l'os du drapeau 0x40\n", e.y);
+	}
 	printf("trajet : l'os 1 avance de %.2f m en %.1f s, vitesse naturelle %.2f m/s\n", t.y, 0.8f, CMotionTrack::VitesseNaturelle(0.8f, t.x, t.y));
 }
 

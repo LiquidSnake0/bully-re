@@ -29,7 +29,7 @@ g++ $FLAGS outils/scene.cpp src/anim/Agr.cpp src/render/SoftRaster.cpp src/gameb
 # Marche dans des volumes de collision construits à la main, et caméra en perspective : aucun fichier du jeu.
 g++ $FLAGS tests/test_marche.cpp src/collision/Marche.cpp -o build/tests/test_marche
 # Une couche du lecteur d'animations et ses places, sur des enregistrements construits à la main : aucun fichier du jeu.
-g++ $FLAGS tests/test_animtrack.cpp -o build/tests/test_animtrack
+g++ $FLAGS tests/test_animtrack.cpp src/anim/Agr.cpp -o build/tests/test_animtrack
 g++ $FLAGS tests/test_camera.cpp src/render/Camera.cpp src/render/SoftRaster.cpp -o build/tests/test_camera
 g++ $FLAGS tests/test_scriptpeds.cpp src/peds/ScriptPedPool.cpp -o build/tests/test_scriptpeds
 # L'inventaire des armes : aucun fichier du jeu.

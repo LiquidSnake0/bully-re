@@ -148,7 +148,7 @@ public:
 	// fondu (68, +0x44) : négatif, 0,5 s (0xb0b13c) ; nul, le poids 1 d'emblée ; sinon le poids part de 0 et monte en ce
 	// temps. Le rang où les pistes LocomotionAnimationNew installent la couche est le champ 64 (+0x40). L'octet +0x7c de
 	// la piste est levé si ses quatre réels 24 à 36 le permettent : (36) > 0, (32) ≥ 0, (24) ≥ 0 et (28) ≥ 0.
-	// **La mise à jour, FUN_00613480** (méthode de la piste, ret 4, 8 071 octets ; lue à l'assembleur de 0x613480 à
+	// **La mise à jour, 00613480** (méthode de la piste, ret 4, 8 071 octets ; lue à l'assembleur de son début à
 	// 0x613a01 et de 0x614ec3 à 0x615404 : l'entrée, la tête de la branche de l'octet +0x4c, toute la branche commune
 	// et les deux sorties) :
 	// - si l'octet +0x3a (58) est levé et que l'octet +0x4c (76) ne l'est pas, l'octet +0xa0 tombe et elle rend vrai
@@ -157,14 +157,14 @@ public:
 	//   cap étant ce même +0, ou le cap voulu +0xc si l'octet +0x39 (57) est levé ; avec l'octet +0x38 (56) et une cible
 	//   (FUN_004d5980 sur +0x1c8 du piéton), le cap est l'écart du piéton à la cible (FUN_00414a20) et x vaut 0,3
 	//   (0x911e30) ; sans cible, pour le piéton dont +0x1310 vaut 13, si FUN_007386f0(10, 0) rend 0 et que l'entier
-	//   0xc3ccf8 vaut 1, le cap est le vecteur que rend FUN_0041a920 sur 0xc3cc68 et x vaut 0,3 aussi ;
+	//   0xc3ccf8 vaut 1, le cap est le vecteur que rend 0041a920 sur 0xc3cc68 et x vaut 0,3 aussi ;
 	// - la direction et le cap sont mis à plat et normés (FUN_00414cc0) ;
 	// - **l'octet +0x4c (76) à 1** prend une autre branche (de 0x613623 à 0x614f71, lue jusqu'à 0x613a01 seulement) :
 	//   elle lit les axes de la manette (FUN_007386f0) et donne au piéton sa propre vitesse (+0x124) projetée sur son
 	//   avant (FUN_00415350), divisée par le réel +0x74 de la piste (0x6139be) ; non refaite ;
 	// - sinon, si l'octet +0x28 (40) est levé (de 0x614f74 à 0x6152ce), le piéton tourne vers le cap : l'angle que
-	//   rend FUN_00608220 (680 octets, non lue) avec les réels +0x2c et +0x30 (44, 48) et l'adresse +0x88 de la piste,
-	//   ramené par FUN_00432d90, est posé sur le piéton (+0x10, FUN_00412ad0 sur sa matrice, FUN_00473370) ; avec
+	//   rend 00608220 (680 octets, non lue) avec les réels +0x2c et +0x30 (44, 48) et l'adresse +0x88 de la piste,
+	//   ramené par 00432d90, est posé sur le piéton (+0x10, FUN_00412ad0 sur sa matrice, 00473370) ; avec
 	//   l'octet +0x3a, l'avant du piéton est retourné quand FUN_00413c10 de son produit avec le cap ne dépasse pas le
 	//   réel +0x3c (60), et π (le double 0x900160) est alors ajouté à l'angle ; non refait ;
 	// - **la vitesse donnée au piéton** (+0x1c de M, celle que la cadence de la couche divise par la vitesse naturelle
