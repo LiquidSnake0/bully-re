@@ -50,6 +50,23 @@ PoserDurees(CActionBank &b, const CActionNode &n, float d)
 	for(const CActionNode &e : n.enfants) PoserDurees(b, e, d);
 }
 
+// Le recensement des pistes Locomotion d'un arbre : les octets que la mise à jour FUN_00613480 lit.
+static void
+RecenserLocomotion(const CActionBank &b, const CActionNode &n, int *c)
+{
+	if(const CActionTreeFile *f = b.Fichier(n))
+		for(int32 dp : n.pistes){
+			CActionTrack p;
+			if(!f->Piste(dp, p) || p.type != ActionHash("Locomotion")) continue;
+			auto O = [&p](uint16 q){ const CActionAttribut *a = p.Champ(q); return a != nil && a->valeur[0] != 0; };
+			auto F = [&p](uint16 q){ float v = 0.0f; uint32 w = p.Mot(q); memcpy(&v, &w, 4); return v; };
+			c[0]++;
+			c[1] += O(76); c[2] += O(40); c[3] += O(56); c[4] += O(57); c[5] += O(58); c[7] += O(58) && !O(76);
+			c[6] += F(36) > 0.0f && F(32) >= 0.0f && F(24) >= 0.0f && F(28) >= 0.0f;
+		}
+	for(const CActionNode &e : n.enfants) RecenserLocomotion(b, e, c);
+}
+
 int
 main(void)
 {
@@ -787,6 +804,14 @@ main(void)
 			}
 		}
 		printf("  %d arbres globaux chargés, %zu banques sous /Global, /Global/HitTree/Standing/BlockHits trouvé\n", n, g.Global()->enfants.size());
+		{
+			// Les pistes Locomotion des arbres globaux : ce que leur mise à jour (FUN_00613480) y lit.
+			int c[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+			RecenserLocomotion(g, g.racine, c);
+			printf("  pistes Locomotion des arbres globaux : %d ; octet 76 (l'autre branche) %d, octet 40 (tourne) %d, octet 56 (vers la cible) %d, octet 57 (cap voulu) %d, octet 58 %d, dont sans l'octet 76 (muettes) %d ; cadencées %d\n",
+			       c[0], c[1], c[2], c[3], c[4], c[5], c[7], c[6]);
+			VERIF(c[0] == 343 && c[1] == 35 && c[2] == 322 && c[3] == 44 && c[4] == 99 && c[5] == 33 && c[7] == 2 && c[6] == 198);
+		}
 		// Les références montées (FUN_005f6bb0 → FUN_005f6960) : Locomotion.act, référencé par B_Striker_A (un des arbres
 		// globaux) et par Fight_Tutorial, n'est lu qu'une fois, sous /Global/Locomotion.act ; chaque référence le prend pour
 		// cible (son nom, ses enfants) et son parent dépend de la clé (FUN_005f6800, FUN_005f6290).

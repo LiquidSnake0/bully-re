@@ -7194,7 +7194,9 @@ AvancerLecteurs(float dt)
 			for(const CActionController::PisteAnimation *m : c.Couches(tn)) vivantes[CActionController::Rang(*m)] = m;
 			const CActionController::PisteLocomotion &loc = c.locomotion;
 			bool locVit = loc.ok && loc.entree <= tn && (loc.vie < 0.0f || tn < loc.entree + loc.vie);
-			if(locVit) o.pieton.vitesse = loc.Vitesse(o.pieton.intentionVitesse);
+			// FUN_00613480 : la piste muette (l'octet 58 sans l'octet 76) ne donne rien au piéton ; l'autre branche
+			// (l'octet 76) n'est pas refaite, la vitesse y reste celle de la branche commune (supposé).
+			if(locVit && !loc.Muette()) o.pieton.vitesse = loc.Vitesse(o.pieton.intentionVitesse);
 			for(int32 r = 0; r < CLecteurAnim::RANGS; r++){
 				const CActionController::PisteAnimation *m = vivantes[r];
 				CLecteurOutil::Cle &k = o.cles[r];
@@ -7209,9 +7211,12 @@ AvancerLecteurs(float dt)
 						o.entrees.clear();
 						o.ditChoix = 0; o.ditPas = 0; o.ditSons = 0; o.pasComptes[0] = o.pasComptes[1] = 0; o.choixDit = o.hautDit = -2;
 						printf("%6.2f s  le piéton %d prend une couche de locomotion (le nœud %s : piste Locomotion, vitesses %.2f et %.2f m/s entre les "
-						       "intentions %.2f et %.2f, %s, rang %d, fondu %.2f s) ; %d couche(s) gardée(s) au rang 0\n",
+						       "intentions %.2f et %.2f, %s, rang %d, fondu %.2f s ; %s) ; %d couche(s) gardée(s) au rang 0\n",
 						       maintenant / 1000.0, kv.first, arbres.CheminDe(c.joue).c_str(), loc.basse, loc.haute, loc.seuilBas, loc.seuilHaut,
-						       loc.Cadencee() ? "cadencée" : "sans cadence", loc.rang, f, (int)o.l.gardees[0].size());
+						       loc.Cadencee() ? "cadencée" : "sans cadence", loc.rang, f,
+						       loc.Muette() ? "sa mise à jour 00613480 ne donne rien au piéton (l'octet 58 sans l'octet 76)" :
+						       loc.autre ? "sa mise à jour 00613480 prend la branche de l'octet 76, non refaite : vitesse supposée" :
+						       "sa mise à jour 00613480 prend la branche commune : vitesse lue à l'assembleur", (int)o.l.gardees[0].size());
 					}
 					CAnimTrack &ct = o.l.couches[0];
 					for(const CActionController::PisteAnimation &pa : c.animations){

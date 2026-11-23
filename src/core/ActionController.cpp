@@ -292,6 +292,9 @@ CActionController::Pistes(const CActionBank &b, const CActionNode &n, float entr
 				locomotion.seuilBas = Reel(p, 32, 0.0f); locomotion.seuilHaut = Reel(p, 36, 0.0f);
 				locomotion.rang = p.Champ(64) ? (int32)p.Mot(64) : 0;
 				locomotion.fondu = Reel(p, 68, 0.0f);
+				auto Octet = [&p](uint16 q){ const CActionAttribut *at = p.Champ(q); return at != nil && at->valeur[0] != 0; };
+				locomotion.tourne = Octet(40); locomotion.cible = Octet(56); locomotion.capVoulu = Octet(57);
+				locomotion.retourne = Octet(58); locomotion.autre = Octet(76);
 			}
 		}else if(p.type == kExecute){
 			const CActionAttribut *at = p.Champ(32);
