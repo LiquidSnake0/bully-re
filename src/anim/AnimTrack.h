@@ -366,8 +366,8 @@ struct CLecteurAnim {
 	// retrouve son ordre ; le bit 0x1000 retiré. **La couche du rang est évaluée ensuite** et mêlée de même avec son
 	// poids et son masque (de 0x6beae1 à 0x6beb1e). La toute première évaluation de l'image n'est pas mêlée : la pose de
 	// travail est alors la pose accumulée elle-même (les deux pointeurs égaux en 0x6be91a et 0x6beb05), et la pose de
-	// travail devient ensuite celle de +0x148. Non refait : les trois réels du déplacement que chaque évaluation rend,
-	// mêlés à côté (00412850), et la fin (de 0x6beb2e à 0x6bee33, vue au décompilé seulement).
+	// travail devient ensuite celle de +0x148. Les trois réels du déplacement que chaque évaluation rend,
+	// mêlés à côté, et la fin : DeplacementDesRangs, plus bas.
 	// L'évaluation entière pour ce qui touche les couches : la purge des rangs installés, puis chaque gardée et la
 	// couche de chaque rang évaluées (FUN_006b9870 ou FUN_006b9890, donc FUN_006b6e50 par place) : **chaque place
 	// évaluée retrouve son bit 2**, celui qu'un tour de boucle lui retire (FUN_006b2560) et que le remplacement d'une
@@ -406,6 +406,52 @@ struct CLecteurAnim {
 			acc = CVector(acc.x * u + v.x * w, acc.y * u + v.y * w, acc.z * u + v.z * w);
 		}
 		return acc;
+	}
+	// **Le déplacement dans l'évaluation de la pose** (006be730, les réels suivis à l'assembleur de 0x6be7cc à 0x6bed02,
+	// puis la fin de 0x6bed08 à 0x6bee33). Pour chaque rang qui porte une couche, de poids p (+0xc) :
+	// - V, le déplacement que rend la couche (le rang 4, +0x10, de sa table), G et une somme S à zéro, un drapeau baissé ;
+	// - si 1 > p et que la liste des gardées n'est pas vide : chaque gardée dont la méthode +0x18 rend vrai (`compte`)
+	//   lève le drapeau et ajoute son poids à S (de 0x6be860 à 0x6be87d) ; puis, de la plus ancienne à la plus récente,
+	//   chaque gardée de poids g rend son déplacement D. Sans masque : G = G × (1 − g) + D × g (0x6bea14). Avec un
+	//   masque : m est le poids de l'os du bassin dans ce masque (l'os de FUN_006b1910, lue en entier, 22 octets : 1, ou
+	//   2 avec le drapeau 0x200 de l'enregistrement de la place 0 ; −1, 0x9009ac, si le masque n'a pas ce poids), et
+	//   G = G × (1 − p) + D × (m × g) : **le premier facteur est 1 − p, le poids de la couche du rang** (fld [esp+0x38]
+	//   en 0x6be9c1, trois push après le poids rangé en 0x6be7f2), pas 1 − m × g ; lu tel quel ;
+	// - si |S| est sous 0,001 (0x900c04) et que le drapeau est baissé : V = V × p ; sinon V = G × (1 − p) + V × p
+	//   (de 0x6beb2e à 0x6bec05) ;
+	// - le déplacement accumulé A : sans masque à la couche (+8, sans le masque par défaut de FUN_006bd150), A = V, pour
+	//   tout rang ; avec un masque, k = m × p et A = V × k + A × (1 − k) (de 0x6bec09 à 0x6bece8).
+	// La fin : si l'entier 0xbb645c n'est pas nul et que le réel donné est strictement positif, A est écrit en
+	// [lecteur+0xa4] s'il n'est pas nul, et le quaternion accumulé (parti de l'identité) en [lecteur+0xa8] s'il n'est
+	// pas nul ; si un vecteur est donné (le troisième argument), il est ajouté à la translation de l'os 1 de la pose
+	// accumulée (+0x18 de son élément) ; le bit 2 de +0x98 met les vecteurs +0x6c et +0x38 de [lecteur+0xc] au vecteur
+	// 0xbcc564 ; 006b4350 (non lue) est appelée sur [lecteur+0x14] et le bit 0x80 de +0x98 est posé ; rend 1.
+	// Supposé : ce qu'est la méthode +0x18 d'une couche (non lue).
+	struct DeplacementGardee { CVector d; float poids = 0.0f; bool masque = false; float poidsOs = 0.0f; bool compte = false; };
+	struct DeplacementRang {
+		bool posee = false; CVector d; float poids = 0.0f; bool masque = false; float poidsOs = 0.0f;
+		std::vector<DeplacementGardee> gardees;        // de la plus ancienne à la plus récente
+	};
+	static CVector DeplacementDesRangs(const DeplacementRang *rangs) {
+		auto Mel = [](const CVector &a, float u, const CVector &b, float w){ return CVector(a.x * u + b.x * w, a.y * u + b.y * w, a.z * u + b.z * w); };
+		CVector A;
+		for(int32 r = 0; r < RANGS; r++){
+			const DeplacementRang &x = rangs[r];
+			if(!x.posee) continue;
+			CVector V = x.d, G;
+			float p = x.poids, S = 0.0f;
+			bool drapeau = false;
+			if(1.0f > p && !x.gardees.empty()){
+				for(const DeplacementGardee &g : x.gardees) if(g.compte){ drapeau = true; S += g.poids; }
+				for(const DeplacementGardee &g : x.gardees)
+					G = g.masque ? Mel(G, 1.0f - p, g.d, g.poidsOs * g.poids) : Mel(G, 1.0f - g.poids, g.d, g.poids);
+			}
+			if((S < 0.0f ? -S : S) < 0.001f && !drapeau) V = CVector(V.x * p, V.y * p, V.z * p);
+			else V = Mel(G, 1.0f - p, V, p);
+			if(x.masque){ float k = x.poidsOs * p; A = Mel(V, k, A, 1.0f - k); }
+			else A = V;
+		}
+		return A;
 	}
 	struct Evaluee { const CAnimTrack *couche; float poids; bool gardee; };
 	int32 OrdreDuRang(int32 r, std::vector<Evaluee> &ordre) const {

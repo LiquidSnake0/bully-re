@@ -770,6 +770,52 @@ SansPose(void)
 	printf("évaluation sans pose : le rang 0 à 2 et le rang 3 à 6 donnent %.2f par le premier masque (0,25), 6 au poids 1, -2 au masque sans poids\n", 2.0f * 0.75f + 6.0f * 0.25f);
 }
 
+static void
+DeplacementDeLaPose(void)
+{
+	// Le déplacement dans 006be730 (CLecteurAnim::DeplacementDesRangs).
+	typedef CLecteurAnim::DeplacementRang Rang;
+	typedef CLecteurAnim::DeplacementGardee Gardee;
+	Rang r[CLecteurAnim::RANGS];
+	VERIF(CLecteurAnim::DeplacementDesRangs(r).x == 0.0f);
+	// Une couche installée au rang 0, sans masque : son déplacement, fois son poids 1.
+	r[0].posee = true; r[0].d = CVector(0.0f, 4.0f, 0.0f); r[0].poids = 1.0f;
+	VERIF(Pres(CLecteurAnim::DeplacementDesRangs(r).y, 4.0f));
+	// En fondu d'entrée sans gardée : le déplacement est multiplié par le poids.
+	r[0].poids = 0.25f;
+	VERIF(Pres(CLecteurAnim::DeplacementDesRangs(r).y, 1.0f));
+	// Une gardée qui compte, sans masque, de poids 1 : G = D, puis V = G × 0,75 + V × 0,25.
+	Gardee g; g.d = CVector(0.0f, 2.0f, 0.0f); g.poids = 1.0f; g.compte = true;
+	r[0].gardees.push_back(g);
+	VERIF(Pres(CLecteurAnim::DeplacementDesRangs(r).y, 2.0f * 0.75f + 4.0f * 0.25f));
+	// La même gardée qui ne compte pas : S nul, drapeau baissé, elle est perdue et V = V × p.
+	r[0].gardees[0].compte = false;
+	VERIF(Pres(CLecteurAnim::DeplacementDesRangs(r).y, 1.0f));
+	// Deux gardées, la plus ancienne d'abord : G = (D0 × 1) × (1 − 0,5) + D1 × 0,5.
+	r[0].gardees[0].compte = true;
+	Gardee h; h.d = CVector(0.0f, 6.0f, 0.0f); h.poids = 0.5f; h.compte = true;
+	r[0].gardees.push_back(h);
+	VERIF(Pres(CLecteurAnim::DeplacementDesRangs(r).y, (2.0f * 0.5f + 6.0f * 0.5f) * 0.75f + 4.0f * 0.25f));
+	// Une gardée à masque : G = G × (1 − p) + D × (m × g), avec le poids p de la couche du rang.
+	r[0].gardees.pop_back();
+	r[0].gardees[0].masque = true; r[0].gardees[0].poidsOs = 0.5f;
+	VERIF(Pres(CLecteurAnim::DeplacementDesRangs(r).y, (0.0f * 0.75f + 2.0f * 0.5f) * 0.75f + 4.0f * 0.25f));
+	// Une couche installée (poids 1) ne lit pas ses gardées.
+	r[0].poids = 1.0f;
+	VERIF(Pres(CLecteurAnim::DeplacementDesRangs(r).y, 4.0f));
+	// Un rang plus haut sans masque remplace tout ; avec un masque, il pèse le poids de l'os du bassin fois son poids.
+	r[2].posee = true; r[2].d = CVector(1.0f, 0.0f, 0.0f); r[2].poids = 1.0f;
+	CVector a = CLecteurAnim::DeplacementDesRangs(r);
+	VERIF(Pres(a.x, 1.0f) && Pres(a.y, 0.0f));
+	r[2].masque = true; r[2].poidsOs = 0.0f;
+	a = CLecteurAnim::DeplacementDesRangs(r);
+	VERIF(Pres(a.x, 0.0f) && Pres(a.y, 4.0f));                 // un masque du haut du corps (bassin à 0) : la marche reste
+	r[2].poidsOs = 1.0f; r[2].poids = 0.5f;
+	a = CLecteurAnim::DeplacementDesRangs(r);
+	VERIF(Pres(a.x, 0.5f * 0.5f) && Pres(a.y, 4.0f * 0.5f));   // V = (1 ; 0) × 0,5 puis k = 0,5
+	printf("déplacement de la pose : une couche à 4 m et sa gardée à 2 m au poids 0,25 donnent %.2f m ; un rang masqué sans le bassin laisse 4,00 m\n", 2.0f * 0.75f + 4.0f * 0.25f);
+}
+
 int
 main(void)
 {
@@ -784,6 +830,7 @@ main(void)
 	Phases();
 	Trajets();
 	SansPose();
+	DeplacementDeLaPose();
 	Directions();
 	Meneuses();
 	MisesAJour();
