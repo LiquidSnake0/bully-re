@@ -54,6 +54,7 @@
 #include "../src/gamebryo/NifFile.h"
 #include "../src/gamebryo/NifSkin.h"
 #include "../src/anim/Hxd.h"
+#include "../src/anim/Mxd.h"
 #include "../src/anim/Agr.h"
 #include "../src/anim/AgrHxd.h"
 #include "../src/anim/AnimGroups.h"
@@ -7085,6 +7086,8 @@ LireDuMonde(const std::string &nom)
 // FUN_006b1c00) : l'outil prend le premier dont un script a chargé le groupe (groupesAnim, LoadAnimationGroup) ; à défaut le
 // premier du fichier, comme avant (`charge` faux ; supposé : son groupe est chargé par ce que l'outil ne suit pas, les groupes
 // permanents et ceux des modèles, sinon la piste ne lancerait rien).
+// Models/Peds/MXDs.MGR, gardé : les vecteurs des os de chaque modèle (+0xa8 du squelette), pour l'échelle du bassin.
+static CMxdFile mxdPietons;
 struct CAnimOutil { const AgrAnim *anim = nil; const CHxdAnim *enr = nil; std::string groupe; int32 rang = -1; bool charge = false; int32 memes = 0; };
 static CAnimOutil
 AnimationParHache(uint32 hache)
@@ -7312,7 +7315,7 @@ AvancerLecteurs(float dt)
 // boucle, l'instant est borné à son champ 44 (la fin), comme l'outil le faisait (supposé : FUN_0060ae00 dit la piste finie à
 // cet instant, ce que la place fait ensuite n'est pas lu).
 struct CPoseFond;
-static void SecondePlace(const CAnimTrack &c, CPoseFond *f);
+static void SecondePlace(const CAnimTrack &c, CPoseFond *f, const CSqueletteOutil *s = nil);
 static void
 PoseDeLaPlace(const CAnimTrack &c, const CLecteurOutil::Cle *k, CPoseJouee *out)
 {
@@ -7350,18 +7353,46 @@ PoseDeLaPlace(const CAnimTrack &c, const CLecteurOutil::Cle *k, CPoseJouee *out)
 struct CCoucheOs { const AgrAnim *a; float t; const std::vector<float> *poids; float facteur = 1.0f; };
 // Une évaluation du rang 0 : une animation à son instant et le poids avec lequel elle est mêlée à ce qui précède.
 // `a2` : la place 1 d'une couche de locomotion, mêlée à la place 0 avec le poids `melange` avant tout (FUN_006b9890).
-struct CPoseFond { const AgrAnim *a; float t; float poids; const AgrAnim *a2 = nil; float t2 = 0.0f; float melange = 0.0f; };
+// `k` et `k2` : l'échelle du bassin de chaque place (EchelleDuBassinOutil).
+struct CPoseFond { const AgrAnim *a; float t; float poids; const AgrAnim *a2 = nil; float t2 = 0.0f; float melange = 0.0f; float k = 1.0f, k2 = 1.0f; };
+// L'échelle du bassin d'une place (FUN_006b6e50, de 0x6b703d à 0x6b70cb) : la norme du vecteur de l'os 1 du modèle du piéton
+// (MXDs.MGR, +0xa8 du squelette) divisée par le réel de référence du groupe de l'animation (MAINPED.HXD, +0x28 du descripteur),
+// 1 quand ce réel est sous 0,001. Le jeu en multiplie le troisième réel de la translation de l'os dans la pose décodée (+0x20
+// de l'os ; l'ordre x, y, z des clés est supposé : la hauteur). Les animations au drapeau 0x200 (l'os 2 au lieu de l'os 1) ne
+// sont pas mises à l'échelle par l'outil, qui ne déplace que l'os 1. Supposé : le squelette de 006b6e50 est celui du modèle
+// du piéton (son entrée de MXDs.MGR, cherchée par le nom du modèle).
+static float
+EchelleDuBassinOutil(const CSqueletteOutil &s, const CHxdAnim *enr, float *norme = nil, const CHxdGroupe **groupe = nil)
+{
+	if(enr == nil || hxdPietons.vecteursOs.empty()) return 1.0f;
+	const CHxdGroupe *g = hxdPietons.Groupe(enr->groupe);
+	if(g == nil) return 1.0f;
+	if(CAnimTrack::OsDuBassin(enr->drapeaux) != 1){
+		static std::set<const CHxdAnim *> dits;
+		if(g->reference != 0.0f && dits.insert(enr).second)
+			printf("%6.2f s  le bassin de %s n'est pas mis à l'échelle : son enregistrement porte le drapeau 0x200 (l'os 2), que l'outil ne déplace pas\n", maintenant / 1000.0, enr->nom.c_str());
+		return 1.0f;
+	}
+	const CMxdModele *m = mxdPietons.Chercher(s.nom.c_str());
+	if(m == nil || m->vecteurs.empty()) return 1.0f;
+	if(norme) *norme = m->NormeOs(1);
+	if(groupe) *groupe = g;
+	return CAnimTrack::EchelleDuBassin(m->NormeOs(1), g->reference);
+}
 // La seconde évaluation d'une couche (CAnimTrack::Evaluations) : la place 1 d'une couche de locomotion, à son instant et à
 // son poids (+0x40), quand elle porte une animation décodée.
 static void
-SecondePlace(const CAnimTrack &c, CPoseFond *f)
+SecondePlace(const CAnimTrack &c, CPoseFond *f, const CSqueletteOutil *s)
 {
 	CAnimTrack::Evaluation ev[2];
 	if(c.Evaluations(ev) < 2 || c.places[ev[1].place].anim == nil) return;
 	auto ia = animsDesPlaces.find(c.places[ev[1].place].anim);
 	if(ia == animsDesPlaces.end() || !ia->second.anim) return;
 	f->a2 = ia->second.anim; f->t2 = c.places[ev[1].place].t; f->melange = ev[1].poids;
+	if(s) f->k2 = EchelleDuBassinOutil(*s, ia->second.enr);
 }
+
+static float HauteurDeLaCle(const AgrAnim &x, float t){ CVector r(0, 0, 0); AgrPositionOs(x, 1, t, &r); return r.z; }
 
 static bool
 PoserOs(const CSqueletteOutil &s, const std::vector<CPoseFond> &fond, CVector out[CSqueletteOutil::OS], const std::vector<CCoucheOs> *couches = nil)
@@ -7410,21 +7441,21 @@ PoserOs(const CSqueletteOutil &s, const std::vector<CPoseFond> &fond, CVector ou
 	}
 	std::vector<CVector> decalage(f.numBlocks, CVector(0, 0, 0));
 	int32 bb = s.n > 1 ? s.bloc[1] : -1;
-	auto Bassin = [&](const AgrAnim &x, float tx, CVector *d) -> bool {
+	auto Bassin = [&](const AgrAnim &x, float tx, float k, CVector *d) -> bool {
 		CVector rt, f0(0, 0, 0), ft(0, 0, 0);
 		if(!AgrPositionOs(x, 1, tx, &rt)) return false;
 		AgrPositionOs(x, AGR_OS - 1, 0, &f0); AgrPositionOs(x, AGR_OS - 1, tx, &ft);
 		const CVector &repos = ((const NifAVObject*)f.blocks[bb].data)->translation;
-		*d = CVector(rt.x - (ft.x - f0.x) - repos.x, rt.y - (ft.y - f0.y) - repos.y, rt.z - repos.z);
+		*d = CVector(rt.x - (ft.x - f0.x) - repos.x, rt.y - (ft.y - f0.y) - repos.y, rt.z * k - repos.z);
 		return true;
 	};
 	if(bb >= 0 && bb < f.numBlocks){
 		CVector d1(0, 0, 0), d2(0, 0, 0);
 		bool b1 = false;
 		for(const CPoseFond &x : fond){
-			bool r1 = Bassin(*x.a, x.t, &d2);
+			bool r1 = Bassin(*x.a, x.t, x.k, &d2);
 			CVector d3(0, 0, 0);
-			if(x.a2 != nil && Bassin(*x.a2, x.t2, &d3)){
+			if(x.a2 != nil && Bassin(*x.a2, x.t2, x.k2, &d3)){
 				CPoseMelange::Geste g2 = r1 ? CPoseMelange::SansMasque(x.melange) : CPoseMelange::COPIER;
 				if(g2 == CPoseMelange::COPIER) d2 = d3;
 				else if(g2 == CPoseMelange::MELER) d2 = CVector(d2.x + x.melange * (d3.x - d2.x), d2.y + x.melange * (d3.y - d2.y), d2.z + x.melange * (d3.z - d2.z));
@@ -7488,7 +7519,7 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 		for(const CLecteurAnim::Evaluee &e : ordre){
 			if(!e.gardee) continue;
 			CPoseJouee x; PoseDeLaPlace(*e.couche, nil, &x);
-			if(x.a.anim){ fond.push_back({x.a.anim, x.t, e.poids}); SecondePlace(*e.couche, &fond.back()); }
+			if(x.a.anim){ fond.push_back({x.a.anim, x.t, e.poids}); fond.back().k = EchelleDuBassinOutil(*s, x.a.enr); SecondePlace(*e.couche, &fond.back(), s); }
 		}
 		for(int32 r = 1; r < CLecteurAnim::RANGS; r++){
 			const CAnimTrack &c = o.l.couches[r];
@@ -7506,7 +7537,15 @@ TesterPieton(const CScriptPed &p, int indice, int32 modeleProjectile, const CVec
 	bool fondu = joue && poids < 1.0f && pq.a.anim;
 	if(joue && pj.a.anim){
 		fond.push_back({pj.a.anim, pj.t, poids});
-		SecondePlace(lecteurs.find(indice)->second.l.couches[0], &fond.back());
+		float norme = 0.0f; const CHxdGroupe *gb = nil;
+		fond.back().k = EchelleDuBassinOutil(*s, pj.a.enr, &norme, &gb);
+		SecondePlace(lecteurs.find(indice)->second.l.couches[0], &fond.back(), s);
+		// Dit une fois par piéton et par groupe : le bassin mis à l'échelle (l'animation écrite sur un autre squelette).
+		static std::set<std::pair<int, const CHxdGroupe *>> ditsBassin;
+		if(gb != nil && fabsf(fond.back().k - 1.0f) >= 0.001f && ditsBassin.insert({indice, gb}).second)
+			printf("%6.2f s  le bassin du piéton %d (%s, os Root à %.4f) est mis à l'échelle %.3f : %s est du groupe %s, écrit sur %s (%.4f) ; à cet instant la hauteur de la clé passe de %.3f à %.3f\n",
+			       maintenant / 1000.0, indice, s->nom.c_str(), norme, fond.back().k, pj.a.enr ? pj.a.enr->nom.c_str() : "?", gb->nom.c_str(), gb->squelette.c_str(), gb->reference,
+			       HauteurDeLaCle(*pj.a.anim, pj.t), HauteurDeLaCle(*pj.a.anim, pj.t) * fond.back().k);
 		// Dit une fois par piéton : la couche de locomotion posée par ses deux places.
 		static std::set<int> ditsDeux;
 		const CAnimTrack &c0 = lecteurs.find(indice)->second.l.couches[0];
@@ -8856,6 +8895,19 @@ ChargerMissions(void)
 			if(k > 0 && mainped.Load(h, (uint32)k))
 				for(const CHxdAnim &a : mainped.anims) arbres.dureesAnimations[a.hachage & 0x7fffffff] = a.duree;
 			printf("%d durées d'animations lues dans MAINPED.HXD\n", (int)arbres.dureesAnimations.size());
+			{
+				// Les vecteurs des os de chaque modèle (FUN_006b5710, +0xa8 du squelette) et le réel de référence de chaque
+				// groupe (FUN_006b2d90, +0x28 du descripteur) : l'échelle du bassin de FUN_006b6e50.
+				const int32 MAXM = 1 << 20;
+				uint8 *mb = (uint8*)malloc(MAXM);
+				int32 km = CFileMgr::LoadFile("Models\\Peds\\MXDs.MGR", mb, MAXM, "rb");
+				bool lu = km > 0 && mxdPietons.Load(mb, (uint32)km);
+				free(mb);
+				int refs = 0;
+				for(const CHxdGroupe &g : mainped.groupes) refs += g.reference != 0.0f;
+				printf("échelle du bassin : %zu modèles lus dans MXDs.MGR%s, %d groupes de MAINPED.HXD sur %zu ont un réel de référence\n",
+				       mxdPietons.modeles.size(), lu ? "" : " (illisible)", refs, mainped.groupes.size());
+			}
 			// Les os : le binaire en cherche deux par leur nom (FUN_0068e380), « Jaw » et « Eyes ».
 			osDesPietons = mainped.os;
 			printf("%d os dans MAINPED.HXD ; par leur nom (FUN_0068e380), « Jaw » a le rang %d et « Eyes » le rang %d\n", (int)mainped.os.size(), mainped.OsParNom("Jaw"), mainped.OsParNom("Eyes"));

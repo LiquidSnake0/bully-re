@@ -150,7 +150,7 @@ struct CAnimTrack {
 	//   os), divisée par R**. Ce +0x28 est lu dans le fichier HXD (CHxdGroupe::reference) et la table +0xa8 dans MXDs.MGR
 	//   (CMxdModele::vecteurs).
 	// - **Le bit 2 des drapeaux de la place est allumé** et elle rend vrai.
-	// Recréé ici : ce qui décide et ce qui touche la place. L'outil n'applique pas encore l'échelle (R inconnu).
+	// Recréé ici : ce qui décide et ce qui touche la place. L'outil applique l'échelle à l'os 1 (EchelleDuBassinOutil).
 	bool PlaceEvaluee(int32 place) {
 		CPlaceAnim &p = places[place];
 		if(p.anim == nil) return false;
