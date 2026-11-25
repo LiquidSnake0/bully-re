@@ -598,12 +598,17 @@ Avec l'outil :
     V="$V --viser-objet tschool_BusWindow02@18 --jouer $C@18.6 --tenir 8,0.7@18.6"
     V="$V --viser-objet tschool_BusWindow03@20 --jouer $C@20.6 --tenir 8,0.7@20.6 --viser-objet -@22"
     A="--entrer _1_04_FIELDTRIG@26 --entrer _1_04_TREE2_TRIG@33 --jouer /Global/TreeClimb/Actions/ON_BOT:Act/Props/pxTree.act@34"
-    T="--viser 10@73.28 --tirer @73.35 --viser 9@74.00 --tirer @74.07 --viser 10@74.14 --tirer @74.21 --viser 8@74.47 --tirer @74.54"
-    T="$T --viser 9@74.80 --tirer @74.87 --viser 10@74.94 --tirer @75.01 --viser 7@75.08 --tirer @75.15 --viser 8@75.27 --tirer @75.34"
-    T="$T --viser 6@75.41 --tirer @75.48 --viser 9@75.60 --tirer @75.67 --viser 7@75.74 --tirer @75.81 --viser 8@76.07 --tirer @76.14"
-    T="$T --viser 6@76.21 --tirer @76.28 --viser 5@76.35 --tirer @76.42 --viser 7@76.49 --tirer @76.56 --viser 6@76.96 --tirer @77.03"
-    T="$T --viser 5@77.10 --tirer @77.17 --tirer @77.83"
+    T="--viser 10@71.88 --tirer @71.95 --viser 9@72.60 --tirer @72.67 --viser 10@72.74 --tirer @72.81 --viser 8@73.07 --tirer @73.14"
+    T="$T --viser 9@73.40 --tirer @73.47 --viser 10@73.54 --tirer @73.61 --viser 7@73.68 --tirer @73.75 --viser 8@73.87 --tirer @73.94"
+    T="$T --viser 6@74.01 --tirer @74.08 --viser 9@74.20 --tirer @74.27 --viser 7@74.34 --tirer @74.41 --viser 8@74.67 --tirer @74.74"
+    T="$T --viser 6@74.81 --tirer @74.88 --viser 5@74.95 --tirer @75.02 --viser 7@75.09 --tirer @75.16 --viser 6@75.56 --tirer @75.63"
+    T="$T --viser 5@75.70 --tirer @75.77 --tirer @76.43"
     build/outils/lancer_lua 90 --mission 1_04 --sans-cinematiques --entrer _1_04_PARKING@10 $V $A $T
+
+Depuis le 25.11, tous les tirs partent 1,40 s plus tôt qu'avant (73.28 → 71.88, etc.) : les piétons avancent du déplacement
+de leurs animations (commits 6d39825 et a73c445), les jocks finissent leur trajet de 1,82 à 1,91 s plus tôt, et un tir lâché
+pendant leur JOCK_JJ_IN (0,57 m en 9 images) visait trop loin devant eux (l'avance sur la cible qui bouge). Le récit qui suit
+garde les instants d'avant le 25.11.
 
 (sous zsh, `${=V}`…) Le joueur prend le lance-pierre au HUD (`--arme`, 15,05 s : `Weapons/SelectActions`, `PropGetDesired`,
 `PropAttach`, son contexte `/Global/SlingShot`), casse les trois vitres (17,52, 19,50 et 21,52 s : la bille part 1 m au-dessus de ses
@@ -763,6 +768,18 @@ piste ; le piéton 4, 5,21 puis 6,75 m/s, pour 6,75 m/s. Dans `1_05`, les piéto
 sans vitesse (−1) et des animations à 3,29 m/s. Les sept missions gardent leurs temps (1_01 à 10,46 s, 1_02 à 132,92 s,
 1_03 à 148,90 s, aux billes 147,97 s, 1_04 à 82,53 s, 1_05 à 180,31 s, 1_06_01 à 61,81 s, 1_07 à 150,88 s) : l'outil dit le
 déplacement, il ne déplace toujours personne avec.
+
+**Le déplacement par les animations (25.11).** Les piétons de l'outil avancent du déplacement que rendent leurs animations
+(CPed::ApplyMoveSpeed, `FUN_0047d510`, `src/peds/DeplacementPieton.h`) quand l'outil ne les a pas déplacés lui-même à l'image
+d'avant ; une ligne par nœud quitté le dit, « le piéton N a avancé de D m (x ; y) par ses animations sur K images (T s) du nœud
+… » (1_03 à 23,50 s : Peter, 1,11 m sous PeterFistShake/PeterHit ; 1_04 à 73,66 s puis 71,84 s : chaque jock, 0,57 m sous
+BeginWorkout). Les marches du pool, les courses du joueur, SeekEntityPosition et la laisse prennent pour pas ce déplacement
+quand une piste Locomotion vit (`PasDuPieton`). La ligne « prend une couche de locomotion » finit par « le piéton reste
+déplacé par ses animations (+0x1334 levé …) » ; « le déplacement du piéton N … » dit, pour une piste sans vitesse, la vitesse
+naturelle fois la stat, et sur la première fenêtre ce que le fondu d'entrée donnerait depuis l'arrêt. Les temps : 1_01 à
+10,46 s, 1_02 à 132,92 s, 1_03 à 148,96 s (aux billes 148,04 s), **1_04 à 81,15 s (avec les tirs ci-dessus)**, **1_05 à
+193,61 s** (Algie, tenu en laisse, suit au pas de ses animations ; le combat finit ailleurs et la course finale est plus
+longue), 1_06_01 à 61,81 s, 1_07 à 151,11 s.
 
 ## `1_05` (« Save Algie ») (06.11.2026)
 

@@ -116,8 +116,17 @@ AgrDeplacementImage(const AgrAnim &a, uint32 drapeaux, float t, float avant, boo
 	int32 os = AgrOsDuDeplacement(drapeaux, a.numOs);
 	*d = CVector(0.0f, 0.0f, 0.0f);
 	if(!a.decodee || os < 0 || os >= AGR_OS || a.positions[os].empty()) return false;
+	// Un instant égal à la durée (la place s'y arrête une image : « la durée juste atteinte n'est pas passée »,
+	// FUN_006b2560) prend la dernière clé, pas la première : AgrPositionOs ramène l'instant modulo la durée, et l'instant
+	// d'avant égal à la durée faisait compter, à l'image du tour de boucle, le trajet entier une seconde fois (3,17 m en
+	// une image pour C_PLAYER\RUN, mesuré le 25.11 dans 1_06_01). Supposé : le décodage du jeu (006be250, non lu) rend
+	// la dernière clé à cet instant.
+	auto position = [&a, os](float u, CVector *p){
+		if(a.duree > 0.0f && u >= a.duree && u <= a.duree * 1.000001f){ *p = a.positions[os].back().p; return true; }
+		return AgrPositionOs(a, os, u, p);
+	};
 	CVector ici, av;
-	if(!AgrPositionOs(a, os, t, &ici) || !AgrPositionOs(a, os, avant, &av)) return false;
+	if(!position(t, &ici) || !position(avant, &av)) return false;
 	*d = AgrDeplacementPlace(ici, av, t < avant && boucle, a.positions[os].back().p, a.positions[os].front().p,
 	                         os == ((drapeaux & 0x200) ? 2 : 1));
 	return true;

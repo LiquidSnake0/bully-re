@@ -2660,7 +2660,7 @@ PoursuivrePieton(void)
 		else printf("%6.2f s  le joueur poursuit le piéton %d (à %.1f m)\n", maintenant / 1000.0, active->ped, active->distance);
 	}
 	else if(ecart(j->pos, active->dernier) > 0.01f){ active->trace.clear(); active->trace.push_back(cible); }   // posé ailleurs (--entrer, un script)
-	float reste = ScriptPedVitesse(ALLURE_SPRINT) * 0.033f;
+	float reste = PasDuPieton(*j, ScriptPedVitesse(ALLURE_SPRINT) * 0.033f);
 	j->intentionVitesse = 0;
 	while(reste > 0 && sqrtf((cible.x - j->pos.x) * (cible.x - j->pos.x) + (cible.y - j->pos.y) * (cible.y - j->pos.y)) > active->distance && !active->trace.empty()){
 		CVector v(active->trace.front().x - j->pos.x, active->trace.front().y - j->pos.y, active->trace.front().z - j->pos.z);
@@ -6279,7 +6279,7 @@ TetherLoco(int ped, CActionController::Laisse &l, bool premiere)
 	p->intentionVitesse = l.enMarche ? v : 0;
 	if(l.enMarche){
 		p->intention = CVector(dx / d, dy / d, 0);
-		float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f * v / 1.5f;
+		float pas = PasDuPieton(*p, ScriptPedVitesse(ALLURE_COURSE) * 0.033f * v / 1.5f);   // le pas des animations (FUN_0047d510)
 		float k = d - l.arrivee < pas ? (d - l.arrivee) / d : pas / d;
 		// L'outil n'a ni sol ni escaliers : la hauteur suit celle du point visé au même pas (supposé ; dans le moteur, la
 		// navigation et la physique le portent sur le sol, ce qui fait monter Algie à l'étage derrière le joueur).
@@ -7174,6 +7174,16 @@ struct CLecteurOutil {
 	int32 choixDit = -2, hautDit = -2;
 	// Le déplacement que les animations rendent (DeplacementDuLecteur), sommé depuis la prise de la couche de locomotion.
 	float depTemps = 0.0f, depPiste = 0.0f; CVector depAnim; bool depDit = false, depNonRefait = false; int32 depFenetre = 0;
+	float depFondu = 0.0f;       // le fondu d'entrée de la couche de locomotion prise (PisteLocomotion::Fondu)
+	float depNaturelle = 0.0f;   // la vitesse naturelle de l'entrée jouée fois la stat, sommée sur la fenêtre (piste sans vitesse)
+	// Les drapeaux de déplacement du piéton (+0x1334, +0x1474, +0x1484 : src/peds/DeplacementPieton.h), que le lancement
+	// et la fin de la piste Locomotion posent (CActionController::PisteLocomotion::Lancer et Finir) ; +0x1334 supposé
+	// levé à la création. `locoVive` : une piste Locomotion vit, lancée au nœud commencé à `locoDebut`.
+	CDeplacementPieton dep; bool locoVive = false; float locoDebut = 0.0f;
+	// CPed::ApplyMoveSpeed (FUN_0047d510) : la position laissée à l'image d'avant (`posApres`), le déplacement cumulé par
+	// les animations du nœud commencé à `avDebut` (`avance`, en `avTemps` s, `avImages` images), les lignes dites.
+	bool posOk = false; CVector posApres; CVector avance; float avDebut = -1.0f, avTemps = 0.0f; int32 avImages = 0, avDits = 0;
+	const CActionNode *avNoeud = nil;
 };
 static std::map<int, CLecteurOutil> lecteurs;
 static std::map<const CHxdAnim *, CAnimOutil> animsDesPlaces;   // l'animation décodée de chaque enregistrement lancé
@@ -7228,6 +7238,7 @@ DeplacementDuLecteur(const CLecteurAnim &l, bool *nonRefait)
 static void
 AvancerLecteurs(float dt)
 {
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++) if(CScriptPed *q = pietons.Acceder(i)) q->pasAnimations = -1.0f;
 	for(auto it = lecteurs.begin(); it != lecteurs.end(); ){
 		if(controleurs.find(it->first) == controleurs.end()) it = lecteurs.erase(it);
 		else ++it;
@@ -7246,6 +7257,9 @@ AvancerLecteurs(float dt)
 			// FUN_00613480 : la piste muette (l'octet 58 sans l'octet 76) ne donne rien au piéton ; l'autre branche
 			// (l'octet 76) n'est pas refaite, la vitesse y reste celle de la branche commune (supposé).
 			if(locVit && !loc.Muette()) o.pieton.vitesse = loc.Vitesse(o.pieton.intentionVitesse);
+			// La fin de la piste quittée (FUN_0060c890), puis le lancement de la nouvelle (0060c5b0).
+			if(o.locoVive && (!locVit || o.locoDebut != c.debut)){ CActionController::PisteLocomotion::Finir(o.dep); o.locoVive = false; }
+			if(locVit && !o.locoVive){ loc.Lancer(o.dep); o.locoVive = true; o.locoDebut = c.debut; }
 			for(int32 r = 0; r < CLecteurAnim::RANGS; r++){
 				const CActionController::PisteAnimation *m = vivantes[r];
 				CLecteurOutil::Cle &k = o.cles[r];
@@ -7258,15 +7272,18 @@ AvancerLecteurs(float dt)
 						else{ mt.reste = -f; mt.fondu = -f; mt.poids = 0.0f; }
 						o.l.Installer(0, mt);
 						o.entrees.clear();
-						o.depTemps = 0.0f; o.depPiste = 0.0f; o.depAnim = CVector(); o.depDit = false; o.depNonRefait = false; o.depFenetre = 0;
+						o.depFondu = f;
+						o.depTemps = 0.0f; o.depPiste = 0.0f; o.depNaturelle = 0.0f; o.depAnim = CVector(); o.depDit = false; o.depNonRefait = false; o.depFenetre = 0;
 						o.ditChoix = 0; o.ditPas = 0; o.ditSons = 0; o.pasComptes[0] = o.pasComptes[1] = 0; o.choixDit = o.hautDit = -2;
 						printf("%6.2f s  le piéton %d prend une couche de locomotion (le nœud %s : piste Locomotion, vitesses %.2f et %.2f m/s entre les "
-						       "intentions %.2f et %.2f, %s, rang %d, fondu %.2f s ; %s) ; %d couche(s) gardée(s) au rang 0\n",
+						       "intentions %.2f et %.2f, %s, rang %d, fondu %.2f s ; %s) ; %d couche(s) gardée(s) au rang 0 ; %s\n",
 						       maintenant / 1000.0, kv.first, arbres.CheminDe(c.joue).c_str(), loc.basse, loc.haute, loc.seuilBas, loc.seuilHaut,
 						       loc.Cadencee() ? "cadencée" : "sans cadence", loc.rang, f,
 						       loc.Muette() ? "sa mise à jour 00613480 ne donne rien au piéton (l'octet 58 sans l'octet 76)" :
 						       loc.autre ? "sa mise à jour 00613480 prend la branche de l'octet 76, non refaite : vitesse supposée" :
-						       "sa mise à jour 00613480 prend la branche commune : vitesse lue à l'assembleur", (int)o.l.gardees[0].size());
+						       "sa mise à jour 00613480 prend la branche commune : vitesse lue à l'assembleur", (int)o.l.gardees[0].size(),
+						       o.dep.parAnimations ? "le piéton reste déplacé par ses animations (+0x1334 levé : le lancement 0060c5b0 ne le baisse qu'avec l'octet 76)" :
+						       "le piéton n'est plus déplacé par ses animations (+0x1334 baissé par le lancement 0060c5b0, l'octet 76 levé)");
 					}
 					CAnimTrack &ct = o.l.couches[0];
 					for(const CActionController::PisteAnimation &pa : c.animations){
@@ -7310,6 +7327,7 @@ AvancerLecteurs(float dt)
 				}
 			}
 		}
+		if(c.joue == nil && o.locoVive){ CActionController::PisteLocomotion::Finir(o.dep); o.locoVive = false; }
 		// Ce que la couche de locomotion lit du piéton, puis la mise à jour du lecteur (FUN_006c05b0, FUN_00731b90 pour une
 		// couche de locomotion) ; les appuis relevés et le choix des entrées sont dits (les premiers de chaque couche).
 		CMotionPieton &mp = o.pieton;
@@ -7322,19 +7340,63 @@ AvancerLecteurs(float dt)
 		}
 		mp.depuisPas[0] += dt; mp.depuisPas[1] += dt;
 		o.l.ParImage(dt, mp);
+		// **Le piéton avance du déplacement de ses animations** (CPed::ApplyMoveSpeed, FUN_0047d510 ; FUN_00473260 tourne
+		// le déplacement du lecteur, [lecteur+0xa4] = piéton+0x1720, du cap +0x1700). L'avant du piéton de l'outil est
+		// (cos cap, sin cap), celui du jeu (−sin h, cos h) : h = cap − 90°. Supposé : le piéton pèse (le bit 0x2 de
+		// +0x1bc), sa hauteur ne suit donc pas ses animations ; la rotation de l'image ([lecteur+0xa8]) n'est pas mêlée par
+		// l'outil (l'identité). **Un piéton que l'outil a déplacé lui-même à l'image d'avant (marche, poursuite, course du
+		// joueur, téléportation) n'avance pas de ses animations** : l'outil tient alors la place de la navigation (supposé).
+		if(CScriptPed *q = c.joue != nil ? pietons.Acceder(kv.first) : nil){
+			bool bouge = o.posOk && (q->pos.x != o.posApres.x || q->pos.y != o.posApres.y);
+			if(o.avNoeud != nil && (o.avDebut != c.debut || o.avNoeud != c.joue)){
+				float d = sqrtf(o.avance.x * o.avance.x + o.avance.y * o.avance.y);
+				if(d >= 0.01f && o.avDits < 8){
+					o.avDits++;
+					printf("%6.2f s  le piéton %d a avancé de %.2f m (%.2f ; %.2f) par ses animations sur %d images (%.2f s) du nœud %s\n",
+					       maintenant / 1000.0, kv.first, d, o.avance.x, o.avance.y, o.avImages, o.avTemps, arbres.CheminDe(o.avNoeud).c_str());
+				}
+				o.avNoeud = nil;
+			}
+			if(o.avNoeud == nil){ o.avNoeud = c.joue; o.avDebut = c.debut; o.avance = CVector(); o.avTemps = 0.0f; o.avImages = 0; }
+			bool nr = false;
+			CVector d = o.l.posee[0] ? DeplacementDuLecteur(o.l, &nr) : CVector();
+			o.dep.deplAnim = d; o.dep.cap = (q->cap - 90.0f) * 3.14159265f / 180.0f;
+			o.dep.pos = q->pos; o.dep.pese = true; o.dep.vitesse.z = 0.0f; o.dep.vitesseZAvant = 0.0f;
+			if(!bouge && (d.x != 0.0f || d.y != 0.0f) && o.dep.Appliquer(dt)){
+				o.avance.x += o.dep.pos.x - q->pos.x; o.avance.y += o.dep.pos.y - q->pos.y; o.avImages++;
+				q->pos.x = o.dep.pos.x; q->pos.y = o.dep.pos.y;
+			}
+			o.avTemps += dt;
+			o.posApres = q->pos; o.posOk = true;
+			// Le pas des marches de l'outil (PasDuPieton) : ce déplacement, quand une piste Locomotion vit et que sa couche en rend un.
+			float plat = sqrtf(d.x * d.x + d.y * d.y);
+			q->pasAnimations = o.locoVive && o.l.posee[0] && o.l.couches[0].motion && plat > 0.0f ? plat : -1.0f;
+		}
 		// Le déplacement que les animations rendent à cette image, contre la vitesse que la piste Locomotion donne : dit
 		// deux fois par couche de locomotion, sur sa première seconde puis sur la suivante (le fondu d'entrée passé).
 		if(o.l.posee[0] && o.l.couches[0].motion && !o.depDit){
 			CVector d = DeplacementDuLecteur(o.l, &o.depNonRefait);
 			o.depAnim.x += d.x; o.depAnim.y += d.y; o.depAnim.z += d.z;
 			o.depTemps += dt; o.depPiste += mp.vitesse * dt;
+			{ const CAnimTrack &cl = o.l.couches[0];
+			  if(cl.courante >= 0 && cl.courante < cl.nEntrees) o.depNaturelle += cl.entrees[cl.courante].naturelle * mp.stat * dt; }
 			if(o.depTemps >= 1.0f){
 				float plat = sqrtf(o.depAnim.x * o.depAnim.x + o.depAnim.y * o.depAnim.y);
+				// Une piste sans vitesse (−1, sans l'octet +0x7c) : 00613480 range −1 en +0x1c de M, la cadence (CMotionTrack::
+				// Cadence) joue alors l'animation à sa vitesse naturelle fois la stat ; c'est à elle que le déplacement se compare.
+				// Sur la première fenêtre, le poids de la couche monte linéairement de 0 à 1 en f secondes (FUN_006b26f0) : si
+				// les gardées ne rendent rien (un piéton parti de l'arrêt), V × p donne en moyenne V × (1 − f / 2T) sur T.
+				char nat[256] = "";
+				if(o.depFenetre == 0 && o.depFondu > 0.0f && o.depFondu < o.depTemps)
+					snprintf(nat, sizeof nat, " ; avec le fondu d'entrée de %.2f s depuis l'arrêt, la piste donnerait %.2f m/s (rapport %.3f)",
+					         o.depFondu, o.depPiste / o.depTemps * (1.0f - o.depFondu / (2.0f * o.depTemps)), 1.0f - o.depFondu / (2.0f * o.depTemps));
+				if(o.depPiste < 0.0f)
+					snprintf(nat + strlen(nat), sizeof nat - strlen(nat), " ; la piste est sans vitesse : la cadence joue l'animation à sa vitesse naturelle fois la stat, %.2f m/s", o.depNaturelle / o.depTemps);
 				printf("%6.2f s  le déplacement du piéton %d sur %s %.2f s de sa couche de locomotion : ses animations rendent (%.3f ; %.3f ; %.3f) m, soit %.2f m/s à plat ; "
-				       "la vitesse de la piste Locomotion donne %.2f m, soit %.2f m/s%s\n",
+				       "la vitesse de la piste Locomotion donne %.2f m, soit %.2f m/s%s%s\n",
 				       maintenant / 1000.0, kv.first, o.depFenetre == 0 ? "les premières" : "les suivantes,", o.depTemps, o.depAnim.x, o.depAnim.y, o.depAnim.z, plat / o.depTemps, o.depPiste, o.depPiste / o.depTemps,
-				       o.depNonRefait ? " (une animation aux bits 7 et 6 : son déplacement, de 006b6900, n'est pas refait)" : "");
-				if(o.depFenetre == 0){ o.depFenetre = 1; o.depTemps = 0.0f; o.depPiste = 0.0f; o.depAnim = CVector(); o.depNonRefait = false; }
+				       nat, o.depNonRefait ? " (une animation aux bits 7 et 6 : son déplacement, de 006b6900, n'est pas refait)" : "");
+				if(o.depFenetre == 0){ o.depFenetre = 1; o.depTemps = 0.0f; o.depPiste = 0.0f; o.depNaturelle = 0.0f; o.depAnim = CVector(); o.depNonRefait = false; }
 				else o.depDit = true;
 			}
 		}
@@ -10036,7 +10098,7 @@ static std::vector<std::pair<uint32, int32>> dons;   // --donner ARME@s
 					if(!cibleDe(r.genre, q, quoi, qui)) continue;
 					float dx = q.x - p->pos.x, dy = q.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
 					if(d <= r.arrivee + 1e-3f) continue;   // arrivé (au millimètre près)
-					float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f, k = d - r.arrivee < pas ? (d - r.arrivee) / d : pas / d;
+					float pas = PasDuPieton(*p, ScriptPedVitesse(ALLURE_COURSE) * 0.033f), k = d - r.arrivee < pas ? (d - r.arrivee) / d : pas / d;
 					p->pos.x += dx * k; p->pos.y += dy * k;
 					p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
 					if(d - r.arrivee < pas) printf("%6.2f s  le piéton %d arrive à %.2f m %s %d (SeekEntityPosition)\n", maintenant / 1000.0, c.first, r.arrivee, quoi, qui);
