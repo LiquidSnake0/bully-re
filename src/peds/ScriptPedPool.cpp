@@ -888,6 +888,14 @@ CScriptPedPool::RendreAmbiant(int h)
 	return true;
 }
 
+// Le pas d'une marche de l'outil : le déplacement des animations du piéton s'il en a un (CScriptPed::pasAnimations), le
+// pas de l'outil sinon (supposé : l'outil tient alors la place de la piste Locomotion).
+float
+PasDuPieton(const CScriptPed &p, float pasOutil)
+{
+	return p.pasAnimations >= 0.0f ? p.pasAnimations : pasOutil;
+}
+
 // Un pas vers `vers`, sans dépasser ; vrai si le point est atteint.
 static bool
 Pas(CScriptPed &p, const CVector &vers, float distanceMax, float garde)
@@ -922,7 +930,7 @@ CScriptPedPool::Avancer(float dt)
 			CScriptPed *c = Acceder(p.attaque);
 			if(c == nil || c->mort){ p.attaque = -1; continue; }
 			// La poursuite se fait à la course ; à portée, un coup toutes les SCRIPT_PED_CADENCE s.
-			if(!Pas(p, c->pos, ScriptPedVitesse(ALLURE_COURSE) * dt, SCRIPT_PED_PORTEE)) continue;
+			if(!Pas(p, c->pos, PasDuPieton(p, ScriptPedVitesse(ALLURE_COURSE) * dt), SCRIPT_PED_PORTEE)) continue;
 			p.prochainCoup -= dt;
 			if(p.prochainCoup > 0) continue;
 			p.prochainCoup = SCRIPT_PED_CADENCE;
@@ -934,7 +942,7 @@ CScriptPedPool::Avancer(float dt)
 			if(c->sante <= 0) Mourir(p.attaque);
 			if(c->mort) p.attaque = -1;
 		}else if(p.enMarche){
-			if(Pas(p, p.cible, p.vitesse * dt, 0)){ p.enMarche = false; p.arrive = true; p.intentionVitesse = 0; }
+			if(Pas(p, p.cible, PasDuPieton(p, p.vitesse * dt), 0)){ p.enMarche = false; p.arrive = true; p.intentionVitesse = 0; }
 		}
 	}
 }

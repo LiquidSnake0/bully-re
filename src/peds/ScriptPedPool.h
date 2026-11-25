@@ -416,6 +416,11 @@ struct CScriptPed {
 	// un piéton (Aller : la vitesse de son allure ; arrivé, arrêté : 0) et dans CombatLoco (lancer_lua).
 	CVector intention;
 	float intentionVitesse = 0;
+	// La longueur à plat du déplacement que les animations du piéton rendent à cette image, quand une piste Locomotion vit
+	// et que sa couche rend un déplacement (posée par l'outil, outils/lancer_lua : AvancerLecteurs) ; −1 sinon. Dans le jeu
+	// le piéton n'avance que de ce déplacement (CPed::ApplyMoveSpeed, FUN_0047d510, src/peds/DeplacementPieton.h : la
+	// branche commune de la piste Locomotion laisse +0x1334 levé). Les marches de l'outil le prennent pour pas (PasDuPieton).
+	float pasAnimations = -1.0f;
 	float armeInit = -1.0f;      // +0x120 de l'objet arme (+0x1d0, CWeapon) : -1 depuis son constructeur (FUN_004da610),
 	                             // posé par une piste SetWeaponInfo (FUN_00660f50) ; WeaponNeedInit (FUN_0065b7b0) attend -1
 	float armePortee = -1.0f;    // +0x124 : le +0x40 (64) de SetWeaponInfo ; la portée d'un tir sans cible va de lui à +0x120 ; -1 au
@@ -433,6 +438,9 @@ struct CScriptPed {
 	bool arrive = false, aFrappe = false, vientDeMourir = false;
 	int dernierFrappe = -1;      // la cible du dernier coup (pour le journal)
 };
+
+// Le pas d'une marche de l'outil pour ce piéton (ScriptPedPool.cpp).
+float PasDuPieton(const CScriptPed &p, float pasOutil);
 
 class CScriptPedPool
 {

@@ -7236,6 +7236,7 @@ DeplacementDuLecteur(const CLecteurAnim &l, bool *nonRefait)
 static void
 AvancerLecteurs(float dt)
 {
+	for(int i = 0; i < SCRIPT_PED_POOL_SIZE; i++) if(CScriptPed *q = pietons.Acceder(i)) q->pasAnimations = -1.0f;
 	for(auto it = lecteurs.begin(); it != lecteurs.end(); ){
 		if(controleurs.find(it->first) == controleurs.end()) it = lecteurs.erase(it);
 		else ++it;
@@ -7364,6 +7365,9 @@ AvancerLecteurs(float dt)
 			}
 			o.avTemps += dt;
 			o.posApres = q->pos; o.posOk = true;
+			// Le pas des marches de l'outil (PasDuPieton) : ce déplacement, quand une piste Locomotion vit et que sa couche en rend un.
+			float plat = sqrtf(d.x * d.x + d.y * d.y);
+			q->pasAnimations = o.locoVive && o.l.posee[0] && o.l.couches[0].motion && plat > 0.0f ? plat : -1.0f;
 		}
 		// Le déplacement que les animations rendent à cette image, contre la vitesse que la piste Locomotion donne : dit
 		// deux fois par couche de locomotion, sur sa première seconde puis sur la suivante (le fondu d'entrée passé).
