@@ -2026,3 +2026,45 @@ piste Locomotion et sa mise à jour 00613480, la fin de 006be730. Huit commits d
   180,31 s, `1_06_01` à 61,81 s et `1_07` à 150,88 s, réussies à chaque commit, **inchangées de bout en bout** : l'échelle
   change la hauteur des os, pas un contact des missions ; le déplacement est dit, il ne déplace personne.
 - **Bilan** : 1 386 fonctions recréées (9,1 % du code), contre 1 379 ; 2 310 comprises (13,6 %), contre 2 302.
+
+## 25.11.2026, séance 1 (de 21 h 51 à 23 h 53)
+
+Le chantier : le premier point de « Suite, dans l'ordre » de `docs/suite.md`, point 1.b : les pistes Locomotion sans vitesse
+(−1), qui lit [lecteur+0xa4], puis déplacer les piétons de l'outil par le déplacement de leurs animations. Neuf commits de
+moteur et celui-ci ; la séance s'arrête à neuf (le brief en permettait douze) : les deux pas suivants, CombatLoco et les
+trajets FollowPath au pas des animations, ont été essayés et font échouer `1_05`, puis `1_03` et `1_04`, dont les commandes
+seraient à refaire (voir `docs/suite.md`).
+
+- **Qui lit [lecteur+0xa4]** (336c488) : le lecteur d'un piéton est en [piéton+0x114], SetModelIndex (`FUN_004788d0`) pose
+  [lecteur+0xa4] = piéton+0x1720 ; `FUN_00473260` en tire la vitesse des animations (+0x1708), CPed::ApplyMoveSpeed
+  (`FUN_0047d510`) en fait la vitesse du piéton et l'avance (`src/peds/DeplacementPieton.h`, test_animtrack).
+- **La piste Locomotion et +0x1334** (fe0a2c2) : le lancement ne baisse +0x1334 qu'avec l'octet 76 ; la fin
+  (`FUN_0060c890`) le relève : dans la branche commune, le piéton reste déplacé par ses animations. La vitesse −1 n'est lue
+  que par la cadence (547d8db : 3,29 contre 3,29 m/s dans `1_05`, 0,99 contre 0,98 dans `1_07`).
+- **Les piétons avancent** (6d39825) du déplacement de leur lecteur quand l'outil ne les a pas déplacés à l'image d'avant ;
+  les marches du pool (a73c445), les courses du joueur et SeekEntityPosition (5fcacce), la laisse (8a84f7a) prennent ce
+  déplacement pour pas quand une piste Locomotion vit (`PasDuPieton`). Le joueur, lui, ne prend aucune couche de
+  locomotion pendant les missions : ses courses gardent le pas de l'outil.
+- **Les sauts d'une image** (04564fe) : l'instant d'avant égal à la durée prenait la première clé (AgrPositionOs modulo la
+  durée) et le tour de boucle comptait le trajet deux fois (3,17 m en une image pour une place de C_PLAYER\RUN) : 14 sauts
+  d'au moins 0,3 m, puis 0.
+- **La première seconde** (36d47ed) : 67 lignes sur 128 suivent le fondu d'entrée depuis l'arrêt (V × (1 − f / 2T)),
+  29 la piste, 32 restent à lire.
+- **Mes erreurs** : (1) le message de 6d39825 écrivait « recule » sans l'avoir mesuré et disait « lu » le +0x1714 dont
+  seule l'écriture est lue : corrigé dans le message de a73c445 ; (2) le message de 547d8db comptait « quatre » lignes
+  accordées passé la première seconde au lieu de trois : corrigé dans celui de 8a84f7a ; le message de 8a84f7a écrit
+  « les bullies l'atteignant autrement » sans le marquer supposé (corrigé dans `docs/suite.md`) ; (3) un filtre sur le
+  drapeau 0x40, fondé sur l'idée que JOCK_JJ_IN n'avait pas ce drapeau, mesuré faux (rien ne changeait) et retiré avant de
+  committer ; (4) une trace de diagnostic lancée d'abord sur un `lancer_lua` périmé (il se construit par
+  `tests/construire_tests.sh`, pas par `construire.sh`) ; (5) CombatLoco et FollowPath essayés et retirés, non committés ;
+  (6) `FUN_004cedd0` écrit avec `FUN_` dans `src/peds/DeplacementPieton.h`, corrigé avant le commit (le compte est resté
+  juste) ; (7) les commandes de `1_04` recalées deux fois (tirs +0,45 s, puis −1,85 s).
+- **Les comptes des README** : contrôlés contre `tools/avancement.py` avant chaque push, justes à chaque commit (1 388
+  fonctions, 9,1 %, dès 336c488).
+- **REA amont** : pas demandé. Le désassemblage `objdump` complet est régénéré dans `build/bully.asm` (46 Mo).
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,92 s, `1_03` à 148,96 s (aux billes 148,04 s), `1_04` à 81,15 s (tirs
+  recalés, `docs/missions.md`), `1_05` à 193,61 s, `1_06_01` à 61,81 s et `1_07` à 151,11 s, réussies à chaque commit.
+  Au départ : 10,46, 132,92, 148,90 (147,97), 82,53, 180,31, 61,81 et 150,88 s. Ce qui change vient des avances par les
+  animations (6d39825 : `1_03` +0,06 s, `1_05` +0,23 s, `1_07` +0,26 s), des tirs de `1_04` recalés, et de la laisse
+  (8a84f7a : `1_05` +13 s, la course finale plus longue).
+- **Bilan** : 1 388 fonctions recréées (9,1 % du code), contre 1 386 ; 2 312 comprises (13,7 %), contre 2 310 (13,6 %).

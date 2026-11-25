@@ -145,19 +145,43 @@ chantier. Un point fini passe en bas, avec son commit.
            un réel de référence qui n'est pas la norme de l'os 1 de leur squelette (IDLE_GSF_A, B et C : 0,8436 contre
            1,0944 sur gn_asiangirl.mxd), non expliqué ;
         b. **la piste Locomotion : sa branche commune est faite le 23.11** (voir « Fait »). Ce qui reste, dans l'ordre :
-           - **les pistes Locomotion sans vitesse (le prochain chantier)** : 22 couches prises dans les missions (21 dans
-             `1_05`, nœud /Global/Locomotion.act/#3fa672a9/#0976d4d8/#0015a4af ; 1 dans `1_07`, …/#0bb98c25) ont leurs
-             deux vitesses à −1 : la formule de la branche commune de 00613480 rend −1 m/s, alors que leurs animations
-             rendent 3,29 m/s (1_05 à 88,80 s et 94,31 s) ou 0,99 m/s (1_07 à 142,49 s). **À lire** dans 00613480 ce que
-             le jeu fait d'une vitesse de piste négative (supposé : le piéton avance alors du déplacement de ses
-             animations, celui que 006be730 range à [lecteur+0xa4]) et **qui lit [lecteur+0xa4]** (non cherché) ;
-           - **déplacer les piétons de l'outil par ce déplacement** : depuis le 23.11 l'outil le calcule à chaque image
-             (`DeplacementDuLecteur` dans `outils/lancer_lua.cpp`) et le compare à la vitesse de la piste, sans déplacer
-             personne : les temps des missions n'en dépendent pas. Passé la première seconde d'une couche les deux
-             s'accordent (84 lignes sur 89 à 5 % près) ; sur la première seconde les animations rendent moins (médiane
-             du rapport 0,836 ; supposé le fondu d'entrée, non isolé). Deux lignes restent en dessous sans explication
-             (1_02 à 98,83 s : 0,24 contre 0,75 m/s ; 1_07 à 145,03 s : 0,74 contre 1,28 m/s, cette dernière avec une
-             animation aux bits 7 et 6) ;
+           - **pistes sans vitesse et déplacement des piétons : faits le 25.11** (voir « Fait »). Lu : le lecteur d'un
+             piéton est en [piéton+0x114] ; SetModelIndex (`FUN_004788d0`) pose [lecteur+0xa4] = piéton+0x1720 et
+             [lecteur+0xa8] = piéton+0x172c ; `FUN_00473260` en tire la vitesse +0x1708 ; CPed::ApplyMoveSpeed
+             (`FUN_0047d510`) avance le piéton de cette vitesse sans +0x1474 ; la branche commune de la piste Locomotion
+             ne baisse pas +0x1334 (seul l'octet 76 le fait) ; la vitesse −1 n'est lue que par la cadence (vitesse
+             naturelle × stat). Recréé : `src/peds/DeplacementPieton.h`, `PisteLocomotion::Lancer` et `Finir`,
+             `PasDuPieton`. **Ce qui reste, dans l'ordre (le prochain chantier est le premier)** :
+             1. **CombatLoco au pas des animations** (le pas de `outils/lancer_lua.cpp`, la fonction qui contient « float
+                pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f * p->intentionVitesse / 1.5f ») : essayé le 25.11, **1_05
+                échoue** (Algie, le piéton critique 7, tombe à 0 point à 32,90 s ; les bullies l'atteignent autrement,
+                supposé) : la commande de combat de `1_05` (r105.sh, combat105.sh de la séance) est à refaire ; puis
+                **les trajets FollowPath** (`AvancerSuivis`, « float pas = ScriptPedVitesse(o->allure < 0 ? … ») :
+                essayé le 25.11, **1_03 échoue à 28,35 s** (MissionFail « 1_03_D11 » : Davis, le piéton 6, court son
+                trajet 58 environ 1,6 fois plus vite, nœud 5 à 5,61 s au lieu de 7,99 s, et s'échappe avant
+                --entrer _1_03_DAVISREGISTERHIT@29) **et 1_04 échoue** (les tirs) : les commandes de 1_03 et 1_04 sont
+                à recaler ;
+             2. **le joueur ne prend aucune couche de locomotion pendant les missions** (0 ligne « le piéton 0 prend une
+                couche de locomotion » avant leur fin ; la seule est dans 1_07 à 151,24 s, sur la planche) : ses courses
+                (--courir, --suivre) gardent le pas de l'outil. À lire : quel nœud joue le joueur quand l'outil le fait
+                courir, et pourquoi aucun ne porte de piste Locomotion au rang 0 ;
+             3. **la rotation de l'image** ([lecteur+0xa8], piéton+0x172c) : l'outil ne la mêle pas (l'identité) ; la
+                branche de `FUN_0047d510` qui la suit (de 0x47d7df à 0x47d8d6 : 00468300, 00472cd0, 00432bc0, non lues)
+                n'est pas refaite ; le mélange des rotations dans 006be730 n'est écrit qu'en commentaire ;
+             4. dans `FUN_0047d510`, non refaits : la méthode +0x90 du piéton, le pas des stats 0047a130, la branche
+                du sol (l'octet +0x16cc, de 0x47d916 à 0x47d9e6) ; supposé : le piéton pèse (sa hauteur ne suit pas ses
+                animations) ; la valeur de +0x1334 à la création (aucune écriture dans `FUN_0047ffe0`, l'outil suppose
+                1) ; LocomotionJump (0060d630, 0060e0e0) et PedReset (006162d0) ne sont pas lues par l'outil ;
+             5. supposé dans l'outil : **un piéton que l'outil a déplacé à l'image d'avant n'avance pas de ses
+                animations**, et une marche de l'outil sans couche de locomotion vivante garde le pas de l'outil ;
+             6. la première seconde d'une couche (36d47ed) : 67 lignes sur 128 suivent le fondu d'entrée depuis
+                l'arrêt, 29 la piste ; restent 19 entre les deux (supposé : une gardée en mouvement) et 13 ailleurs.
+                Les gardées qui ne sont pas des couches de locomotion ne sont pas avancées (`ParImage`, comme
+                `FUN_006c05b0`) : à confronter ;
+             7. les commandes de missions recalées le 25.11 dépendent des arrivées des piétons : `1_04` (tous les tirs
+                1,40 s plus tôt, `docs/missions.md`) ; toute nouvelle vitesse les déplacera encore ;
+             8. l'instant égal à la durée prend la dernière clé dans le déplacement (04564fe) : supposé pour 006be250
+                (non lue), à vérifier en la lisant ;
            - **l'autre branche de 00613480** (l'octet 76 de la piste, de 0x613623 à 0x614f71 : 35 pistes sur 343 dans les
              arbres globaux, aucune couche prise dans les missions) et le virage : 00608220 (680 octets, lue le 23.11
              sans être refaite : le cap par 00432bc0 ; si la cible n'est pas le vecteur nul, le côté (y, −x, 0) normé,
@@ -407,6 +431,19 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- Le déplacement des piétons par leurs animations (25.11 ; 336c488, fe0a2c2, 6d39825, a73c445, 04564fe, 5fcacce, 547d8db,
+  8a84f7a, 36d47ed) : **qui lit [lecteur+0xa4]** (piéton+0x1720, posé par SetModelIndex `FUN_004788d0` ; lu par
+  `FUN_00473260`, la vitesse des animations +0x1708) et **CPed::ApplyMoveSpeed** (`FUN_0047d510`) recréés dans
+  `src/peds/DeplacementPieton.h` (test_animtrack) ; le lancement et la fin de la piste Locomotion (`FUN_0060c890`) sur
+  +0x1334, +0x1474 et +0x1484 : **la branche commune ne baisse pas +0x1334**, le piéton reste déplacé par ses animations ;
+  la vitesse −1 n'est lue que par la cadence (vitesse naturelle × stat : 3,29 contre 3,29 m/s dans 1_05). Dans l'outil :
+  chaque piéton qui joue un nœud avance du déplacement de son lecteur quand l'outil ne l'a pas déplacé à l'image d'avant
+  (lignes « a avancé de ») ; les marches du pool, les courses du joueur, SeekEntityPosition et la laisse prennent ce
+  déplacement pour pas (`PasDuPieton`) ; le déplacement d'une image prend la dernière clé à l'instant égal à la durée (les
+  sauts d'une image, jusqu'à 3,17 m pour une place de C_PLAYER\RUN, disparaissent) ; la première seconde d'une couche
+  confrontée au fondu d'entrée (67 lignes sur 128). Temps : `1_04` à 81,15 s (tirs recalés), `1_05` à 193,61 s (+13 s,
+  Algie en laisse au pas de ses animations), `1_07` à 151,11 s, `1_03` à 148,96 s (aux billes 148,04 s).
 
 - L'échelle du bassin, la mise à jour de la piste Locomotion et le déplacement que les animations rendent (23.11 ; 409343f,
   7c5e0a7, 91bf10f, 4cd1a6e, a8a8dc7, c6316b1, 4cf25b4, 8896234) : **l'échelle du bassin** est lue à ses deux sources (le
