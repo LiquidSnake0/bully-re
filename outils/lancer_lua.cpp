@@ -7178,6 +7178,10 @@ struct CLecteurOutil {
 	// et la fin de la piste Locomotion posent (CActionController::PisteLocomotion::Lancer et Finir) ; +0x1334 supposé
 	// levé à la création. `locoVive` : une piste Locomotion vit, lancée au nœud commencé à `locoDebut`.
 	CDeplacementPieton dep; bool locoVive = false; float locoDebut = 0.0f;
+	// CPed::ApplyMoveSpeed (FUN_0047d510) : la position laissée à l'image d'avant (`posApres`), le déplacement cumulé par
+	// les animations du nœud commencé à `avDebut` (`avance`, en `avTemps` s, `avImages` images), les lignes dites.
+	bool posOk = false; CVector posApres; CVector avance; float avDebut = -1.0f, avTemps = 0.0f; int32 avImages = 0, avDits = 0;
+	const CActionNode *avNoeud = nil;
 };
 static std::map<int, CLecteurOutil> lecteurs;
 static std::map<const CHxdAnim *, CAnimOutil> animsDesPlaces;   // l'animation décodée de chaque enregistrement lancé
@@ -7332,6 +7336,35 @@ AvancerLecteurs(float dt)
 		}
 		mp.depuisPas[0] += dt; mp.depuisPas[1] += dt;
 		o.l.ParImage(dt, mp);
+		// **Le piéton avance du déplacement de ses animations** (CPed::ApplyMoveSpeed, FUN_0047d510 ; FUN_00473260 tourne
+		// le déplacement du lecteur, [lecteur+0xa4] = piéton+0x1720, du cap +0x1700). L'avant du piéton de l'outil est
+		// (cos cap, sin cap), celui du jeu (−sin h, cos h) : h = cap − 90°. Supposé : le piéton pèse (le bit 0x2 de
+		// +0x1bc), sa hauteur ne suit donc pas ses animations ; la rotation de l'image ([lecteur+0xa8]) n'est pas mêlée par
+		// l'outil (l'identité). **Un piéton que l'outil a déplacé lui-même à l'image d'avant (marche, poursuite, course du
+		// joueur, téléportation) n'avance pas de ses animations** : l'outil tient alors la place de la navigation (supposé).
+		if(CScriptPed *q = c.joue != nil ? pietons.Acceder(kv.first) : nil){
+			bool bouge = o.posOk && (q->pos.x != o.posApres.x || q->pos.y != o.posApres.y);
+			if(o.avNoeud != nil && (o.avDebut != c.debut || o.avNoeud != c.joue)){
+				float d = sqrtf(o.avance.x * o.avance.x + o.avance.y * o.avance.y);
+				if(d >= 0.01f && o.avDits < 8){
+					o.avDits++;
+					printf("%6.2f s  le piéton %d a avancé de %.2f m (%.2f ; %.2f) par ses animations sur %d images (%.2f s) du nœud %s\n",
+					       maintenant / 1000.0, kv.first, d, o.avance.x, o.avance.y, o.avImages, o.avTemps, arbres.CheminDe(o.avNoeud).c_str());
+				}
+				o.avNoeud = nil;
+			}
+			if(o.avNoeud == nil){ o.avNoeud = c.joue; o.avDebut = c.debut; o.avance = CVector(); o.avTemps = 0.0f; o.avImages = 0; }
+			bool nr = false;
+			CVector d = o.l.posee[0] ? DeplacementDuLecteur(o.l, &nr) : CVector();
+			o.dep.deplAnim = d; o.dep.cap = (q->cap - 90.0f) * 3.14159265f / 180.0f;
+			o.dep.pos = q->pos; o.dep.pese = true; o.dep.vitesse.z = 0.0f; o.dep.vitesseZAvant = 0.0f;
+			if(!bouge && (d.x != 0.0f || d.y != 0.0f) && o.dep.Appliquer(dt)){
+				o.avance.x += o.dep.pos.x - q->pos.x; o.avance.y += o.dep.pos.y - q->pos.y; o.avImages++;
+				q->pos.x = o.dep.pos.x; q->pos.y = o.dep.pos.y;
+			}
+			o.avTemps += dt;
+			o.posApres = q->pos; o.posOk = true;
+		}
 		// Le déplacement que les animations rendent à cette image, contre la vitesse que la piste Locomotion donne : dit
 		// deux fois par couche de locomotion, sur sa première seconde puis sur la suivante (le fondu d'entrée passé).
 		if(o.l.posee[0] && o.l.couches[0].motion && !o.depDit){
