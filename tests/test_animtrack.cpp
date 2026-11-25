@@ -2,6 +2,7 @@
 #include "../src/anim/AnimTrack.h"
 #include "../src/anim/MotionTrack.h"
 #include "../src/anim/Agr.h"
+#include "../src/peds/DeplacementPieton.h"
 #include <cmath>
 #include <cstdio>
 
@@ -816,6 +817,40 @@ DeplacementDeLaPose(void)
 	printf("déplacement de la pose : une couche à 4 m et sa gardée à 2 m au poids 0,25 donnent %.2f m ; un rang masqué sans le bassin laisse 4,00 m\n", 2.0f * 0.75f + 4.0f * 0.25f);
 }
 
+// FUN_00473260 et FUN_0047d510 : le piéton avance du déplacement que son lecteur rend, tourné de son cap.
+static void
+DeplacementDuPieton(void)
+{
+	const float dt = 1.0f / 30.0f;
+	CDeplacementPieton p;
+	p.deplAnim = CVector(0.0f, 0.05f, 0.0f);                 // 5 cm vers l'avant du piéton (son y)
+	p.VitesseDesAnimations(dt);
+	VERIF(Pres(p.vitesseAnim.x, 0.0f) && std::fabs(p.vitesseAnim.y - 1.5f) < 1e-4f && p.vitesseAnim.z == 0.0f);
+	VERIF(p.Appliquer(dt));
+	VERIF(std::fabs(p.pos.y - 0.05f) < 1e-6f && Pres(p.pos.x, 0.0f) && std::fabs(p.vitesse.y - 1.5f) < 1e-4f);
+	// Au cap π/2, l'avant du piéton est (−1 ; 0) : le même déplacement le mène vers les x négatifs.
+	CDeplacementPieton q; q.cap = 1.5707964f; q.deplAnim = CVector(0.0f, 0.05f, 0.01f);
+	VERIF(q.Appliquer(dt));
+	VERIF(std::fabs(q.pos.x + 0.05f) < 1e-6f && std::fabs(q.pos.y) < 1e-6f && std::fabs(q.pos.z - 0.01f) < 1e-6f && q.capEntite == q.cap);
+	// Sans +0x1334, +0x1708 reprend la vitesse ; un pas nul la met à zéro.
+	CDeplacementPieton r; r.parAnimations = false; r.vitesse = CVector(2.0f, 0.0f, 0.0f); r.deplAnim = CVector(0.0f, 1.0f, 0.0f);
+	r.VitesseDesAnimations(dt);
+	VERIF(r.vitesseAnim.x == 2.0f && r.vitesseAnim.y == 0.0f);
+	r.VitesseDesAnimations(0.0f);
+	VERIF(r.vitesseAnim.x == 0.0f && r.vitesseAnim.y == 0.0f);
+	// Avec +0x1474 : le déplacement de CPhysical, la vitesse fois l'échelle +0x154 fois le pas, les animations ignorées.
+	CDeplacementPieton l; l.locomotion = true; l.vitesse = CVector(0.0f, 3.0f, 0.0f); l.deplAnim = CVector(0.0f, 1.0f, 0.0f);
+	VERIF(l.Appliquer(dt));
+	VERIF(std::fabs(l.pos.y - 0.1f) < 1e-6f);
+	// Une rotation de l'image qui n'est pas l'identité prend la branche non refaite : rien ne bouge.
+	CDeplacementPieton t; t.deplAnim = CVector(0.0f, 0.05f, 0.0f); t.rotAnim[2] = 0.1f;
+	VERIF(!t.Appliquer(dt) && t.pos.y == 0.0f);
+	// Le bit 0x1 de +0x1bd fige le piéton.
+	CDeplacementPieton f; f.fige = true; f.vitesse = CVector(1.0f, 1.0f, 1.0f); f.deplAnim = CVector(0.0f, 0.05f, 0.0f);
+	VERIF(f.Appliquer(dt) && f.pos.y == 0.0f && f.vitesse.x == 0.0f);
+	printf("déplacement du piéton : 5 cm d'animation en 1/30 s donnent %.2f m/s, au cap π/2 vers (%.3f ; %.3f)\n", p.vitesseAnim.y, q.pos.x, q.pos.y);
+}
+
 int
 main(void)
 {
@@ -837,6 +872,7 @@ main(void)
 	Purges();
 	Melanges();
 	EvaluationsDesPlaces();
+	DeplacementDuPieton();
 	printf("test_animtrack : %d échec(s)\n", echecs);
 	return echecs ? 1 : 0;
 }
