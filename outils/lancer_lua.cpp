@@ -6279,7 +6279,7 @@ TetherLoco(int ped, CActionController::Laisse &l, bool premiere)
 	p->intentionVitesse = l.enMarche ? v : 0;
 	if(l.enMarche){
 		p->intention = CVector(dx / d, dy / d, 0);
-		float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f * v / 1.5f;
+		float pas = PasDuPieton(*p, ScriptPedVitesse(ALLURE_COURSE) * 0.033f * v / 1.5f);   // le pas des animations (FUN_0047d510)
 		float k = d - l.arrivee < pas ? (d - l.arrivee) / d : pas / d;
 		// L'outil n'a ni sol ni escaliers : la hauteur suit celle du point visé au même pas (supposé ; dans le moteur, la
 		// navigation et la physique le portent sur le sol, ce qui fait monter Algie à l'étage derrière le joueur).
