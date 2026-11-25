@@ -2067,4 +2067,5 @@ seraient à refaire (voir `docs/suite.md`).
   Au départ : 10,46, 132,92, 148,90 (147,97), 82,53, 180,31, 61,81 et 150,88 s. Ce qui change vient des avances par les
   animations (6d39825 : `1_03` +0,06 s, `1_05` +0,23 s, `1_07` +0,26 s), des tirs de `1_04` recalés, et de la laisse
   (8a84f7a : `1_05` +13 s, la course finale plus longue).
-- **Bilan** : 1 388 fonctions recréées (9,1 % du code), contre 1 386 ; 2 312 comprises (13,7 %), contre 2 310 (13,6 %).
+- **Bilan** : 1 388 fonctions recréées (9,1 % du code), contre 1 386 ; 2 313 comprises (13,7 %), contre 2 310 (13,6 %) ; la
+  2 313e est 004cedd0 (lue en entier, 72 octets), comprise par sa citation dans l'erreur (6) ci-dessus.
