@@ -15,6 +15,7 @@
 #pragma once
 #include "ActionBank.h"
 #include "Opportunite.h"
+#include "../peds/DeplacementPieton.h"
 #include <algorithm>
 
 class CActionController
@@ -171,6 +172,31 @@ public:
 	//   de l'animation ; de 0x6152d3 à 0x615382) : −1 (0x9009ac) sans l'octet +0x7c ; sinon (24) si x atteint (36)
 	//   (fcom, test ah,0x41, jp) ; sinon (28), plus ((24) − (28)) × (x − (32)) / ((36) − (32)) quand x − (32) est
 	//   strictement positif. La direction mise à plat est rangée en +0x24 de M (0x61538e et 0x6153d8).
+	// **Ce que le lancement et la fin posent sur le piéton** (relu le 25.11 : le lancement de 0x60c738 à 0x60c88d, la fin
+	// FUN_0060c890, la méthode +0x10 de la table 0x930ec4, lue en entier de 0x60c890 à 0x60c97a) :
+	// - le lancement met +0x147c du piéton à 0, puis range dans la piste (+0x90) le produit scalaire de la vitesse du
+	//   piéton (+0x124) et du vecteur que rend FUN_00415350 (supposé : son avant), +0x94 à 0, +0x98 et +0x9c à −1 si
+	//   +0x1488 du piéton n'est pas nul, à 1 sinon, l'octet +0xa0 à 0 ;
+	// - **l'octet 76 à 0 (la branche commune) : ce produit est rangé en +0x1d5c du piéton et c'est tout** (jne 0x60c87f
+	//   en 0x60c7eb, sur le cmp de l'octet +0x4c à 1 en 0x60c7b5 : rien entre les deux ne touche aux drapeaux). +0x1334
+	//   n'est pas baissé : **le piéton reste déplacé par ses animations** (CPed::ApplyMoveSpeed, FUN_0047d510,
+	//   src/peds/DeplacementPieton.h), et la vitesse de la piste (00613480) n'y entre que par la cadence de la couche ;
+	// - l'octet 76 à 1 : +0x1334 à 0 (le piéton n'est plus déplacé par ses animations), +0x1474 à 1 (le déplacement de
+	//   CPhysical, par sa vitesse +0x124), +0x1484 à 1 sans l'octet 40, à 0 avec ; puis, si |(+0xc) − (+0x10)| de la
+	//   piste dépasse 0,001 (0x900c04), sa mise à jour (+0xc de sa table) est appelée une fois avec le pas CTimer ;
+	// - la fin : +0x1334 à 1, +0x1474 et +0x1484 à 0 ; sans l'octet 40 et avec l'entier 0x1b65038 non nul, 00474420
+	//   (non lue) ; puis la couche de locomotion de la piste (+0x18 de son contexte +0x80) : si l'octet +0x1c du contexte
+	//   est nul, détruite (le rang 1 de sa table) ; sinon, avec un fondu (+0x40 de la piste) strictement positif, sortie
+	//   du lecteur par 006bd320 (non lue) sur 0x20c4910 au fondu +0x48 de la piste, ou 0x9055a0 s'il n'est pas
+	//   strictement positif ; le +0x18 du contexte revient à 0 ; rend 1.
+	// La vitesse −1 (sans l'octet +0x7c) n'est traitée nulle part dans 00613480 : elle est rangée telle quelle en +0x1c de
+	// M (0x6153cc), où la cadence de la couche (CMotionTrack::Cadence) la lit : négative, l'animation est jouée à sa vitesse
+	// naturelle fois la stat, et le piéton avance donc de la vitesse naturelle de ses animations.
+	// Les autres pistes qui touchent ces drapeaux (lues pour cela seulement) : LocomotionJump (table 0x931044) met +0x1334
+	// à 0 à son lancement 0060d630 (en 0x60d641) et sa fin 0060e0e0 (lue en entier, 34 octets ; la piste n'est pas lue par l'outil) remet +0x1334 à 1 et
+	// +0x1474 à 0 ; PedReset (lancement 006162d0, table 0x9311b4) met +0x1334 à 1, +0x1474 et +0x1484 à 0 (de 0x616492 à
+	// 0x61649e). Aucune écriture de +0x1334 dans le constructeur de CPed (FUN_0047ffe0) : sa valeur à la création n'est pas
+	// lue ; l'outil suppose 1.
 	// Supposé : un champ absent de la piste vaut 0.
 	struct PisteLocomotion {
 		bool ok = false;
@@ -191,6 +217,12 @@ public:
 			if(x - seuilBas > 0.0f) v = basse + (haute - basse) * ((x - seuilBas) / (seuilHaut - seuilBas));
 			return v;
 		}
+		// Le lancement (0060c5b0) et la fin (FUN_0060c890) sur les drapeaux de déplacement du piéton, ci-dessus.
+		void Lancer(CDeplacementPieton &d) const {
+			if(!autre) return;
+			d.parAnimations = false; d.locomotion = true; d.tourneParAnim = !tourne;
+		}
+		static void Finir(CDeplacementPieton &d) { d.parAnimations = true; d.locomotion = false; d.tourneParAnim = false; }
 		// Le fondu d'entrée de la couche, en secondes (0 : sans fondu).
 		float Fondu(void) const { return fondu < 0.0f ? 0.5f : fondu; }
 	};

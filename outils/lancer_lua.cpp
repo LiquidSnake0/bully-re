@@ -7174,6 +7174,10 @@ struct CLecteurOutil {
 	int32 choixDit = -2, hautDit = -2;
 	// Le déplacement que les animations rendent (DeplacementDuLecteur), sommé depuis la prise de la couche de locomotion.
 	float depTemps = 0.0f, depPiste = 0.0f; CVector depAnim; bool depDit = false, depNonRefait = false; int32 depFenetre = 0;
+	// Les drapeaux de déplacement du piéton (+0x1334, +0x1474, +0x1484 : src/peds/DeplacementPieton.h), que le lancement
+	// et la fin de la piste Locomotion posent (CActionController::PisteLocomotion::Lancer et Finir) ; +0x1334 supposé
+	// levé à la création. `locoVive` : une piste Locomotion vit, lancée au nœud commencé à `locoDebut`.
+	CDeplacementPieton dep; bool locoVive = false; float locoDebut = 0.0f;
 };
 static std::map<int, CLecteurOutil> lecteurs;
 static std::map<const CHxdAnim *, CAnimOutil> animsDesPlaces;   // l'animation décodée de chaque enregistrement lancé
@@ -7246,6 +7250,9 @@ AvancerLecteurs(float dt)
 			// FUN_00613480 : la piste muette (l'octet 58 sans l'octet 76) ne donne rien au piéton ; l'autre branche
 			// (l'octet 76) n'est pas refaite, la vitesse y reste celle de la branche commune (supposé).
 			if(locVit && !loc.Muette()) o.pieton.vitesse = loc.Vitesse(o.pieton.intentionVitesse);
+			// La fin de la piste quittée (FUN_0060c890), puis le lancement de la nouvelle (0060c5b0).
+			if(o.locoVive && (!locVit || o.locoDebut != c.debut)){ CActionController::PisteLocomotion::Finir(o.dep); o.locoVive = false; }
+			if(locVit && !o.locoVive){ loc.Lancer(o.dep); o.locoVive = true; o.locoDebut = c.debut; }
 			for(int32 r = 0; r < CLecteurAnim::RANGS; r++){
 				const CActionController::PisteAnimation *m = vivantes[r];
 				CLecteurOutil::Cle &k = o.cles[r];
@@ -7261,12 +7268,14 @@ AvancerLecteurs(float dt)
 						o.depTemps = 0.0f; o.depPiste = 0.0f; o.depAnim = CVector(); o.depDit = false; o.depNonRefait = false; o.depFenetre = 0;
 						o.ditChoix = 0; o.ditPas = 0; o.ditSons = 0; o.pasComptes[0] = o.pasComptes[1] = 0; o.choixDit = o.hautDit = -2;
 						printf("%6.2f s  le piéton %d prend une couche de locomotion (le nœud %s : piste Locomotion, vitesses %.2f et %.2f m/s entre les "
-						       "intentions %.2f et %.2f, %s, rang %d, fondu %.2f s ; %s) ; %d couche(s) gardée(s) au rang 0\n",
+						       "intentions %.2f et %.2f, %s, rang %d, fondu %.2f s ; %s) ; %d couche(s) gardée(s) au rang 0 ; %s\n",
 						       maintenant / 1000.0, kv.first, arbres.CheminDe(c.joue).c_str(), loc.basse, loc.haute, loc.seuilBas, loc.seuilHaut,
 						       loc.Cadencee() ? "cadencée" : "sans cadence", loc.rang, f,
 						       loc.Muette() ? "sa mise à jour 00613480 ne donne rien au piéton (l'octet 58 sans l'octet 76)" :
 						       loc.autre ? "sa mise à jour 00613480 prend la branche de l'octet 76, non refaite : vitesse supposée" :
-						       "sa mise à jour 00613480 prend la branche commune : vitesse lue à l'assembleur", (int)o.l.gardees[0].size());
+						       "sa mise à jour 00613480 prend la branche commune : vitesse lue à l'assembleur", (int)o.l.gardees[0].size(),
+						       o.dep.parAnimations ? "le piéton reste déplacé par ses animations (+0x1334 levé : le lancement 0060c5b0 ne le baisse qu'avec l'octet 76)" :
+						       "le piéton n'est plus déplacé par ses animations (+0x1334 baissé par le lancement 0060c5b0, l'octet 76 levé)");
 					}
 					CAnimTrack &ct = o.l.couches[0];
 					for(const CActionController::PisteAnimation &pa : c.animations){
@@ -7310,6 +7319,7 @@ AvancerLecteurs(float dt)
 				}
 			}
 		}
+		if(c.joue == nil && o.locoVive){ CActionController::PisteLocomotion::Finir(o.dep); o.locoVive = false; }
 		// Ce que la couche de locomotion lit du piéton, puis la mise à jour du lecteur (FUN_006c05b0, FUN_00731b90 pour une
 		// couche de locomotion) ; les appuis relevés et le choix des entrées sont dits (les premiers de chaque couche).
 		CMotionPieton &mp = o.pieton;
