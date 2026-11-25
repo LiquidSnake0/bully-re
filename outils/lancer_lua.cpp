@@ -2660,7 +2660,7 @@ PoursuivrePieton(void)
 		else printf("%6.2f s  le joueur poursuit le piéton %d (à %.1f m)\n", maintenant / 1000.0, active->ped, active->distance);
 	}
 	else if(ecart(j->pos, active->dernier) > 0.01f){ active->trace.clear(); active->trace.push_back(cible); }   // posé ailleurs (--entrer, un script)
-	float reste = ScriptPedVitesse(ALLURE_SPRINT) * 0.033f;
+	float reste = PasDuPieton(*j, ScriptPedVitesse(ALLURE_SPRINT) * 0.033f);
 	j->intentionVitesse = 0;
 	while(reste > 0 && sqrtf((cible.x - j->pos.x) * (cible.x - j->pos.x) + (cible.y - j->pos.y) * (cible.y - j->pos.y)) > active->distance && !active->trace.empty()){
 		CVector v(active->trace.front().x - j->pos.x, active->trace.front().y - j->pos.y, active->trace.front().z - j->pos.z);
@@ -10083,7 +10083,7 @@ static std::vector<std::pair<uint32, int32>> dons;   // --donner ARME@s
 					if(!cibleDe(r.genre, q, quoi, qui)) continue;
 					float dx = q.x - p->pos.x, dy = q.y - p->pos.y, d = sqrtf(dx * dx + dy * dy);
 					if(d <= r.arrivee + 1e-3f) continue;   // arrivé (au millimètre près)
-					float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f, k = d - r.arrivee < pas ? (d - r.arrivee) / d : pas / d;
+					float pas = PasDuPieton(*p, ScriptPedVitesse(ALLURE_COURSE) * 0.033f), k = d - r.arrivee < pas ? (d - r.arrivee) / d : pas / d;
 					p->pos.x += dx * k; p->pos.y += dy * k;
 					p->cap = atan2f(dy, dx) * 180.0f / 3.14159265f;
 					if(d - r.arrivee < pas) printf("%6.2f s  le piéton %d arrive à %.2f m %s %d (SeekEntityPosition)\n", maintenant / 1000.0, c.first, r.arrivee, quoi, qui);
