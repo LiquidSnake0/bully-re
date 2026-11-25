@@ -7174,6 +7174,7 @@ struct CLecteurOutil {
 	int32 choixDit = -2, hautDit = -2;
 	// Le déplacement que les animations rendent (DeplacementDuLecteur), sommé depuis la prise de la couche de locomotion.
 	float depTemps = 0.0f, depPiste = 0.0f; CVector depAnim; bool depDit = false, depNonRefait = false; int32 depFenetre = 0;
+	float depFondu = 0.0f;       // le fondu d'entrée de la couche de locomotion prise (PisteLocomotion::Fondu)
 	float depNaturelle = 0.0f;   // la vitesse naturelle de l'entrée jouée fois la stat, sommée sur la fenêtre (piste sans vitesse)
 	// Les drapeaux de déplacement du piéton (+0x1334, +0x1474, +0x1484 : src/peds/DeplacementPieton.h), que le lancement
 	// et la fin de la piste Locomotion posent (CActionController::PisteLocomotion::Lancer et Finir) ; +0x1334 supposé
@@ -7271,6 +7272,7 @@ AvancerLecteurs(float dt)
 						else{ mt.reste = -f; mt.fondu = -f; mt.poids = 0.0f; }
 						o.l.Installer(0, mt);
 						o.entrees.clear();
+						o.depFondu = f;
 						o.depTemps = 0.0f; o.depPiste = 0.0f; o.depNaturelle = 0.0f; o.depAnim = CVector(); o.depDit = false; o.depNonRefait = false; o.depFenetre = 0;
 						o.ditChoix = 0; o.ditPas = 0; o.ditSons = 0; o.pasComptes[0] = o.pasComptes[1] = 0; o.choixDit = o.hautDit = -2;
 						printf("%6.2f s  le piéton %d prend une couche de locomotion (le nœud %s : piste Locomotion, vitesses %.2f et %.2f m/s entre les "
@@ -7382,9 +7384,14 @@ AvancerLecteurs(float dt)
 				float plat = sqrtf(o.depAnim.x * o.depAnim.x + o.depAnim.y * o.depAnim.y);
 				// Une piste sans vitesse (−1, sans l'octet +0x7c) : 00613480 range −1 en +0x1c de M, la cadence (CMotionTrack::
 				// Cadence) joue alors l'animation à sa vitesse naturelle fois la stat ; c'est à elle que le déplacement se compare.
-				char nat[160] = "";
+				// Sur la première fenêtre, le poids de la couche monte linéairement de 0 à 1 en f secondes (FUN_006b26f0) : si
+				// les gardées ne rendent rien (un piéton parti de l'arrêt), V × p donne en moyenne V × (1 − f / 2T) sur T.
+				char nat[256] = "";
+				if(o.depFenetre == 0 && o.depFondu > 0.0f && o.depFondu < o.depTemps)
+					snprintf(nat, sizeof nat, " ; avec le fondu d'entrée de %.2f s depuis l'arrêt, la piste donnerait %.2f m/s (rapport %.3f)",
+					         o.depFondu, o.depPiste / o.depTemps * (1.0f - o.depFondu / (2.0f * o.depTemps)), 1.0f - o.depFondu / (2.0f * o.depTemps));
 				if(o.depPiste < 0.0f)
-					snprintf(nat, sizeof nat, " ; la piste est sans vitesse : la cadence joue l'animation à sa vitesse naturelle fois la stat, %.2f m/s", o.depNaturelle / o.depTemps);
+					snprintf(nat + strlen(nat), sizeof nat - strlen(nat), " ; la piste est sans vitesse : la cadence joue l'animation à sa vitesse naturelle fois la stat, %.2f m/s", o.depNaturelle / o.depTemps);
 				printf("%6.2f s  le déplacement du piéton %d sur %s %.2f s de sa couche de locomotion : ses animations rendent (%.3f ; %.3f ; %.3f) m, soit %.2f m/s à plat ; "
 				       "la vitesse de la piste Locomotion donne %.2f m, soit %.2f m/s%s%s\n",
 				       maintenant / 1000.0, kv.first, o.depFenetre == 0 ? "les premières" : "les suivantes,", o.depTemps, o.depAnim.x, o.depAnim.y, o.depAnim.z, plat / o.depTemps, o.depPiste, o.depPiste / o.depTemps,
