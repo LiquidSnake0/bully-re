@@ -7174,6 +7174,7 @@ struct CLecteurOutil {
 	int32 choixDit = -2, hautDit = -2;
 	// Le déplacement que les animations rendent (DeplacementDuLecteur), sommé depuis la prise de la couche de locomotion.
 	float depTemps = 0.0f, depPiste = 0.0f; CVector depAnim; bool depDit = false, depNonRefait = false; int32 depFenetre = 0;
+	float depNaturelle = 0.0f;   // la vitesse naturelle de l'entrée jouée fois la stat, sommée sur la fenêtre (piste sans vitesse)
 	// Les drapeaux de déplacement du piéton (+0x1334, +0x1474, +0x1484 : src/peds/DeplacementPieton.h), que le lancement
 	// et la fin de la piste Locomotion posent (CActionController::PisteLocomotion::Lancer et Finir) ; +0x1334 supposé
 	// levé à la création. `locoVive` : une piste Locomotion vit, lancée au nœud commencé à `locoDebut`.
@@ -7270,7 +7271,7 @@ AvancerLecteurs(float dt)
 						else{ mt.reste = -f; mt.fondu = -f; mt.poids = 0.0f; }
 						o.l.Installer(0, mt);
 						o.entrees.clear();
-						o.depTemps = 0.0f; o.depPiste = 0.0f; o.depAnim = CVector(); o.depDit = false; o.depNonRefait = false; o.depFenetre = 0;
+						o.depTemps = 0.0f; o.depPiste = 0.0f; o.depNaturelle = 0.0f; o.depAnim = CVector(); o.depDit = false; o.depNonRefait = false; o.depFenetre = 0;
 						o.ditChoix = 0; o.ditPas = 0; o.ditSons = 0; o.pasComptes[0] = o.pasComptes[1] = 0; o.choixDit = o.hautDit = -2;
 						printf("%6.2f s  le piéton %d prend une couche de locomotion (le nœud %s : piste Locomotion, vitesses %.2f et %.2f m/s entre les "
 						       "intentions %.2f et %.2f, %s, rang %d, fondu %.2f s ; %s) ; %d couche(s) gardée(s) au rang 0 ; %s\n",
@@ -7375,13 +7376,20 @@ AvancerLecteurs(float dt)
 			CVector d = DeplacementDuLecteur(o.l, &o.depNonRefait);
 			o.depAnim.x += d.x; o.depAnim.y += d.y; o.depAnim.z += d.z;
 			o.depTemps += dt; o.depPiste += mp.vitesse * dt;
+			{ const CAnimTrack &cl = o.l.couches[0];
+			  if(cl.courante >= 0 && cl.courante < cl.nEntrees) o.depNaturelle += cl.entrees[cl.courante].naturelle * mp.stat * dt; }
 			if(o.depTemps >= 1.0f){
 				float plat = sqrtf(o.depAnim.x * o.depAnim.x + o.depAnim.y * o.depAnim.y);
+				// Une piste sans vitesse (−1, sans l'octet +0x7c) : 00613480 range −1 en +0x1c de M, la cadence (CMotionTrack::
+				// Cadence) joue alors l'animation à sa vitesse naturelle fois la stat ; c'est à elle que le déplacement se compare.
+				char nat[160] = "";
+				if(o.depPiste < 0.0f)
+					snprintf(nat, sizeof nat, " ; la piste est sans vitesse : la cadence joue l'animation à sa vitesse naturelle fois la stat, %.2f m/s", o.depNaturelle / o.depTemps);
 				printf("%6.2f s  le déplacement du piéton %d sur %s %.2f s de sa couche de locomotion : ses animations rendent (%.3f ; %.3f ; %.3f) m, soit %.2f m/s à plat ; "
-				       "la vitesse de la piste Locomotion donne %.2f m, soit %.2f m/s%s\n",
+				       "la vitesse de la piste Locomotion donne %.2f m, soit %.2f m/s%s%s\n",
 				       maintenant / 1000.0, kv.first, o.depFenetre == 0 ? "les premières" : "les suivantes,", o.depTemps, o.depAnim.x, o.depAnim.y, o.depAnim.z, plat / o.depTemps, o.depPiste, o.depPiste / o.depTemps,
-				       o.depNonRefait ? " (une animation aux bits 7 et 6 : son déplacement, de 006b6900, n'est pas refait)" : "");
-				if(o.depFenetre == 0){ o.depFenetre = 1; o.depTemps = 0.0f; o.depPiste = 0.0f; o.depAnim = CVector(); o.depNonRefait = false; }
+				       nat, o.depNonRefait ? " (une animation aux bits 7 et 6 : son déplacement, de 006b6900, n'est pas refait)" : "");
+				if(o.depFenetre == 0){ o.depFenetre = 1; o.depTemps = 0.0f; o.depPiste = 0.0f; o.depNaturelle = 0.0f; o.depAnim = CVector(); o.depNonRefait = false; }
 				else o.depDit = true;
 			}
 		}
