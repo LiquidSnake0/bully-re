@@ -8183,7 +8183,12 @@ AppliquerLances(int ped, CActionController &c)
 	std::vector<CActionController *> tous;
 	c.Recueillir(tous);
 	CScriptPed *p = pietons.Acceder(ped);
+	// Les passages déjà dits, par contrôleur de spawn du joueur : un contrôleur qui disparaît est oublié, pour qu'un autre
+	// recréé à la même adresse ne passe pas pour lui (le journal dépendait de la mémoire, vu le 26.11).
 	static std::map<const CActionController *, const CActionNode *> vus;
+	if(ped == SCRIPT_PED_JOUEUR)
+		for(auto it = vus.begin(); it != vus.end(); )
+			it = std::find(tous.begin() + 1, tous.end(), it->first) == tous.end() ? vus.erase(it) : std::next(it);
 	for(size_t i = 1; i < tous.size(); i++){
 		CActionController *k = tous[i];
 		if(ped == SCRIPT_PED_JOUEUR && vus[k] != k->joue){
