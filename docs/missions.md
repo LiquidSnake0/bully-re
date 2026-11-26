@@ -792,6 +792,15 @@ naturelle fois la stat, et sur la première fenêtre ce que le fondu d'entrée d
 193,61 s** (Algie, tenu en laisse, suit au pas de ses animations ; le combat finit ailleurs et la course finale est plus
 longue), 1_06_01 à 61,81 s, 1_07 à 151,11 s.
 
+**CombatLoco, FollowPath et la couche du joueur (26.11).** Les combats (CombatLoco) et les trajets (FollowPath) avancent au
+pas des animations, et le joueur prend sa couche de locomotion (le spawn `../Locomotion` de Player.act a son contrôleur, la
+couche va au rang 1) : les lignes « contrôleur du joueur, spawn : /Global/Player/Default_KEY/Locomotion/… » disent ses
+passages (Idle, Run, Sprint), et « le piéton 0 prend une couche de locomotion » vient dans chaque mission (1_03 à 1,81 s :
+Sprint/LocoTracks, 8,80 m/s). Trois commandes sont refaites (voir leurs sections) : `1_03` entre sur la dalle de Davis à 19 s,
+`1_04` tire sur la première séance d'exercice des jocks, `1_05` bat le bully 3 avant le 2. La vérification compte aussi les
+morts du joueur (l'outil ne fait pas échouer une mission quand il meurt) : 0 partout. Les temps : 1_01 à 10,46 s, 1_02 à
+132,96 s, 1_03 à 148,90 s (aux billes 147,97 s), **1_04 à 60,75 s**, **1_05 à 181,70 s**, 1_06_01 à 61,81 s, 1_07 à 151,44 s.
+
 ## `1_05` (« Save Algie ») (06.11.2026)
 
 `1_05` s'enchaîne après `1_04`. Lancée seule (`build/outils/lancer_lua 90 --mission 1_05 --sans-cinematiques`), elle bouclait

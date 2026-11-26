@@ -145,50 +145,51 @@ chantier. Un point fini passe en bas, avec son commit.
            un réel de référence qui n'est pas la norme de l'os 1 de leur squelette (IDLE_GSF_A, B et C : 0,8436 contre
            1,0944 sur gn_asiangirl.mxd), non expliqué ;
         b. **la piste Locomotion : sa branche commune est faite le 23.11** (voir « Fait »). Ce qui reste, dans l'ordre :
-           - **pistes sans vitesse et déplacement des piétons : faits le 25.11** (voir « Fait »). Lu : le lecteur d'un
-             piéton est en [piéton+0x114] ; SetModelIndex (`FUN_004788d0`) pose [lecteur+0xa4] = piéton+0x1720 et
-             [lecteur+0xa8] = piéton+0x172c ; `FUN_00473260` en tire la vitesse +0x1708 ; CPed::ApplyMoveSpeed
-             (`FUN_0047d510`) avance le piéton de cette vitesse sans +0x1474 ; la branche commune de la piste Locomotion
-             ne baisse pas +0x1334 (seul l'octet 76 le fait) ; la vitesse −1 n'est lue que par la cadence (vitesse
-             naturelle × stat). Recréé : `src/peds/DeplacementPieton.h`, `PisteLocomotion::Lancer` et `Finir`,
-             `PasDuPieton`. **Ce qui reste, dans l'ordre (le prochain chantier est le premier)** :
-             1. **CombatLoco au pas des animations** (le pas de `outils/lancer_lua.cpp`, la fonction qui contient « float
-                pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f * p->intentionVitesse / 1.5f ») : essayé le 25.11, **1_05
-                échoue** (Algie, le piéton critique 7, tombe à 0 point à 32,90 s ; les bullies l'atteignent autrement,
-                supposé) : la commande de combat de `1_05` (r105.sh, combat105.sh de la séance) est à refaire ; puis
-                **les trajets FollowPath** (`AvancerSuivis`, « float pas = ScriptPedVitesse(o->allure < 0 ? … ») :
-                essayé le 25.11, **1_03 échoue à 28,35 s** (MissionFail « 1_03_D11 » : Davis, le piéton 6, court son
-                trajet 58 environ 1,6 fois plus vite, nœud 5 à 5,61 s au lieu de 7,99 s, et s'échappe avant
-                --entrer _1_03_DAVISREGISTERHIT@29) **et 1_04 échoue** (les tirs) : les commandes de 1_03 et 1_04 sont
-                à recaler ;
-             2. **le joueur ne prend aucune couche de locomotion pendant les missions** (0 ligne « le piéton 0 prend une
-                couche de locomotion » avant leur fin ; la seule est dans 1_07 à 151,24 s, sur la planche) : ses courses
-                (--courir, --suivre) gardent le pas de l'outil. À lire : quel nœud joue le joueur quand l'outil le fait
-                courir, et pourquoi aucun ne porte de piste Locomotion au rang 0 ;
-             3. **la rotation de l'image** ([lecteur+0xa8], piéton+0x172c) : l'outil ne la mêle pas (l'identité) ; la
-                branche de `FUN_0047d510` qui la suit (de 0x47d7df à 0x47d8d6 : 00468300, 00472cd0, 00432bc0, non lues)
-                n'est pas refaite ; le mélange des rotations dans 006be730 n'est écrit qu'en commentaire ;
-             4. dans `FUN_0047d510`, non refaits : la méthode +0x90 du piéton, le pas des stats 0047a130, la branche
-                du sol (l'octet +0x16cc, de 0x47d916 à 0x47d9e6) ; supposé : le piéton pèse (sa hauteur ne suit pas ses
-                animations) ; la valeur de +0x1334 à la création (aucune écriture dans `FUN_0047ffe0`, l'outil suppose
-                1) ; LocomotionJump (0060d630, 0060e0e0) et PedReset (006162d0) ne sont pas lues par l'outil ;
+           - **pistes sans vitesse et déplacement des piétons : faits le 25.11 ; CombatLoco, FollowPath et la couche du
+             joueur : faits le 26.11** (voir « Fait »). Ce qui reste, dans l'ordre (le prochain chantier est le premier) :
+             1. **la rotation de l'image, sa source** : l'application est recréée le 26.11 (`CDeplacementPieton::
+                TournerParImage`, `FUN_00468300`, la branche 0x47d7df de `FUN_0047d510` et celle de CPhysical, test_animtrack),
+                mais [lecteur+0xa8] reste l'identité dans l'outil. Lu : seule 006b6900 (1 359 octets) reçoit le quaternion
+                dans l'évaluation d'une place (`FUN_006b6e50`, 0x6b6fb6), pour les enregistrements aux bits 6 et 7 (0xc0 :
+                553 des 3 365 animations de MAINPED.HXD, dont C_PLAYER\RUNSTOP180, GRAP_MISS, GROUND_ONBACK, test_hxd) ;
+                006b6900 commence par 006be250 sur le dernier os (rang +0x5c du dictionnaire moins 1) à l'instant d'avant
+                (+8), rend la translation si l'instant n'a pas reculé ou si la place ne boucle pas (de 0x6b6900 à 0x6b6a7f,
+                avec 006b3cc0, 00414a20 et 00412850, non refaits), puis, si le squelette porte le haché 0x6b6f323, deux
+                cas d'animations (hachés 0x23f12ad6 et 0x44a81d7) tirent un hasard (00446720) ; la suite (de 0x6b6c03 à
+                0x6b6e4c : 00413d10, 00412920, 00413930, 00414560) n'est pas lue. Puis le mélange des rangs dans 006be730
+                (de 0x6be7cc à 0x6bed08, non lu pour les quaternions ; la copie dans [lecteur+0xa8] est en 0x6bed40, dans
+                l'ordre x, y, z, w de la pile). Restent supposés dans l'application : +0x1564 (la position du début de
+                l'image), 00775ef0 (NiQuaternion::FromRotation), le cap avec matrice (le même que sans, supposé) ;
+             2. **le joueur hors des gestes de l'outil** : depuis 6163b33, tant qu'une couche de locomotion est posée à son
+                rang 1, le joueur n'avance pas de ses animations (supposé) ; sans cette règle, ses arrêts (RunStop,
+                WalkStop) le portaient au-delà du piéton visé et 1_03 (le joueur meurt) et 1_05 (Algie) échouaient. Les
+                autres pistes spawn de Player.act restent déroulées une fois dans son contrôleur (seule ../Locomotion a le
+                sien, `LocomotionDuJoueur`) ;
+             3. **la mort du joueur ne fait pas échouer la mission dans l'outil** : vu dans 1_03 au commit d3dd722 (le
+                joueur meurt à 80,55 s, la mission se dit réussie) ; la vérification compte désormais les morts du joueur
+                (« morts du joueur » : 0 partout depuis 7eee480). Le chemin du jeu (qui appelle l'échec) n'est pas lu ;
+             4. dans `FUN_0047d510`, non refaits : la méthode +0x90 du piéton, 0047a130 (lue de son début à 0x47a209 : pas
+                un compte de stats, elle lit +0x1744, +0x1758, l'octet +0x16cc et la vitesse de l'intention, non refaite),
+                la branche du sol (l'octet +0x16cc, de 0x47d916 à 0x47d9e6) ; supposé : le piéton pèse ; la valeur de
+                +0x1334 à la création (l'outil suppose 1) ; LocomotionJump (0060d630, 0060e0e0) et PedReset (006162d0) ;
              5. supposé dans l'outil : **un piéton que l'outil a déplacé à l'image d'avant n'avance pas de ses
                 animations**, et une marche de l'outil sans couche de locomotion vivante garde le pas de l'outil ;
-             6. la première seconde d'une couche (36d47ed) : 67 lignes sur 128 suivent le fondu d'entrée depuis
-                l'arrêt, 29 la piste ; restent 19 entre les deux (supposé : une gardée en mouvement) et 13 ailleurs.
-                Les gardées qui ne sont pas des couches de locomotion ne sont pas avancées (`ParImage`, comme
-                `FUN_006c05b0`) : à confronter ;
-             7. les commandes de missions recalées le 25.11 dépendent des arrivées des piétons : `1_04` (tous les tirs
-                1,40 s plus tôt, `docs/missions.md`) ; toute nouvelle vitesse les déplacera encore ;
-             8. l'instant égal à la durée prend la dernière clé dans le déplacement (04564fe) : supposé pour 006be250
-                (non lue), à vérifier en la lisant ;
+             6. la première seconde d'une couche (36d47ed) : 67 lignes sur 128 suivent le fondu d'entrée depuis l'arrêt,
+                29 la piste ; 19 entre les deux (supposé : une gardée en mouvement) et 13 ailleurs. Les gardées qui ne
+                sont pas des couches de locomotion ne sont pas avancées (`ParImage`, comme `FUN_006c05b0`) : à confronter ;
+             7. les commandes de missions dépendent des arrivées des piétons : `1_04` (les tirs posés sur la première
+                séance d'exercice de chaque jock, tirs104.py de la séance du 26.11), `1_05` (le bully 3 avant le 2),
+                `1_03` (la dalle de Davis à 19 s) ; toute nouvelle vitesse les déplacera encore ;
+             8. la troncature à l'image de 006be250 (u × 511, ou × 65 535) n'est pas refaite : l'outil interpole entre
+                les clés ; 006bd470 et 006bd660 ne sont pas lues ;
            - **l'autre branche de 00613480** (l'octet 76 de la piste, de 0x613623 à 0x614f71 : 35 pistes sur 343 dans les
              arbres globaux, aucune couche prise dans les missions) et le virage : 00608220 (680 octets, lue le 23.11
              sans être refaite : le cap par 00432bc0 ; si la cible n'est pas le vecteur nul, le côté (y, −x, 0) normé,
              les deux produits scalaires, le premier borné entre −1 et 1 puis passé à 00413c10 sauf s'il est à moins de
-             0,00001 de 1 ; 00432bc0 et 00413c10 ne sont pas lues ; son seul appel vu est en 0x61527b, hors de
+             0,00001 de 1 ; 00413c10 n'est pas lue (`FUN_00432bc0` est recréée le 26.11, `CDeplacementPieton::AngleEntrePoints`) ; son seul appel vu est en 0x61527b, hors de
              00613480). Les octets 56, 57 et 58 de la piste sont lus, leur effet non refait ;
-           - un nœud dont la piste Locomotion donne un rang autre que 0 garde l'ancienne lecture ; la méthode +0x40 de
+           - un nœud dont la piste Locomotion donne un rang autre que 0 garde l'ancienne lecture, sauf la couche du joueur
+             (rang 1, depuis le 26.11) ; la méthode +0x40 de
              la table du piéton (non lue : d'où sort la vitesse lue par 00731b90) ; les deux vecteurs dont 00731b90
              mesure l'angle (supposé : l'avant du piéton et son intention de mouvement) ; 0072eec0 (297 octets, la
              phase à quatre tronçons, prise si le mot 0x20c9024 n'est pas nul ; non lue) ; le son du pas (0060e5d0,
@@ -431,6 +432,19 @@ chantier. Un point fini passe en bas, avec son commit.
      cookies du compte, rien à voir avec la rétro-ingénierie).
 
 ## Fait
+
+- CombatLoco, FollowPath et la couche du joueur au pas des animations ; la rotation de l'image appliquée (26.11 ; b05fe50, 6163b33, d3dd722, 7eee480, 47b91b6, 42c969b, b307894, bfc16dd, ebcf1cd, 4a532a3):
+  **CombatLoco** au pas des animations (b05fe50 : 1_05 réussit sans changer de commande) ; **le joueur prend sa couche de
+  locomotion** (6163b33) : le spawn `../Locomotion` de Default_KEY/Default (Player.act) a son contrôleur (`LocomotionDuJoueur`,
+  `ControleurDeLocomotion`), GlobalLoco y choisit Idle, Walk, Run et Sprint, dont la piste Locomotion est au rang 1 (le champ 64)
+  et le lecteur la pose à ce rang ; supposé : hors des gestes de l'outil, le joueur n'avance pas de ses animations ; **les trajets
+  FollowPath** au pas des animations (d3dd722 : Davis à 8,50 m/s ; les tirs de 1_04 posés sur la séance d'exercice de chaque
+  jock, 60,75 s) ; la commande de 1_03 recalée sur le passage du joueur sur la dalle de Davis (7eee480 ; d3dd722 laissait le
+  joueur mourir sans échec) ; **006be250 lue** (47b91b6 : l'instant borné à la durée, la dernière image à la durée) ; la
+  rotation de l'image n'a pour source que 006b6900, pour les 553 animations aux bits 6 et 7 (42c969b) ; **la rotation
+  appliquée** (b307894 : `FUN_00468300`, `FUN_00472cd0`, les branches 0x47d7df et 0x47d59e de `FUN_0047d510`) ; la méthode 36
+  de CPed, `FUN_00473200`, la chute (bfc16dd) ; le journal des spawn du joueur indépendant des adresses (ebcf1cd) ;
+  `FUN_00432bc0` recréée (4a532a3). Temps : `1_04` à 60,75 s, `1_05` à 181,70 s, `1_07` à 151,44 s, les autres inchangés.
 
 - Le déplacement des piétons par leurs animations (25.11 ; 336c488, fe0a2c2, 6d39825, a73c445, 04564fe, 5fcacce, 547d8db,
   8a84f7a, 36d47ed) : **qui lit [lecteur+0xa4]** (piéton+0x1720, posé par SetModelIndex `FUN_004788d0` ; lu par
