@@ -487,8 +487,13 @@ sur `_1_03_FLEETOFOUNTAIN` (trajet 56, jusqu'au nœud 9 à 34,42 s) et crée `T_
 `L_MonitorTriggers`, `T_WaveMonitor`, `T_DoorMonitor`. `T_ChasePartTwo` attend le joueur dans `_1_03_DAVISREGISTERHIT`, une dalle
 d'un mètre (z de 7,30 à 8,30) que la trace de Davis frôle 0,5 m plus bas : sans le sol du monde, l'outil y entre par
 `--entrer _1_03_DAVISREGISTERHIT@29`, et le script pose Davis à `_1_03_DAVISBRAG` (34,45 s).
+**Depuis le 26.11**, Davis court ses trajets au pas de ses animations (8,50 m/s) et le joueur le suit au pas de sa couche de Sprint :
+mesuré, le joueur passe au-dessus de la dalle (dans son contour, de 0,17 à 0,71 m sous son bas, à 7,30 m) de 18,98 à 20,23 s ; il y entre donc à 19 s
+(`--entrer _1_03_DAVISREGISTERHIT@19` dans les commandes qui suivent), et le script pose Davis à `_1_03_DAVISBRAG` à 21,81 s. Avec
+l'entrée à 29 s, le joueur tombait à 0 point à 76,26 s (le piéton 5 n'était pas battu), sans que la mission échoue (l'outil ne fait pas
+échouer une mission quand le joueur meurt).
 
-    build/outils/lancer_lua 120 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@29
+    build/outils/lancer_lua 120 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@19
 
 La suite (02.11.2026) : `T_ChasePartTwo` attend que le joueur frappe Davis ou le bully 5 (`DavisGroupHitRegister` enregistre
 `cbDavisGroupHit` sur eux deux à chaque image, `RegisterPedEventHandler`, l'événement 0 que la méthode du coup déclenche) ou
@@ -500,7 +505,7 @@ le joueur dans `_1_03_FIGHT3` (derrière les tonneaux), `_1_03_FIGHT4` (le garag
 n'a pas d'arbre de l'IA (`1_03` ne lui en pose pas ; celui des `.idb`, `/Global/AI`, n'est pas posé par l'outil) : le geste réduit
 de l'outil le fait rattraper et tuer le joueur à 62,67 s.
 
-    build/outils/lancer_lua 120 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@29 \
+    build/outils/lancer_lua 120 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@19 \
       --suivre 5,0.8@35 --viser 5@35 --jouer /Global/Player/Attacks/Strikes/LightAttacks@38 --suivre 6,1@38.5
 
 Le 03.11 (docs/suite.md) : les piétons reçoivent les arbres de leur modèle à la création (`FUN_00484d10` : `/Global/B_Striker_A` et
@@ -535,7 +540,7 @@ coup sur la cible verrouillée sans regarder la distance : le jab tient lieu du 
     R="$R --suivre 3,0.8@108.5 --viser 3@108.5 --jouer /Global/Player/Attacks/Strikes/LightAttacks@109,109.6,110.2,110.8,111.4,112,112.6,113.2,113.8,114.4,115,115.6"
     R="$R --suivre 2,0.8@116.5 --viser 2@116.5 --jouer /Global/Player/Attacks/Strikes/LightAttacks@117,117.6,118.2,118.8"
     R="$R --suivre 6,0.8@122 --viser 6@122 --jouer /Global/Player/Attacks/Strikes/LightAttacks@124,126,128"
-    build/outils/lancer_lua 160 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@29 \
+    build/outils/lancer_lua 160 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@19 \
       --suivre 5,0.8@35 --viser 5@35 --jouer /Global/Player/Attacks/Strikes/LightAttacks@38 --suivre 6,1@38.5 $R
 
 (sous zsh, `${=R}`.) Les bullies 1 et 5 meurent à 70,62 et 78,01 s (douze et onze jabs ; chacun tombe à 0 point, joue
