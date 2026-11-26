@@ -30,6 +30,8 @@ struct CDeplacementPieton {
 	bool sansPlat = false;            // l'octet +0x1558 : ni cap ni déplacement en x et y
 	bool pese = false;                // le bit 0x2 de +0x1bc
 	bool fige = false;                // le bit 0x1 de +0x1bd : la vitesse tombe à 0, rien ne bouge
+	CVector posAvant;                 // +0x1564 : la position d'où la vitesse est refaite après une rotation (supposé : celle
+	                                  // du début de l'image ; son écriture n'est pas lue)
 
 	// FUN_00473260 (méthode du piéton, lue en entier à l'assembleur de 0x473260 à 0x473361, 258 octets) : avec +0x1334,
 	// le déplacement de l'image tourné du cap +0x1700 (c = cos, s = sin : FUN_0085ad50 et FUN_0085aec0, le _CIcos et le
@@ -52,18 +54,48 @@ struct CDeplacementPieton {
 	// La rotation de l'image est-elle l'identité, au sens du jeu : ses trois premiers réels (x, y, z) valent 0.
 	bool SansRotation(void) const { return rotAnim[0] == 0.0f && rotAnim[1] == 0.0f && rotAnim[2] == 0.0f; }
 
+	// FUN_00468300 (ecx = le piéton ; la rotation de l'image puis son déplacement en arguments ; lue à l'assembleur de 0x468300
+	// à 0x46850c, ret 8) : la matrice du piéton (0046dbd0 : la sienne, +0x14, sinon une matrice tournée du cap +0x10,
+	// 0046db50 et 00412ad0 : la droite (cos, sin, 0), l'avant (−sin, cos, 0)) tourne le déplacement (dx, dy, 0) (00414560 :
+	// dx × la droite + dy × l'avant + 0 × le haut), ajouté à la position ; dz s'y ajoute tel quel (0x46839b). Puis
+	// l'orientation : le quaternion de la matrice (004654d0, NiQuaternion::FromRotation) multiplié par celui de l'image
+	// (00465370, le produit de Hamilton q(piéton) ⊗ q(image), quaternions rangés x, y, z, w), remis en matrice (00413d10 :
+	// 00775a40 puis 00413b00, la matrice NiMatrix3 standard, m01 = 2xy − 2wz, m11 = 1 − 2x² − 2z²), recopiée transposée
+	// dans la matrice du piéton (00412920 : la colonne 1 devient l'avant). Sans matrice, le cap +0x10 prend
+	// atan2(−avant.x, avant.y) (0x4684c2, le _CIatan2 0085ceea). Enfin la position (0041c390).
+	// Ici : le cap de l'entité tient lieu de matrice (le piéton tourne autour de z) ; avec matrice, supposé le même cap.
+	void TournerParImage(void) {
+		float c = cosf(capEntite), s = sinf(capEntite);
+		pos.x += deplAnim.x * c - deplAnim.y * s;
+		pos.y += deplAnim.x * s + deplAnim.y * c;
+		pos.z += deplAnim.z;
+		float x = rotAnim[0], y = rotAnim[1], z = rotAnim[2], w = rotAnim[3];
+		float m01 = 2.0f * x * y - 2.0f * w * z, m11 = 1.0f - 2.0f * x * x - 2.0f * z * z;
+		float ax = c * m01 - s * m11, ay = s * m01 + c * m11;   // l'avant : Rz(cap) × la colonne 1
+		capEntite = atan2f(-ax, ay);
+	}
+	// FUN_00472cd0 (lue en entier, 52 octets) : le quaternion remis à l'identité (0, 0, 0, 1).
+	void RotationIdentite(void) { rotAnim[0] = rotAnim[1] = rotAnim[2] = 0.0f; rotAnim[3] = 1.0f; }
+	// Le cap +0x1700 que la fin des deux branches tire de l'avant (FUN_00415350, puis 00432bc0(avant.x, avant.y, 0, 0) :
+	// l'angle de (0 − x, 0 − y), lue de son début à 0x432c79 ; supposé : atan2(−avant.x, avant.y), la branche 0x432c7a non
+	// lue).
+	void CapDeLAvant(void) { cap = atan2f(sinf(capEntite), cosf(capEntite)); }
+
 	// FUN_0047d510 (CPed::ApplyMoveSpeed, lue à l'assembleur de 0x47d510 à 0x47d9e8 ; 1 247 octets) :
 	// - FUN_00473260 d'abord ; puis, si +0x1324 est nul et l'octet +0x1c98 aussi, le cap de l'entité +0x10 prend +0x1700 ;
 	// - **avec +0x1474** : le déplacement de CPhysical (FUN_00469760) ; puis, avec +0x1484 et une rotation de l'image qui
-	//   n'est pas l'identité, la rotation tourne le piéton (00468300, 00472cd0, FUN_00415350 et 00432bc0 : non refait) ;
+	//   n'est pas l'identité (de 0x47d59e à 0x47d610) : le déplacement de l'image mis à zéro, la rotation tourne le piéton
+	//   (TournerParImage), le quaternion revient à l'identité, le cap +0x1700 prend celui de l'avant, et la fin ;
 	// - **sans +0x1474** : la méthode +0x90 du piéton et le pas de ses stats (0047a130 ; non lues), puis, avec le bit 0x1
 	//   de +0x1bd, la vitesse à zéro et la sortie. Sans rotation de l'image (de 0x47d6b3 à 0x47d788) : si l'octet +0x1558
 	//   est nul, le cap +0x10 prend +0x1700, **la vitesse en x et y prend celle des animations** (+0x1708, avec +0x1334)
 	//   et la position avance de vitesse × dt en x et en y. Puis, sans le bit 0x2 de +0x1bc et avec +0x1334, la vitesse
 	//   en z prend celle des animations et la position monte de vz × dt (de 0x47d795 à 0x47d7d8) ; avec le bit 0x2,
 	//   z += (+0x1704 + vz) × 0,5 (le double 0x8ff1f8) × dt (de 0x47d8e6 à 0x47d90c). Avec une rotation de l'image (de
-	//   0x47d7df à 0x47d8d6) : le déplacement de l'image est tourné par elle (00468300), puis la vitesse +0x1708 et +0x124
-	//   viennent de FUN_00414a20 sur la position, et le cap +0x1700 de 00432bc0 : non refait.
+	//   0x47d7df à 0x47d8d6, lue le 26.11) : la position +0x1564 gardée, TournerParImage, le déplacement de l'image à zéro,
+	//   le quaternion à l'identité (00472cd0), **la vitesse +0x1708, puis +0x124 en x et y, prend la position moins
+	//   +0x1564** (FUN_00414a20, sans division par dt), le cap +0x1700 celui de l'avant ; puis la suite commune (0x47d8dd :
+	//   le bit 0x2 de +0x1bc), sans la vitesse en z des animations ni l'octet +0x1558.
 	// - non refait : ce qui suit sans le bit 0x2 quand l'octet +0x16cc est levé (de 0x47d916 à 0x47d9e6, le sol).
 	// Rend faux quand une branche non refaite est prise (rien n'est alors bougé de plus).
 	bool Appliquer(float dt) {
@@ -73,10 +105,26 @@ struct CDeplacementPieton {
 			float p[3] = {pos.x, pos.y, pos.z}, v[3] = {vitesse.x, vitesse.y, vitesse.z};
 			CVolProjectile::Deplacer(p, v, fige, false, 0.0f, dt, echelle);
 			pos = CVector(p[0], p[1], p[2]); vitesse = CVector(v[0], v[1], v[2]);
-			return !(tourneParAnim && !SansRotation());
+			if(tourneParAnim && !SansRotation()){
+				deplAnim = CVector(0.0f, 0.0f, 0.0f);
+				TournerParImage();
+				RotationIdentite();
+				CapDeLAvant();
+			}
+			return true;
 		}
 		if(fige){ vitesse = CVector(0.0f, 0.0f, 0.0f); return true; }
-		if(!SansRotation()) return false;
+		if(!SansRotation()){
+			CVector avant = posAvant;
+			TournerParImage();
+			deplAnim = CVector(0.0f, 0.0f, 0.0f);
+			RotationIdentite();
+			vitesseAnim = CVector(pos.x - avant.x, pos.y - avant.y, pos.z - avant.z);
+			vitesse.x = vitesseAnim.x; vitesse.y = vitesseAnim.y;
+			CapDeLAvant();
+			if(pese) pos.z = (vitesseZAvant + vitesse.z) * 0.5f * dt + pos.z;
+			return true;
+		}
 		if(!sansPlat){
 			capEntite = cap;
 			if(parAnimations){ vitesse.x = vitesseAnim.x; vitesse.y = vitesseAnim.y; }
