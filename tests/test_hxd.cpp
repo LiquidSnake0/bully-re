@@ -138,6 +138,12 @@ main(void)
 		for(const CHxdAnim &a : mainped.anims){ n40 += (a.drapeaux & 0x40) != 0; n200 += (a.drapeaux & 0x200) != 0; n100 += (a.drapeaux & 0x100) != 0; nb += (a.drapeaux & 4) != 0; }
 		printf("déplacement, drapeaux des %zu animations de MAINPED.HXD : 0x40 (le dernier os) %d, 0x200 (l'os 2) %d, 0x100 %d, bit 2 %d\n", mainped.anims.size(), n40, n200, n100, nb);
 		VERIF(n40 == 1072 && n200 == 0 && n100 == 0 && nb == 1260);
+		// La rotation de l'image : seule 006b6900 (les bits 6 et 7 ensemble, 0xc0) rend un quaternion à l'évaluation d'une
+		// place (006b6e50) ; le bit 2 seul passe par 006b47b0, qui ne rend qu'une translation. Combien, et lesquelles.
+		int32 nc0 = 0; std::string exemples;
+		for(const CHxdAnim &a : mainped.anims) if((a.drapeaux & 0xc0) == 0xc0){ if(nc0 < 6) exemples += " " + a.nom; nc0++; }
+		printf("rotation de l'image : %d animations de MAINPED.HXD portent les bits 6 et 7 (0xc0) :%s%s\n", nc0, exemples.c_str(), nc0 > 6 ? " …" : "");
+		VERIF(nc0 == 553);
 
 	}
 	printf("%d groupes présents, %d parcourus exactement, %d animations rattachées\n", groupes, groupesSuivis, rattachees);

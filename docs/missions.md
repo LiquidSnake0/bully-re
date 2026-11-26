@@ -487,8 +487,13 @@ sur `_1_03_FLEETOFOUNTAIN` (trajet 56, jusqu'au nœud 9 à 34,42 s) et crée `T_
 `L_MonitorTriggers`, `T_WaveMonitor`, `T_DoorMonitor`. `T_ChasePartTwo` attend le joueur dans `_1_03_DAVISREGISTERHIT`, une dalle
 d'un mètre (z de 7,30 à 8,30) que la trace de Davis frôle 0,5 m plus bas : sans le sol du monde, l'outil y entre par
 `--entrer _1_03_DAVISREGISTERHIT@29`, et le script pose Davis à `_1_03_DAVISBRAG` (34,45 s).
+**Depuis le 26.11**, Davis court ses trajets au pas de ses animations (8,50 m/s) et le joueur le suit au pas de sa couche de Sprint :
+mesuré, le joueur passe au-dessus de la dalle (dans son contour, de 0,17 à 0,71 m sous son bas, à 7,30 m) de 18,98 à 20,23 s ; il y entre donc à 19 s
+(`--entrer _1_03_DAVISREGISTERHIT@19` dans les commandes qui suivent), et le script pose Davis à `_1_03_DAVISBRAG` à 21,81 s. Avec
+l'entrée à 29 s, le joueur tombait à 0 point à 76,26 s (le piéton 5 n'était pas battu), sans que la mission échoue (l'outil ne fait pas
+échouer une mission quand le joueur meurt).
 
-    build/outils/lancer_lua 120 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@29
+    build/outils/lancer_lua 120 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@19
 
 La suite (02.11.2026) : `T_ChasePartTwo` attend que le joueur frappe Davis ou le bully 5 (`DavisGroupHitRegister` enregistre
 `cbDavisGroupHit` sur eux deux à chaque image, `RegisterPedEventHandler`, l'événement 0 que la méthode du coup déclenche) ou
@@ -500,7 +505,7 @@ le joueur dans `_1_03_FIGHT3` (derrière les tonneaux), `_1_03_FIGHT4` (le garag
 n'a pas d'arbre de l'IA (`1_03` ne lui en pose pas ; celui des `.idb`, `/Global/AI`, n'est pas posé par l'outil) : le geste réduit
 de l'outil le fait rattraper et tuer le joueur à 62,67 s.
 
-    build/outils/lancer_lua 120 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@29 \
+    build/outils/lancer_lua 120 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@19 \
       --suivre 5,0.8@35 --viser 5@35 --jouer /Global/Player/Attacks/Strikes/LightAttacks@38 --suivre 6,1@38.5
 
 Le 03.11 (docs/suite.md) : les piétons reçoivent les arbres de leur modèle à la création (`FUN_00484d10` : `/Global/B_Striker_A` et
@@ -535,7 +540,7 @@ coup sur la cible verrouillée sans regarder la distance : le jab tient lieu du 
     R="$R --suivre 3,0.8@108.5 --viser 3@108.5 --jouer /Global/Player/Attacks/Strikes/LightAttacks@109,109.6,110.2,110.8,111.4,112,112.6,113.2,113.8,114.4,115,115.6"
     R="$R --suivre 2,0.8@116.5 --viser 2@116.5 --jouer /Global/Player/Attacks/Strikes/LightAttacks@117,117.6,118.2,118.8"
     R="$R --suivre 6,0.8@122 --viser 6@122 --jouer /Global/Player/Attacks/Strikes/LightAttacks@124,126,128"
-    build/outils/lancer_lua 160 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@29 \
+    build/outils/lancer_lua 160 --mission 1_03 --sans-cinematiques --suivre 6,3@3.4 --entrer _1_03_DAVISREGISTERHIT@19 \
       --suivre 5,0.8@35 --viser 5@35 --jouer /Global/Player/Attacks/Strikes/LightAttacks@38 --suivre 6,1@38.5 $R
 
 (sous zsh, `${=R}`.) Les bullies 1 et 5 meurent à 70,62 et 78,01 s (douze et onze jabs ; chacun tombe à 0 point, joue
@@ -598,12 +603,18 @@ Avec l'outil :
     V="$V --viser-objet tschool_BusWindow02@18 --jouer $C@18.6 --tenir 8,0.7@18.6"
     V="$V --viser-objet tschool_BusWindow03@20 --jouer $C@20.6 --tenir 8,0.7@20.6 --viser-objet -@22"
     A="--entrer _1_04_FIELDTRIG@26 --entrer _1_04_TREE2_TRIG@33 --jouer /Global/TreeClimb/Actions/ON_BOT:Act/Props/pxTree.act@34"
-    T="--viser 10@71.88 --tirer @71.95 --viser 9@72.60 --tirer @72.67 --viser 10@72.74 --tirer @72.81 --viser 8@73.07 --tirer @73.14"
-    T="$T --viser 9@73.40 --tirer @73.47 --viser 10@73.54 --tirer @73.61 --viser 7@73.68 --tirer @73.75 --viser 8@73.87 --tirer @73.94"
-    T="$T --viser 6@74.01 --tirer @74.08 --viser 9@74.20 --tirer @74.27 --viser 7@74.34 --tirer @74.41 --viser 8@74.67 --tirer @74.74"
-    T="$T --viser 6@74.81 --tirer @74.88 --viser 5@74.95 --tirer @75.02 --viser 7@75.09 --tirer @75.16 --viser 6@75.56 --tirer @75.63"
-    T="$T --viser 5@75.70 --tirer @75.77 --tirer @76.43"
+    T="--viser 10@53.00 --tirer @53.07 --viser 9@53.39 --tirer @53.46 --viser 8@53.64 --tirer @53.71 --viser 10@53.86 --tirer @53.93"
+    T="$T --viser 7@54.00 --tirer @54.07 --viser 6@54.14 --tirer @54.21 --viser 9@54.28 --tirer @54.35 --viser 8@54.44 --tirer @54.51"
+    T="$T --viser 5@54.58 --tirer @54.65 --viser 7@54.72 --tirer @54.79 --viser 10@54.86 --tirer @54.93 --viser 6@55.00 --tirer @55.07"
+    T="$T --viser 9@55.14 --tirer @55.21 --viser 8@55.28 --tirer @55.35 --viser 5@55.42 --tirer @55.49 --viser 7@55.56 --tirer @55.63"
+    T="$T --viser 6@55.70 --tirer @55.77 --viser 5@55.97 --tirer @56.04"
     build/outils/lancer_lua 90 --mission 1_04 --sans-cinematiques --entrer _1_04_PARKING@10 $V $A $T
+
+**Depuis le 26.11**, les jocks suivent leurs trajets au pas de leurs animations et font leur première séance d'exercice
+(`PedSetActionNode(N, "/Global/Ambient/Scripted/Workout")`, au nœud 1 de leur trajet) de 52,63 à 53,99 s au lieu de 71,51 à 74,38 s ; chaque
+tir garde son écart au début de la séance de sa cible, et deux tirs se suivent d'au moins 0,14 s (`--viser`, puis `--tirer` 0,07 s
+après ; le dernier tir, sans `--viser` avant, vise le piéton 5). Les dix-huit billes portent, le sixième jock tombe à 0 à 56,36 s et
+**`1_04` se termine réussie à 60,75 s**.
 
 Depuis le 25.11, tous les tirs partent 1,40 s plus tôt qu'avant (73.28 → 71.88, etc.) : les piétons avancent du déplacement
 de leurs animations (commits 6d39825 et a73c445), les jocks finissent leur trajet de 1,82 à 1,91 s plus tôt, et un tir lâché
@@ -781,6 +792,15 @@ naturelle fois la stat, et sur la première fenêtre ce que le fondu d'entrée d
 193,61 s** (Algie, tenu en laisse, suit au pas de ses animations ; le combat finit ailleurs et la course finale est plus
 longue), 1_06_01 à 61,81 s, 1_07 à 151,11 s.
 
+**CombatLoco, FollowPath et la couche du joueur (26.11).** Les combats (CombatLoco) et les trajets (FollowPath) avancent au
+pas des animations, et le joueur prend sa couche de locomotion (le spawn `../Locomotion` de Player.act a son contrôleur, la
+couche va au rang 1) : les lignes « contrôleur du joueur, spawn : /Global/Player/Default_KEY/Locomotion/… » disent ses
+passages (Idle, Run, Sprint), et « le piéton 0 prend une couche de locomotion » vient dans chaque mission (1_03 à 1,81 s :
+Sprint/LocoTracks, 8,80 m/s). Trois commandes sont refaites (voir leurs sections) : `1_03` entre sur la dalle de Davis à 19 s,
+`1_04` tire sur la première séance d'exercice des jocks, `1_05` bat le bully 3 avant le 2. La vérification compte aussi les
+morts du joueur (l'outil ne fait pas échouer une mission quand il meurt) : 0 partout. Les temps : 1_01 à 10,46 s, 1_02 à
+132,96 s, 1_03 à 148,90 s (aux billes 147,97 s), **1_04 à 60,75 s**, **1_05 à 181,70 s**, 1_06_01 à 61,81 s, 1_07 à 151,44 s.
+
 ## `1_05` (« Save Algie ») (06.11.2026)
 
 `1_05` s'enchaîne après `1_04`. Lancée seule (`build/outils/lancer_lua 90 --mission 1_05 --sans-cinematiques`), elle bouclait
@@ -809,13 +829,17 @@ Avec l'outil (sous zsh, `${=…}`) :
     LA=/Global/Player/Attacks/Strikes/LightAttacks
     J1=13.5,14.1,…,24.3 (dix-neuf jabs) ; J2=28,28.6,…,37 (seize) ; J3=39,39.6,…,48 (seize)
     build/outils/lancer_lua 200 --mission 1_05 --sans-cinematiques --courir 187.3,-132.2,6.1@5 \
-      --suivre 1,0.8@12.5 --viser 1@12.5 --jouer $LA@$J1 --suivre 2,0.8@27 --viser 2@27 --jouer $LA@$J2 \
-      --suivre 3,0.8@38 --viser 3@38 --jouer $LA@$J3 \
+      --suivre 1,0.8@12.5 --viser 1@12.5 --jouer $LA@$J1 --suivre 3,0.8@27 --viser 3@27 --jouer $LA@$J2 \
+      --suivre 2,0.8@38 --viser 2@38 --jouer $LA@$J3 \
       --courir 209.2,-73.3,6@59 --porte DT_tschool_SchoolFrontDoorL@66 --courir -675.8,-325.4,5.9@70 \
       --suivre 9,0.8@105 --viser 9@105 --jouer $LA@106,106.6,…,115 --suivre 10,0.8@117 --viser 10@117 --jouer $LA@118,118.6,…,127 \
       --courir -657.2,-293.5,5.9@155
 
-(`J1`, `J2`, `J3` et les deux séries de l'embuscade : seize ou dix-neuf instants de 0,6 s en 0,6 s.) Le joueur court à la bibliothèque,
+(`J1`, `J2`, `J3` et les deux séries de l'embuscade : seize ou dix-neuf instants de 0,6 s en 0,6 s.) **Depuis le 26.11**, le joueur
+bat le bully 3 avant le 2 : quand le premier bully atteint le nœud 1 de sa fuite, `F_routeBullyFleeNew` lance `PedAttackPlayer(2, 1)` et
+`PedAttack(3, 7, 1)` (le bully 3 sur Algie, le piéton critique) ; le joueur, qui court désormais au pas de sa couche de locomotion, arrive
+autrement, et le bully 3 mettait Algie à 0 point (1_05_FAIL_01, 33,73 s) pendant que le joueur battait le 2. Le récit qui suit garde
+l'ordre d'avant. Le joueur court à la bibliothèque,
 Algie le suit (`TetherLoco`, 5,51 s) ; le premier bully attaque Algie à 12,08 s ; dix-neuf jabs (six manquent « dans son dos ») : il fuit
 à 47 points (19,04 s), meurt à 27,32 s ; sa fuite lance les bullies 5 et 6 sur le joueur (25,11 s), morts à 40,00 et 50,98 s ;
 `F_UnlockStage2` et `MissionTimerStart(180)` à 58,01 s. La porte de l'école à 66 s : Algie passe avec le joueur (`FUN_0048b970`), posé

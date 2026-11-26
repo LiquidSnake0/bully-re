@@ -2069,3 +2069,39 @@ seraient à refaire (voir `docs/suite.md`).
   (8a84f7a : `1_05` +13 s, la course finale plus longue).
 - **Bilan** : 1 388 fonctions recréées (9,1 % du code), contre 1 386 ; 2 313 comprises (13,7 %), contre 2 310 (13,6 %) ; la
   2 313e est 004cedd0 (lue en entier, 72 octets), comprise par sa citation dans l'erreur (6) ci-dessus.
+
+## 26.11.2026, séance 1 (de 19 h 37 à 21 h 49)
+
+Le chantier : le premier point de « Suite, dans l'ordre » de `docs/suite.md` : CombatLoco au pas des animations, puis les
+trajets FollowPath, puis les points suivants dans l'ordre. Dix commits de moteur et celui-ci (le message de lancement en
+permettait treize) : après la rotation de l'image appliquée, sa source (006b6900, 1 359 octets, et le mélange de 006be730)
+demande une séance entière ; le reste de la soirée a pris des points courts (la chute, l'angle 00432bc0, le journal).
+
+- **CombatLoco** (b05fe50) : au pas des animations, 1_05 réussit sans changer de commande (l'essai du 25.11 échouait, la
+  différence n'est pas isolée) ; Algie reçoit deux coups ; 1_05 −9,70 s (les toilettes se vident plus tôt, le combat de
+  l'embuscade finit ailleurs).
+- **La couche du joueur** (6163b33) : le point 2 bloquait FollowPath (Davis à 8,50 m/s, le joueur à 5 m/s le perdait).
+  Lu dans Player.act : le spawn `../Locomotion` de Default_KEY/Default mène à GlobalLoco, dont la piste Locomotion de Run
+  et Sprint est **au rang 1** ; l'outil déroulait ce spawn une fois (Idle) et ne posait une couche qu'au rang 0. La commande
+  de 1_05 bat le bully 3 (envoyé sur Algie par `F_routeBullyFleeNew`) avant le 2.
+- **FollowPath** (d3dd722) : Davis court ses trajets à 8,50 m/s ; les jocks de 1_04 font leurs exercices de 52,63 à
+  53,99 s ; les tirs sont posés sur la séance de chaque jock (tirs104.py) : 1_04 à 60,75 s.
+- **1_03** (7eee480) : le joueur entre sur la dalle de Davis à 19 s, quand il passe au-dessus (18,98 à 20,23 s, mesuré).
+- **006be250** (47b91b6), **la source de la rotation** (42c969b), **la rotation appliquée** (b307894), **la chute**
+  (bfc16dd), **le journal** (ebcf1cd), **00432bc0** (4a532a3) : voir `docs/suite.md`, « Fait ».
+- **Mes erreurs** : (1) le message de d3dd722 dit 1_03 réussie alors que le joueur y mourait à 80,55 s (l'outil ne fait pas
+  échouer une mission quand le joueur meurt) : corrigé dans 7eee480, et la vérification compte désormais les morts du
+  joueur ; (2) une adresse écrite avec `0x` au début d'une fonction non recréée (0x432bc0) comptait une fonction de trop
+  (1 391 au lieu de 1 390) : corrigée avant le commit b307894 ; (3) au commit 2, la règle « le joueur n'avance pas de ses
+  animations » d'abord réduite au temps où la piste du spawn vit : 1_03 et 1_05 échouaient encore (mesuré), élargie à la
+  couche posée au rang 1 ; (4) un essai du journal par l'instant d'entrée des nœuds, arrêté avant la vérification (il aurait
+  multiplié les lignes) ; (5) les messages de b307894 et bfc16dd notent des lignes de journal changées par la table rangée
+  par adresse, corrigée ensuite (ebcf1cd).
+- **Les comptes des README** : contrôlés contre `tools/avancement.py` avant chaque push, justes à chaque commit.
+- **REA amont** : pas demandé. Le désassemblage `objdump` complet était dans `build/bully.asm` ; un listeur de bytecode Lua
+  5.0 et un lecteur d'arbres d'actions, écrits dans le dossier de la séance, ont lu 1_03.lur, 1_04.lur, 1_05.lur et Player.cat.
+- **Chronos** : `1_01` à 10,46 s, `1_02` à 132,96 s, `1_03` à 148,90 s (aux billes 147,97 s), `1_04` à 60,75 s, `1_05` à
+  181,70 s, `1_06_01` à 61,81 s et `1_07` à 151,44 s, réussies à chaque commit, 0 mort du joueur depuis 7eee480. Au départ :
+  10,46, 132,92, 148,96 (148,04), 81,15, 193,61, 61,81 et 151,11 s.
+- **Bilan** : 1 392 fonctions recréées (9,1 % du code), contre 1 388 (`FUN_00468300`, `FUN_00472cd0`, `FUN_00473200`,
+  `FUN_00432bc0`) ; 2 317 comprises (13,7 %), contre 2 313.

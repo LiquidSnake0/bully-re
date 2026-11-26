@@ -2752,6 +2752,14 @@ ChargerPedStats(void)
 // (FUN_005f36d0) ; à chaque image, faute de nœud joué, son contrôleur y redescend (FUN_00484040 pour les actions,
 // FUN_00483ec0 dans FUN_00484490 pour l'IA). Le contrôleur du visage (+0x4bc : /Global/PlayerFacial pour le type 13,
 // sinon DAT_01b649bc hors de quatre modèles) n'est pas suivi.
+// La piste spawn ../Locomotion du nœud Default_KEY/Default de Player.act : son contrôleur (FUN_005f8860) joue la locomotion du
+// joueur (Default_KEY/Locomotion, la référence GlobalLoco.act : Idle, Walk, Run et Sprint jugés par MotionIntentionSpeed).
+static const CActionNode *
+LocomotionDuJoueur(void)
+{
+	return arbres.Trouver("/Global/Player/Default_KEY/Locomotion");
+}
+
 static void
 PoserArbresDuModele(int h, int32 modele)
 {
@@ -2775,6 +2783,7 @@ PoserArbresDuModele(int h, int32 modele)
 		c = CActionController();
 		c.arbre = ac;
 		c.Racine(arbres, ac);
+		if(h == SCRIPT_PED_JOUEUR) c.arbreDesLances = LocomotionDuJoueur();
 	}
 	printf("%6.2f s  piéton %d (modèle %d) : arbre d'actions %s%s, arbre de l'IA %s%s\n", t, h, modele, a.actions.c_str(),
 	       ac ? "" : " (absent)", a.ia.c_str(), ia ? "" : " (absent)");
@@ -5584,7 +5593,7 @@ AvancerSuivis(lua_State *L)
 			if(ScriptPedSuiviSuivant(s, nombre, r)) ScriptPedSuiviPoserPlan(s, noeuds, q, r); else s.plan = -1;
 		}
 		float dx = but.x - p->pos.x, dy = but.y - p->pos.y, dz = but.z - p->pos.z, d = sqrtf(dx * dx + dy * dy);
-		float pas = ScriptPedVitesse(o->allure < 0 ? ALLURE_MARCHE : o->allure) * 0.033f;
+		float pas = PasDuPieton(*p, ScriptPedVitesse(o->allure < 0 ? ALLURE_MARCHE : o->allure) * 0.033f);   // FUN_0047d510
 		p->enMarche = false;
 		p->intentionVitesse = vitesseIntention;
 		if(d > 1e-3f){
@@ -6038,8 +6047,9 @@ GererCibles(int ped, bool joueur)
 // le point qui suit la cible aux images de tirage (cible + le décalage +0x38, s'il est à plus de 0,5 m du piéton,
 // _DAT_009055a0), et, sauf aux modes 3, 7 et 12, le cap voulu vers la cible ; la navigation (FUN_004a4eb0, le rayon
 // d'arrivée 0,2 m, _DAT_00900484) en fait la vitesse de l'intention (FUN_005e4a60). La cible vue : FUN_0048d320
-// (CScriptPedPool::Voit, sans monde à traverser). Supposé : le point toujours valable (FUN_006254c0), tout droit (sans la recherche de chemin, FUN_005e9df0), à
-// l'allure de course de l'outil réduite dans le rapport de la vitesse de l'intention à 1,5.
+// (CScriptPedPool::Voit, sans monde à traverser). Supposé : le point toujours valable (FUN_006254c0), tout droit (sans la recherche de chemin, FUN_005e9df0).
+// Le pas : le déplacement que rendent les animations du piéton quand une piste Locomotion vit (PasDuPieton, CPed::ApplyMoveSpeed,
+// FUN_0047d510) ; sinon, supposé, l'allure de course de l'outil réduite dans le rapport de la vitesse de l'intention à 1,5.
 static std::map<int, CCombatLoco> etatsCombat;
 static uint32 graineCombat = 1;   // le rand() du CRT que la piste tire (l'outil a sa propre graine)
 static int TirerCombat(void *){ return RandCrt(graineCombat); }
@@ -6159,7 +6169,7 @@ CombatLoco(int ped, bool joueur, bool premiere)
 	p->intentionVitesse = ScriptPedVitesseDuTrajet(vitesse, d * d, ecart, 0.2f, p->immobile);
 	if(d > 0 && p->intentionVitesse > 0) p->intention = CVector(dx / d, dy / d, 0);
 	if(p->intentionVitesse > 0){
-		float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f * p->intentionVitesse / 1.5f;
+		float pas = PasDuPieton(*p, ScriptPedVitesse(ALLURE_COURSE) * 0.033f * p->intentionVitesse / 1.5f);   // FUN_0047d510
 		float k = d - 0.2f < pas ? (d - 0.2f) / d : pas / d;
 		p->pos.x += dx * k; p->pos.y += dy * k;
 	}
@@ -7235,6 +7245,24 @@ DeplacementDuLecteur(const CLecteurAnim &l, bool *nonRefait)
 	return CLecteurAnim::DeplacementDesRangs(rangs);
 }
 
+// Le contrôleur dont le lecteur suit les animations : celui du piéton ; pour le joueur, le contrôleur de la piste spawn
+// ../Locomotion (LocomotionDuJoueur) quand sa piste Locomotion vit.
+static const CActionController &
+ControleurDeLocomotion(int ped, CActionController &c)
+{
+	if(ped != SCRIPT_PED_JOUEUR) return c;
+	std::vector<CActionController *> tous;
+	c.Recueillir(tous);
+	float t = maintenant / 1000.0f;
+	for(size_t i = 1; i < tous.size(); i++){
+		const CActionController &k = *tous[i];
+		const CActionController::PisteLocomotion &loc = k.locomotion;
+		float tn = k.Temps(t);
+		if(k.joue && loc.ok && loc.entree <= tn && (loc.vie < 0.0f || tn < loc.entree + loc.vie)) return k;
+	}
+	return c;
+}
+
 static void
 AvancerLecteurs(float dt)
 {
@@ -7244,50 +7272,56 @@ AvancerLecteurs(float dt)
 		else ++it;
 	}
 	for(auto &kv : controleurs){
-		const CActionController &c = kv.second;
+		const CActionController &c = kv.second, &cl = ControleurDeLocomotion(kv.first, kv.second);
 		CLecteurOutil &o = lecteurs[kv.first];
+		// Le rang de la couche de locomotion (0, sauf pour le joueur : le champ 64 de sa piste Locomotion).
+		const int32 rl = cl.locomotion.ok && cl.locomotion.rang > 0 && cl.locomotion.rang < CLecteurAnim::RANGS ? cl.locomotion.rang : 0;
 		if(c.joue != nil){
 			float stat = StatVitesse(kv.first);
 			float tn = c.Temps(maintenant / 1000.0f);
 			const CActionController::PisteAnimation *vivantes[CLecteurAnim::RANGS] = {};
 			vivantes[0] = c.Animation(tn);
 			for(const CActionController::PisteAnimation *m : c.Couches(tn)) vivantes[CActionController::Rang(*m)] = m;
-			const CActionController::PisteLocomotion &loc = c.locomotion;
-			bool locVit = loc.ok && loc.entree <= tn && (loc.vie < 0.0f || tn < loc.entree + loc.vie);
+			// La piste Locomotion : celle du contrôleur, ou pour le joueur celle du contrôleur de son spawn ../Locomotion (cl), dont
+			// les animations de locomotion vont au rang du champ 64 de la piste (FUN_0060e240 : FUN_006bcb70 au rang +0x40).
+			const float tl = cl.Temps(maintenant / 1000.0f);
+			const CActionController::PisteLocomotion &loc = cl.locomotion;
+			bool locVit = loc.ok && loc.entree <= tl && (loc.vie < 0.0f || tl < loc.entree + loc.vie);
+			if(&cl != &c && locVit && loc.rang >= 0 && loc.rang < CLecteurAnim::RANGS) vivantes[loc.rang] = cl.Animation(tl);
 			// FUN_00613480 : la piste muette (l'octet 58 sans l'octet 76) ne donne rien au piéton ; l'autre branche
 			// (l'octet 76) n'est pas refaite, la vitesse y reste celle de la branche commune (supposé).
 			if(locVit && !loc.Muette()) o.pieton.vitesse = loc.Vitesse(o.pieton.intentionVitesse);
 			// La fin de la piste quittée (FUN_0060c890), puis le lancement de la nouvelle (0060c5b0).
-			if(o.locoVive && (!locVit || o.locoDebut != c.debut)){ CActionController::PisteLocomotion::Finir(o.dep); o.locoVive = false; }
-			if(locVit && !o.locoVive){ loc.Lancer(o.dep); o.locoVive = true; o.locoDebut = c.debut; }
+			if(o.locoVive && (!locVit || o.locoDebut != cl.debut)){ CActionController::PisteLocomotion::Finir(o.dep); o.locoVive = false; }
+			if(locVit && !o.locoVive){ loc.Lancer(o.dep); o.locoVive = true; o.locoDebut = cl.debut; }
 			for(int32 r = 0; r < CLecteurAnim::RANGS; r++){
 				const CActionController::PisteAnimation *m = vivantes[r];
 				CLecteurOutil::Cle &k = o.cles[r];
-				if(m != nil && r == 0 && m->loco && loc.ok && loc.rang == 0 && loc.entree <= tn){
-					if(!k.ok || !k.motion || k.debut != c.debut){
-						k.ok = true; k.motion = true; k.debut = c.debut; k.p = *m;
+				if(m != nil && r == loc.rang && m->loco && loc.ok && loc.entree <= tl){
+					if(!k.ok || !k.motion || k.debut != cl.debut){
+						k.ok = true; k.motion = true; k.debut = cl.debut; k.p = *m;
 						CAnimTrack mt = CAnimTrack::Motion();
 						float f = loc.Fondu();
 						if(f == 0.0f){ mt.reste = 0.0f; mt.fondu = 0.0f; mt.poids = 1.0f; }
 						else{ mt.reste = -f; mt.fondu = -f; mt.poids = 0.0f; }
-						o.l.Installer(0, mt);
+						o.l.Installer(r, mt);
 						o.entrees.clear();
 						o.depFondu = f;
 						o.depTemps = 0.0f; o.depPiste = 0.0f; o.depNaturelle = 0.0f; o.depAnim = CVector(); o.depDit = false; o.depNonRefait = false; o.depFenetre = 0;
 						o.ditChoix = 0; o.ditPas = 0; o.ditSons = 0; o.pasComptes[0] = o.pasComptes[1] = 0; o.choixDit = o.hautDit = -2;
 						printf("%6.2f s  le piéton %d prend une couche de locomotion (le nœud %s : piste Locomotion, vitesses %.2f et %.2f m/s entre les "
-						       "intentions %.2f et %.2f, %s, rang %d, fondu %.2f s ; %s) ; %d couche(s) gardée(s) au rang 0 ; %s\n",
-						       maintenant / 1000.0, kv.first, arbres.CheminDe(c.joue).c_str(), loc.basse, loc.haute, loc.seuilBas, loc.seuilHaut,
+						       "intentions %.2f et %.2f, %s, rang %d, fondu %.2f s ; %s) ; %d couche(s) gardée(s) au rang %d ; %s\n",
+						       maintenant / 1000.0, kv.first, arbres.CheminDe(cl.joue).c_str(), loc.basse, loc.haute, loc.seuilBas, loc.seuilHaut,
 						       loc.Cadencee() ? "cadencée" : "sans cadence", loc.rang, f,
 						       loc.Muette() ? "sa mise à jour 00613480 ne donne rien au piéton (l'octet 58 sans l'octet 76)" :
 						       loc.autre ? "sa mise à jour 00613480 prend la branche de l'octet 76, non refaite : vitesse supposée" :
-						       "sa mise à jour 00613480 prend la branche commune : vitesse lue à l'assembleur", (int)o.l.gardees[0].size(),
+						       "sa mise à jour 00613480 prend la branche commune : vitesse lue à l'assembleur", (int)o.l.gardees[r].size(), r,
 						       o.dep.parAnimations ? "le piéton reste déplacé par ses animations (+0x1334 levé : le lancement 0060c5b0 ne le baisse qu'avec l'octet 76)" :
 						       "le piéton n'est plus déplacé par ses animations (+0x1334 baissé par le lancement 0060c5b0, l'octet 76 levé)");
 					}
-					CAnimTrack &ct = o.l.couches[0];
-					for(const CActionController::PisteAnimation &pa : c.animations){
-						if(!pa.loco || pa.entree > tn || ct.nEntrees >= CAnimTrack::ENTREES) continue;
+					CAnimTrack &ct = o.l.couches[r];
+					for(const CActionController::PisteAnimation &pa : cl.animations){
+						if(!pa.loco || pa.entree > tl || ct.nEntrees >= CAnimTrack::ENTREES) continue;
 						if(std::find(o.entrees.begin(), o.entrees.end(), &pa) != o.entrees.end()) continue;
 						o.entrees.push_back(&pa);
 						CAnimOutil a = AnimationParHache(pa.hache);
@@ -7359,10 +7393,14 @@ AvancerLecteurs(float dt)
 			}
 			if(o.avNoeud == nil){ o.avNoeud = c.joue; o.avDebut = c.debut; o.avance = CVector(); o.avTemps = 0.0f; o.avImages = 0; }
 			bool nr = false;
-			CVector d = o.l.posee[0] ? DeplacementDuLecteur(o.l, &nr) : CVector();
+			CVector d = o.l.posee[0] || o.l.posee[rl] ? DeplacementDuLecteur(o.l, &nr) : CVector();
 			o.dep.deplAnim = d; o.dep.cap = (q->cap - 90.0f) * 3.14159265f / 180.0f;
 			o.dep.pos = q->pos; o.dep.pese = true; o.dep.vitesse.z = 0.0f; o.dep.vitesseZAvant = 0.0f;
-			if(!bouge && (d.x != 0.0f || d.y != 0.0f) && o.dep.Appliquer(dt)){
+			// Supposé : la manette de l'outil mène le joueur ; tant qu'une couche de locomotion est posée à son rang 1 (celle de
+			// son spawn ../Locomotion, fondu de sortie compris), il n'avance pas de ses animations hors des gestes de l'outil (les
+			// arrêts RunStop et WalkStop le portaient au-delà du piéton visé : 1_03 et 1_05 échouaient, mesuré le 26.11).
+			bool joueurMene = kv.first == SCRIPT_PED_JOUEUR && o.l.posee[1] && o.l.couches[1].motion;
+			if(!bouge && !joueurMene && (d.x != 0.0f || d.y != 0.0f) && o.dep.Appliquer(dt)){
 				o.avance.x += o.dep.pos.x - q->pos.x; o.avance.y += o.dep.pos.y - q->pos.y; o.avImages++;
 				q->pos.x = o.dep.pos.x; q->pos.y = o.dep.pos.y;
 			}
@@ -7370,15 +7408,15 @@ AvancerLecteurs(float dt)
 			o.posApres = q->pos; o.posOk = true;
 			// Le pas des marches de l'outil (PasDuPieton) : ce déplacement, quand une piste Locomotion vit et que sa couche en rend un.
 			float plat = sqrtf(d.x * d.x + d.y * d.y);
-			q->pasAnimations = o.locoVive && o.l.posee[0] && o.l.couches[0].motion && plat > 0.0f ? plat : -1.0f;
+			q->pasAnimations = o.locoVive && o.l.posee[rl] && o.l.couches[rl].motion && plat > 0.0f ? plat : -1.0f;
 		}
 		// Le déplacement que les animations rendent à cette image, contre la vitesse que la piste Locomotion donne : dit
 		// deux fois par couche de locomotion, sur sa première seconde puis sur la suivante (le fondu d'entrée passé).
-		if(o.l.posee[0] && o.l.couches[0].motion && !o.depDit){
+		if(o.l.posee[rl] && o.l.couches[rl].motion && !o.depDit){
 			CVector d = DeplacementDuLecteur(o.l, &o.depNonRefait);
 			o.depAnim.x += d.x; o.depAnim.y += d.y; o.depAnim.z += d.z;
 			o.depTemps += dt; o.depPiste += mp.vitesse * dt;
-			{ const CAnimTrack &cl = o.l.couches[0];
+			{ const CAnimTrack &cl = o.l.couches[rl];
 			  if(cl.courante >= 0 && cl.courante < cl.nEntrees) o.depNaturelle += cl.entrees[cl.courante].naturelle * mp.stat * dt; }
 			if(o.depTemps >= 1.0f){
 				float plat = sqrtf(o.depAnim.x * o.depAnim.x + o.depAnim.y * o.depAnim.y);
@@ -7400,9 +7438,9 @@ AvancerLecteurs(float dt)
 				else o.depDit = true;
 			}
 		}
-		if(o.l.posee[0] && o.l.couches[0].motion){
-			const CAnimTrack &ct = o.l.couches[0];
-			const CAnimTrack *men = o.l.Meneuse(0);
+		if(o.l.posee[rl] && o.l.couches[rl].motion){
+			const CAnimTrack &ct = o.l.couches[rl];
+			const CAnimTrack *men = o.l.Meneuse(rl);
 			int32 haut = -1;
 			for(int32 i = 0; i < ct.nEntrees; i++) if(ct.places[1].anim != nil && ct.melange > 0.0f && ct.entrees[i].enr == ct.places[1].anim && i != ct.courante) haut = i;
 			if(ct.courante >= 0 && (ct.courante != o.choixDit || haut != o.hautDit) && o.ditChoix < 3){
@@ -8125,7 +8163,7 @@ RendreArbreAvantArme(int ped)
 	const CActionNode *arme = c.arbre;
 	c.arbre = it->second;
 	c.Racine(arbres, it->second);
-	c.arbreDesLances = nil;   // les spawn de l'arbre de l'arme n'ont plus leur contrôleur
+	c.arbreDesLances = ped == SCRIPT_PED_JOUEUR ? LocomotionDuJoueur() : nil;   // les spawn de l'arbre de l'arme n'ont plus leur contrôleur
 	arbresAvantArme.erase(it);
 	float t = maintenant / 1000.0f;   // comme à la prise : revenu dans l'arbre de l'arme, il redescend depuis celui du piéton
 	if(arme && c.joue && c.arbre && arbres.Sous(arme, c.joue) && c.Poser(arbres, c.arbre, CJugeOutil(ped, t), t))
@@ -8145,7 +8183,12 @@ AppliquerLances(int ped, CActionController &c)
 	std::vector<CActionController *> tous;
 	c.Recueillir(tous);
 	CScriptPed *p = pietons.Acceder(ped);
+	// Les passages déjà dits, par contrôleur de spawn du joueur : un contrôleur qui disparaît est oublié, pour qu'un autre
+	// recréé à la même adresse ne passe pas pour lui (le journal dépendait de la mémoire, vu le 26.11).
 	static std::map<const CActionController *, const CActionNode *> vus;
+	if(ped == SCRIPT_PED_JOUEUR)
+		for(auto it = vus.begin(); it != vus.end(); )
+			it = std::find(tous.begin() + 1, tous.end(), it->first) == tous.end() ? vus.erase(it) : std::next(it);
 	for(size_t i = 1; i < tous.size(); i++){
 		CActionController *k = tous[i];
 		if(ped == SCRIPT_PED_JOUEUR && vus[k] != k->joue){

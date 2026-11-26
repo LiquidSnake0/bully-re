@@ -545,6 +545,11 @@ Trajets(void)
 		// Le drapeau 0x40 : l'os 35, de y = 1 à 5 ; à mi-course 2 m et 0,25 m de haut ; au tour (5 − 1 − 4,5) + 1,5 = 1.
 		VERIF(AgrDeplacementImage(b, 0x40, 0.4f, 0.0f, true, &e) && Pres(e.y, 2.0f) && Pres(e.z, 0.25f));
 		VERIF(AgrDeplacementImage(b, 0x40, 0.1f, 0.7f, true, &e) && Pres(e.y, 1.0f) && Pres(e.z, 0.125f));
+		// L'instant borné à la durée (FUN_006be250) : à 0,8 s comme au-delà, la dernière clé (3,4) ; l'instant d'avant égal
+		// à la durée, au tour de boucle, ne compte pas le trajet une seconde fois : la racine rend sa position à 0,1 s.
+		CVector f, g, h0; AgrPositionOs(b, 1, 0.1f, &h0);
+		VERIF(AgrDeplacementImage(b, 0, 0.8f, 0.4f, false, &f) && AgrDeplacementImage(b, 0, 0.85f, 0.4f, false, &g) && Pres(f.y, 1.9f) && Pres(g.y, 1.9f));
+		VERIF(AgrDeplacementImage(b, 0, 0.1f, 0.8f, true, &f) && Pres(f.y, h0.y));
 		// Le drapeau 0x200 : l'os 2, sans position ici.
 		VERIF(!AgrDeplacementImage(b, 0x200, 0.4f, 0.0f, true, &e) && e.y == 0.0f);
 		printf("déplacement d'une place : 1,30 m de 0 à 0,4 s ; au tour de boucle, de 0,7 à 0,1 s, %.2f m pour la racine comme pour l'os du drapeau 0x40\n", e.y);
@@ -842,9 +847,29 @@ DeplacementDuPieton(void)
 	CDeplacementPieton l; l.locomotion = true; l.vitesse = CVector(0.0f, 3.0f, 0.0f); l.deplAnim = CVector(0.0f, 1.0f, 0.0f);
 	VERIF(l.Appliquer(dt));
 	VERIF(std::fabs(l.pos.y - 0.1f) < 1e-6f);
-	// Une rotation de l'image qui n'est pas l'identité prend la branche non refaite : rien ne bouge.
-	CDeplacementPieton t; t.deplAnim = CVector(0.0f, 0.05f, 0.0f); t.rotAnim[2] = 0.1f;
-	VERIF(!t.Appliquer(dt) && t.pos.y == 0.0f);
+	// Une rotation de l'image (0x47d7df) : 0,2 rad autour de z, au cap 0,3 ; le déplacement (0 ; 0,05) tourné du cap
+	// d'avant (00468300), le cap porté à 0,5, le quaternion rendu à l'identité, la vitesse = la position moins +0x1564.
+	CDeplacementPieton t; t.capEntite = 0.3f; t.cap = 0.3f; t.deplAnim = CVector(0.0f, 0.05f, 0.0f);
+	t.rotAnim[2] = sinf(0.1f); t.rotAnim[3] = cosf(0.1f);
+	VERIF(t.Appliquer(dt) && std::fabs(t.capEntite - 0.5f) < 1e-5f && std::fabs(t.cap - 0.5f) < 1e-5f && t.SansRotation() && t.rotAnim[3] == 1.0f);
+	VERIF(std::fabs(t.pos.x + 0.05f * sinf(0.3f)) < 1e-6f && std::fabs(t.pos.y - 0.05f * cosf(0.3f)) < 1e-6f && t.deplAnim.y == 0.0f);
+	VERIF(std::fabs(t.vitesse.x - t.pos.x) < 1e-6f && std::fabs(t.vitesseAnim.y - t.pos.y) < 1e-6f);
+	// Avec +0x1474 et +0x1484 (0x47d59e) : la rotation seule, le déplacement de l'image mis à zéro d'abord.
+	CDeplacementPieton u; u.locomotion = true; u.tourneParAnim = true; u.deplAnim = CVector(0.0f, 1.0f, 0.0f);
+	u.rotAnim[2] = sinf(-0.25f); u.rotAnim[3] = cosf(-0.25f);
+	VERIF(u.Appliquer(dt) && std::fabs(u.capEntite + 0.5f) < 1e-5f && std::fabs(u.cap + 0.5f) < 1e-5f && u.pos.y == 0.0f);
+	// FUN_00432bc0 : les quatre branches ; l'angle de l'opposé de l'avant redonne le cap, de part et d'autre de ±π/2.
+	VERIF(CDeplacementPieton::AngleEntrePoints(0.0f, 0.0f, 1.0f, 0.0f) == 1.5707964f && CDeplacementPieton::AngleEntrePoints(0.0f, 0.0f, -1.0f, 0.0f) == -1.5707964f);
+	for(float h : {0.3f, 2.0f, -2.0f, -0.7f}){
+		float a = CDeplacementPieton::AngleEntrePoints(-sinf(h), cosf(h), 0.0f, 0.0f);
+		VERIF(std::fabs(a - h) < 1e-5f);
+	}
+	// La méthode 36 (FUN_00473200) : le piéton qui pèse et tombe (+0x1e24) perd 9,8 × dt en z ; z monte de la moyenne des deux.
+	CDeplacementPieton g; g.pese = true; g.chute = true; g.gravite = 9.8f; g.vitesse = CVector(0.0f, 0.0f, 1.0f);
+	VERIF(g.Appliquer(dt) && std::fabs(g.vitesseZAvant - 1.0f) < 1e-6f && std::fabs(g.vitesse.z - (1.0f - 9.8f * dt)) < 1e-6f);
+	VERIF(std::fabs(g.pos.z - (1.0f + 1.0f - 9.8f * dt) * 0.5f * dt) < 1e-6f);
+	CDeplacementPieton h; h.pese = true; h.gravite = 9.8f; h.vitesse = CVector(0.0f, 0.0f, 1.0f);
+	VERIF(h.Appliquer(dt) && h.vitesse.z == 1.0f);
 	// Le bit 0x1 de +0x1bd fige le piéton.
 	CDeplacementPieton f; f.fige = true; f.vitesse = CVector(1.0f, 1.0f, 1.0f); f.deplAnim = CVector(0.0f, 0.05f, 0.0f);
 	VERIF(f.Appliquer(dt) && f.pos.y == 0.0f && f.vitesse.x == 0.0f);

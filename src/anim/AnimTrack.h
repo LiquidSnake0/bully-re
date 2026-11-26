@@ -139,7 +139,10 @@ struct CAnimTrack {
 	// - Sinon 006bd810 (2 615 octets, non lue) décode l'animation à l'instant de la place (+4) dans la pose. Selon les
 	//   bits 6, 7 et 2 des drapeaux de l'enregistrement (+0x18) : le bit 6 appelle 006b67b0 ; les bits 7 et 6 ensemble
 	//   006b6900 (1 359 octets), qui rend le déplacement ; sinon le bit 2 appelle 006b47b0, qui rend le déplacement, et
-	//   sans le bit 6, 006b6690 (toutes non lues). Si le bit 2 de +0x98 du lecteur est levé, à la place, les deux
+	//   sans le bit 6, 006b6690 (toutes non lues). Seule 006b6900 reçoit le quaternion de l'appelante (0x6b6fb6 : [esp+0x48]
+	//   poussé avec le déplacement) : **une place ne rend une rotation que si son enregistrement porte les bits 6 et 7**
+	//   (0xc0 : 553 des 3 365 animations de MAINPED.HXD, dont C_PLAYER\RUNSTOP180 et les prises au sol, test_hxd) ; 006b6900
+	//   commence par l'évaluation du dernier os (006be250, le rang +0x5c du dictionnaire moins 1) à l'instant d'avant (+8). Si le bit 2 de +0x98 du lecteur est levé, à la place, les deux
 	//   vecteurs +0x6c et +0x38 de [+0xc] sont mis au vecteur 0xbcc564. Le déplacement est multiplié par le poids quand
 	//   il est sous 1 (0088a490) et ajouté à celui de l'appelante (004150b0).
 	// - **L'échelle du bassin** (de 0x6b703d à 0x6b70cb), si l'entier 0x20c48c0 est nul et que le dictionnaire a quelque
