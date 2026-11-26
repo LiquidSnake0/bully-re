@@ -89,10 +89,19 @@ struct CDeplacementPieton {
 	}
 	// FUN_00472cd0 (lue en entier, 52 octets) : le quaternion remis à l'identité (0, 0, 0, 1).
 	void RotationIdentite(void) { rotAnim[0] = rotAnim[1] = rotAnim[2] = 0.0f; rotAnim[3] = 1.0f; }
-	// Le cap +0x1700 que la fin des deux branches tire de l'avant (FUN_00415350, puis 00432bc0(avant.x, avant.y, 0, 0) :
-	// l'angle de (0 − x, 0 − y), lue de son début à 0x432c79 ; supposé : atan2(−avant.x, avant.y), la branche 0x432c7a non
-	// lue).
-	void CapDeLAvant(void) { cap = atan2f(sinf(capEntite), cosf(capEntite)); }
+	// FUN_00432bc0(x1, y1, x2, y2) (lue en entier de 0x432bc0 à 0x432c9d) : l'angle de (dx, dy) = (x2 − x1, y2 − y1), dans
+	// le sens des caps du jeu (φ tel que (dx, dy) suive (sin φ, −cos φ), l'opposé de l'avant d'un cap φ) : dy nul, π/2 (le réel 0x903348) si dx est
+	// strictement positif, sinon −π/2 (0x900fb8) ; dy négatif, −atan(dx / dy) (le _CIatan 0085cf40) ; dy positif,
+	// π − atan(dx / dy) (le double 0x900160) si dx est strictement positif, sinon −π − atan(dx / dy) (0x900cf8).
+	static float AngleEntrePoints(float x1, float y1, float x2, float y2) {
+		float dx = x2 - x1, dy = y2 - y1;
+		if(dy == 0.0f) return 0.0f < dx ? 1.5707964f : -1.5707964f;
+		if(dy < 0.0f) return -atanf(dx / dy);
+		return 0.0f < dx ? (float)(3.1415927410125732 - atanf(dx / dy)) : (float)(-3.1415927410125732 - atanf(dx / dy));
+	}
+	// Le cap +0x1700 que la fin des deux branches tire de l'avant (FUN_00415350, puis FUN_00432bc0(avant.x, avant.y, 0, 0) :
+	// l'angle de (0 − avant.x, 0 − avant.y) = (sin h, −cos h), soit h).
+	void CapDeLAvant(void) { cap = AngleEntrePoints(-sinf(capEntite), cosf(capEntite), 0.0f, 0.0f); }
 
 	// FUN_0047d510 (CPed::ApplyMoveSpeed, lue à l'assembleur de 0x47d510 à 0x47d9e8 ; 1 247 octets) :
 	// - FUN_00473260 d'abord ; puis, si +0x1324 est nul et l'octet +0x1c98 aussi, le cap de l'entité +0x10 prend +0x1700 ;

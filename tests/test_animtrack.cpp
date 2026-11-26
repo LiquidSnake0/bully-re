@@ -858,6 +858,12 @@ DeplacementDuPieton(void)
 	CDeplacementPieton u; u.locomotion = true; u.tourneParAnim = true; u.deplAnim = CVector(0.0f, 1.0f, 0.0f);
 	u.rotAnim[2] = sinf(-0.25f); u.rotAnim[3] = cosf(-0.25f);
 	VERIF(u.Appliquer(dt) && std::fabs(u.capEntite + 0.5f) < 1e-5f && std::fabs(u.cap + 0.5f) < 1e-5f && u.pos.y == 0.0f);
+	// FUN_00432bc0 : les quatre branches ; l'angle de l'opposé de l'avant redonne le cap, de part et d'autre de ±π/2.
+	VERIF(CDeplacementPieton::AngleEntrePoints(0.0f, 0.0f, 1.0f, 0.0f) == 1.5707964f && CDeplacementPieton::AngleEntrePoints(0.0f, 0.0f, -1.0f, 0.0f) == -1.5707964f);
+	for(float h : {0.3f, 2.0f, -2.0f, -0.7f}){
+		float a = CDeplacementPieton::AngleEntrePoints(-sinf(h), cosf(h), 0.0f, 0.0f);
+		VERIF(std::fabs(a - h) < 1e-5f);
+	}
 	// La méthode 36 (FUN_00473200) : le piéton qui pèse et tombe (+0x1e24) perd 9,8 × dt en z ; z monte de la moyenne des deux.
 	CDeplacementPieton g; g.pese = true; g.chute = true; g.gravite = 9.8f; g.vitesse = CVector(0.0f, 0.0f, 1.0f);
 	VERIF(g.Appliquer(dt) && std::fabs(g.vitesseZAvant - 1.0f) < 1e-6f && std::fabs(g.vitesse.z - (1.0f - 9.8f * dt)) < 1e-6f);
