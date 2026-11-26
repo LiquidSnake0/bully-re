@@ -5593,7 +5593,7 @@ AvancerSuivis(lua_State *L)
 			if(ScriptPedSuiviSuivant(s, nombre, r)) ScriptPedSuiviPoserPlan(s, noeuds, q, r); else s.plan = -1;
 		}
 		float dx = but.x - p->pos.x, dy = but.y - p->pos.y, dz = but.z - p->pos.z, d = sqrtf(dx * dx + dy * dy);
-		float pas = ScriptPedVitesse(o->allure < 0 ? ALLURE_MARCHE : o->allure) * 0.033f;
+		float pas = PasDuPieton(*p, ScriptPedVitesse(o->allure < 0 ? ALLURE_MARCHE : o->allure) * 0.033f);   // FUN_0047d510
 		p->enMarche = false;
 		p->intentionVitesse = vitesseIntention;
 		if(d > 1e-3f){

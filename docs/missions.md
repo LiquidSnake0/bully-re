@@ -598,12 +598,18 @@ Avec l'outil :
     V="$V --viser-objet tschool_BusWindow02@18 --jouer $C@18.6 --tenir 8,0.7@18.6"
     V="$V --viser-objet tschool_BusWindow03@20 --jouer $C@20.6 --tenir 8,0.7@20.6 --viser-objet -@22"
     A="--entrer _1_04_FIELDTRIG@26 --entrer _1_04_TREE2_TRIG@33 --jouer /Global/TreeClimb/Actions/ON_BOT:Act/Props/pxTree.act@34"
-    T="--viser 10@71.88 --tirer @71.95 --viser 9@72.60 --tirer @72.67 --viser 10@72.74 --tirer @72.81 --viser 8@73.07 --tirer @73.14"
-    T="$T --viser 9@73.40 --tirer @73.47 --viser 10@73.54 --tirer @73.61 --viser 7@73.68 --tirer @73.75 --viser 8@73.87 --tirer @73.94"
-    T="$T --viser 6@74.01 --tirer @74.08 --viser 9@74.20 --tirer @74.27 --viser 7@74.34 --tirer @74.41 --viser 8@74.67 --tirer @74.74"
-    T="$T --viser 6@74.81 --tirer @74.88 --viser 5@74.95 --tirer @75.02 --viser 7@75.09 --tirer @75.16 --viser 6@75.56 --tirer @75.63"
-    T="$T --viser 5@75.70 --tirer @75.77 --tirer @76.43"
+    T="--viser 10@53.00 --tirer @53.07 --viser 9@53.39 --tirer @53.46 --viser 8@53.64 --tirer @53.71 --viser 10@53.86 --tirer @53.93"
+    T="$T --viser 7@54.00 --tirer @54.07 --viser 6@54.14 --tirer @54.21 --viser 9@54.28 --tirer @54.35 --viser 8@54.44 --tirer @54.51"
+    T="$T --viser 5@54.58 --tirer @54.65 --viser 7@54.72 --tirer @54.79 --viser 10@54.86 --tirer @54.93 --viser 6@55.00 --tirer @55.07"
+    T="$T --viser 9@55.14 --tirer @55.21 --viser 8@55.28 --tirer @55.35 --viser 5@55.42 --tirer @55.49 --viser 7@55.56 --tirer @55.63"
+    T="$T --viser 6@55.70 --tirer @55.77 --viser 5@55.97 --tirer @56.04"
     build/outils/lancer_lua 90 --mission 1_04 --sans-cinematiques --entrer _1_04_PARKING@10 $V $A $T
+
+**Depuis le 26.11**, les jocks suivent leurs trajets au pas de leurs animations et font leur première séance d'exercice
+(`PedSetActionNode(N, "/Global/Ambient/Scripted/Workout")`, au nœud 1 de leur trajet) de 52,63 à 53,99 s au lieu de 71,51 à 74,38 s ; chaque
+tir garde son écart au début de la séance de sa cible, et deux tirs se suivent d'au moins 0,14 s (`--viser`, puis `--tirer` 0,07 s
+après ; le dernier tir, sans `--viser` avant, vise le piéton 5). Les dix-huit billes portent, le sixième jock tombe à 0 à 56,36 s et
+**`1_04` se termine réussie à 60,75 s**.
 
 Depuis le 25.11, tous les tirs partent 1,40 s plus tôt qu'avant (73.28 → 71.88, etc.) : les piétons avancent du déplacement
 de leurs animations (commits 6d39825 et a73c445), les jocks finissent leur trajet de 1,82 à 1,91 s plus tôt, et un tir lâché
