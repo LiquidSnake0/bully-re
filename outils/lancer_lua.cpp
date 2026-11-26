@@ -6038,8 +6038,9 @@ GererCibles(int ped, bool joueur)
 // le point qui suit la cible aux images de tirage (cible + le décalage +0x38, s'il est à plus de 0,5 m du piéton,
 // _DAT_009055a0), et, sauf aux modes 3, 7 et 12, le cap voulu vers la cible ; la navigation (FUN_004a4eb0, le rayon
 // d'arrivée 0,2 m, _DAT_00900484) en fait la vitesse de l'intention (FUN_005e4a60). La cible vue : FUN_0048d320
-// (CScriptPedPool::Voit, sans monde à traverser). Supposé : le point toujours valable (FUN_006254c0), tout droit (sans la recherche de chemin, FUN_005e9df0), à
-// l'allure de course de l'outil réduite dans le rapport de la vitesse de l'intention à 1,5.
+// (CScriptPedPool::Voit, sans monde à traverser). Supposé : le point toujours valable (FUN_006254c0), tout droit (sans la recherche de chemin, FUN_005e9df0).
+// Le pas : le déplacement que rendent les animations du piéton quand une piste Locomotion vit (PasDuPieton, CPed::ApplyMoveSpeed,
+// FUN_0047d510) ; sinon, supposé, l'allure de course de l'outil réduite dans le rapport de la vitesse de l'intention à 1,5.
 static std::map<int, CCombatLoco> etatsCombat;
 static uint32 graineCombat = 1;   // le rand() du CRT que la piste tire (l'outil a sa propre graine)
 static int TirerCombat(void *){ return RandCrt(graineCombat); }
@@ -6159,7 +6160,7 @@ CombatLoco(int ped, bool joueur, bool premiere)
 	p->intentionVitesse = ScriptPedVitesseDuTrajet(vitesse, d * d, ecart, 0.2f, p->immobile);
 	if(d > 0 && p->intentionVitesse > 0) p->intention = CVector(dx / d, dy / d, 0);
 	if(p->intentionVitesse > 0){
-		float pas = ScriptPedVitesse(ALLURE_COURSE) * 0.033f * p->intentionVitesse / 1.5f;
+		float pas = PasDuPieton(*p, ScriptPedVitesse(ALLURE_COURSE) * 0.033f * p->intentionVitesse / 1.5f);   // FUN_0047d510
 		float k = d - 0.2f < pas ? (d - 0.2f) / d : pas / d;
 		p->pos.x += dx * k; p->pos.y += dy * k;
 	}
