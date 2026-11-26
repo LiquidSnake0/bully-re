@@ -30,6 +30,8 @@ struct CDeplacementPieton {
 	bool sansPlat = false;            // l'octet +0x1558 : ni cap ni déplacement en x et y
 	bool pese = false;                // le bit 0x2 de +0x1bc
 	bool fige = false;                // le bit 0x1 de +0x1bd : la vitesse tombe à 0, rien ne bouge
+	bool chute = false;               // les bits 0x1 et 0x2 de l'octet +0x1e24 (FUN_00473200) ; leur écriture n'est pas lue
+	float gravite = 0.0f;             // +0x1d58 : ce que la vitesse en z perd par pas de CTimer (FUN_00473200)
 	CVector posAvant;                 // +0x1564 : la position d'où la vitesse est refaite après une rotation (supposé : celle
 	                                  // du début de l'image ; son écriture n'est pas lue)
 
@@ -74,6 +76,17 @@ struct CDeplacementPieton {
 		float ax = c * m01 - s * m11, ay = s * m01 + c * m11;   // l'avant : Rz(cap) × la colonne 1
 		capEntite = atan2f(-ax, ay);
 	}
+	// FUN_00473200 (la méthode 36 de CPed, +0x90 de sa table 0x90c804, lue en entier de 0x473200 à 0x473254, 85 octets) :
+	// avec le bit 0x2 de +0x1bc (pese) et les bits 0x1 et 0x2 de l'octet +0x1e24 : avec +0x1474, celle de CPhysical
+	// (0046aa90, non lue) ; sans, la vitesse en z d'avant est gardée en +0x1704 et la vitesse en z (+0x12c) perd
+	// +0x1d58 × CTimer::ms_fTimeStep (0xc1a9a4). Rend vrai quand la branche de CPhysical, non refaite, serait prise.
+	bool Chute(float dt) {
+		if(!pese || !chute) return false;
+		if(locomotion) return true;
+		vitesseZAvant = vitesse.z;
+		vitesse.z -= gravite * dt;
+		return false;
+	}
 	// FUN_00472cd0 (lue en entier, 52 octets) : le quaternion remis à l'identité (0, 0, 0, 1).
 	void RotationIdentite(void) { rotAnim[0] = rotAnim[1] = rotAnim[2] = 0.0f; rotAnim[3] = 1.0f; }
 	// Le cap +0x1700 que la fin des deux branches tire de l'avant (FUN_00415350, puis 00432bc0(avant.x, avant.y, 0, 0) :
@@ -86,7 +99,7 @@ struct CDeplacementPieton {
 	// - **avec +0x1474** : le déplacement de CPhysical (FUN_00469760) ; puis, avec +0x1484 et une rotation de l'image qui
 	//   n'est pas l'identité (de 0x47d59e à 0x47d610) : le déplacement de l'image mis à zéro, la rotation tourne le piéton
 	//   (TournerParImage), le quaternion revient à l'identité, le cap +0x1700 prend celui de l'avant, et la fin ;
-	// - **sans +0x1474** : la méthode +0x90 du piéton et le pas de ses stats (0047a130 ; non lues), puis, avec le bit 0x1
+	// - **sans +0x1474** : la méthode +0x90 du piéton (Chute) et 0047a130 (non lue), puis, avec le bit 0x1
 	//   de +0x1bd, la vitesse à zéro et la sortie. Sans rotation de l'image (de 0x47d6b3 à 0x47d788) : si l'octet +0x1558
 	//   est nul, le cap +0x10 prend +0x1700, **la vitesse en x et y prend celle des animations** (+0x1708, avec +0x1334)
 	//   et la position avance de vitesse × dt en x et en y. Puis, sans le bit 0x2 de +0x1bc et avec +0x1334, la vitesse
@@ -113,6 +126,7 @@ struct CDeplacementPieton {
 			}
 			return true;
 		}
+		Chute(dt);
 		if(fige){ vitesse = CVector(0.0f, 0.0f, 0.0f); return true; }
 		if(!SansRotation()){
 			CVector avant = posAvant;

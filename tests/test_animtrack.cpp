@@ -858,6 +858,12 @@ DeplacementDuPieton(void)
 	CDeplacementPieton u; u.locomotion = true; u.tourneParAnim = true; u.deplAnim = CVector(0.0f, 1.0f, 0.0f);
 	u.rotAnim[2] = sinf(-0.25f); u.rotAnim[3] = cosf(-0.25f);
 	VERIF(u.Appliquer(dt) && std::fabs(u.capEntite + 0.5f) < 1e-5f && std::fabs(u.cap + 0.5f) < 1e-5f && u.pos.y == 0.0f);
+	// La méthode 36 (FUN_00473200) : le piéton qui pèse et tombe (+0x1e24) perd 9,8 × dt en z ; z monte de la moyenne des deux.
+	CDeplacementPieton g; g.pese = true; g.chute = true; g.gravite = 9.8f; g.vitesse = CVector(0.0f, 0.0f, 1.0f);
+	VERIF(g.Appliquer(dt) && std::fabs(g.vitesseZAvant - 1.0f) < 1e-6f && std::fabs(g.vitesse.z - (1.0f - 9.8f * dt)) < 1e-6f);
+	VERIF(std::fabs(g.pos.z - (1.0f + 1.0f - 9.8f * dt) * 0.5f * dt) < 1e-6f);
+	CDeplacementPieton h; h.pese = true; h.gravite = 9.8f; h.vitesse = CVector(0.0f, 0.0f, 1.0f);
+	VERIF(h.Appliquer(dt) && h.vitesse.z == 1.0f);
 	// Le bit 0x1 de +0x1bd fige le piéton.
 	CDeplacementPieton f; f.fige = true; f.vitesse = CVector(1.0f, 1.0f, 1.0f); f.deplAnim = CVector(0.0f, 0.05f, 0.0f);
 	VERIF(f.Appliquer(dt) && f.pos.y == 0.0f && f.vitesse.x == 0.0f);
