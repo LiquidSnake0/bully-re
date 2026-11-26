@@ -119,10 +119,14 @@ AgrDeplacementImage(const AgrAnim &a, uint32 drapeaux, float t, float avant, boo
 	// Un instant égal à la durée (la place s'y arrête une image : « la durée juste atteinte n'est pas passée »,
 	// FUN_006b2560) prend la dernière clé, pas la première : AgrPositionOs ramène l'instant modulo la durée, et l'instant
 	// d'avant égal à la durée faisait compter, à l'image du tour de boucle, le trajet entier une seconde fois (3,17 m en
-	// une image pour C_PLAYER\RUN, mesuré le 25.11 dans 1_06_01). Supposé : le décodage du jeu (006be250, non lu) rend
-	// la dernière clé à cet instant.
+	// une image pour C_PLAYER\RUN, mesuré le 25.11 dans 1_06_01). Lu le 26.11 : l'évaluation d'un os (006be250, lue
+	// de 0x6be250 à 0x6be477, ret 0x18) borne l'instant à la durée de l'enregistrement (+0xc : fcompp, test ah,5, jp),
+	// le divise par elle, puis prend l'image : u × 511 tronqué et décalé de 7 bits si le bit 2 de +0x18 est posé
+	// (006bd470), sinon |u| × 65 535 tronqué sur 16 bits (006bd660, le double 0x922828) ; elle rend la position
+	// (+0x64 de l'os décodé) et le quaternion (+0x54). L'instant égal à la durée, ou au-delà, prend donc la dernière
+	// image. Non refait : la troncature à l'image (l'outil interpole entre les clés).
 	auto position = [&a, os](float u, CVector *p){
-		if(a.duree > 0.0f && u >= a.duree && u <= a.duree * 1.000001f){ *p = a.positions[os].back().p; return true; }
+		if(a.duree > 0.0f && u >= a.duree){ *p = a.positions[os].back().p; return true; }
 		return AgrPositionOs(a, os, u, p);
 	};
 	CVector ici, av;

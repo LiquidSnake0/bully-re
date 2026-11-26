@@ -545,6 +545,11 @@ Trajets(void)
 		// Le drapeau 0x40 : l'os 35, de y = 1 à 5 ; à mi-course 2 m et 0,25 m de haut ; au tour (5 − 1 − 4,5) + 1,5 = 1.
 		VERIF(AgrDeplacementImage(b, 0x40, 0.4f, 0.0f, true, &e) && Pres(e.y, 2.0f) && Pres(e.z, 0.25f));
 		VERIF(AgrDeplacementImage(b, 0x40, 0.1f, 0.7f, true, &e) && Pres(e.y, 1.0f) && Pres(e.z, 0.125f));
+		// L'instant borné à la durée (FUN_006be250) : à 0,8 s comme au-delà, la dernière clé (3,4) ; l'instant d'avant égal
+		// à la durée, au tour de boucle, ne compte pas le trajet une seconde fois : la racine rend sa position à 0,1 s.
+		CVector f, g, h0; AgrPositionOs(b, 1, 0.1f, &h0);
+		VERIF(AgrDeplacementImage(b, 0, 0.8f, 0.4f, false, &f) && AgrDeplacementImage(b, 0, 0.85f, 0.4f, false, &g) && Pres(f.y, 1.9f) && Pres(g.y, 1.9f));
+		VERIF(AgrDeplacementImage(b, 0, 0.1f, 0.8f, true, &f) && Pres(f.y, h0.y));
 		// Le drapeau 0x200 : l'os 2, sans position ici.
 		VERIF(!AgrDeplacementImage(b, 0x200, 0.4f, 0.0f, true, &e) && e.y == 0.0f);
 		printf("déplacement d'une place : 1,30 m de 0 à 0,4 s ; au tour de boucle, de 0,7 à 0,1 s, %.2f m pour la racine comme pour l'os du drapeau 0x40\n", e.y);
