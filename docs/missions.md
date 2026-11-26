@@ -809,13 +809,17 @@ Avec l'outil (sous zsh, `${=…}`) :
     LA=/Global/Player/Attacks/Strikes/LightAttacks
     J1=13.5,14.1,…,24.3 (dix-neuf jabs) ; J2=28,28.6,…,37 (seize) ; J3=39,39.6,…,48 (seize)
     build/outils/lancer_lua 200 --mission 1_05 --sans-cinematiques --courir 187.3,-132.2,6.1@5 \
-      --suivre 1,0.8@12.5 --viser 1@12.5 --jouer $LA@$J1 --suivre 2,0.8@27 --viser 2@27 --jouer $LA@$J2 \
-      --suivre 3,0.8@38 --viser 3@38 --jouer $LA@$J3 \
+      --suivre 1,0.8@12.5 --viser 1@12.5 --jouer $LA@$J1 --suivre 3,0.8@27 --viser 3@27 --jouer $LA@$J2 \
+      --suivre 2,0.8@38 --viser 2@38 --jouer $LA@$J3 \
       --courir 209.2,-73.3,6@59 --porte DT_tschool_SchoolFrontDoorL@66 --courir -675.8,-325.4,5.9@70 \
       --suivre 9,0.8@105 --viser 9@105 --jouer $LA@106,106.6,…,115 --suivre 10,0.8@117 --viser 10@117 --jouer $LA@118,118.6,…,127 \
       --courir -657.2,-293.5,5.9@155
 
-(`J1`, `J2`, `J3` et les deux séries de l'embuscade : seize ou dix-neuf instants de 0,6 s en 0,6 s.) Le joueur court à la bibliothèque,
+(`J1`, `J2`, `J3` et les deux séries de l'embuscade : seize ou dix-neuf instants de 0,6 s en 0,6 s.) **Depuis le 26.11**, le joueur
+bat le bully 3 avant le 2 : quand le premier bully atteint le nœud 1 de sa fuite, `F_routeBullyFleeNew` lance `PedAttackPlayer(2, 1)` et
+`PedAttack(3, 7, 1)` (le bully 3 sur Algie, le piéton critique) ; le joueur, qui court désormais au pas de sa couche de locomotion, arrive
+autrement, et le bully 3 mettait Algie à 0 point (1_05_FAIL_01, 33,73 s) pendant que le joueur battait le 2. Le récit qui suit garde
+l'ordre d'avant. Le joueur court à la bibliothèque,
 Algie le suit (`TetherLoco`, 5,51 s) ; le premier bully attaque Algie à 12,08 s ; dix-neuf jabs (six manquent « dans son dos ») : il fuit
 à 47 points (19,04 s), meurt à 27,32 s ; sa fuite lance les bullies 5 et 6 sur le joueur (25,11 s), morts à 40,00 et 50,98 s ;
 `F_UnlockStage2` et `MissionTimerStart(180)` à 58,01 s. La porte de l'école à 66 s : Algie passe avec le joueur (`FUN_0048b970`), posé
